@@ -1,4 +1,4 @@
-{ config, ... }: {
+{ pkgs, config, ... }: {
   imports = [
     ./home.nix
     ../common
@@ -26,4 +26,14 @@
       font-size = 12;
     };
   };
+
+  services = {
+    keybase.enable = true;
+    kbfs.enable = true;
+  };
+
+  home.packages = with pkgs; [
+    keybase-gui
+    keybase
+  ];
 }
