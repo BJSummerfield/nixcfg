@@ -17,6 +17,7 @@
     desktop = {
       hyprland.enable = false;
       wayland.enable = false;
+      fonts.enable = true;
     };
   };
 
