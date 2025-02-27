@@ -6,7 +6,8 @@
 
 {
   imports =
-    [ # Include the results of the hardware scan.
+    [
+      # Include the results of the hardware scan.
       ./hardware-configuration.nix
     ];
 
@@ -55,12 +56,11 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-  #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-  #  wget
-    helix
+    #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+    #  wget
+    wl-clipboard
     git
-    ghostty
-
+    brightnessctl
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
@@ -70,14 +70,17 @@
   #   enable = true;
   #   enableSSHSupport = true;
   # };
+
+  programs._1password-gui.enable = true;
+  programs._1password.enable = true;
   programs.hyprland.enable = true;
-  programs.firefox.enable = true;
+  programs.fish.enable = true;
 
   # List services that you want to enable:
 
   # Enable the OpenSSH daemon.
   # services.openssh.enable = true;
-  
+
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];

@@ -7,7 +7,7 @@
 {
   # Home Manager needs a bit of information about you and the paths it should
   # manage.
-  home.username = lib.mkDefault "brians";
+  home.username = lib.mkDefault "waktu";
   home.homeDirectory = lib.mkDefault "/home/${config.home.username}";
 
   # This value determines the Home Manager release that your configuration is
@@ -21,10 +21,13 @@
 
   # The home.packages option allows you to install Nix packages into your
   # environment.
-  home.packages = [
+  home.packages = with pkgs; [
     # # Adds the 'hello' command to your environment. It prints a friendly
     # # "Hello, world!" when run.
     # pkgs.hello
+    wofi
+    ghostty
+
 
     # # It is sometimes useful to fine-tune packages, for example, by applying
     # # overrides. You can do that directly here, just don't forget the
@@ -71,8 +74,12 @@
   #  /etc/profiles/per-user/m3tam3re/etc/profile.d/hm-session-vars.sh
   #
   home.sessionVariables = {
+
     EDITOR = "hx";
+    TERMINAL = "ghostty";
   };
+
+  programs.firefox.enable = true;
 
   # Let Home Manager install and manage itself.
   programs.home-manager.enable = true;

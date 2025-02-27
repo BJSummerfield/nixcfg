@@ -17,6 +17,7 @@
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
+    _1password-shell-plugins.url = "github:1Password/shell-plugins";
   };
 
   outputs = { self, home-manager, nixpkgs, ... }@inputs:
@@ -30,7 +31,8 @@
         "x86_64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
-    in {
+    in
+    {
       packages =
         forAllSystems (system: import ./pkgs nixpkgs.legacyPackages.${system});
       overlays = import ./overlays { inherit inputs; };
