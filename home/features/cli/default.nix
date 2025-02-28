@@ -12,7 +12,7 @@
   programs.ghostty = {
     enable = true;
     settings = {
-      font-family = "MonaspiceNe Nerd Font Mono";
+      font-family = "MonaspaceNe Nerd Font Mono";
       window-decoration = false;
       theme = "catppuccin-mocha";
       background-opacity = 0.9;
