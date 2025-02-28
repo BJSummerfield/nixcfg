@@ -8,6 +8,7 @@ in
   config = mkIf cfg.enable {
     wayland.windowManager.hyprland = {
       enable = true;
+      package = null;
       settings = {
 
         # MONITOR
