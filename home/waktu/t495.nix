@@ -16,7 +16,7 @@
       enable = true;
       flavor = "macchiato";
     };
-    dunst = {
+    mako = {
       enable = true;
       flavor = "macchiato";
     };

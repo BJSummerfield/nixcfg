@@ -27,9 +27,12 @@ in
         #   "waybar"
         #   "hyprpaper"
         # ];
+
+
         # ENVIRONMENT VARIABLES
-        # (Uncomment and add environment variables if needed.)
-        # env = [ "XCURSOR_SIZE,24" "HYPRCURSOR_SIZE,24" ];
+        env = [
+          "XCURSOR_SIZE,24"
+        ];
 
         # LOOK AND FEEL: GENERAL
         general = {
@@ -221,14 +224,11 @@ in
       };
     };
 
-    services.dunst = {
+    services.mako = {
       enable = true;
-      settings = {
-        global = {
-          font = "MonaspiceNe Nerd Font 8";
-          word_wrap = true;
-        };
-      };
+      font = "MonaspiceNe Nerd Font 8";
+      borderRadius = 8;
+      borderSize = 2;
     };
 
     services.hyprpaper = {
@@ -246,6 +246,7 @@ in
     };
 
     home.packages = with pkgs; [
+      libnotify
       brightnessctl
       grim
       slurp
