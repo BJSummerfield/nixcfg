@@ -212,26 +212,26 @@ in
       enable = true;
       extraConfig = {
         show-icons = true;
-        "display-ssh" = "󰣀 ssh:";
-        "display-run" = "󱓞 run:";
-        "display-drun" = "󰣖 drun:";
-        "display-window" = "󱂬 window:";
-        "display-combi" = "󰕘 combi:";
-        "display-filebrowser" = "󰉋 filebrowser:";
+        # "display-ssh" = "󰣀 ssh:";
+        # "display-run" = "󱓞 run:";
+        # "display-drun" = "󰣖 drun:";
+        # "display-window" = "󱂬 window:";
+        # "display-combi" = "󰕘 combi:";
+        # "display-filebrowser" = "󰉋 filebrowser:";
       };
       font = "MonaspaceNe Nerd Font 12";
     };
 
-    # services.dunst = {
-    #   enable = true;
-    #   settings = {
-    #     global = {
-    #       font = "MonaspiceNe Nerd Font 8";
-    #       word_wrap = true;
-    #       transparency = 10;
-    #     };
-    #   };
-    # };
+    services.dunst = {
+      enable = true;
+      # settings = {
+      #   global = {
+      #     font = "MonaspiceNe Nerd Font 8";
+      #     word_wrap = true;
+      #     transparency = 10;
+      #   };
+      # };
+    };
 
     home.packages = with pkgs;
       [

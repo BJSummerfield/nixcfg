@@ -71,6 +71,7 @@
   #   enableSSHSupport = true;
   # };
 
+programs.hyprland.enable = true;
   programs.fish.enable = true;
   # programs.steam.enable = true;
   # programs._1password-gui.enable = true;
