@@ -1,10 +1,27 @@
-{ pkgs, config, ... }: {
+{ pkgs, config, inputs, ... }: {
   imports = [
     ./home.nix
     ../common
     ../features/cli
     ../features/desktop
+    inputs.catppuccin.homeManagerModules.catppuccin
   ];
+
+  catppuccin = {
+    flavor = "mocha";
+    starship.enable = true;
+    fish.enable = true;
+    lazygit.enable = true;
+    rofi = {
+      enable = true;
+      flavor = "Macchiato";
+    };
+    dunst = {
+      enable = true;
+      flavor = "Macchiato";
+    };
+    bottom.enable = true;
+  };
 
   features = {
     cli = {
@@ -15,8 +32,7 @@
     };
 
     desktop = {
-      hyprland.enable = false;
-      wayland.enable = false;
+      hyprland.enable = true;
       fonts.enable = true;
     };
   };
@@ -33,7 +49,16 @@
   };
 
   home.packages = with pkgs; [
+    firefox
+    steam
+    _1password-gui
+    _1password
     keybase-gui
     keybase
   ];
+
+  home.sessionVariables = {
+    EDITOR = "hx";
+    TERMINAL = "ghostty";
+  };
 }
