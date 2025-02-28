@@ -214,14 +214,10 @@ in
       enable = true;
       extraConfig = {
         show-icons = true;
-        # "display-ssh" = "󰣀 ssh:";
-        # "display-run" = "󱓞 run:";
+        hide-scrollbar = true;
         "display-drun" = "󰣖 drun:";
-        # "display-window" = "󱂬 window:";
-        # "display-combi" = "󰕘 combi:";
-        # "display-filebrowser" = "󰉋 filebrowser:";
+        font = "MonaspiceNe Nerd Font 8";
       };
-      font = "MonaspiceNe Nerd Font 10";
     };
 
     services.dunst = {
@@ -230,7 +226,6 @@ in
         global = {
           font = "MonaspiceNe Nerd Font 8";
           word_wrap = true;
-          transparency = 10;
         };
       };
     };
@@ -239,7 +234,7 @@ in
       [
         brightnessctl
         grim
-        hyprlock
+        hyprpaper
         qt6.qtwayland
         slurp
         wl-clipboard
