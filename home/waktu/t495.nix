@@ -9,7 +9,7 @@
 
   catppuccin = {
     flavor = "mocha";
-    # waybar.enable = true;
+    hyprlock.enable = true;
     starship.enable = true;
     fish.enable = true;
     lazygit.enable = true;
