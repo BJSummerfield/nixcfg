@@ -24,8 +24,7 @@ in
         #  Uncomment and add commands here if desired.)
         # exec-once = [ "uwsm app -- dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP" ];
         exec-once = [
-          "waybar"
-          "hyprpaper"
+          "uwsm app -- hyprpaper"
         ];
         # ENVIRONMENT VARIABLES
         # (Uncomment and add environment variables if needed.)
@@ -144,11 +143,11 @@ in
         # KEYBINDINGS & MODIFIERS
         "$mainMod" = "SUPER";
         bind = [
-          "$mainMod, RETURN, exec, $terminal"
+          "$mainMod, RETURN, exec, uwsm app -- $terminal"
           "$mainMod, Q, killactive,"
           "$mainMod SHIFT, E, exit,"
           "$mainMod, E, exec, $fileManager"
-          "$mainMod, SPACE, exec, $menu"
+          "$mainMod, SPACE, exec, uwsm app -- $menu"
           "$mainMod, J, togglesplit"
           "$mainMod, F, fullscreen"
           "$mainMod, left, movefocus, l"
@@ -217,6 +216,7 @@ in
         hide-scrollbar = true;
         "display-drun" = "󰣖 drun:";
         font = "MonaspiceNe Nerd Font 8";
+        run-command = "uwsm app -- {cmd}";
       };
     };
 
@@ -230,12 +230,15 @@ in
       };
     };
 
+    programs.hyprpaper = {
+      enable = true;
+    };
+
     home.packages = with pkgs;
       [
         brightnessctl
         grim
         hyprpaper
-        qt6.qtwayland
         slurp
         wl-clipboard
       ];
