@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 {
   services.hyprpaper = {
     enable = true;
@@ -7,12 +7,8 @@
       # splash = false;
       # splash_offset = 2.0;
 
-      preload =
-        [ "$Home/wallpapers/MistyTrees.jpg" ];
-
-      wallpaper = [
-        "$Home/wallpapers/MistyTrees.jpg"
-      ];
+      preload = [ "${config.home.homeDirectory}/wallpapers/MistyTrees.jpg" ];
+      wallpaper = [ " , ${config.home.homeDirectory}/wallpapers/MistyTrees.jpg" ];
     };
   };
 
