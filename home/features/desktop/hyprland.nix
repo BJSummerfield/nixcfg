@@ -30,9 +30,9 @@ in
 
 
         # ENVIRONMENT VARIABLES
-        env = [
-          "XCURSOR_SIZE,24"
-        ];
+        # env = [
+        #   "XCURSOR_SIZE,24"
+        # ];
 
         # LOOK AND FEEL: GENERAL
         general = {
@@ -137,12 +137,12 @@ in
         };
 
         # PER-DEVICE CONFIG
-        device = [
-          {
-            name = "epic-mouse-v1";
-            sensitivity = -0.5;
-          }
-        ];
+        # device = [
+        #   {
+        #     name = "epic-mouse-v1";
+        #     sensitivity = -0.5;
+        #   }
+        # ];
 
         # KEYBINDINGS & MODIFIERS
         "$mainMod" = "SUPER";
@@ -236,13 +236,13 @@ in
     };
 
     programs.fish = {
-      loginShellInit = ''
-        set fish_greeting # Disable greeting
-    
-        if test (tty) = "/dev/tty1"
-          exec Hyprland &> /dev/null
-        end
-      '';
+      # loginShellInit = ''
+      #   set fish_greeting # Disable greeting
+
+      #   if uwsm check may-start
+      #       exec uwsm start hyprland-uwsm.desktop
+      #   end
+      # '';
     };
 
     home.packages = with pkgs; [

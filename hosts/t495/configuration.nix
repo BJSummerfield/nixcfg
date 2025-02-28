@@ -79,10 +79,10 @@
     };
   };
 
+  programs.steam.enable = true;
   programs.fish.enable = true;
-  # programs.steam.enable = true;
-  # programs._1password-gui.enable = true;
-  # programs._1password.enable = true;
+  programs._1password-gui.enable = true;
+  programs._1password.enable = true;
 
   # List services that you want to enable:
 
