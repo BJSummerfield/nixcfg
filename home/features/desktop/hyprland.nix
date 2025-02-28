@@ -23,10 +23,10 @@ in
         # (Autostart commands from the plain config are commented out.
         #  Uncomment and add commands here if desired.)
         # exec-once = [ "uwsm app -- dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP" ];
-        exec-once = [
-          "waybar"
-          "hyprpaper"
-        ];
+        # exec-once = [
+        #   "waybar"
+        #   "hyprpaper"
+        # ];
         # ENVIRONMENT VARIABLES
         # (Uncomment and add environment variables if needed.)
         # env = [ "XCURSOR_SIZE,24" "HYPRCURSOR_SIZE,24" ];
@@ -230,12 +230,25 @@ in
       };
     };
 
+    services.hyprpaper = {
+      enable = true;
+    };
+
+    programs.fish = {
+      loginShellInit = ''
+        set fish_greeting # Disable greeting
+    
+        if test (tty) = "/dev/tty1"
+          exec Hyprland &> /dev/null
+        end
+      '';
+    };
+
+
     home.packages = with pkgs;
       [
         brightnessctl
         grim
-        hyprpaper
-        qt6.qtwayland
         slurp
         wl-clipboard
       ];
