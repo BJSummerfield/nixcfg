@@ -14,11 +14,11 @@
     lazygit.enable = true;
     rofi = {
       enable = true;
-      flavor = "Macchiato";
+      flavor = "macchiato";
     };
     dunst = {
       enable = true;
-      flavor = "Macchiato";
+      flavor = "macchiato";
     };
     bottom.enable = true;
   };
