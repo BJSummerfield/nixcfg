@@ -15,12 +15,13 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    catppuccin.url = "github:catppuccin/nix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
     _1password-shell-plugins.url = "github:1Password/shell-plugins";
   };
 
-  outputs = { self, home-manager, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, ... }@inputs:
     let
       inherit (self) outputs;
       systems = [
@@ -40,13 +41,6 @@
         t495 = nixpkgs.lib.nixosSystem {
           specialArgs = { inherit inputs outputs; };
           modules = [ ./hosts/t495 ];
-        };
-      };
-      homeConfigurations = {
-        "brians@t495" = home-manager.lib.homeManagerConfiguration {
-          pkgs = nixpkgs.legacyPackages."x86_64-linux";
-          extraSpecialArgs = { inherit inputs outputs; };
-          modules = [ ./home/brians/t495.nix ];
         };
       };
     };

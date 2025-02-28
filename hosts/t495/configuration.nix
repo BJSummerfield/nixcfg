@@ -58,9 +58,7 @@
   environment.systemPackages = with pkgs; [
     #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     #  wget
-    wl-clipboard
     git
-    brightnessctl
   ];
 
 
@@ -72,11 +70,10 @@
   #   enableSSHSupport = true;
   # };
 
-  programs.hyprland.enable = true;
   programs.fish.enable = true;
-  programs.steam.enable = true;
-  programs._1password-gui.enable = true;
-  programs._1password.enable = true;
+  # programs.steam.enable = true;
+  # programs._1password-gui.enable = true;
+  # programs._1password.enable = true;
 
   # List services that you want to enable:
 
