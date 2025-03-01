@@ -59,70 +59,70 @@ in
             };
             auto-format = true;
           }
-          # {
-          #   name = "javascript";
-          #   language-servers = [
-          #     { name = "typescript-language-server"; except-features = [ "format" ]; }
-          #     "biome"
-          #   ];
-          #   auto-format = true;
-          # }
-          # {
-          #   name = "json";
-          #   language-servers = [
-          #     { name = "vscode-json-language-server"; except-features = [ "format" ]; }
-          #     "biome"
-          #   ];
-          #   formatter = {
-          #     command = "biome";
-          #     args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.json" ];
-          #   };
-          #   auto-format = true;
-          # }
-          # {
-          #   name = "jsx";
-          #   language-servers = [
-          #     { name = "typescript-language-server"; except-features = [ "format" ]; }
-          #     "biome"
-          #   ];
-          #   formatter = {
-          #     command = "biome";
-          #     args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.jsx" ];
-          #   };
-          #   auto-format = true;
-          # }
-          # {
-          #   name = "tsx";
-          #   language-servers = [
-          #     { name = "typescript-language-server"; except-features = [ "format" ]; }
-          #     "biome"
-          #   ];
-          #   formatter = {
-          #     command = "biome";
-          #     args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.tsx" ];
-          #   };
-          #   auto-format = true;
-          # }
-          # {
-          #   name = "graphql";
-          #   formatter = {
-          #     command = "prettier";
-          #     args = [ "--stdin-filepath" "file.graphql" ];
-          #   };
-          #   auto-format = true;
-          # }
-          # {
-          #   name = "typescript";
-          #   language-servers = [
-          #     { name = "typescript-language-server"; except-features = [ "format" ]; }
-          #     "biome"
-          #   ];
-          #   formatter = {
-          #     command = "biome";
-          #     args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.ts" ];
-          #   };
-          #   auto-format = true;
-          # }
+          {
+            name = "javascript";
+            language-servers = [
+              { name = "typescript-language-server"; except-features = [ "format" ]; }
+              "biome"
+            ];
+            auto-format = true;
+          }
+          {
+            name = "json";
+            language-servers = [
+              { name = "vscode-json-language-server"; except-features = [ "format" ]; }
+              "biome"
+            ];
+            formatter = {
+              command = "biome";
+              args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.json" ];
+            };
+            auto-format = true;
+          }
+          {
+            name = "jsx";
+            language-servers = [
+              { name = "typescript-language-server"; except-features = [ "format" ]; }
+              "biome"
+            ];
+            formatter = {
+              command = "biome";
+              args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.jsx" ];
+            };
+            auto-format = true;
+          }
+          {
+            name = "tsx";
+            language-servers = [
+              { name = "typescript-language-server"; except-features = [ "format" ]; }
+              "biome"
+            ];
+            formatter = {
+              command = "biome";
+              args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.tsx" ];
+            };
+            auto-format = true;
+          }
+          {
+            name = "graphql";
+            formatter = {
+              command = "prettier";
+              args = [ "--stdin-filepath" "file.graphql" ];
+            };
+            auto-format = true;
+          }
+          {
+            name = "typescript";
+            language-servers = [
+              { name = "typescript-language-server"; except-features = [ "format" ]; }
+              "biome"
+            ];
+            formatter = {
+              command = "biome";
+              args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.ts" ];
+            };
+            auto-format = true;
+          }
           {
             name = "yaml";
             language-servers = [ "yaml-language-server" ];
@@ -161,11 +161,11 @@ in
         rustfmt
 
         #node
-        # nodePackages.graphql-language-service-cli
-        # biome
-        # nodePackages.prettier
-        # nodePackages.typescript-language-server
-        # typescript
+        nodePackages.graphql-language-service-cli
+        biome
+        nodePackages.prettier
+        nodePackages.typescript-language-server
+        typescript
 
         #markdown
         marksman
