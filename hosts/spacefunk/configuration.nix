@@ -6,8 +6,7 @@
 
 {
   imports =
-    [
-      # Include the results of the hardware scan.
+    [ # Include the results of the hardware scan.
       ./hardware-configuration.nix
     ];
 
@@ -15,8 +14,8 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  boot.initrd.luks.devices."luks-5cccbb79-6ae4-4a43-add1-9b5fa0a03e18".device = "/dev/disk/by-uuid/5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
-  networking.hostName = "t495"; # Define your hostname.
+  boot.initrd.luks.devices."luks-360f73f5-1bf7-4111-aff0-be9b1a4dd579".device = "/dev/disk/by-uuid/360f73f5-1bf7-4111-aff0-be9b1a4dd579";
+  networking.hostName = "spacefunk"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
   # Configure network proxy if necessary
@@ -56,21 +55,12 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-    #  wget
-    git
-    helix
+  #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+  helix
+  git
   ];
 
-
-  # Some programs need SUID wrappers, can be configured further or are
-  # started in user sessions.
-  # programs.mtr.enable = true;
-  # programs.gnupg.agent = {
-  #   enable = true;
-  #   enableSSHSupport = true;
-  # };
-
+  
   programs = {
     uwsm.enable = true;
     hyprland = {
@@ -83,6 +73,33 @@
   programs.fish.enable = true;
   programs._1password-gui.enable = true;
   programs._1password.enable = true;
+
+  fileSystems = {
+"/home/waktu/media" = {
+  device = "/dev/disk/by-uuid/f9c0acb3-2ce3-4e63-baa0-6d31cca413e1";
+  fsType = "ext4";
+} ;   
+"/home/waktu/games" = {
+  device = "/dev/disk/by-uuid/ee353e06-2eb1-4df2-bc2d-22c0e8b37bd9";
+  fsType = "ext4";
+} ;   
+"/home/waktu/data1" = {
+  device = "/dev/disk/by-uuid/7d4a0f34-b26e-4b40-8eb5-07707af967e6";
+  fsType = "ext4";
+} ;   
+"/home/waktu/data2" = {
+  device = "/dev/disk/by-uuid/41e816f6-22c4-4230-8788-c3386f029c54";
+  fsType = "ext4";
+};
+  };
+
+  # Some programs need SUID wrappers, can be configured further or are
+  # started in user sessions.
+  # programs.mtr.enable = true;
+  # programs.gnupg.agent = {
+  #   enable = true;
+  #   enableSSHSupport = true;
+  # };
 
   # List services that you want to enable:
 
