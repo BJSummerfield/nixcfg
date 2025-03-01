@@ -103,14 +103,14 @@ in
             };
             auto-format = true;
           }
-          {
-            name = "graphql";
-            formatter = {
-              command = "prettier";
-              args = [ "--stdin-filepath" "file.graphql" ];
-            };
-            auto-format = true;
-          }
+          # {
+          #   name = "graphql";
+          #   formatter = {
+          #     command = "prettier";
+          #     args = [ "--stdin-filepath" "file.graphql" ];
+          #   };
+          #   auto-format = true;
+          # }
           {
             name = "typescript";
             language-servers = [
@@ -161,7 +161,7 @@ in
         rustfmt
 
         #node
-        nodePackages.graphql-language-service-cli
+        # nodePackages.graphql-language-service-cli
         biome
         nodePackages.prettier
         nodePackages.typescript-language-server
