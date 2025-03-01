@@ -42,6 +42,11 @@
           specialArgs = { inherit inputs outputs; };
           modules = [ ./hosts/t495 ];
         };
+        spacefunk = nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit inputs outputs; };
+          modules = [ ./hosts/spacefunk ];
+        };
+
       };
     };
 }
