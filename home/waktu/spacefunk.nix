@@ -7,6 +7,7 @@
     inputs.catppuccin.homeManagerModules.catppuccin
   ];
 
+
   catppuccin = {
     flavor = "mocha";
     starship.enable = true;
