@@ -230,6 +230,12 @@ in
       # '';
     };
 
+    home.pointerCursor = {
+      name = "Catppuccin-Mocha-Dark-Cursors";
+      package = pkgs.catppuccin-cursors.mochaDark;
+      size = 32;
+    };
+
     home.packages = with pkgs; [
       brightnessctl
       grim
