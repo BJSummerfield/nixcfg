@@ -231,9 +231,35 @@ in
     };
 
     home.pointerCursor = {
+      gtk.enable = true;
+      x11.enable = true;
       name = "Catppuccin-Mocha-Dark-Cursors";
       package = pkgs.catppuccin-cursors.mochaDark;
-      size = 32;
+      size = 18;
+    };
+
+    gtk = {
+      enable = true;
+      cursorTheme.size = 18;
+      cursorTheme.name = "catppuccin-mocha-dark-cursors";
+      cursorTheme.package = pkgs.catppuccin-cursors.frappeDark;
+
+      theme = {
+        name = "Adwaita-dark"; # catppuccin archived
+        package = pkgs.gnome-themes-extra;
+      };
+    };
+
+    qt = {
+      enable = true;
+      platformTheme.name = "kvantum";
+      style.name = "kvantum";
+    };
+
+    nixpkgs.config.qt5 = {
+      enable = true;
+      platformTheme = "kvantum";
+      style.name = "kvantum";
     };
 
     home.packages = with pkgs; [
