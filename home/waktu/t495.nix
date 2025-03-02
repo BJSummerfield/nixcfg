@@ -12,6 +12,7 @@
     starship.enable = true;
     fish.enable = true;
     lazygit.enable = true;
+    yazi.enable = true;
     rofi = {
       enable = true;
       flavor = "macchiato";

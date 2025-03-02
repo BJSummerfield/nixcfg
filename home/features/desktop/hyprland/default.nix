@@ -22,7 +22,7 @@ in
 
         # PROGRAMS
         "$terminal" = "ghostty";
-        "$fileManager" = "dolphin";
+        "$fileManager" = "yazi";
         "$menu" = "rofi -show drun";
 
         # AUTOSTART
@@ -156,7 +156,7 @@ in
           "$mainMod, RETURN, exec, uwsm app -- $terminal"
           "$mainMod, Q, killactive,"
           "$mainMod SHIFT, E, exit,"
-          "$mainMod, E, exec, $fileManager"
+          "$mainMod, E, exec, uwsm app -- $fileManager"
           "$mainMod, SPACE, exec, uwsm app -- $menu"
           "$mainMod, J, togglesplit"
           "$mainMod, F, fullscreen"
@@ -235,12 +235,12 @@ in
       x11.enable = true;
       name = "Catppuccin-Mocha-Dark-Cursors";
       package = pkgs.catppuccin-cursors.mochaDark;
-      size = 18;
+      size = 32;
     };
 
     gtk = {
       enable = true;
-      cursorTheme.size = 18;
+      cursorTheme.size = 32;
       cursorTheme.name = "catppuccin-mocha-dark-cursors";
       cursorTheme.package = pkgs.catppuccin-cursors.frappeDark;
 
@@ -263,6 +263,7 @@ in
     };
 
     home.packages = with pkgs; [
+      yazi
       brightnessctl
       grim
       slurp
