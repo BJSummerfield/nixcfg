@@ -235,14 +235,14 @@ in
       x11.enable = true;
       name = "Catppuccin-Mocha-Dark-Cursors";
       package = pkgs.catppuccin-cursors.mochaDark;
-      size = 32;
+      size = 24;
     };
 
     gtk = {
       enable = true;
-      cursorTheme.size = 32;
+      cursorTheme.size = 24;
       cursorTheme.name = "catppuccin-mocha-dark-cursors";
-      cursorTheme.package = pkgs.catppuccin-cursors.frappeDark;
+      cursorTheme.package = pkgs.catppuccin-cursors.mochaDark;
 
       theme = {
         name = "Adwaita-dark"; # catppuccin archived

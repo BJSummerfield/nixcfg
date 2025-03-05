@@ -79,7 +79,7 @@
     };
   };
 
-  programs.steam.enable = true;
+  # programs.steam.enable = true;
   programs.fish.enable = true;
   programs._1password-gui.enable = true;
   programs._1password.enable = true;
