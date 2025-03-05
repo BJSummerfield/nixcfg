@@ -42,9 +42,9 @@ in
 
         # LOOK AND FEEL: GENERAL
         general = {
-          gaps_in = 5;
-          gaps_out = 20;
-          border_size = 2;
+          gaps_in = 2;
+          gaps_out = 10;
+          border_size = 0;
           "col.active_border" = "rgba(33ccffee) rgba(00ff99ee) 45deg";
           "col.inactive_border" = "rgba(595959aa)";
           resize_on_border = false;
@@ -73,7 +73,7 @@ in
 
         # ANIMATIONS
         animations = {
-          enabled = false;
+          enabled = true;
           bezier = [
             "easeOutQuint,0.23,1,0.32,1"
             "easeInOutCubic,0.65,0.05,0.36,1"
@@ -133,7 +133,7 @@ in
           follow_mouse = 1;
           sensitivity = 0;
           touchpad = {
-            natural_scroll = false;
+            natural_scroll = true;
           };
         };
 
