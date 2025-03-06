@@ -239,6 +239,7 @@ in
 
     stylix = {
       enable = true;
+      polarity = "dark";
       image = ./hyprpaper/wallpapers/mountain.jpg;
       base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
       autoEnable = true;
@@ -246,6 +247,11 @@ in
         ghostty.enable = false;
         helix.enable = false;
         fish.enable = false;
+      };
+
+      iconTheme = {
+        enable = true;
+        package = pkgs.papirus-icon-theme;
       };
 
       fonts = {
