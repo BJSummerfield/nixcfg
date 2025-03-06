@@ -73,6 +73,11 @@ in
           };
         };
 
+
+        layerrule = [
+          "blur, wofi"
+        ];
+
         # ANIMATIONS
         animations = {
           enabled = true;
