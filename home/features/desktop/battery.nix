@@ -47,6 +47,7 @@ in
           Type = "simple";
           ExecStart = "${batteryScript}";
           Restart = "always";
+          Environment = "PATH=${pkgs.libnotify}/bin:/run/current-system/sw/bin:/usr/bin:/bin";
         };
         Install = {
           WantedBy = [ "default.target" ];
