@@ -18,6 +18,7 @@
     desktop = {
       hyprland.enable = true;
       fonts.enable = true;
+      battery.enable = true;
     };
   };
 
