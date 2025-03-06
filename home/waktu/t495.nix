@@ -1,28 +1,11 @@
-{ pkgs, config, inputs, ... }: {
+{ pkgs, config, inputs, ... }:
+{
   imports = [
     ./home.nix
     ../common
     ../features/cli
     ../features/desktop
-    inputs.catppuccin.homeManagerModules.catppuccin
   ];
-
-  catppuccin = {
-    flavor = "mocha";
-    starship.enable = true;
-    fish.enable = true;
-    lazygit.enable = true;
-    yazi.enable = true;
-    rofi = {
-      enable = true;
-      flavor = "macchiato";
-    };
-    mako = {
-      enable = true;
-      flavor = "macchiato";
-    };
-    bottom.enable = true;
-  };
 
   features = {
     cli = {
@@ -35,12 +18,6 @@
     desktop = {
       hyprland.enable = true;
       fonts.enable = true;
-    };
-  };
-
-  programs.ghostty = {
-    settings = {
-      font-size = 12;
     };
   };
 

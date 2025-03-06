@@ -1,12 +1,14 @@
-{ pkgs, config, lib, ... }:
+{ pkgs, config, lib, inputs, ... }:
 with lib; let
   cfg = config.features.desktop.hyprland;
+  stylixModule = inputs.stylix.homeManagerModules.stylix;
 in
 {
   imports = [
     ./mako.nix
-    ./rofi.nix
+    ./wofi.nix
     ./hyprpaper
+    stylixModule
   ];
 
   options.features.desktop.hyprland.enable = mkEnableOption "hyprland config";
@@ -23,7 +25,7 @@ in
         # PROGRAMS
         "$terminal" = "ghostty";
         "$fileManager" = "yazi";
-        "$menu" = "rofi -show drun";
+        "$menu" = "wofi --show drun";
 
         # AUTOSTART
         # (Autostart commands from the plain config are commented out.
@@ -44,9 +46,9 @@ in
         general = {
           gaps_in = 2;
           gaps_out = 10;
-          border_size = 0;
-          "col.active_border" = "rgba(33ccffee) rgba(00ff99ee) 45deg";
-          "col.inactive_border" = "rgba(595959aa)";
+          border_size = 1;
+          # "col.active_border" = "rgba(33ccffee) rgba(00ff99ee) 45deg";
+          # "col.inactive_border" = "rgba(595959aa)";
           resize_on_border = false;
           allow_tearing = false;
           layout = "dwindle";
@@ -61,7 +63,7 @@ in
             enabled = true;
             range = 4;
             render_power = 3;
-            color = "rgba(1a1a1aee)";
+            # color = "rgba(1a1a1aee)";
           };
           blur = {
             enabled = true;
@@ -230,40 +232,42 @@ in
       # '';
     };
 
-    home.pointerCursor = {
-      gtk.enable = true;
-      x11.enable = true;
-      name = "Catppuccin-Mocha-Dark-Cursors";
-      package = pkgs.catppuccin-cursors.mochaDark;
-      size = 24;
-    };
-
-    gtk = {
+    stylix = {
       enable = true;
-      cursorTheme.size = 24;
-      cursorTheme.name = "catppuccin-mocha-dark-cursors";
-      cursorTheme.package = pkgs.catppuccin-cursors.mochaDark;
+      image = ./hyprpaper/wallpapers/mountain.jpg;
+      base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
+      autoEnable = true;
+      targets = {
+        ghostty.enable = false;
+        helix.enable = false;
+        fish.enable = false;
+      };
 
-      theme = {
-        name = "Adwaita-dark"; # catppuccin archived
-        package = pkgs.gnome-themes-extra;
+      fonts = {
+        serif = {
+          package = pkgs.nerd-fonts.monaspace;
+          name = "MonaspiceNe Nerd Font";
+        };
+
+        sansSerif = {
+          package = pkgs.nerd-fonts.monaspace;
+          name = "MonaspiceNe Nerd Font";
+        };
+
+        monospace = {
+          package = pkgs.nerd-fonts.monaspace;
+          name = "MonaspiceNe Nerd Font";
+        };
+
+        emoji = {
+          package = pkgs.noto-fonts-emoji;
+          name = "Noto Color Emoji";
+        };
       };
     };
 
-    qt = {
-      enable = true;
-      platformTheme.name = "kvantum";
-      style.name = "kvantum";
-    };
-
-    nixpkgs.config.qt5 = {
-      enable = true;
-      platformTheme = "kvantum";
-      style.name = "kvantum";
-    };
 
     home.packages = with pkgs; [
-      yazi
       brightnessctl
       grim
       slurp
