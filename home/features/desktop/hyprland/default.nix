@@ -252,8 +252,9 @@ in
       iconTheme = {
         enable = true;
         package = pkgs.papirus-icon-theme;
+        dark = "Papirus-Dark";
+        light = "Papirus-Light";
       };
-
       fonts = {
         serif = {
           package = pkgs.nerd-fonts.monaspace;
