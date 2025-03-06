@@ -6,7 +6,8 @@
 
 {
   imports =
-    [ # Include the results of the hardware scan.
+    [
+      # Include the results of the hardware scan.
       ./hardware-configuration.nix
     ];
 
@@ -55,12 +56,12 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-  #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-  helix
-  git
+    #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
+    helix
+    git
   ];
 
-  
+
   programs = {
     uwsm.enable = true;
     hyprland = {
@@ -69,28 +70,33 @@
     };
   };
 
-  programs.steam.enable = true;
+  programs.steam = {
+    enable = true;
+    remotePlay.openFirewall = true;
+    gamescopeSession.enable = true;
+  };
+
   programs.fish.enable = true;
   programs._1password-gui.enable = true;
   programs._1password.enable = true;
 
   fileSystems = {
-"/home/waktu/media" = {
-  device = "/dev/disk/by-uuid/f9c0acb3-2ce3-4e63-baa0-6d31cca413e1";
-  fsType = "ext4";
-} ;   
-"/home/waktu/games" = {
-  device = "/dev/disk/by-uuid/ee353e06-2eb1-4df2-bc2d-22c0e8b37bd9";
-  fsType = "ext4";
-} ;   
-"/home/waktu/data1" = {
-  device = "/dev/disk/by-uuid/7d4a0f34-b26e-4b40-8eb5-07707af967e6";
-  fsType = "ext4";
-} ;   
-"/home/waktu/data2" = {
-  device = "/dev/disk/by-uuid/41e816f6-22c4-4230-8788-c3386f029c54";
-  fsType = "ext4";
-};
+    "/home/waktu/media" = {
+      device = "/dev/disk/by-uuid/f9c0acb3-2ce3-4e63-baa0-6d31cca413e1";
+      fsType = "ext4";
+    };
+    "/home/waktu/games" = {
+      device = "/dev/disk/by-uuid/ee353e06-2eb1-4df2-bc2d-22c0e8b37bd9";
+      fsType = "ext4";
+    };
+    "/home/waktu/data1" = {
+      device = "/dev/disk/by-uuid/7d4a0f34-b26e-4b40-8eb5-07707af967e6";
+      fsType = "ext4";
+    };
+    "/home/waktu/data2" = {
+      device = "/dev/disk/by-uuid/41e816f6-22c4-4230-8788-c3386f029c54";
+      fsType = "ext4";
+    };
   };
 
   # Some programs need SUID wrappers, can be configured further or are
