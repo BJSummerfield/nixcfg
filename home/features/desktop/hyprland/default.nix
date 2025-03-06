@@ -2,6 +2,7 @@
 with lib; let
   cfg = config.features.desktop.hyprland;
   stylixModule = inputs.stylix.homeManagerModules.stylix;
+  catppuccinModule = inputs.catppuccin.homeManagerModules.catppuccin;
 in
 {
   imports = [
@@ -9,6 +10,7 @@ in
     ./wofi.nix
     ./hyprpaper
     stylixModule
+    catppuccinModule
   ];
 
   options.features.desktop.hyprland.enable = mkEnableOption "hyprland config";
@@ -237,6 +239,11 @@ in
       # '';
     };
 
+    catppuccin = {
+      flavor = "mocha";
+      fish.enable = true;
+    };
+
     stylix = {
       enable = true;
       polarity = "dark";
@@ -280,6 +287,7 @@ in
 
 
     home.packages = with pkgs; [
+
       brightnessctl
       grim
       slurp
