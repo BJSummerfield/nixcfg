@@ -11,11 +11,10 @@ in
   config = mkIf cfg.enable {
     programs.fish = {
       enable = true;
-
       # direnv hook fish | source
-
       interactiveShellInit = ''
         set fish_greeting # Disable greeting
+        set EDITOR hx
       '';
       loginShellInit = ''
         set fish_greeting # Disable greeting

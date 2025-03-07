@@ -61,7 +61,6 @@
     git
   ];
 
-
   programs = {
     uwsm.enable = true;
     hyprland = {
@@ -79,6 +78,9 @@
   programs._1password-gui.enable = true;
   programs._1password.enable = true;
 
+  #needed for nfs mount
+  services.rpcbind.enable = true;
+
   fileSystems = {
     "/home/waktu/media" = {
       device = "/dev/disk/by-uuid/f9c0acb3-2ce3-4e63-baa0-6d31cca413e1";
@@ -95,6 +97,19 @@
     "/home/waktu/data2" = {
       device = "/dev/disk/by-uuid/41e816f6-22c4-4230-8788-c3386f029c54";
       fsType = "ext4";
+    };
+    "/home/waktu/nas" = {
+      device = "192.168.1.234:/volume1/data"; # NFS server and share path
+      fsType = "nfs";
+      options = [
+        "x-systemd.automount" # Only mount when accessed
+        "noauto" # Prevents blocking boot if unavailable
+        "x-systemd.idle-timeout=600" # Unmount after 10 minutes of inactivity
+        "nfsvers=3" # Explicitly use NFSv3 (since Synology defaults to v3)
+        "soft" # Prevents hanging on network issues
+        "timeo=150" # Faster timeout in case of network failure
+        "retrans=2" # Retries mount requests twice before failing
+      ];
     };
   };
 

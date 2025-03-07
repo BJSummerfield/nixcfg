@@ -36,7 +36,6 @@
   ];
 
   home.sessionVariables = {
-    EDITOR = "hx";
     TERMINAL = "ghostty";
   };
 }
