@@ -6,15 +6,17 @@
 with lib; let
   cfg = config.features.cli.git;
   encode_queue = pkgs.rustPlatform.buildRustPackage {
+    #fixes build warning in nixos
+    useFetchCargoVendor = true;
     pname = "encode-queue";
     version = "unstable";
     src = pkgs.fetchFromGitHub {
       owner = "BJSummerfield";
       repo = "encode_queue";
-      rev = "main"; # pull from the main branch
+      rev = "main";
       sha256 = "sha256-jUDG5pjkWHTWOoyV7f6Bdmel8ZzNX1VtG9ZXRD709Kc=";
     };
-    cargoHash = "sha256-lmElNMLEg1SqQp+mupjYzQwQQn7B5CVfLBI0rB5jpH0=";
+    cargoHash = "sha256-3hfXLgVzT088UAMfxE7ao86nO7Gx8MHwi+9rLBrYYQw=";
   };
 in
 {
