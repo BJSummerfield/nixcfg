@@ -32,7 +32,7 @@ in
         # AUTOSTART
         # (Autostart commands from the plain config are commented out.
         #  Uncomment and add commands here if desired.)
-        # exec-once = [ "uwsm app -- dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP" ];
+        exec-once = [ "uwsm app -- 1password --silent" ];
         # exec-once = [
         #   "waybar"
         #   "hyprpaper"
