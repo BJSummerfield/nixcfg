@@ -12,6 +12,7 @@
       helix.enable = true;
       git.enable = true;
       ssh-1password.enable = true;
+      encoding.enable = true;
     };
 
     desktop = {

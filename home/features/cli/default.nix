@@ -4,6 +4,7 @@
     ./helix.nix
     ./git.nix
     ./ssh-1password.nix
+    ./encoding.nix
   ];
 
   programs.zoxide.enable = true;
