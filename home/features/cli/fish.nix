@@ -15,6 +15,7 @@ in
       interactiveShellInit = ''
         set fish_greeting # Disable greeting
         set EDITOR hx
+        set -x NIX_PATH nixpkgs=channel:nixos-unstable
       '';
       loginShellInit = ''
         set fish_greeting # Disable greeting
