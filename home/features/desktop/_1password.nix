@@ -1,16 +1,14 @@
-{ inputs
-, pkgs
-, config
-, lib
-, ...
-}:
+{ pkgs, lib, config, ... }:
+
 with lib; let
-  cfg = config.features.cli.ssh-1password;
+  cfg = config.features.desktop._1password;
+  _1passwordShellModules = inputs._1password-shell-plugins.hmModules.default;
 in
 {
-  options.features.cli.ssh-1password.enable = mkEnableOption "enable extended _1password-ssh configuration";
+  imports = [ _1passwordShellModules ];
 
-  imports = [ inputs._1password-shell-plugins.hmModules.default ];
+  options.features.desktop._1password.enable = mkEnableOption "Enable 1password config";
+
   config = mkIf cfg.enable {
 
     programs._1password-shell-plugins = {
@@ -33,7 +31,6 @@ in
         };
     };
 
-
     programs.ssh = {
       enable = true;
       extraConfig = ''
@@ -41,5 +38,11 @@ in
             IdentityAgent ~/.1password/agent.sock              
       '';
     };
+
+    home.packages = with pkgs; [
+      _1password-gui
+      _1password
+    ];
+
   };
 }

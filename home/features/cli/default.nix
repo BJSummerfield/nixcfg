@@ -1,7 +1,7 @@
 { pkgs, ... }: {
   imports = [
     ./helix.nix
-    ./ssh-1password.nix
+    ./encode_queue.nix
   ];
 
   programs.zoxide.enable = true;
@@ -27,18 +27,6 @@
     shellAliases = {
       ls = "eza";
       lg = "lazygit";
-    };
-  };
-
-  programs.ghostty = {
-    enable = true;
-    settings = {
-      font-family = "MonaspiceNe Nerd Font";
-      window-decoration = false;
-      theme = "catppuccin-mocha";
-      background-opacity = 0.9;
-      background-blur-radius = 15;
-      font-size = 12;
     };
   };
 

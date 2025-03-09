@@ -1,10 +1,9 @@
-{ pkgs, ... }: {
+{ ... }: {
   imports = [
     ./hyprland
-    ./fonts.nix
     ./battery.nix
-  ];
-
-  home.packages = with pkgs; [
+    ./_1password.nix
+    ./keybase.nix
+    ./ghostty.nix
   ];
 }

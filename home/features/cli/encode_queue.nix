@@ -4,7 +4,7 @@
 , ...
 }:
 with lib; let
-  cfg = config.features.cli.git;
+  cfg = config.features.cli.encode_queue;
   encode_queue = pkgs.rustPlatform.buildRustPackage {
     #fixes build warning in nixos
     useFetchCargoVendor = true;
@@ -20,7 +20,7 @@ with lib; let
   };
 in
 {
-  options.features.cli.encoding.enable = mkEnableOption "enable encoding configuration";
+  options.features.cli.encode_queue.enable = mkEnableOption "enable encoding configuration";
 
   config = mkIf cfg.enable {
     home.packages = with pkgs; [

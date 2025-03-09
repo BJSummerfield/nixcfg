@@ -17,7 +17,6 @@ let
         if [ "$battery" -gt 50 ]; then
           sleep 600   # 10 minutes when battery > 50%
         elif [ "$battery" -gt 20 ]; then
-          notify-send -t 5000 -u normal "Battery Status" "Battery status: $battery%"
           sleep 600   # 10 minutes when battery is between 21% and 50%
         elif [ "$battery" -gt 10 ]; then
           notify-send -t 8000 -u normal "Battery Warning" "Battery low: $battery%"

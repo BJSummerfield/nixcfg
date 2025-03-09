@@ -1,16 +1,12 @@
-{ pkgs, config, lib, inputs, ... }:
+{ pkgs, config, lib, ... }:
 with lib; let
   cfg = config.features.desktop.hyprland;
-  stylixModule = inputs.stylix.homeManagerModules.stylix;
-  catppuccinModule = inputs.catppuccin.homeManagerModules.catppuccin;
 in
 {
   imports = [
     ./mako.nix
     ./wofi.nix
-    ./hyprpaper
-    stylixModule
-    catppuccinModule
+    ./theme.nix
   ];
 
   options.features.desktop.hyprland.enable = mkEnableOption "hyprland config";
@@ -31,18 +27,7 @@ in
 
         # AUTOSTART
         # (Autostart commands from the plain config are commented out.
-        #  Uncomment and add commands here if desired.)
         exec-once = [ "uwsm app -- 1password --silent" ];
-        # exec-once = [
-        #   "waybar"
-        #   "hyprpaper"
-        # ];
-
-
-        # ENVIRONMENT VARIABLES
-        # env = [
-        #   "XCURSOR_SIZE,24"
-        # ];
 
         # LOOK AND FEEL: GENERAL
         general = {
@@ -151,14 +136,6 @@ in
           workspace_swipe = false;
         };
 
-        # PER-DEVICE CONFIG
-        # device = [
-        #   {
-        #     name = "epic-mouse-v1";
-        #     sensitivity = -0.5;
-        #   }
-        # ];
-
         # KEYBINDINGS & MODIFIERS
         "$mainMod" = "SUPER";
         bind = [
@@ -229,67 +206,15 @@ in
     };
 
 
-    programs.fish = {
-      # loginShellInit = ''
-      #   set fish_greeting # Disable greeting
+    # programs.fish = {
+    # loginShellInit = ''
+    #   set fish_greeting # Disable greeting
 
-      #   if uwsm check may-start
-      #       exec uwsm start hyprland-uwsm.desktop
-      #   end
-      # '';
-    };
-
-    catppuccin = {
-      flavor = "mocha";
-      fish.enable = true;
-    };
-
-    stylix = {
-      enable = true;
-      polarity = "dark";
-      image = ./hyprpaper/wallpapers/mountain.jpg;
-      base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
-      autoEnable = true;
-      targets = {
-        ghostty.enable = false;
-        helix.enable = false;
-        fish.enable = false;
-      };
-
-      iconTheme = {
-        enable = true;
-        package = pkgs.papirus-icon-theme;
-        dark = "Papirus-Dark";
-        light = "Papirus-Light";
-      };
-      fonts = {
-        serif = {
-          package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
-        };
-
-        sansSerif = {
-          package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
-        };
-
-        monospace = {
-          package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
-        };
-
-        emoji = {
-          package = pkgs.noto-fonts-emoji;
-          name = "Noto Color Emoji";
-        };
-      };
-    };
-
-    programs.direnv = {
-      enable = true;
-      nix-direnv.enable = true;
-    };
-
+    #   if uwsm check may-start
+    #       exec uwsm start hyprland-uwsm.desktop
+    #   end
+    # '';
+    # };
 
     home.packages = with pkgs; [
       brightnessctl
