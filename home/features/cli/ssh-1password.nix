@@ -13,7 +13,6 @@ in
   imports = [ inputs._1password-shell-plugins.hmModules.default ];
   config = mkIf cfg.enable {
 
-
     programs._1password-shell-plugins = {
       # enable 1Password shell plugins for bash, zsh, and fish shell
       enable = true;
@@ -21,6 +20,19 @@ in
       # automatically installed and configured to use shell plugins
       plugins = with pkgs; [ gh ];
     };
+
+    programs.git = {
+      extraConfig =
+        {
+          user.signingkey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP2G3biYuL3iFvhAXYNuVzvRpAQMmFFLek3KFZV4PfDu";
+          gpg = {
+            ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
+            format = "ssh";
+          };
+          commit.gpgSign = true;
+        };
+    };
+
 
     programs.ssh = {
       enable = true;
