@@ -7,7 +7,6 @@
 
   features = {
     cli = {
-      helix.enable = true;
       encode_queue.enable = true;
     };
 
