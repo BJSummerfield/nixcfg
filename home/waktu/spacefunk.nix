@@ -21,5 +21,7 @@
   home.packages = with pkgs; [
     firefox
     steam
+    subtitleedit
+    makemkv
   ];
 }
