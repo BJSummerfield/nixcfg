@@ -1,4 +1,4 @@
-{ pkgs, config, lib, ... }:
+{ inputs, pkgs, config, lib, ... }:
 with lib; let
   cfg = config.features.desktop.theme;
   stylixModule = inputs.stylix.homeManagerModules.stylix;
@@ -9,6 +9,7 @@ in
     stylixModule
     catppuccinModule
   ];
+
   options.features.desktop.theme.enable = mkEnableOption "Enable theme config";
   config = mkIf cfg.enable {
 
