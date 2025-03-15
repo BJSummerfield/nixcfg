@@ -26,6 +26,12 @@ in
       fish.enable = false;
     };
 
+    cursor = {
+      name = "Vanilla-DMZ";
+      package = pkgs.vanilla-dmz;
+      size = 32;
+    };
+
     iconTheme = {
       enable = true;
       package = pkgs.papirus-icon-theme;
