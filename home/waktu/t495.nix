@@ -7,12 +7,11 @@
   ];
 
   features = {
-    cli = {
-      encode_queue.enable = true;
-    };
-
     desktop = {
       hyprland.enable = true;
+      mako.enable = true;
+      wofi.enable = true;
+      theme.enable = true;
       battery.enable = true;
       _1password.enable = true;
       keybase.enable = true;

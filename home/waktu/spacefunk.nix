@@ -12,6 +12,9 @@
 
     desktop = {
       hyprland.enable = true;
+      mako.enable = true;
+      wofi.enable = true;
+      theme.enable = true;
       keybase.enable = true;
       _1password.enable = true;
     };
