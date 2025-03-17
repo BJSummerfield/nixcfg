@@ -8,6 +8,7 @@
 
   features = {
     desktop = {
+      firefox.enable = true;
       hyprland.enable = true;
       mako.enable = true;
       wofi.enable = true;
@@ -20,7 +21,6 @@
 
 
   home.packages = with pkgs; [
-    firefox
     steam
   ];
 }
