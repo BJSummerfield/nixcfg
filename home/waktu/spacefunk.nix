@@ -12,6 +12,7 @@
 
     desktop = {
       hyprland.enable = true;
+      firefox.enable = true;
       mako.enable = true;
       wofi.enable = true;
       theme.enable = true;
@@ -22,7 +23,6 @@
 
 
   home.packages = with pkgs; [
-    firefox
     steam
     subtitleedit
     makemkv
