@@ -7,7 +7,7 @@ in
   options.features.cli.helix.bicep.enable = mkEnableOption "Enable bicep lsp for helix";
   config = mkIf cfg.enable {
 
-    programs.helix.languages = {
+    programs.helix = {
       extraPackages = with pkgs; [
         bicep-langserver
         dotnetCorePackages.dotnet_8.sdk

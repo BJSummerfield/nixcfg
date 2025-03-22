@@ -8,19 +8,21 @@ in
   options.features.cli.helix.rust.enable = mkEnableOption "Enable Rust lsp for helix";
   config = mkIf cfg.enable {
 
-    programs.helix.languages = {
-      language-server = {
-        rust-analyzer.config.check = {
-          command = "clippy";
+    programs.helix = {
+      languages = {
+        language-server = {
+          rust-analyzer.config.check = {
+            command = "clippy";
+          };
         };
+        language = [{
+          name = "rust";
+          formatter = {
+            command = "cargo fmt";
+          };
+          auto-format = true;
+        }];
       };
-      language = [{
-        name = "rust";
-        formatter = {
-          command = "cargo fmt";
-        };
-        auto-format = true;
-      }];
       extraPackages = with pkgs; [
         rustc
         rust-analyzer

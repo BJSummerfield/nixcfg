@@ -7,7 +7,6 @@ in
   options.features.cli.helix.nix.enable = mkEnableOption "Enable nix lsp for helix";
   config = mkIf cfg.enable {
 
-    # programs.helix = mkMerge[
     programs.helix = {
       languages = {
         language = [{

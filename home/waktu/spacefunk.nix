@@ -9,18 +9,18 @@
     cli = {
       encode_queue.enable = true;
       helix = {
-        bicep.enable = false;
-        graphql.enable = false;
+        bicep.enable = true;
+        graphql.enable = true;
         javascript.enable = true;
-        # json.enable = true;
-        jsx.enable = false;
-        markdown.enable = false;
+        json.enable = true;
+        jsx.enable = true;
+        markdown.enable = true;
         nix.enable = true;
-        rust.enable = false;
-        toml.enable = false;
-        tsx.enable = false;
-        typescript.enable = false;
-        yaml.enable = false;
+        rust.enable = true;
+        toml.enable = true;
+        tsx.enable = true;
+        typescript.enable = true;
+        yaml.enable = true;
       };
     };
 
