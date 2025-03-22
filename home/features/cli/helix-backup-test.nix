@@ -1,5 +1,6 @@
 { pkgs, ... }:
 {
+  imports = [ ./languages ];
   programs.helix = {
     enable = true;
     defaultEditor = true;
@@ -32,7 +33,6 @@
         typescript-language-server.config.tsserver = {
           path = "${pkgs.typescript}/lib/node_modules/typescript/lib/tsserver.js";
         };
-
         mpls = {
           command = "${pkgs.mpls}/bin/mpls";
           args = [ "--dark-mode" "--enable-emoji" ];
@@ -42,7 +42,7 @@
         {
           name = "markdown";
           auto-format = true;
-          language-servers = [ "mpls" "marksman" ];
+          language-servers = [ "marksman" "mpls" ];
         }
         {
           name = "nix";
@@ -102,14 +102,14 @@
           };
           auto-format = true;
         }
-        # {
-        #   name = "graphql";
-        #   formatter = {
-        #     command = "prettier";
-        #     args = [ "--stdin-filepath" "file.graphql" ];
-        #   };
-        #   auto-format = true;
-        # }
+        {
+          name = "graphql";
+          formatter = {
+            command = "prettier";
+            args = [ "--stdin-filepath" "file.graphql" ];
+          };
+          auto-format = true;
+        }
         {
           name = "typescript";
           language-servers = [
@@ -160,7 +160,7 @@
       rustfmt
 
       #node
-      # nodePackages.graphql-language-service-cli
+      nodePackages.graphql-language-service-cli
       biome
       nodePackages.prettier
       nodePackages.typescript-language-server

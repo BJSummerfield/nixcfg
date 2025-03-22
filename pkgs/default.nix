@@ -1,5 +1,5 @@
 { pkgs, ... }:
 {
-  bicep-lsp = pkgs.callPackage ./bicep-lsp { };
+  bicep-langserver = pkgs.callPackage ./bicep-langserver { };
   mpls = pkgs.callPackage ./mpls { };
 }

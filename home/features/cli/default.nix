@@ -1,6 +1,6 @@
 { pkgs, ... }: {
   imports = [
-    ./helix.nix
+    ./helix
     ./encode_queue.nix
   ];
 

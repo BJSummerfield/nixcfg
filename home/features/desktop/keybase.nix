@@ -1,7 +1,7 @@
 { pkgs, lib, config, ... }:
 
 with lib; let
-  cfg = config.features.desktop._1password;
+  cfg = config.features.desktop.keybase;
 in
 {
 

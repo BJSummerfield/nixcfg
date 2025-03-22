@@ -1,4 +1,4 @@
-{ stdenv, fetchzip }:
+{ lib, stdenv, fetchzip }:
 
 stdenv.mkDerivation rec {
   pname = "bicep-langserver";
@@ -24,7 +24,7 @@ stdenv.mkDerivation rec {
   meta = {
     description = "Bicep language server";
     homepage = "https://github.com/Azure/bicep";
-    platforms = stdenv.lib.platforms.all;
+    platforms = lib.platforms.all;
     mainProgram = "bicep-langserver";
   };
 }
