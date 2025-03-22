@@ -1,6 +1,9 @@
-{ ... }:
+{ config, lib, ... }:
+let
+  cfg = config.features.cli.helix;
+in
 {
-  imports = [ ./languages ];
+imports = [ ./languages ];
   programs.helix = {
     enable = true;
     defaultEditor = true;
