@@ -33,8 +33,17 @@
           path = "${pkgs.typescript}/lib/node_modules/typescript/lib/tsserver.js";
         };
 
+        mpls = {
+          command = "${pkgs.mpls}/bin/mpls";
+          args = [ "--dark-mode" "--enable-emoji" ];
+        };
       };
       language = [
+        {
+          name = "markdown";
+          auto-format = true;
+          language-servers = [ "mpls" "marksman" ];
+        }
         {
           name = "nix";
           formatter = {
@@ -140,8 +149,8 @@
     };
     extraPackages = with pkgs; [
       #bicep
-      # bicep-langserver
-      # dotnetCorePackages.dotnet_8.sdk
+      bicep-lsp
+      dotnetCorePackages.dotnet_8.sdk
 
       #rust
       rustc
@@ -159,6 +168,7 @@
 
       #markdown
       marksman
+      mpls
 
       #nix
       nil

@@ -26,5 +26,6 @@
     steam
     subtitleedit
     makemkv
+    yazi
   ];
 }

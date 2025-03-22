@@ -1,5 +1,5 @@
 { pkgs, ... }:
 {
-  # Define your custom packages here
-  #  my-package = pkgs.callPackage ./my-package {};
+  bicep-lsp = pkgs.callPackage ./bicep-lsp { };
+  mpls = pkgs.callPackage ./mpls { };
 }
