@@ -9,7 +9,6 @@
   features = {
 
     cli = {
-      encode_queue.enable = true;
       helix = {
         # bicep.enable = true;
         # graphql.enable = true;
