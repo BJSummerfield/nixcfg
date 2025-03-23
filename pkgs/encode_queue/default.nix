@@ -1,6 +1,6 @@
-{ buildRustPackage, fetchFromGitHub }:
+{ rustPlatform, fetchFromGitHub }:
 
-buildRustPackage {
+rustPlatform.buildRustPackage {
   #fixes build warning in nixos
   useFetchCargoVendor = true;
   pname = "encode-queue";
