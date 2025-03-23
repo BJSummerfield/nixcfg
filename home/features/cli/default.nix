@@ -1,7 +1,7 @@
 { pkgs, ... }: {
   imports = [
     ./helix
-    ./encode_queue.nix
+    ./encoding.nix
   ];
 
   programs.zoxide.enable = true;
@@ -55,5 +55,7 @@
 
   home.packages = with pkgs; [
     bottom
+    yazi
+    bat
   ];
 }

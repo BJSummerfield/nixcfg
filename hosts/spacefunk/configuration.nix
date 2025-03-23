@@ -16,6 +16,10 @@
   boot.loader.efi.canTouchEfiVariables = true;
 
   boot.initrd.luks.devices."luks-360f73f5-1bf7-4111-aff0-be9b1a4dd579".device = "/dev/disk/by-uuid/360f73f5-1bf7-4111-aff0-be9b1a4dd579";
+  # 
+  # allows mkmkv to read optical drives
+  boot.kernelModules = [ "sg" ];
+
   networking.hostName = "spacefunk"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
