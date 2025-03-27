@@ -33,7 +33,8 @@
       keybase.enable = true;
       mako.enable = true;
       theme.enable = true;
-      wofi.enable = true;
+      # wofi.enable = true;
+      fuzzel.enable = true;
     };
   };
 
