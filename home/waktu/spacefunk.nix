@@ -27,14 +27,13 @@
     desktop = {
       _1password.enable = true;
       firefox.enable = true;
+      fuzzel.enable = true;
       hyprland.enable = true;
       keybase.enable = true;
       mako.enable = true;
       theme.enable = true;
-      wofi.enable = true;
     };
   };
-
 
   home.packages = with pkgs; [
     steam

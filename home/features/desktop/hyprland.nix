@@ -14,9 +14,9 @@ in
         monitor = ",highrr,auto,auto";
 
         # PROGRAMS
-        "$terminal" = "ghostty";
+        "$terminal" = "alacritty";
         "$fileManager" = "yazi";
-        "$menu" = "wofi --show drun";
+        "$menu" = "fuzzel";
 
         # AUTOSTART
         # (Autostart commands from the plain config are commented out.
@@ -197,17 +197,6 @@ in
         ];
       };
     };
-
-
-    # programs.fish = {
-    # loginShellInit = ''
-    #   set fish_greeting # Disable greeting
-
-    #   if uwsm check may-start
-    #       exec uwsm start hyprland-uwsm.desktop
-    #   end
-    # '';
-    # };
 
     home.packages = with pkgs; [
       brightnessctl
