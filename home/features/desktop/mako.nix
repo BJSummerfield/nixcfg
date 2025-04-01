@@ -10,6 +10,7 @@ in
       # font = "MonaspiceNe Nerd Font 8";
       borderRadius = 8;
       borderSize = 1;
+      defaultTimeout = 6000;
     };
   };
 }

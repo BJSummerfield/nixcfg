@@ -201,10 +201,13 @@ in
     xdg.portal = {
       enable = true;
       extraPortals = with pkgs; [
-        xdg-desktop-portal-hyprland # main backend for Hyprland
-        xdg-desktop-portal-gtk # adds file chooser, color picker, etc.
+        xdg-desktop-portal-hyprland
+        xdg-desktop-portal-gtk
       ];
-      config.common.default = [ "hyprland" "gtk" ]; # hyprland handles most, gtk fills gaps
+      config.common.default = [
+        "hyprland"
+        "gtk"
+      ];
     };
 
     home.packages = with pkgs; [
