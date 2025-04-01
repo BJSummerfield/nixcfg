@@ -198,6 +198,15 @@ in
       };
     };
 
+    xdg.portal = {
+      enable = true;
+      extraPortals = with pkgs; [
+        xdg-desktop-portal-hyprland # main backend for Hyprland
+        xdg-desktop-portal-gtk # adds file chooser, color picker, etc.
+      ];
+      config.common.default = [ "hyprland" "gtk" ]; # hyprland handles most, gtk fills gaps
+    };
+
     home.packages = with pkgs; [
       brightnessctl
       grim

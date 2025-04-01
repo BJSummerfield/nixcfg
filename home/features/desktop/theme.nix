@@ -2,7 +2,7 @@
 with lib; let
   cfg = config.features.desktop.theme;
   stylixModule = inputs.stylix.homeManagerModules.stylix;
-  catppuccinModule = inputs.catppuccin.homeManagerModules.catppuccin;
+  catppuccinModule = inputs.catppuccin.homeModules.catppuccin;
 in
 {
   imports = [
