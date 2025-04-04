@@ -29,12 +29,12 @@
       _1password.enable = true;
       battery.enable = true;
       firefox.enable = true;
+      fuzzel.enable = true;
       hyprland.enable = true;
+      hyprlock.enable = true;
       keybase.enable = true;
       mako.enable = true;
       theme.enable = true;
-      # wofi.enable = true;
-      fuzzel.enable = true;
     };
   };
 
