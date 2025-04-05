@@ -7,6 +7,7 @@ in
   config = mkIf cfg.enable {
     programs.fuzzel = {
       enable = true;
+      settings.main.launch-prefix = "uwsm app -- ";
     };
   };
 }
