@@ -7,6 +7,7 @@
     ./fuzzel.nix
     ./hyprland.nix
     ./hyprlock.nix
+    ./hyprpolkit.nix
     ./keybase.nix
     ./mako.nix
     ./theme.nix
