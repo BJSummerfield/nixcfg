@@ -38,9 +38,4 @@
       theme.enable = true;
     };
   };
-
-
-  home.packages = with pkgs; [
-    steam
-  ];
 }

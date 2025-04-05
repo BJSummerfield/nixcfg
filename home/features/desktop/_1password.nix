@@ -38,11 +38,5 @@ in
             IdentityAgent ~/.1password/agent.sock              
       '';
     };
-
-    home.packages = with pkgs; [
-      _1password-gui
-      _1password
-    ];
-
   };
 }
