@@ -1,10 +1,11 @@
 { config, lib, pkgs, ... }:
 
 with lib; let
-  cfg = config.host.home.applications.hyprpolkitagent;
+  cfg = config.features.desktop.hyprpolkitagent;
+
 in
 {
-  options.host.home.applications.hyprpolkitagent = {
+  options.features.desktop.hyprpolkitagent = {
     enable = mkEnableOption "Enable Hyprland Polkit Authentication Agent (hyprpolkitagent)";
   };
   config = mkIf cfg.enable {
