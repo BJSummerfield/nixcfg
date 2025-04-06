@@ -29,13 +29,11 @@
       firefox.enable = true;
       fuzzel.enable = true;
       hyprland.enable = true;
+      hyprlock.enable = true;
+      hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
       theme.enable = true;
     };
   };
-
-  home.packages = with pkgs; [
-    steam
-  ];
 }
