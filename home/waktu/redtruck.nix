@@ -26,6 +26,7 @@
 
     desktop = {
       _1password.enable = true;
+      audio-rip.enable = true;
       firefox.enable = true;
       fuzzel.enable = true;
       hyprland.enable = true;

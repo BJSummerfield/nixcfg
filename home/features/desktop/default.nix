@@ -1,6 +1,7 @@
 { ... }: {
   imports = [
     ./_1password.nix
+    ./audio-rip.nix
     ./alacritty.nix
     ./battery.nix
     ./firefox.nix
