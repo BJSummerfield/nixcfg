@@ -19,7 +19,6 @@ in
       fish.enable = true;
       fuzzel.enable = true;
       alacritty.enable = true;
-      hyprlock.enable = true;
     };
 
     stylix = {
