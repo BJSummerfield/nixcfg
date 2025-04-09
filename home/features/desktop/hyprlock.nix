@@ -26,10 +26,8 @@ in
 
         background = {
           monitor = "";
-          # use the background set by stylix
-          # path = "${config.stylix.image}";
-          path = "${./wallpapers/Galaxy.jpg}";
-          blur_passes = 0.5;
+          path = "${./wallpapers/mountain.jpg}";
+          blur_passes = 1;
           color = base;
         };
 
