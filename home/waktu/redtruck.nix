@@ -1,4 +1,4 @@
-{ pkgs, ... }: {
+{ ... }: {
   imports = [
     ./home.nix
     ../common
@@ -34,6 +34,7 @@
       hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
+      obs-studio.enable = true;
       theme.enable = true;
     };
   };

@@ -11,6 +11,7 @@
     ./hyprpolkit.nix
     ./keybase.nix
     ./mako.nix
+    ./obs.nix
     ./theme.nix
     ./wofi.nix
   ];
