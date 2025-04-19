@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ pkgs, config, lib, ... }:
 with lib; let
   cfg = config.features.desktop.obs-studio;
 in
@@ -7,7 +7,6 @@ in
   config = mkIf cfg.enable {
     programs.obs-studio = {
       enable = true;
-      enableVirtualCamera = true;
       plugins = with pkgs.obs-studio-plugins; [
         wlrobs
         obs-pipewire-audio-capture

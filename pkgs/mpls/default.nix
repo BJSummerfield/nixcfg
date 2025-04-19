@@ -7,7 +7,7 @@ buildGoModule {
     owner = "mhersson";
     repo = "mpls";
     rev = "main";
-    hash = "sha256-cyfVa5tFYHDE0+q7D1Urn50YfzC3mcuNGT3Lc2Su+o4=";
+    hash = "sha256-z3miAbL3qQHusWoofUp8kNNZjoGANhPjeIj39KPYyvc=";
   };
 
   vendorHash = "sha256-xILlYrwcnMWAPACeELwVKGUBIK9QbrUSR03xVmNXsnE=";

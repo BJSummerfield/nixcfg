@@ -106,8 +106,8 @@ in
 
         # INPUT: CURSOR
         cursor = {
-          no_break_fs_vrr = false;
-          no_hardware_cursors = false;
+          no_break_fs_vrr = true;
+          no_hardware_cursors = true;
         };
 
         # INPUT: KEYBOARD & TOUCHPAD
