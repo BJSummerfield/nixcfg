@@ -24,8 +24,7 @@ in
           listener = [
             {
               # 2.5min timeout for screen dimming
-              timeout = 10;
-              # timeout = 150;
+              timeout = 150;
               # set monitor backlight to minimum (adjust '10' if needed, avoid 0 on OLED).
               on-timeout = "brightnessctl -s set 10";
               # monitor backlight restore.
@@ -42,15 +41,13 @@ in
             # }
             {
               # 5min timeout for locking the session
-              timeout = 20;
-              # timeout = 300;
+              timeout = 300;
               # lock screen when timeout has passed.
               on-timeout = "loginctl lock-session";
             }
             {
               # 5.5min timeout for turning off the display
-              # timeout = 330;
-              timeout = 30;
+              timeout = 330;
               # screen off when timeout has passed.
               on-timeout = "hyprctl dispatch dpms off";
               # screen on and restore brightness when activity is detected.
@@ -58,8 +55,7 @@ in
             }
             {
               # 30min timeout for suspending the system
-              timeout = 40;
-              # timeout = 1800;
+              timeout = 1800;
               # suspend pc.
               on-timeout = "systemctl suspend";
             }
