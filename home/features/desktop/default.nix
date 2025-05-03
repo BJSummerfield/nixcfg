@@ -6,6 +6,7 @@
     ./battery.nix
     ./firefox.nix
     ./fuzzel.nix
+    ./hypridle.nix
     ./hyprland.nix
     ./hyprlock.nix
     ./hyprpolkit.nix

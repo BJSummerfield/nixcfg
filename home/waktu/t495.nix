@@ -30,6 +30,7 @@
       battery.enable = true;
       firefox.enable = true;
       fuzzel.enable = true;
+      hypridle.enable = true;
       hyprland.enable = true;
       hyprlock.enable = true;
       hyprpolkitagent.enable = true;
