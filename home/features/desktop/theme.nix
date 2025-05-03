@@ -28,6 +28,7 @@ in
       base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
       autoEnable = true;
       targets = {
+        firefox.enable = false;
         alacritty.enable = false;
         helix.enable = false;
         fish.enable = false;

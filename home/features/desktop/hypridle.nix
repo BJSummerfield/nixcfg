@@ -10,7 +10,6 @@ in
     {
       services.hypridle = {
         enable = true;
-
         settings = {
           general = {
             # avoid starting multiple hyprlock instances.
