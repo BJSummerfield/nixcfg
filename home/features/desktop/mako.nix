@@ -8,9 +8,11 @@ in
     services.mako = {
       enable = true;
       # font = "MonaspiceNe Nerd Font 8";
-      borderRadius = 8;
-      borderSize = 1;
-      defaultTimeout = 6000;
+      settings = {
+        borderRadius = 8;
+        borderSize = 1;
+        defaultTimeout = 6000;
+      };
     };
   };
 }
