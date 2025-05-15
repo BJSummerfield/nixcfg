@@ -25,6 +25,7 @@
     # brightnessctl
     # grim
     # slurp
+    libnotify
     wl-clipboard
     xwayland-satellite
     nautilus
