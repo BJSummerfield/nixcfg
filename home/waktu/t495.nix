@@ -34,6 +34,7 @@
       hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
+      niri.enable = true;
       theme.enable = true;
     };
   };
