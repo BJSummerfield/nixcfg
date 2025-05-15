@@ -64,12 +64,6 @@
     tailscale
   ];
 
-
-  # niri
-  programs.niri = {
-    enable = true;
-  };
-
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
   # programs.mtr.enable = true;
@@ -85,31 +79,24 @@
     };
     _1password.enable = true;
     fish.enable = true;
-    # hyprland = {
-    #   enable = true;
-    #   withUWSM = true;
-    # };
-    # steam.enable = true;
-    # uwsm.enable = true;
-  };
-
-  programs = {
-    gamescope = {
+    hyprland = {
       enable = true;
-      capSysNice = true;
+      withUWSM = true;
     };
-    steam = {
-      enable = true;
-      gamescopeSession.enable = true;
-      remotePlay.openFirewall = true;
-    };
+    steam =
+      {
+        enable = true;
+        # remotePlay.openFirewall = true;
+      };
+    uwsm.enable = true;
+    # niri.enable = true;
   };
 
   # Rootless docker
-  virtualisation.docker.rootless = {
-    enable = true;
-    setSocketVariable = true;
-  };
+  # virtualisation.docker.rootless = {
+  #   enable = true;
+  #   setSocketVariable = true;
+  # };
 
 
   # List services that you want to enable:
