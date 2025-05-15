@@ -9,9 +9,9 @@ in
       enable = true;
       # font = "MonaspiceNe Nerd Font 8";
       settings = {
-        borderRadius = 8;
-        borderSize = 1;
-        defaultTimeout = 6000;
+        border-radius = 8;
+        border-size = 1;
+        default-timeout = 6000;
       };
     };
   };
