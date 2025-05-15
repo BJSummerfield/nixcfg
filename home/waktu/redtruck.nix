@@ -28,7 +28,10 @@
       _1password.enable = true;
       audio-rip.enable = true;
       firefox.enable = true;
-      fuzzel.enable = true;
+      fuzzel = {
+        enable = true;
+        uwsm = true;
+      };
       hypridle.enable = true;
       hyprland.enable = true;
       hyprlock.enable = true;
