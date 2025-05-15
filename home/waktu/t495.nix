@@ -6,31 +6,6 @@
     ../features
   ];
 
-  xdg.portal = {
-    enable = true;
-    extraPortals = with pkgs; [
-      xdg-desktop-portal-gnome
-      xdg-desktop-portal-gtk
-      # xdg-desktop-portal-wlr
-    ];
-    config.common.default = [
-      "gnome"
-      # "hyprland"
-      "gtk"
-      # "wlr"
-    ];
-  };
-
-  home.packages = with pkgs; [
-    # brightnessctl
-    # grim
-    # slurp
-    libnotify
-    wl-clipboard
-    xwayland-satellite
-    nautilus
-  ];
-
   features = {
     cli = {
       helix = {
@@ -55,12 +30,10 @@
       firefox.enable = true;
       fuzzel.enable = true;
       hypridle.enable = true;
-      # hyprland.enable = true;
       hyprlock.enable = true;
       hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
-      obs-studio.enable = true;
       theme.enable = true;
     };
   };
