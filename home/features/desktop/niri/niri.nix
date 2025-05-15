@@ -17,6 +17,10 @@ in
       ];
     };
 
+    home.file = {
+      ".config/niri".source = ./config.kdl;
+    };
+
     home.packages = with pkgs; [
       brightnessctl
       wl-clipboard
