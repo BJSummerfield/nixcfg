@@ -6,6 +6,26 @@
     ../features
   ];
 
+  xdg.portal = {
+    enable = true;
+    extraPortals = with pkgs; [
+      # xdg-desktop-portal-hyprland
+      xdg-desktop-portal-gtk
+    ];
+    config.common.default = [
+      # "hyprland"
+      "gtk"
+    ];
+  };
+
+  home.packages = with pkgs; [
+    brightnessctl
+    grim
+    slurp
+    wl-clipboard
+    xwayland-satellite
+  ];
+
   features = {
 
     cli = {
@@ -30,10 +50,10 @@
       battery.enable = true;
       firefox.enable = true;
       fuzzel.enable = true;
-      hypridle.enable = true;
-      hyprland.enable = true;
-      hyprlock.enable = true;
-      hyprpolkitagent.enable = true;
+      # hypridle.enable = true;
+      # hyprland.enable = true;
+      # hyprlock.enable = true;
+      # hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
       theme.enable = true;

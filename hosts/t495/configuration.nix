@@ -58,14 +58,17 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
-    #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-    #  wget
+    wget
     git
     helix
     tailscale
+    # niri
   ];
 
 
+  programs.niri = {
+    enable = true;
+  };
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
   # programs.mtr.enable = true;
@@ -75,20 +78,37 @@
   # };
 
   programs = {
-    uwsm.enable = true;
-    hyprland = {
+    _1password-gui = {
       enable = true;
-      withUWSM = true;
+      polkitPolicyOwners = [ "waktu" ];
+    };
+    _1password.enable = true;
+    fish.enable = true;
+    # hyprland = {
+    #   enable = true;
+    #   withUWSM = true;
+    # };
+    # steam.enable = true;
+    # uwsm.enable = true;
+  };
+
+  programs = {
+    gamescope = {
+      enable = true;
+      capSysNice = true;
+    };
+    steam = {
+      enable = true;
+      gamescopeSession.enable = true;
     };
   };
 
-  programs.steam.enable = true;
-  programs.fish.enable = true;
-  programs._1password-gui = {
+  # Rootless docker
+  virtualisation.docker.rootless = {
     enable = true;
-    polkitPolicyOwners = [ "waktu" ];
+    setSocketVariable = true;
   };
-  programs._1password.enable = true;
+
 
   # List services that you want to enable:
 
