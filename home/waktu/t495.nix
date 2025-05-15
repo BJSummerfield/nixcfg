@@ -27,9 +27,8 @@
     # slurp
     wl-clipboard
     xwayland-satellite
+    nautilus
   ];
-
-  programs.niri.enable = true;
 
   features = {
     cli = {
@@ -57,7 +56,7 @@
       # hypridle.enable = true;
       # hyprland.enable = true;
       # hyprlock.enable = true;
-      # hyprpolkitagent.enable = true;
+      hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
       obs-studio.enable = true;
