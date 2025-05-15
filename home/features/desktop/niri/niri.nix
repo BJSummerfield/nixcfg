@@ -18,7 +18,7 @@ in
     };
 
     home.file = {
-      ".config/niri".source = ./config.kdl;
+      ".config/niri/config.kdl".source = ./config.kdl;
     };
 
     home.packages = with pkgs; [
