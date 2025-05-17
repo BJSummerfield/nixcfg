@@ -1,7 +1,7 @@
 { inputs, pkgs, config, lib, ... }:
 with lib; let
   cfg = config.features.desktop.theme;
-  stylixModule = inputs.stylix.homeManagerModules.stylix;
+  stylixModule = inputs.stylix.homeModules.stylix;
   catppuccinModule = inputs.catppuccin.homeModules.catppuccin;
 in
 {
