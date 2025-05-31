@@ -50,13 +50,12 @@
     variant = "";
   };
 
+  # Tailscale
   services.tailscale.enable = true;
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # List packages installed in system profile. To search, run:
-  # $ nix search wget
   environment.systemPackages = with pkgs; [
     wget
     git
@@ -90,6 +89,21 @@
       };
     uwsm.enable = true;
     # niri.enable = true;
+  };
+
+  # Bluetooth
+  # hardware.bluetooth = {
+  #   enable = true;
+  #   powerOnBoot = true;
+  # };
+  # services.blueman.enable = true;
+
+  # Printer
+  services.printing.enable = true;
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
   };
 
   # Rootless docker
