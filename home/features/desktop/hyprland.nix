@@ -129,6 +129,7 @@ in
           workspace_swipe = false;
         };
 
+
         # KEYBINDINGS & MODIFIERS
         "$mainMod" = "SUPER";
         bind = [
@@ -139,6 +140,8 @@ in
           "$mainMod, SPACE, exec, uwsm app -- $menu"
           "$mainMod, J, togglesplit"
           "$mainMod, F, fullscreen"
+          "$mainMod, C, centerwindow"
+          "$mainMod SHIFT, F, togglefloating"
           "$mainMod, left, movefocus, l"
           "$mainMod, right, movefocus, r"
           "$mainMod, up, movefocus, u"
