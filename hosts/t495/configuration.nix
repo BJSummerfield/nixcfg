@@ -78,17 +78,17 @@
     };
     _1password.enable = true;
     fish.enable = true;
-    # hyprland = {
-    #   enable = true;
-    #   withUWSM = true;
-    # };
+    hyprland = {
+      enable = true;
+      withUWSM = true;
+    };
     steam =
       {
         enable = true;
         # remotePlay.openFirewall = true;
       };
-    # uwsm.enable = true;
-    niri.enable = true;
+    uwsm.enable = true;
+    # niri.enable = true;
   };
 
   # Bluetooth
