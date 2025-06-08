@@ -21,7 +21,12 @@ in
       ".config/niri/config.kdl".source = ./config.kdl;
     };
 
+    home.file = {
+      ".config/swaybg/mountain.jpg".source = ../wallpapers/mountain.jpg;
+    };
+
     home.packages = with pkgs; [
+      swaybg
       brightnessctl
       wl-clipboard
       xwayland-satellite
