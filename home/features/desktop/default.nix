@@ -14,6 +14,8 @@
     ./mako.nix
     ./niri
     ./obs.nix
+    ./plasma-polkit.nix
+    ./swaybg.nix
     ./theme.nix
     ./wofi.nix
   ];
