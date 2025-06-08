@@ -82,14 +82,18 @@
     #   enable = true;
     #   withUWSM = true;
     # };
-    steam =
-      {
-        enable = true;
-        # remotePlay.openFirewall = true;
-      };
-    # uwsm.enable = true;
-    niri.enable = true;
+    gamescope = {
+      enable = true;
+      capSysNice = true;
+    };
+    steam = {
+      enable = true;
+      gamescopeSession.enable = true;
+      # remotePlay.openFirewall = true;
+    };
   };
+  # uwsm.enable = true;
+  niri.enable = true;
 
   # Bluetooth
   # hardware.bluetooth = {
