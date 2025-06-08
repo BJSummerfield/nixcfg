@@ -7,7 +7,7 @@ in
   config = mkIf cfg.enable {
 
     home.file = {
-      ".config/swaybg/mountain.jpg".source = ../wallpapers/mountain.jpg;
+      ".config/swaybg/mountain.jpg".source = ./wallpapers/mountain.jpg;
     };
 
     systemd.user.services.swaybg = {
