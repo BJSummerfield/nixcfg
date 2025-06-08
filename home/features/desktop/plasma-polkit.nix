@@ -7,7 +7,10 @@ in
   options.features.desktop.plasma-polkit.enable = mkEnableOption "Enable Plasma Polkit Authentication Agent";
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.kdePackages.polkit-kde-agent-1 ];
+
+    home.packages = with pkgs; [
+      kdePackages.polkit-kde-agent-1
+    ];
 
     systemd.user.services.plasma-polkit-agent = {
       Unit = {
