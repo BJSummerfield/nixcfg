@@ -15,9 +15,18 @@ in
   config = mkIf cfg.enable {
     programs.fuzzel = {
       enable = true;
-      settings = mkIf cfg.uwsm {
-        main.launch-prefix = "uwsm app -- ";
-      };
+      settings = mkMerge [
+        # Base settings that should always apply
+        {
+          border.radius = 0;
+        }
+        # Conditional settings that only apply if cfg.uwsm is true
+        (mkIf cfg.uwsm {
+          main = {
+            launch-prefix = "uwsm app -- ";
+          };
+        })
+      ];
     };
   };
 }

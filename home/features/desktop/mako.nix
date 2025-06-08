@@ -9,7 +9,7 @@ in
       enable = true;
       # font = "MonaspiceNe Nerd Font 8";
       settings = {
-        border-radius = 8;
+        # border-radius = 8;
         border-size = 1;
         default-timeout = 6000;
       };
