@@ -84,16 +84,15 @@
     # };
     gamescope = {
       enable = true;
-      capSysNice = true;
     };
     steam = {
       enable = true;
       gamescopeSession.enable = true;
       # remotePlay.openFirewall = true;
     };
+    niri.enable = true;
   };
   # uwsm.enable = true;
-  niri.enable = true;
 
   # Bluetooth
   # hardware.bluetooth = {
