@@ -113,6 +113,7 @@ layout {
     // Set gaps around windows in logical pixels.
     gaps 10
 
+    background-color "transparent"
     // When to center a column when changing focus, options are:
     // - "never", default behavior, focusing an off-screen column will keep at the left
     //   or right edge of the screen.
@@ -130,7 +131,7 @@ layout {
         proportion 0.5
         proportion 0.66667
 
-        // Fixed sets the width in logical pixels exactly.
+
         // fixed 1920
     }
 
@@ -282,6 +283,11 @@ animations {
 
     // Slow down all animations by this factor. Values below 1 speed them up instead.
     // slowdown 3.0
+}
+
+layer-rule {
+    match namespace="^wallpaper$"
+    place-within-backdrop true
 }
 
 // Window rules let you adjust behavior for individual windows.

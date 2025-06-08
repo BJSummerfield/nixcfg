@@ -30,7 +30,7 @@
       firefox.enable = true;
       fuzzel = {
         enable = true;
-        uwsm = true;
+        # uwsm = true;
       };
       hypridle.enable = true;
       # hyprland.enable = true;
