@@ -63,8 +63,11 @@
     #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
     helix
     git
-    # tailscale
+    tailscale
   ];
+
+  # Polkit services/agents require
+  security.polkit.enable = true;
 
   programs = {
     uwsm.enable = true;
@@ -77,6 +80,7 @@
   programs.steam = {
     enable = true;
     remotePlay.openFirewall = true;
+    gamescopeSession.enable = true;
   };
 
 
@@ -87,7 +91,7 @@
   };
   programs._1password.enable = true;
 
-  # services.tailscale.enable = true;
+  services.tailscale.enable = true;
 
   #needed for nfs mount
   services.rpcbind.enable = true;

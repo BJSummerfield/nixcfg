@@ -30,15 +30,18 @@
       firefox.enable = true;
       fuzzel = {
         enable = true;
-        uwsm = true;
+        # uwsm = true;
       };
       hypridle.enable = true;
-      hyprland.enable = true;
+      # hyprland.enable = true;
       hyprlock.enable = true;
-      hyprpolkitagent.enable = true;
+      # hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
+      niri.enable = true;
       obs-studio.enable = true;
+      swaybg.enable = true;
+      polkit-gnome.enable = true;
       theme.enable = true;
     };
   };
