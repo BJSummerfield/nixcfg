@@ -69,19 +69,22 @@
   # Polkit services/agents require
   security.polkit.enable = true;
 
-  programs = {
-    uwsm.enable = true;
-    hyprland = {
-      enable = true;
-      withUWSM = true;
-    };
-  };
+  # programs = {
+  #   uwsm.enable = true;
+  #   hyprland = {
+  #     enable = true;
+  #     withUWSM = true;
+  #   };
+  # };
 
   programs.steam = {
     enable = true;
     remotePlay.openFirewall = true;
     gamescopeSession.enable = true;
   };
+
+  programs.gamescope.enable = true;
+  programs.niri.enable = true;
 
 
   programs.fish.enable = true;
