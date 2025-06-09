@@ -38,10 +38,5 @@ in
             IdentityAgent ~/.1password/agent.sock              
       '';
     };
-
-    programs._1password-gui = {
-      enable = true;
-      enableSshAgent = true;
-    };
   };
 }
