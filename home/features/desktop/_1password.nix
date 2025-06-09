@@ -38,5 +38,26 @@ in
             IdentityAgent ~/.1password/agent.sock              
       '';
     };
+
+    systemd.user.services._1password-silent = {
+      Unit = {
+        Description = "Starts 1password silently in the background";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+
+      Service = {
+        Type = "simple";
+        ExecStart = ''
+          ${pkgs._1password}/bin/1password --silent"
+        '';
+        Restart = "on-failure";
+        RestartSec = "1s";
+      };
+
+      Install = {
+        WantedBy = [ "graphical-session.target" ];
+      };
+    };
   };
 }
