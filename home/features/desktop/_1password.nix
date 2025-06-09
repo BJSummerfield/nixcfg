@@ -39,25 +39,9 @@ in
       '';
     };
 
-    systemd.user.services.silent-1password = {
-      Unit = {
-        Description = "Starts 1password silently in the background";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-      };
-
-      Service = {
-        Type = "simple";
-        ExecStart = ''
-          ${pkgs._1password}/bin/1password --silent
-        '';
-        Restart = "on-failure";
-        RestartSec = "1s";
-      };
-
-      Install = {
-        WantedBy = [ "graphical-session.target" ];
-      };
+    programs._1password-gui = {
+      enable = true;
+      enableSshAgent = true;
     };
   };
 }

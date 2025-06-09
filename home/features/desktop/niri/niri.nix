@@ -1,4 +1,5 @@
 { pkgs, config, lib, ... }:
+
 with lib; let
   cfg = config.features.desktop.niri;
 in

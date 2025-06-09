@@ -35,12 +35,12 @@
       hypridle.enable = true;
       # hyprland.enable = true;
       hyprlock.enable = true;
-      # hyprpolkitagent.enable = true;
+      hyprpolkitagent.enable = true;
       keybase.enable = true;
       mako.enable = true;
       niri.enable = true;
       swaybg.enable = true;
-      plasma-polkit.enable = true;
+      # plasma-polkit.enable = true;
       # obs-studio.enable = true;
       theme.enable = true;
     };
