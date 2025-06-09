@@ -39,7 +39,7 @@ in
       '';
     };
 
-    systemd.user.services._1password-silent = {
+    systemd.user.services.silent-1password = {
       Unit = {
         Description = "Starts 1password silently in the background";
         PartOf = [ "graphical-session.target" ];
@@ -49,7 +49,7 @@ in
       Service = {
         Type = "simple";
         ExecStart = ''
-          ${pkgs._1password}/bin/1password --silent"
+          ${pkgs._1password}/bin/1password --silent
         '';
         Restart = "on-failure";
         RestartSec = "1s";
