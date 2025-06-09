@@ -4,7 +4,7 @@
 // https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
 
 spawn-at-startup "xwayland-satellite"
-spawn-at-startup "1password --silent"
+// spawn-at-startup "1password --silent"
 
 // Or, if you built it by hand:
 // spawn-at-startup "~/path/to/code/target/release/xwayland-satellite"
@@ -32,7 +32,7 @@ input {
     // Omitting settings disables them, or leaves them at their default values.
     touchpad {
         // off
-        tap
+        // tap
         // dwt
         // dwtp
         // drag-lock
@@ -132,6 +132,7 @@ layout {
         proportion 0.33333
         proportion 0.5
         proportion 0.66667
+        proportion 0.8322
 
 
         // fixed 1920
@@ -564,9 +565,9 @@ binds {
     // Mod+Space       { switch-layout "next"; }
     // Mod+Shift+Space { switch-layout "prev"; }
 
-    Print { screenshot; }
-    Ctrl+Print { screenshot-screen; }
-    Alt+Print { screenshot-window; }
+    Mod+Alt+1 { screenshot; }
+    Mod+Alt+2 { screenshot-screen; }
+    Mod+Alt+3 { screenshot-window; }
 
     // Applications such as remote-desktop clients and software KVM switches may
     // request that niri stops processing the keyboard shortcuts defined here
