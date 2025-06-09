@@ -14,6 +14,7 @@
     ./mako.nix
     ./niri
     ./obs.nix
+    ./polkit-gnome.nix
     ./swaybg.nix
     ./theme.nix
     ./wofi.nix

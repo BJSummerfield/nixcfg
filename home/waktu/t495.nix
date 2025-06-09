@@ -40,7 +40,7 @@
       mako.enable = true;
       niri.enable = true;
       swaybg.enable = true;
-      # plasma-polkit.enable = true;
+      polkit-gnome.enable = true;
       # obs-studio.enable = true;
       theme.enable = true;
     };
