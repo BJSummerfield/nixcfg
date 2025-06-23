@@ -316,6 +316,19 @@ window-rule {
     open-floating true
 }
 
+window-rule {
+    match app-id="Alacritty"
+    default-column-width {
+        proportion 0.33333
+    }
+}
+
+window-rule {
+    match app-id="1Password"
+    match app-id="polkit-gnome-authentication-agent-1"
+    block-out-from "screen-capture"
+}
+
 // Example: block out two password managers from screen capture.
 // (This example rule is commented out with a "/-" in front.)
 /-window-rule {
