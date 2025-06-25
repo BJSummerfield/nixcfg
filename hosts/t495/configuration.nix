@@ -125,8 +125,10 @@
   services.openssh =
     {
       enable = true;
-      ports = [ 65321 ];
-      settings.PermitRootLogin = "no";
+      settings = {
+        PermitRootLogin = "no";
+        PasswordAuthentication = false;
+      };
     };
 
   # service is off by default
