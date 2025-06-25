@@ -55,6 +55,5 @@
 
   home.packages = with pkgs; [
     bottom
-    yazi
   ];
 }

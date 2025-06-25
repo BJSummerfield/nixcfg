@@ -45,4 +45,8 @@
       theme.enable = true;
     };
   };
+
+  home.packages = with pkgs; [
+    cowsay
+  ];
 }
