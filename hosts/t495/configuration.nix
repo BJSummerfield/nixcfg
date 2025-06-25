@@ -2,7 +2,7 @@
 # your system.  Help is available in the configuration.nix(5) man page
 # and in the NixOS manual (accessible by running ‘nixos-help’).
 
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   imports =
@@ -122,7 +122,17 @@
   # List services that you want to enable:
 
   # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  services.openssh =
+    {
+      enable = true;
+      ports = [ 65321 ];
+      settings.PermitRootLogin = "no";
+    };
+
+  # service is off by default
+  # use systemctl start sshd to start the service for the session 
+  systemd.services.sshd.wantedBy = lib.mkForce [ ];
+
 
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
