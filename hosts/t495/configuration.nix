@@ -53,9 +53,6 @@
   # Tailscale
   services.tailscale.enable = true;
 
-  # Allow unfree packages
-  nixpkgs.config.allowUnfree = true;
-
   environment.systemPackages = with pkgs; [
     wget
     git
