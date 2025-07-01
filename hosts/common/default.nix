@@ -7,7 +7,7 @@
   ];
   home-manager = {
     useUserPackages = true;
-    extraSpecialArgs = {inherit inputs outputs;};
+    extraSpecialArgs = { inherit inputs outputs; };
   };
   nixpkgs = {
     # You can add overlays here
@@ -27,6 +27,7 @@
       #   });
       # })
     ];
+
     # Configure your nixpkgs instance
     config = {
       # Disable if you don't want unfree packages

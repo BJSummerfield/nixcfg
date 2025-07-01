@@ -1,4 +1,4 @@
-{ inputs, pkgs, config, lib, ... }:
+{ inputs, pkgs, config, lib, globals, ... }:
 with lib; let
   cfg = config.features.desktop.theme;
   stylixModule = inputs.stylix.homeModules.stylix;
@@ -50,17 +50,17 @@ in
       fonts = {
         serif = {
           package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
+          name = globals.systemFont;
         };
 
         sansSerif = {
           package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
+          name = globals.systemFont;
         };
 
         monospace = {
           package = pkgs.nerd-fonts.monaspace;
-          name = "MonaspiceNe Nerd Font";
+          name = globals.systemFont;
         };
 
         emoji = {

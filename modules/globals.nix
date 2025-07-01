@@ -1,0 +1,3 @@
+{
+  systemFont = "MonaspiceNe Nerd Font";
+}

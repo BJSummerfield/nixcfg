@@ -1,9 +1,11 @@
-{ ... }: {
+{ globals, ... }:
+{
+
   programs.alacritty = {
     enable = true;
     settings = {
       font = {
-        normal.family = "MonaspiceNe Nerd Font";
+        normal.family = globals.systemFont;
         size = 14;
       };
       window = {

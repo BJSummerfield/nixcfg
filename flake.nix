@@ -22,6 +22,7 @@
         "x86_64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      definitions = import ./modules/definitions.nix;
     in
     {
       packages =
@@ -29,11 +30,11 @@
       overlays = import ./overlays { inherit inputs; };
       nixosConfigurations = {
         t495 = nixpkgs.lib.nixosSystem {
-          specialArgs = { inherit inputs outputs; };
+          specialArgs = { inherit inputs outputs definitions; };
           modules = [ ./hosts/t495 ];
         };
         redtruck = nixpkgs.lib.nixosSystem {
-          specialArgs = { inherit inputs outputs; };
+          specialArgs = { inherit inputs outputs definitions; };
           modules = [ ./hosts/redtruck ];
         };
       };

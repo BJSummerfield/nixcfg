@@ -1,4 +1,4 @@
-{ config, lib, ... }:
+{ config, lib, globals, ... }:
 with lib; let
   cfg = config.features.desktop.hyprlock;
   base = "rgb(1e1e2e)";
@@ -11,7 +11,6 @@ with lib; let
   surface0 = "rgb(313244)";
   red = "rgb(f38ba8)";
   yellow = "rgb(f9e2af)";
-  font = "MonaspiceNe Nerd Font";
 in
 {
   options.features.desktop.hyprlock.enable = mkEnableOption "Enable hyprlock config";
@@ -39,7 +38,7 @@ in
             text = "$TIME";
             color = text;
             font_size = 90;
-            font_family = font;
+            font_family = globals.systemFont;
             position = "-30, 0";
             halign = "right";
             valign = "top";
@@ -50,7 +49,7 @@ in
             text = "cmd[update:43200000] date +\"%A, %d %B %Y\"";
             color = text;
             font_size = 25;
-            font_family = font;
+            font_family = globals.systemFont;
             position = "-30, -150";
             halign = "right";
             valign = "top";
