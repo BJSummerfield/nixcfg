@@ -14,10 +14,10 @@
 
   config = {
     mine = {
-      system.enabled = true;
+      system.enable = true;
       user = {
-        enabled = true;
-        home-manager.enabled = true;
+        enable = true;
+        home-manager.enable = true;
       };
     };
   };

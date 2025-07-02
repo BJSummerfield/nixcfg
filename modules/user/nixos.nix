@@ -13,6 +13,8 @@ let
     types
     ;
   inherit (config.mine) user;
+
+  cfg = config.mine.user;
 in
 {
   options.mine.user = {
@@ -29,7 +31,7 @@ in
     };
     homeDir = mkOption {
       type = types.str;
-      default = "/home/${user.name}";
+      default = "/home/${config.mine.user.name}";
       description = "Home Directory Path";
     };
     home-manager.enable = mkOption {
@@ -52,24 +54,24 @@ in
     };
   };
 
-  config = mkIf user.enable {
-    mine.system.shell.fish.enable = mkIf (user.shell.package == pkgs.fish) true;
-    nix.settings.trusted-users = [ "${user.name}" ];
+  config = mkIf cfg.enable {
+    mine.system.shell.fish.enable = mkIf (cfg.shell.package == pkgs.fish) true;
+    nix.settings.trusted-users = [ "${cfg.name}" ];
 
-    users.groups.${user.name} = { };
+    users.groups.${cfg.name} = { };
 
-    users.users.${user.name} = {
+    users.users.${cfg.name} = {
       initialHashedPassword = "$y$j9T$IoChbWGYRh.rKfmm0G86X0$bYgsWqDRkvX.EBzJTX.Z0RsTlwspADpvEF3QErNyCMC";
       isNormalUser = true;
       openssh.authorizedKeys.keys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtTarFZkhNoHtu39C6eCRaS84jb6SPoY92gn64Q2D3O"
       ];
-      group = "${user.name}";
+      group = "${cfg.name}";
       extraGroups = [
         "wheel"
         "networkmanager"
       ];
-      shell = user.shell.package;
+      shell = cfg.shell.package;
     };
 
   };
