@@ -31,14 +31,19 @@ in
 
     programs.fish.enable = true;
 
-    services.openssh =
-      {
-        enable = true;
-        settings = {
-          PermitRootLogin = "no";
-          PasswordAuthentication = false;
-        };
+    services.openssh = {
+      enable = true;
+      settings = {
+        PermitRootLogin = "no";
+        PasswordAuthentication = false;
       };
+    };
+
+    services.avahi = {
+      enable = true;
+      nssmdns4 = true;
+      openFirewall = true;
+    };
 
     systemd.services.sshd.wantedBy = lib.mkForce [ ];
 
