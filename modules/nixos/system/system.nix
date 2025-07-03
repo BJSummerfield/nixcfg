@@ -39,12 +39,6 @@ in
       };
     };
 
-    services.avahi = {
-      enable = true;
-      nssmdns4 = true;
-      openFirewall = true;
-    };
-
     systemd.services.sshd.wantedBy = lib.mkForce [ ];
 
     environment.systemPackages = with pkgs; [
