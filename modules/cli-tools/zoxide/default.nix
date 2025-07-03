@@ -10,7 +10,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.zoxide.enable = true;
     home-manager.users.${user.name} = {
       programs.zoxide.enable = true;
     };

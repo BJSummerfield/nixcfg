@@ -5,7 +5,7 @@
     # ./gh
     ./git
     ./lazygit
-    # ./starship
-    # ./zoxide
+    ./starship
+    ./zoxide
   ];
 }
