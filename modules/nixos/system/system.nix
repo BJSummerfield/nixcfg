@@ -29,8 +29,6 @@ in
 
     time.timeZone = "America/Chicago";
 
-    programs.fish.enable = true;
-
     services.openssh = {
       enable = true;
       settings = {

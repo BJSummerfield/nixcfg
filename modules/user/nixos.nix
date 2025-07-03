@@ -1,11 +1,5 @@
-{ lib
-, config
-, pkgs
-, inputs
-, ...
-}:
+{ lib, config, pkgs, ... }:
 let
-
   inherit (lib)
     mkEnableOption
     mkOption
@@ -27,6 +21,11 @@ in
       type = types.str;
       default = "brianjsummerfield@gmail.com";
       description = "My Email";
+    };
+    git-user = mkOption {
+      type = types.str;
+      default = "BJSummerfield";
+      description = "Git username";
     };
     homeDir = mkOption {
       type = types.str;
