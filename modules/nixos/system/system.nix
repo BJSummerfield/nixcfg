@@ -13,6 +13,13 @@ in
   config = mkIf cfg.enable {
     system.stateVersion = "24.11";
 
+    nix = {
+      settings.experimental-features = [
+        "nix-command"
+        "flakes"
+      ];
+    };
+
     boot.loader.systemd-boot.enable = true;
     boot.loader.efi.canTouchEfiVariables = true;
     boot.initrd.luks.devices."luks-5cccbb79-6ae4-4a43-add1-9b5fa0a03e18".device = "/dev/disk/by-uuid/5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
@@ -39,6 +46,7 @@ in
       wget
       git
       helix
+      bottom
       # tailscale
     ];
   };
