@@ -7,13 +7,15 @@
 {
   imports =
     [
-      # Include the results of the hardware scan.
       ./hardware-configuration.nix
       ../../modules
     ];
 
   config = {
     mine = {
+      system = {
+        bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      };
       cli-tools = {
         git.enable = true;
         lazygit.enable = true;

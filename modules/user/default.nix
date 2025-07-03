@@ -1,7 +1,6 @@
 { lib, config, pkgs, inputs, ... }:
 let
   inherit (lib)
-    mkEnableOption
     mkOption
     mkIf
     types
@@ -16,7 +15,6 @@ in
   ];
 
   options.mine.user = {
-    enable = mkEnableOption "Enable User";
     name = mkOption {
       type = types.str;
       default = "waktu";
@@ -52,7 +50,6 @@ in
     };
   };
 
-  # config = mkIf user.enable {
   config = {
     mine.system.shell.fish.enable = mkIf (user.shell.package == pkgs.fish) true;
     nix.settings.trusted-users = [ "${user.name}" ];

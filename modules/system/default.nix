@@ -1,16 +1,18 @@
 { lib, pkgs, config, ... }:
 let
-  inherit (lib)
-    mkIf
-    ;
-  cfg = config.mine.system;
+  inherit (config.mine.system) bootPartitionUuid;
 in
 {
 
   imports = [
     ./shell/fish
   ];
-  # config = mkIf cfg.enable {
+
+  options.mine.system.bootPartitionUuid = lib.mkOption {
+    type = lib.types.str;
+    description = "The UUID of the encrypted root partition.";
+  };
+
   config = {
     system.stateVersion = "24.11";
 
@@ -23,9 +25,8 @@ in
 
     boot.loader.systemd-boot.enable = true;
     boot.loader.efi.canTouchEfiVariables = true;
-    boot.initrd.luks.devices."luks-5cccbb79-6ae4-4a43-add1-9b5fa0a03e18".device = "/dev/disk/by-uuid/5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+    boot.initrd.luks.devices."luks-${bootPartitionUuid}".device = "/dev/disk/by-uuid/${bootPartitionUuid}";
 
-    networking.hostName = "t495";
     networking.networkmanager.enable = true;
 
     time.timeZone = "America/Chicago";
