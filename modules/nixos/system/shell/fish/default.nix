@@ -56,8 +56,8 @@ in
         set fish_greeting # Disable greeting
       '';
       shellAliases = {
-        ls = "eza";
-        lg = "lazygit";
+        # ls = "eza";
+        # lg = "lazygit";
       };
     };
   };
