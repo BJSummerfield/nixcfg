@@ -1,6 +1,7 @@
 { lib, pkgs, config, ... }:
 let
-  inherit (config.mine.system) bootPartitionUuid;
+  inherit (lib) mkOption types;
+  inherit (config.mine.system) bootPartitionUuid hostName;
 in
 {
 
@@ -8,9 +9,15 @@ in
     ./shell/fish
   ];
 
-  options.mine.system.bootPartitionUuid = lib.mkOption {
-    type = lib.types.str;
-    description = "The UUID of the encrypted root partition.";
+  options.mine.system = {
+    bootPartitionUuid = mkOption {
+      type = types.str;
+      description = "The UUID of the encrypted root partition.";
+    };
+    hostName = mkOption {
+      type = types.str;
+      description = "The hostname";
+    };
   };
 
   config = {
@@ -28,6 +35,7 @@ in
     boot.initrd.luks.devices."luks-${bootPartitionUuid}".device = "/dev/disk/by-uuid/${bootPartitionUuid}";
 
     networking.networkmanager.enable = true;
+    networking.hostName = hostName;
 
     time.timeZone = "America/Chicago";
 

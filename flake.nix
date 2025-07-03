@@ -14,7 +14,7 @@
           specialArgs = {
             inherit inputs;
           };
-          modules = [ ./hosts/t495/configuration.nix ];
+          modules = [ ./hosts/t495 ];
         };
       };
     };
