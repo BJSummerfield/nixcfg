@@ -1,6 +1,6 @@
 { ... }: {
   imports = [
-    ./nixos
     ./user
+    ./cli-tools
   ];
 }

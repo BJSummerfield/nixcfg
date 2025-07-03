@@ -1,16 +1,16 @@
-{ lib, config, pkgs, ... }:
-let
-  inherit (lib)
-    mkEnableOption
-    mkIf;
-  cfg = config.mine.system;
-in
+{ lib, pkgs, ... }:
+# let
+# inherit (lib)
+#   mkIf;
+# cfg = config.mine.system;
+# in
 {
-  options.mine.system = {
-    enable = mkEnableOption "Enable System";
-  };
 
-  config = mkIf cfg.enable {
+  imports = [
+    ./shell/fish
+  ];
+  # config = mkIf cfg.enable {
+  config = {
     system.stateVersion = "24.11";
 
     nix = {
