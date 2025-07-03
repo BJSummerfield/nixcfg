@@ -10,7 +10,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.eza.enable = true;
     home-manager.users.${user.name} = {
       programs.eza.enable = true;
     };

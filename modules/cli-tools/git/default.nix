@@ -10,13 +10,11 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.git.enable = true;
-
     home-manager.users.${user.name} = {
       programs.git = {
         enable = true;
-        userName = user.git-user;
-        userEmail = user.email;
+        userName = "${user.git-user}";
+        userEmail = "${user.email}";
         extraConfig.init.defaultBranch = "main";
       };
     };

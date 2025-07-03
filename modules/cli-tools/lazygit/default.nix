@@ -10,7 +10,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.lazygit.enable = true;
     home-manager.users.${user.name} = {
       programs.lazygit = {
         enable = true;

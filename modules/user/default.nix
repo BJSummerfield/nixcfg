@@ -52,8 +52,8 @@ in
     };
   };
 
-  config = mkIf user.enable {
-    # config = {
+  # config = mkIf user.enable {
+  config = {
     mine.system.shell.fish.enable = mkIf (user.shell.package == pkgs.fish) true;
     nix.settings.trusted-users = [ "${user.name}" ];
 

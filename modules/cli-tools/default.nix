@@ -2,10 +2,10 @@
   imports = [
     ./direnv
     ./eza
-    ./gh
+    # ./gh
     ./git
     ./lazygit
-    ./starship
-    ./zoxide
+    # ./starship
+    # ./zoxide
   ];
 }

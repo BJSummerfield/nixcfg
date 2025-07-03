@@ -1,6 +1,7 @@
 { ... }: {
   imports = [
     ./user
-    # ./cli-tools
+    ./system
+    ./cli-tools
   ];
 }

@@ -10,7 +10,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.direnv.enable = true;
     home-manager.users.${user.name} = {
       programs.direnv = {
         enable = true;
