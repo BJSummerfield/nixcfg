@@ -17,11 +17,13 @@ in
         inherit inputs;
         inherit user;
       };
-      programs.home-manager.enable = true;
-      home = {
-        username = "${user.name}";
-        stateVersion = "24.05";
-        homeDirectory = "${user.homeDir}";
+      users.${user.name} = {
+        programs.home-manager.enable = true;
+        home = {
+          username = "${user.name}";
+          stateVersion = "24.05";
+          homeDirectory = "${user.homeDir}";
+        };
       };
     };
   };
