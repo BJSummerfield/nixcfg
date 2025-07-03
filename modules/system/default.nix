@@ -1,16 +1,17 @@
-{ lib, pkgs, ... }:
-# let
-# inherit (lib)
-#   mkIf;
-# cfg = config.mine.system;
-# in
+{ lib, pkgs, config, ... }:
+let
+  inherit (lib)
+    mkIf
+    ;
+  cfg = config.mine.system;
+in
 {
 
   imports = [
     ./shell/fish
   ];
-  # config = mkIf cfg.enable {
-  config = {
+  config = mkIf cfg.enable {
+    # config = {
     system.stateVersion = "24.11";
 
     nix = {

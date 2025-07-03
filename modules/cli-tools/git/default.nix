@@ -2,10 +2,10 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.home-manager.git;
+  cfg = config.mine.cli-tools.git;
 in
 {
-  options.mine.home-manager.git = {
+  options.mine.cli-tools.git = {
     enable = mkEnableOption "Git config";
   };
 

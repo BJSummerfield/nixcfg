@@ -1,7 +1,7 @@
 { lib, config, pkgs, inputs, ... }:
 let
   inherit (lib)
-    # mkEnableOption
+    mkEnableOption
     mkOption
     mkIf
     types
@@ -10,8 +10,13 @@ let
 
 in
 {
+
+  imports = [
+    inputs.home-manager.nixosModules.home-manager
+  ];
+
   options.mine.user = {
-    # enable = mkEnableOption "Enable User";
+    enable = mkEnableOption "Enable User";
     name = mkOption {
       type = types.str;
       default = "waktu";
@@ -32,11 +37,6 @@ in
       default = "/home/${user.name}";
       description = "Home Directory Path";
     };
-    home-manager.enable = mkOption {
-      type = types.bool;
-      default = false;
-      description = "Enable home-manager";
-    };
     shell = mkOption {
       default = { };
       description = "Shell config for user";
@@ -52,8 +52,8 @@ in
     };
   };
 
-  # config = mkIf user.enable {
-  config = {
+  config = mkIf user.enable {
+    # config = {
     mine.system.shell.fish.enable = mkIf (user.shell.package == pkgs.fish) true;
     nix.settings.trusted-users = [ "${user.name}" ];
 

@@ -15,10 +15,7 @@
   config = {
     mine = {
       system.enable = true;
-      user = {
-        enable = true;
-        home-manager.enable = true;
-      };
+      user.enable = true;
     };
   };
   # # Bootloader.

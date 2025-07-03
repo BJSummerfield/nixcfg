@@ -2,15 +2,15 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.home-manager.cli-tools.gh;
+  cfg = config.mine.cli-tools.gh;
 in
 {
-  options.mine.home-manager.cli-tools.gh = {
+  options.mine.cli-tools.gh = {
     enable = mkEnableOption "gh config";
   };
 
   config = mkIf cfg.enable {
-    mine.home-manager.cli-tools.gh.enable = true;
+    mine.cli-tools.gh.enable = true;
     home-manager.users.${user.name} = {
       programs.gh = {
         enable = true;
