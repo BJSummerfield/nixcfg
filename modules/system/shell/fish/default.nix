@@ -15,7 +15,6 @@ in
     # system level fish shell for auto-complete
     programs.fish.enable = true;
 
-    # set EDITOR hx
     home-manager.users.${user.name} = {
       programs.fish = {
         enable = true;
