@@ -7,6 +7,7 @@ in
 
   imports = [
     ./shell/fish
+    ./ssh.nix
   ];
 
   options.mine.system = {
@@ -38,16 +39,6 @@ in
     networking.hostName = hostName;
 
     time.timeZone = "America/Chicago";
-
-    services.openssh = {
-      enable = true;
-      settings = {
-        PermitRootLogin = "no";
-        PasswordAuthentication = false;
-      };
-    };
-
-    systemd.services.sshd.wantedBy = lib.mkForce [ ];
 
     environment.systemPackages = with pkgs; [
       wget
