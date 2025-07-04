@@ -2,8 +2,9 @@
   imports = [
     ./direnv
     ./eza
-    # ./gh
+    ./gh
     ./git
+    ./helix
     ./lazygit
     ./starship
     ./zoxide

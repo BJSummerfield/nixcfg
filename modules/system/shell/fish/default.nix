@@ -15,12 +15,12 @@ in
     # system level fish shell for auto-complete
     programs.fish.enable = true;
 
+    # set EDITOR hx
     home-manager.users.${user.name} = {
       programs.fish = {
         enable = true;
         interactiveShellInit = ''
           set fish_greeting # Disable greeting
-          set EDITOR hx
           set -x NIX_PATH nixpkgs=channel:nixos-unstable
         '';
         loginShellInit = ''

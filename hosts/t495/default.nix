@@ -23,6 +23,23 @@
         lazygit.enable = true;
         starship.enable = true;
         zoxide.enable = true;
+        helix = {
+          enable = true;
+          lsp = {
+            bicep.enable = true;
+            graphql.enable = true;
+            javascript.enable = true;
+            json.enable = true;
+            jsx.enable = true;
+            markdown.enable = true;
+            nix.enable = true;
+            rust.enable = true;
+            toml.enable = true;
+            tsx.enable = true;
+            typescript.enable = true;
+            yaml.enable = true;
+          };
+        };
       };
     };
   };

@@ -1,10 +1,10 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.jsx;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.typescript;
 in
 {
-  options.features.cli.helix.jsx.enable = mkEnableOption "Enable jsx lsp for helix";
+  options.mine.cli-tools.helix.lsp.typescript.enable = mkEnableOption "Enable typescript lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {
@@ -19,14 +19,14 @@ in
           };
         };
         language = [{
-          name = "jsx";
+          name = "typescript";
           language-servers = [
             { name = "typescript-language-server"; except-features = [ "format" ]; }
             "biome"
           ];
           formatter = {
             command = "biome";
-            args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.jsx" ];
+            args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.ts" ];
           };
           auto-format = true;
         }];

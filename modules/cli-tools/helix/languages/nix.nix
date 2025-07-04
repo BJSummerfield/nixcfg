@@ -1,10 +1,10 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.nix;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.nix;
 in
 {
-  options.features.cli.helix.nix.enable = mkEnableOption "Enable nix lsp for helix";
+  options.mine.cli-tools.helix.lsp.nix.enable = mkEnableOption "Enable nix lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {

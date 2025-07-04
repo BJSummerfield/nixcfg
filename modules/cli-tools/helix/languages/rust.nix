@@ -1,11 +1,11 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.rust;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.rust;
 in
 {
 
-  options.features.cli.helix.rust.enable = mkEnableOption "Enable Rust lsp for helix";
+  options.mine.cli-tools.helix.lsp.rust.enable = mkEnableOption "Enable Rust lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {

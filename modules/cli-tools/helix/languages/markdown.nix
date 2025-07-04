@@ -1,17 +1,16 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.markdown;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.markdown;
 in
 {
-  options.features.cli.helix.markdown.enable = mkEnableOption "Enable markdown lsp for helix";
+  options.mine.cli-tools.helix.lsp.markdown.enable = mkEnableOption "Enable markdown lsp for helix";
   config = mkIf cfg.enable {
-
     programs.helix = {
       languages = {
         language-server = {
           mpls = {
-            command = "${pkgs.mpls}/bin/mpls";
+            # command = "${pkgs.mpls}/bin/mpls";
             args = [ "--dark-mode" "--enable-emoji" ];
           };
         };
@@ -21,9 +20,10 @@ in
           language-servers = [ "marksman" "mpls" ];
         }];
       };
+      # TODO fix this!
       extraPackages = with pkgs; [
         marksman
-        mpls
+        # mpls
       ];
     };
   };

@@ -5,7 +5,7 @@ let
   cfg = config.mine.system.ssh;
 in
 {
-  # Todo import the key as an array
+  # TODO import the key as an array
   options.mine.system.ssh = {
     enable = mkEnableOption "enable SSH";
     authorizedKeys = mkOption {
@@ -23,7 +23,7 @@ in
       };
     };
 
-    # ssh is disabled on boot
+    # ssh is disabled on boot, use systemctl to turn it on when needed with 'start'
     systemd.services.sshd.wantedBy = lib.mkForce [ ];
 
     users.users.${user.name} = {

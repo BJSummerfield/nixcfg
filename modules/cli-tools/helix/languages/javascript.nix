@@ -1,10 +1,11 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.json;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.javascript;
 in
 {
-  options.features.cli.helix.json.enable = mkEnableOption "Enable json lsp for helix";
+
+  options.mine.cli-tools.helix.lsp.javascript.enable = mkEnableOption "Enable javascript lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {
@@ -19,15 +20,11 @@ in
           };
         };
         language = [{
-          name = "json";
+          name = "javascript";
           language-servers = [
-            { name = "vscode-json-language-server"; except-features = [ "format" ]; }
+            { name = "typescript-language-server"; except-features = [ "format" ]; }
             "biome"
           ];
-          formatter = {
-            command = "biome";
-            args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.json" ];
-          };
           auto-format = true;
         }];
       };

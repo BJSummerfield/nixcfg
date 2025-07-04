@@ -1,10 +1,10 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.toml;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.toml;
 in
 {
-  options.features.cli.helix.toml.enable = mkEnableOption "Enable toml lsp for helix";
+  options.mine.cli-tools.helix.lsp.toml.enable = mkEnableOption "Enable toml lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {

@@ -1,10 +1,10 @@
 { pkgs, lib, config, ... }:
-
-with lib; let
-  cfg = config.features.cli.helix.tsx;
+let
+  inherit (lib) mkEnableOption mkIf;
+  cfg = config.mine.cli-tools.helix.lsp.tsx;
 in
 {
-  options.features.cli.helix.tsx.enable = mkEnableOption "Enable tsx lsp for helix";
+  options.mine.cli-tools.helix.lsp.tsx.enable = mkEnableOption "Enable tsx lsp for helix";
   config = mkIf cfg.enable {
 
     programs.helix = {
