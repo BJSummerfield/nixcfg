@@ -13,8 +13,8 @@ in
     home-manager.users.${user.name} = {
       programs.alacritty.enable = true;
       settings = {
-        font = {
-          normal.family = "MonaspiceNe Nerd Font";
+        font = mkIf config.mine.system.fonts.enable {
+          normal.family = user.system.fonts.name;
           size = 14;
         };
         window = {

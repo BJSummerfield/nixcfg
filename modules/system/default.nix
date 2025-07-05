@@ -8,6 +8,7 @@ in
   imports = [
     ./shell/fish
     ./ssh.nix
+    ./fonts.nix
   ];
 
   options.mine.system = {

@@ -1,10 +1,6 @@
 { lib, config, pkgs, inputs, ... }:
 let
-  inherit (lib)
-    mkOption
-    mkIf
-    types
-    ;
+  inherit (lib) mkOption mkIf types;
   inherit (config.mine) user;
 
 in
@@ -35,6 +31,11 @@ in
       default = "/home/${user.name}";
       description = "Home Directory Path";
     };
+    sshKey = mkOption {
+      type = types.str;
+      default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtTarFZkhNoHtu39C6eCRaS84jb6SPoY92gn64Q2D3O";
+      description = "Authorized SSH Key";
+    };
     shell = mkOption {
       default = { };
       description = "Shell config for user";
@@ -60,7 +61,7 @@ in
       initialHashedPassword = "$y$j9T$IoChbWGYRh.rKfmm0G86X0$bYgsWqDRkvX.EBzJTX.Z0RsTlwspADpvEF3QErNyCMC";
       isNormalUser = true;
       openssh.authorizedKeys.keys = [
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtTarFZkhNoHtu39C6eCRaS84jb6SPoY92gn64Q2D3O"
+        user.sshKey
       ];
       group = "${user.name}";
       extraGroups = [
