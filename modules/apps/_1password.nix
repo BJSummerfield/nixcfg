@@ -13,25 +13,27 @@ in
 
     sshAgent = mkOption {
       type = types.bool;
-      default = true;
+      default = false;
       description = "Enable SSH agent in 1password";
     };
 
     gitSigning = mkOption {
       type = types.bool;
-      default = true;
+      default = false;
       description = "Enable 1password git signing";
     };
 
     ghPlugin = mkOption {
       type = types.bool;
-      default = true;
+      default = false;
       description = "Enable 1password gh shell plugin";
     };
   };
 
   config = mkIf cfg.enable {
     mine.system.allowUnfree.enable = true;
+    # Enable gh if the plugin is enabled
+    mine.cli-tools.gh.enable = mkIf cfg.ghPlugin true;
 
     programs._1password.enable = true;
     programs._1password-gui = {
@@ -42,13 +44,12 @@ in
     home-manager.users.${user.name} = {
       imports = [ _1passwordShellModules ];
 
-      programs._1password-shell-plugins = mkIf cfg.ghPlugin.enable {
+      programs._1password-shell-plugins = mkIf cfg.ghPlugin {
         enable = true;
         plugins = with pkgs; [ gh ];
       };
 
-      # TODO this may need to be broken out
-      programs.ssh = mkIf cfg.sshAgent.enable {
+      programs.ssh = mkIf cfg.sshAgent {
         enable = true;
         extraConfig = ''
           Host *

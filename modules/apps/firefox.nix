@@ -3,6 +3,7 @@ let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
   cfg = config.mine.apps.firefox;
+  _1pass = config.mine.apps._1password;
 in
 {
   options.mine.apps.firefox.enable = mkEnableOption "Enable firefox config";
@@ -36,9 +37,8 @@ in
               installation_mode = "force_installed";
               private_browsing = true;
             };
-            # TODO Make this a MkIf
             # 1Password:
-            "{d634138d-c276-4fc8-924b-40a0ea21d284}" = {
+            "{d634138d-c276-4fc8-924b-40a0ea21d284}" = mkIf _1pass.enable {
               install_url = "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi";
               installation_mode = "force_installed";
               private_browsing = true;

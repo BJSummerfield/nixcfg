@@ -8,7 +8,6 @@ in
   imports = [
     ./shell/fish
     ./openssh.nix
-    ./ssh.nix
     ./fonts.nix
     ./allowUnfree.nix
     ./polkit.nix

@@ -20,7 +20,7 @@ in
           {
             init.defaultBranch = "main";
           }
-          (mkIf _1passSigning.enable {
+          (mkIf _1passSigning {
             user.signingkey = user.gitSigningKey;
             gpg = {
               ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";

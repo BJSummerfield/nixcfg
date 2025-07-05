@@ -12,9 +12,7 @@
         hostName = "t495";
         bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
         fonts.enable = true;
-        ssh = {
-          enable = true;
-        };
+        openssh.enable = true;
       };
       desktop = {
         niri.enable = true;
@@ -23,7 +21,12 @@
         polkit-gnome.enable = true;
       };
       apps = {
-        _1password.enable = true;
+        _1password = {
+          enable = true;
+          sshAgent = true;
+          gitSigning = true;
+          ghPlugin = true;
+        };
         alacritty.enable = true;
         firefox.enable = true;
         keybase.enable = true;
