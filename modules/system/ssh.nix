@@ -1,23 +1,20 @@
 { lib, config, ... }:
 let
-  inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.system.ssh;
+  inherit (lib) mkIf;
+  inherit (config.mine) user;
+  _1passAgent = config.mine.apps._1password.sshAgent;
 in
 {
-  options.mine.system.ssh = {
-    enable = mkEnableOption "enable SSH";
-  };
 
-  config = mkIf cfg.enable {
-    services.openssh = {
-      enable = true;
-      settings = {
-        PermitRootLogin = "no";
-        PasswordAuthentication = false;
+  config = mkIf _1passAgent.enable {
+    home-manager.users.${user.name} = {
+      programs.ssh = {
+        enable = true;
+        extraConfig = ''
+          Host *
+              IdentityAgent ~/.1password/agent.sock              
+        '';
       };
     };
-
-    # ssh is disabled on boot, use systemctl to turn it on when needed with 'start'
-    systemd.services.sshd.wantedBy = lib.mkForce [ ];
   };
 }
