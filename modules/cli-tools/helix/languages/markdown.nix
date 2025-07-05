@@ -12,14 +12,17 @@ in
         languages = {
           language-server = {
             mpls = {
-              # command = "${pkgs.mpls}/bin/mpls";
+              command = "${pkgs.mpls}/bin/mpls";
               args = [ "--dark-mode" "--enable-emoji" ];
             };
           };
           language = [{
             name = "markdown";
             auto-format = true;
-            language-servers = [ "marksman" "mpls" ];
+            language-servers = [
+            "marksman"
+            "mpls"
+             ];
           }];
         };
         # TODO fix this!

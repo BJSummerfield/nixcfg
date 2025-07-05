@@ -4,5 +4,6 @@
     ./user
     ./system
     ./cli-tools
+    ./desktop
   ];
 }
