@@ -10,6 +10,7 @@ in
     ./ssh.nix
     ./fonts.nix
     ./allowUnfree.nix
+    ./polkit.nix
   ];
 
   options.mine.system = {

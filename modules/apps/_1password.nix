@@ -5,18 +5,18 @@ let
   inherit (config.mine) user;
   _1passwordShellModules = inputs._1password-shell-plugins.hmModules.default;
   cfg = config.mine.apps._1password;
+  polkit = config.mine.system.polkit;
 in
 {
   options.mine.apps._1password.enable = mkEnableOption "Enable 1password config";
 
   config = mkIf cfg.enable {
     mine.system.allowUnfree.enable = true;
-    programs._1password.enable = true;
 
-    # TODO Break out polkit
+    programs._1password.enable = true;
     programs._1password-gui = {
       enable = true;
-      # polkitPolicyOwners = [ user.name ];
+      polkitPolicyOwners = mkIf polkit [ user.name ];
     };
 
     home-manager.users.${user.name} = {

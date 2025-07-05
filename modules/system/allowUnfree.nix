@@ -5,6 +5,7 @@ let
   cfg = config.mine.system.allowUnfree;
 in
 {
+  # TODO this could be set to allow for specific packages
   options.mine.system.allowUnfree = {
     enable = mkEnableOption "Enable Unfree packages";
   };

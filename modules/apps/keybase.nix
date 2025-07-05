@@ -5,10 +5,8 @@ let
   cfg = config.mine.apps.keybase;
 in
 {
-
   options.mine.apps.keybase.enable = mkEnableOption "Enable Keybase config";
   config = mkIf cfg.enable {
-
     home-manager.users.${user.name} = {
       services = {
         keybase.enable = true;
