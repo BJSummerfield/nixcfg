@@ -15,9 +15,11 @@ in
       programs.alacritty = {
         enable = true;
         settings = mkMerge [
-          (mkIf fonts {
-            normal.family = fonts.name;
-            size = 14;
+          (mkIf fonts.enable {
+            font = {
+              normal.family = fonts.name;
+              size = 14;
+            };
           })
           {
             window = {
@@ -31,9 +33,9 @@ in
           }
         ];
       };
-    };
-    home.sessionVariables = {
-      TERMINAL = "alacritty";
+      home.sessionVariables = {
+        TERMINAL = "alacritty";
+      };
     };
   };
 }

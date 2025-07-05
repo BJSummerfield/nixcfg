@@ -19,6 +19,7 @@
       desktop = {
         niri.enable = true;
         fuzzel.enable = true;
+        swaybg.enable = true;
       };
       apps = {
         alacritty.enable = true;

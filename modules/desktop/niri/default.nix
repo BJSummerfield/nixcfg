@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.apps.alacritty;
+  cfg = config.mine.desktop.niri;
 in
 {
   options.mine.desktop.niri = {

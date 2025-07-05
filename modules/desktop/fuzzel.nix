@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkMerge mkIf mkOption types;
   inherit (config.mine) user;
-  cfg = config.mine.apps.alacritty;
+  cfg = config.mine.desktop.fuzzel;
 in
 {
   options.mine.desktop.fuzzel = {
