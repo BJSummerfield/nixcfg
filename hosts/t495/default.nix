@@ -22,6 +22,7 @@
         swaybg.enable = true;
       };
       apps = {
+        _1password.enable = true;
         alacritty.enable = true;
         firefox.enable = true;
       };
