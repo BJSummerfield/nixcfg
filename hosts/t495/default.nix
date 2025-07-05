@@ -23,6 +23,7 @@
       };
       apps = {
         alacritty.enable = true;
+        firefox.enable = true;
       };
       cli-tools = {
         direnv.enable = true;

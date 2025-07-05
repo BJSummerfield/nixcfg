@@ -30,7 +30,7 @@ in
         Service = {
           Type = "simple";
           ExecStart = ''
-            ${pkgs.swaybg}/bin/swaybg -m fill -i "${config.home.homeDirectory}/.config/swaybg/mountain.jpg"
+            ${pkgs.swaybg}/bin/swaybg -m fill -i "${user.homeDir}/.config/swaybg/${cfg.wallpaper}"
           '';
           Restart = "on-failure";
           RestartSec = "1s";
