@@ -20,11 +20,13 @@
         niri.enable = true;
         fuzzel.enable = true;
         swaybg.enable = true;
+        polkit-gnome.enable = true;
       };
       apps = {
         _1password.enable = true;
         alacritty.enable = true;
         firefox.enable = true;
+        keybase.enable = true;
       };
       cli-tools = {
         direnv.enable = true;
