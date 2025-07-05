@@ -2,10 +2,10 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.system.battery-notifications;
+  cfg = config.mine.desktop.battery-notifications;
 in
 {
-  options.mine.system.battery-notifications.enable =
+  options.mine.desktop.battery-notifications.enable =
     mkEnableOption "Get battery status through notifications";
 
   config = mkIf cfg.enable {
