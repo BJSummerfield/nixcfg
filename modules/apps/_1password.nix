@@ -8,10 +8,11 @@ let
 in
 {
   imports = [ _1passwordShellModules ];
-  options.features.desktop._1password.enable = mkEnableOption "Enable 1password config";
+  options.mine.apps._1password.enable = mkEnableOption "Enable 1password config";
 
   config = mkIf cfg.enable {
     programs._1password.enable = true;
+
     # TODO Break out polkit
     programs._1password-gui = {
       enable = true;
