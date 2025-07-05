@@ -9,6 +9,7 @@ in
     ./shell/fish
     ./ssh.nix
     ./fonts.nix
+    ./allowUnfree.nix
   ];
 
   options.mine.system = {

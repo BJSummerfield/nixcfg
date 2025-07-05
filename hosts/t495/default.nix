@@ -30,6 +30,7 @@
         direnv.enable = true;
         eza.enable = true;
         git.enable = true;
+        gh.enable = true;
         lazygit.enable = true;
         starship.enable = true;
         zoxide.enable = true;
