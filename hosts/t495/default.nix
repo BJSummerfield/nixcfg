@@ -10,12 +10,12 @@
     mine = {
       system = {
         hostName = "t495";
-        battery-notifications.enable = true;
         bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
         fonts.enable = true;
         openssh.enable = true;
       };
       desktop = {
+        battery-notifications.enable = true;
         niri.enable = true;
         fuzzel.enable = true;
         swaybg.enable = true;

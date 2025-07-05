@@ -11,7 +11,6 @@ in
     ./fonts.nix
     ./allowUnfree.nix
     ./polkit.nix
-    ./battery-notifications.nix
   ];
 
   options.mine.system = {
