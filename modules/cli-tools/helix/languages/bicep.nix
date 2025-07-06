@@ -7,12 +7,11 @@ in
 {
   options.mine.cli-tools.helix.lsp.bicep.enable = mkEnableOption "Enable bicep lsp for helix";
   config = mkIf cfg.enable {
-
+    mine.cli-tools.bicepLangServer.expose = true;
     home-manager.users.${user.name} = {
       programs.helix = {
         extraPackages = with pkgs; [
-          # TODO Fix This !!
-          # bicep-langserver
+          bicepLangServer
           dotnetCorePackages.dotnet_8.sdk
         ];
       };

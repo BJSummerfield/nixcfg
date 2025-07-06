@@ -1,5 +1,6 @@
 { ... }: {
   imports = [
+    ./bicep-langserver.nix
     ./direnv
     ./eza
     ./gh
