@@ -58,6 +58,7 @@
           lsp = {
             nix.enable = true;
             markdown.enable = true;
+            bicep.enable = true;
           };
         };
       };
