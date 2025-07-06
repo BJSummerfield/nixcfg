@@ -3,14 +3,14 @@ let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
   stylixModule = inputs.stylix.homeModules.stylix;
-  cfg = config.mine.desktop.theme.catppuccin;
+  cfg = config.mine.desktop.theme.stylix;
   fonts = config.mine.system.fonts;
   theme-ables = config.mine;
 in
 
 {
 
-  options.mine.desktop.theme.catppuccin.enable = mkEnableOption "Enable theme config";
+  options.mine.desktop.theme.stylix.enable = mkEnableOption "Enable theme config";
   config = mkIf cfg.enable {
     home-manager.users.${user.name} = {
 
@@ -25,11 +25,11 @@ in
         base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
         autoEnable = true;
         targets = {
-          firefox.enable = mkIf theme-ables.apps.firefox false;
-          alacritty.enable = mkIf theme-ables.apps.alacritty false;
-          helix.enable = mkIf theme-ables.cli-tools.helix false;
-          fish.enable = mkIf theme-ables.system.shell.fish false;
-          hyprlock.enable = mkIf theme-ables.desktop.hyprlock false;
+          firefox.enable = mkIf theme-ables.apps.firefox.enable false;
+          alacritty.enable = mkIf theme-ables.apps.alacritty.enable false;
+          helix.enable = mkIf theme-ables.cli-tools.helix.enable false;
+          fish.enable = mkIf theme-ables.system.shell.fish.enable false;
+          hyprlock.enable = mkIf theme-ables.desktop.hyprlock.enable false;
         };
 
         cursor = {

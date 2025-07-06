@@ -8,5 +8,7 @@
     ./lazygit
     ./starship
     ./zoxide
+    ./tailscale.nix
+    ./gamescope.nix
   ];
 }

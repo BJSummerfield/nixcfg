@@ -19,11 +19,10 @@ in
       catppuccin = {
         flavor = "mocha";
         accent = "blue";
-        fish.enable = mkIf theme-ables.system.shell.fish true;
-        fuzzel.enable = mkIf theme-ables.desktop.fuzzel true;
-        alacritty.enable = mkIf theme-ables.apps.alacritty true;
+        fish.enable = mkIf theme-ables.system.shell.fish.enable true;
+        fuzzel.enable = mkIf theme-ables.desktop.fuzzel.enable true;
+        alacritty.enable = mkIf theme-ables.apps.alacritty.enable true;
       };
-
     };
   };
 }

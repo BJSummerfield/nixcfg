@@ -38,8 +38,14 @@
         alacritty.enable = true;
         firefox.enable = true;
         keybase.enable = true;
+        steam = {
+          enable = true;
+          gamescope = true;
+          remotePlay = true;
+        };
       };
       cli-tools = {
+        tailscale.enable = true;
         direnv.enable = true;
         eza.enable = true;
         git.enable = true;
