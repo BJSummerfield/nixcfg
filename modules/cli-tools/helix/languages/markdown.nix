@@ -7,6 +7,7 @@ in
 {
   options.mine.cli-tools.helix.lsp.markdown.enable = mkEnableOption "Enable markdown lsp for helix";
   config = mkIf cfg.enable {
+    mine.cli-tools.mpls.expose = true;
     home-manager.users.${user.name} = {
       programs.helix = {
         languages = {
@@ -20,15 +21,15 @@ in
             name = "markdown";
             auto-format = true;
             language-servers = [
-            "marksman"
-            "mpls"
-             ];
+              "marksman"
+              "mpls"
+            ];
           }];
         };
-        # TODO fix this!
+
         extraPackages = with pkgs; [
           marksman
-          # mpls
+          mpls
         ];
       };
     };
