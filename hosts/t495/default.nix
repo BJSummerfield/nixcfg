@@ -8,7 +8,6 @@
 
   config = {
     mine = {
-      user.userName = "billy";
       system = {
         hostName = "t495";
         bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
