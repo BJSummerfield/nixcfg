@@ -48,14 +48,6 @@ in
         enable = true;
         plugins = with pkgs; [ gh ];
       };
-
-      programs.ssh = mkIf cfg.sshAgent {
-        enable = true;
-        extraConfig = ''
-          Host *
-              IdentityAgent ~/.1password/agent.sock              
-        '';
-      };
     };
   };
 }
