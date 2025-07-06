@@ -23,6 +23,10 @@
         hypridle.enable = true;
         hyprlock.enable = true;
         mako.enable = true;
+        theme = {
+          catppuccin.enable = true;
+          stylix.enable = true;
+        };
       };
       apps = {
         _1password = {

@@ -4,8 +4,8 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # catppuccin.url = "github:catppuccin/nix";
-    # stylix.url = "github:danth/stylix";
+    catppuccin.url = "github:catppuccin/nix";
+    stylix.url = "github:danth/stylix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     # nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-24.11";
     _1password-shell-plugins.url = "github:1Password/shell-plugins";

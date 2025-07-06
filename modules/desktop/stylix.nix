@@ -5,12 +5,12 @@ let
   stylixModule = inputs.stylix.homeModules.stylix;
   cfg = config.mine.desktop.theme.catppuccin;
   fonts = config.mine.system.fonts;
-  items = config.mine;
+  theme-ables = config.mine;
 in
 
 {
 
-  options.features.desktop.theme.enable = mkEnableOption "Enable theme config";
+  options.mine.desktop.theme.catppuccin.enable = mkEnableOption "Enable theme config";
   config = mkIf cfg.enable {
     home-manager.users.${user.name} = {
 
@@ -25,11 +25,11 @@ in
         base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
         autoEnable = true;
         targets = {
-          firefox.enable = mkIf items.apps.firefox false;
-          alacritty.enable = mkIf items.apps.alacritty false;
-          helix.enable = mkIf items.cli-tools.helix false;
-          fish.enable = mkIf items.system.shell.fish false;
-          hyprlock.enable = mkIf items.desktop.hyprlock false;
+          firefox.enable = mkIf theme-ables.apps.firefox false;
+          alacritty.enable = mkIf theme-ables.apps.alacritty false;
+          helix.enable = mkIf theme-ables.cli-tools.helix false;
+          fish.enable = mkIf theme-ables.system.shell.fish false;
+          hyprlock.enable = mkIf theme-ables.desktop.hyprlock false;
         };
 
         cursor = {
