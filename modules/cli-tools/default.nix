@@ -6,6 +6,7 @@
     ./git
     ./helix
     ./lazygit
+    ./mpls.nix
     ./starship
     ./zoxide
     ./tailscale.nix

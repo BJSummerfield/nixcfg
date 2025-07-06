@@ -57,6 +57,7 @@
           enable = true;
           lsp = {
             nix.enable = true;
+            markdown.enable = true;
           };
         };
       };
