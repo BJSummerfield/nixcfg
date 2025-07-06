@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.features.desktop.hyprlock;
+  cfg = config.mine.desktop.hyprlock;
   font = config.mine.system.fonts.name;
   base = "rgb(1e1e2e)";
   text = "rgb(cdd6f4)";
@@ -16,7 +16,7 @@ let
   yellow = "rgb(f9e2af)";
 in
 {
-  options.features.desktop.hyprlock.enable = mkEnableOption "Enable hyprlock config";
+  options.mine.desktop.hyprlock.enable = mkEnableOption "Enable hyprlock config";
   config = mkIf cfg.enable {
     home-manager.users.${user.name} = {
       programs.hyprlock = {
@@ -29,7 +29,7 @@ in
 
           background = {
             monitor = "";
-            path = ./wallpapers/${user.wallpaper};
+            path = "${./wallpapers/${user.wallpaper}}";
             blur_passes = 1;
             color = base;
           };

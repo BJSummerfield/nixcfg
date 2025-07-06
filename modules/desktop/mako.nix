@@ -5,7 +5,7 @@ let
   cfg = config.mine.desktop.mako;
 in
 {
-  options.features.desktop.mako.enable = mkEnableOption "Enable Mako config";
+  options.mine.desktop.mako.enable = mkEnableOption "Enable Mako config";
   config = mkIf cfg.enable {
     home-manager.users.${user.name} = {
       services.mako = {
