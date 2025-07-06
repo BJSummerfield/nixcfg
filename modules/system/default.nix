@@ -11,7 +11,7 @@ in
     ./fonts.nix
     ./allowUnfree.nix
     ./polkit.nix
-    ./ssh.nix
+    ./sshAgent.nix
   ];
 
   options.mine.system = {
