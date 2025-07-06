@@ -41,6 +41,10 @@ in
       default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP2G3biYuL3iFvhAXYNuVzvRpAQMmFFLek3KFZV4PfDu";
       description = "Git Signing Key";
     };
+    wallpaper = mkOption {
+      type = types.str;
+      default = "mountain.jpg";
+    };
     shell = mkOption {
       default = { };
       description = "Shell config for user";

@@ -1,23 +1,19 @@
 { pkgs, config, lib, ... }:
 let
-  inherit (lib) mkEnableOption mkIf mkOption types;
+  inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
   cfg = config.mine.desktop.swaybg;
 in
 {
   options.mine.desktop.swaybg = {
     enable = mkEnableOption "Enable swaybg config";
-    wallpaper = mkOption {
-      type = types.str;
-      default = "mountain.jpg";
-    };
   };
 
   config = mkIf cfg.enable {
 
     home-manager.users.${user.name} = {
       home.file = {
-        ".config/swaybg/${cfg.wallpaper}".source = ./wallpapers/${cfg.wallpaper};
+        ".config/swaybg/${user.wallpaper}".source = ./wallpapers/${user.wallpaper};
       };
 
       systemd.user.services.swaybg = {
@@ -30,7 +26,7 @@ in
         Service = {
           Type = "simple";
           ExecStart = ''
-            ${pkgs.swaybg}/bin/swaybg -m fill -i "${user.homeDir}/.config/swaybg/${cfg.wallpaper}"
+            ${pkgs.swaybg}/bin/swaybg -m fill -i "${user.homeDir}/.config/swaybg/${user.wallpaper}"
           '';
           Restart = "on-failure";
           RestartSec = "1s";

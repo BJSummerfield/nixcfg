@@ -20,6 +20,9 @@
         fuzzel.enable = true;
         swaybg.enable = true;
         polkit-gnome.enable = true;
+        hypridle.enable = true;
+        hyprlock.enable = true;
+        mako.enable = true;
       };
       apps = {
         _1password = {

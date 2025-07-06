@@ -1,6 +1,6 @@
 { lib, config, ... }:
 let
-  inherit (lib) mkEnableOption mkMerge mkIf mkOption types;
+  inherit (lib) mkEnableOption mkIf mkOption types;
   inherit (config.mine) user;
   cfg = config.mine.desktop.fuzzel;
 in
@@ -18,16 +18,12 @@ in
     home-manager.users.${user.name} = {
       programs.fuzzel = {
         enable = true;
-        settings = mkMerge [
-          {
-            border.radius = 0;
-          }
-          (mkIf cfg.uwsm {
-            main = {
-              launch-prefix = "uwsm app -- ";
-            };
-          })
-        ];
+        settings = {
+          border.radius = 0;
+          main = {
+            launch-prefix = mkIf cfg.uwsm "uwsm app -- ";
+          };
+        };
       };
     };
   };
