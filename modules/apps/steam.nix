@@ -17,7 +17,7 @@ in
   };
 
   config = mkIf cfg.enable {
-    mine.cli-tools.gamescope = mkIf cfg.gamescope true;
+    mine.cli-tools.gamescope.enable = mkIf cfg.gamescope true;
     programs.steam = {
       enable = true;
       gamescopeSession.enable = mkIf cfg.gamescope true;
