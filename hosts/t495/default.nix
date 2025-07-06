@@ -43,6 +43,7 @@
           gamescope = true;
           remotePlay = true;
         };
+        printer.enable = true;
       };
       cli-tools = {
         tailscale.enable = true;

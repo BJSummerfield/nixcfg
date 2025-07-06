@@ -6,5 +6,6 @@
     ./obs-studio.nix
     ./steam.nix
     ./_1password.nix
+    ./printer.nix
   ];
 }
