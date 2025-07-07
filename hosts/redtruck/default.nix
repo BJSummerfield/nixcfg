@@ -16,7 +16,6 @@
       };
       groupings.encoding.enable = true;
       desktop = {
-        battery-notifications.enable = true;
         fuzzel.enable = true;
         hypridle.enable = true;
         hyprlock.enable = true;
