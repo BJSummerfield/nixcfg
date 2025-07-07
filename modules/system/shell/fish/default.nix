@@ -26,7 +26,6 @@ in
           set fish_greeting # Disable greeting
         '';
         shellAliases = {
-          ls = mkIf cli-tools.eza.enable "eza";
           lg = mkIf cli-tools.lazygit.enable "lazygit";
         };
       };
