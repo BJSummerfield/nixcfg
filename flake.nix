@@ -20,6 +20,12 @@
           };
           modules = [ ./hosts/t495 ];
         };
+        redtruck = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/redtruck ];
+        };
       };
     };
 }
