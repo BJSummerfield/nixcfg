@@ -10,5 +10,6 @@
     ./stylix.nix
     ./swaybg.nix
     ./polkit-gnome.nix
+    ./xwayland-satellite.nix
   ];
 }
