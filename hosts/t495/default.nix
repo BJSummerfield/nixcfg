@@ -49,7 +49,7 @@
         };
       };
       cli-tools = {
-        comq.enable = true;
+        encode_queue.enable = true;
         tailscale.enable = true;
         direnv.enable = true;
         eza.enable = true;

@@ -2,21 +2,21 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.cli-tools.comq;
+  cfg = config.mine.cli-tools.encode_queue;
 in
 {
-  options.mine.cli-tools.comq = {
-    expose = mkEnableOption "Expose the comq package via an overlay";
+  options.mine.cli-tools.encode_queue = {
+    expose = mkEnableOption "Expose the encode_queue package via an overlay";
     enable = mkEnableOption "Install the package from the user";
   };
 
   config = mkIf (cfg.enable || cfg.expose) {
     nixpkgs.overlays = [
       (self: super: {
-        encodeq = super.rustPlatform.buildRustPackage {
+        encode_queue = super.rustPlatform.buildRustPackage {
           #fixes build warning in nixos
           useFetchCargoVendor = true;
-          pname = "comq";
+          pname = "encode_queue";
           version = "unstable";
 
           src = super.fetchFromGitHub {
@@ -31,7 +31,7 @@ in
       })
     ];
     home-manager.users.${user.name} = mkIf cfg.enable {
-      home.packages = [ pkgs.comq ];
+      home.packages = [ pkgs.encode_queue ];
     };
   };
 }

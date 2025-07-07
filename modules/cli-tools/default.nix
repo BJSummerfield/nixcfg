@@ -12,6 +12,6 @@
     ./zoxide
     ./tailscale.nix
     ./gamescope.nix
-    ./comq.nix
+    ./encode_queue.nix
   ];
 }
