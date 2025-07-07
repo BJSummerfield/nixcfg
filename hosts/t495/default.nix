@@ -35,8 +35,8 @@
           sshAgent = true;
           gitSigning = true;
           ghPlugin = true;
-          obs-studio = true;
         };
+        obs-studio.enable = true;
         alacritty.enable = true;
         firefox.enable = true;
         keybase.enable = true;

@@ -2,10 +2,10 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.features.cli.encoding;
+  cfg = config.mine.groupings.encoding;
 in
 {
-  options.features.groupings.encoding.enable = mkEnableOption "enable encoding configuration";
+  options.mine.groupings.encoding.enable = mkEnableOption "enable encoding configuration";
 
   config = mkIf cfg.enable {
     mine.cli-tools.encode_queue.enable = true;
