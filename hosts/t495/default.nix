@@ -43,9 +43,13 @@
           gamescope = true;
           remotePlay = true;
         };
-        printer.enable = true;
+        printer = {
+          enable = true;
+          avahi = true;
+        };
       };
       cli-tools = {
+        comq.enable = true;
         tailscale.enable = true;
         direnv.enable = true;
         eza.enable = true;
