@@ -50,7 +50,6 @@ in
       git
       helix
       bottom
-      # tailscale
     ];
   };
 }
