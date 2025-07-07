@@ -20,9 +20,9 @@
         fuzzel.enable = true;
         hypridle.enable = true;
         hyprlock.enable = true;
-        mako-gnome.enable = true;
+        mako.enable = true;
         niri.enable = true;
-        polkit.enable = true;
+        polkit-gnome.enable = true;
         swaybg.enable = true;
         theme = {
           catppuccin.enable = true;
