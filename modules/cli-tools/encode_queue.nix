@@ -6,11 +6,10 @@ let
 in
 {
   options.mine.cli-tools.encode_queue = {
-    expose = mkEnableOption "Expose the encode_queue package via an overlay";
     enable = mkEnableOption "Install the package from the user";
   };
 
-  config = mkIf (cfg.enable || cfg.expose) {
+  config = mkIf cfg.enable {
     nixpkgs.overlays = [
       (self: super: {
         encode_queue = super.rustPlatform.buildRustPackage {

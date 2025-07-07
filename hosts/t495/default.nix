@@ -14,6 +14,7 @@
         fonts.enable = true;
         openssh.enable = true;
       };
+      groupings.encoding.enable = true;
       desktop = {
         battery-notifications.enable = true;
         niri.enable = true;
@@ -34,6 +35,7 @@
           sshAgent = true;
           gitSigning = true;
           ghPlugin = true;
+          obs-studio = true;
         };
         alacritty.enable = true;
         firefox.enable = true;

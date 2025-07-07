@@ -5,6 +5,7 @@ let
 in
 {
 
+  # TODO Fix system imports file structure
   imports = [
     ./shell/fish
     ./openssh.nix
