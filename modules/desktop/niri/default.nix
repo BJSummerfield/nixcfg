@@ -13,6 +13,7 @@ in
   config = mkIf cfg.enable {
     programs.niri.enable = true;
     mine.desktop.xwayland-satellite.enable = true;
+    mine.apps._1password.silentStartOnGraphical = true;
 
     home-manager.users.${user.name} = {
       xdg.portal = {
@@ -33,7 +34,7 @@ in
 
       home.file.".config/niri/config.kdl".text = ''
         // https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
-
+        
         environment {
             DISPLAY ":0"
         }

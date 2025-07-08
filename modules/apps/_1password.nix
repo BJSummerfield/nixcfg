@@ -10,6 +10,7 @@ in
 {
   options.mine.apps._1password = {
     enable = mkEnableOption "Enable 1password config";
+    silentStartOnGraphical = mkEnableOption "Start 1Password silently with the graphical session";
 
     sshAgent = mkOption {
       type = types.bool;
@@ -47,6 +48,27 @@ in
       programs._1password-shell-plugins = mkIf cfg.ghPlugin {
         enable = true;
         plugins = with pkgs; [ gh ];
+      };
+
+      # makes a systemd service that runs 1password --silent on execution.
+      systemd.user.services."1password-silent" = mkIf cfg.silentStartOnGraphical {
+        Unit = {
+          Description = "Start 1Password in the background";
+          PartOf = [ "graphical-session.target" ];
+          After = [ "graphical-session.target" ];
+        };
+
+        Service = {
+          Type = "simple";
+          Environment = [ "DISPLAY=:0" ];
+          ExecStart = "${config.programs._1password-gui.package}/bin/1password --silent";
+          Restart = "on-failure";
+          RestartSec = "1s";
+        };
+
+        Install = {
+          WantedBy = [ "graphical-session.target" ];
+        };
       };
     };
   };

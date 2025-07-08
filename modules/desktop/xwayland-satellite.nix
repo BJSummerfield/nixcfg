@@ -29,7 +29,7 @@ in
         };
 
         Install = {
-          WantedBy = [ "niri.service" ];
+          WantedBy = [ "graphical-session.target" ];
         };
       };
     };
