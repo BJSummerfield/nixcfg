@@ -54,7 +54,7 @@ in
         layout {
             gaps 10
             background-color "transparent"
-            center-focused-column "always"
+            center-focused-column "on-overflow"
             preset-column-widths {
                 proportion 0.33333
                 proportion 0.5
