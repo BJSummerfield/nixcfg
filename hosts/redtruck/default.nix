@@ -35,8 +35,7 @@
           gitSigning = true;
           ghPlugin = true;
         };
-        # alacritty.enable = true;
-        ghostty.enable = true;
+        alacritty.enable = true;
         firefox.enable = true;
         keybase.enable = true;
         obs-studio.enable = true;
