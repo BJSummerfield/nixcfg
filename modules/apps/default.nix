@@ -1,11 +1,12 @@
 { ... }: {
   imports = [
+    ./_1password.nix
     ./alacritty.nix
     ./firefox.nix
+    ./ghostty.nix
     ./keybase.nix
     ./obs-studio.nix
-    ./steam.nix
-    ./_1password.nix
     ./printer.nix
+    ./steam.nix
   ];
 }

@@ -22,6 +22,7 @@ in
         fish.enable = mkIf theme-ables.system.shell.fish.enable true;
         fuzzel.enable = mkIf theme-ables.desktop.fuzzel.enable true;
         alacritty.enable = mkIf theme-ables.apps.alacritty.enable true;
+        ghostty.enable = mkIf theme-ables.apps.ghostty.enable true;
       };
     };
   };

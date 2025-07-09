@@ -108,6 +108,7 @@ in
         binds {
             Mod+Shift+Slash { show-hotkey-overlay; }
             ${optionalString mine.apps.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
+            ${optionalString mine.apps.ghostty.enable ''Mod+Return { spawn "ghostty"; }''}
             ${optionalString mine.desktop.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
             ${optionalString mine.desktop.hyprlock.enable ''Super+Alt+L { spawn "hyprlock"; }''}
     
