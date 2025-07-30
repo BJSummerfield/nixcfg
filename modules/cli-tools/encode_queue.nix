@@ -14,7 +14,6 @@ in
       (self: super: {
         encode_queue = super.rustPlatform.buildRustPackage {
           #fixes build warning in nixos
-          useFetchCargoVendor = true;
           pname = "encode_queue";
           version = "unstable";
 
