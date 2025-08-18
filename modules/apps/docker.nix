@@ -13,6 +13,7 @@ in
       enable = false;
       rootless = {
         enable = true;
+        setSocketVariable = true;
       };
     };
   };
