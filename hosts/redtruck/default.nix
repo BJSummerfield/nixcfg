@@ -36,6 +36,7 @@
           ghPlugin = true;
         };
         alacritty.enable = true;
+        docker.enable = true;
         firefox.enable = true;
         keybase.enable = true;
         obs-studio.enable = true;
