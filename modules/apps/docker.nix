@@ -1,7 +1,6 @@
 { lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  inherit (config.mine) user;
   cfg = config.mine.apps.docker;
 in
 {
@@ -10,12 +9,10 @@ in
   };
 
   config = mkIf cfg.enable {
-    home-manager.users.${user.name} = {
-      virtualisation.docker = {
-        enable = false;
-        rootless = {
-          enable = true;
-        };
+    virtualisation.docker = {
+      enable = false;
+      rootless = {
+        enable = true;
       };
     };
   };
