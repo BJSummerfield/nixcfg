@@ -5,7 +5,7 @@ let
   cfg = config.mine.apps.docker;
 in
 {
-  options.mine.apps.ghostty = {
+  options.mine.apps.docker = {
     enable = mkEnableOption "docker Config";
   };
 
