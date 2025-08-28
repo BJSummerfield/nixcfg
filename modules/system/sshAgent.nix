@@ -13,7 +13,8 @@ in
     home-manager.users.${user.name} = {
       #Only for 1pass for now
       programs.ssh = mkIf _1passwordAgent {
-        enable = true;
+        enableDefaultConfig = true;
+        matchBlocks = "*";
         extraConfig = ''
           Host *
               IdentityAgent ~/.1password/agent.sock              
