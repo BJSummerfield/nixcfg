@@ -13,7 +13,7 @@ in
     home-manager.users.${user.name} = {
       #Only for 1pass for now
       programs.ssh = mkIf _1passwordAgent {
-        enableDefaultConfig = true;
+        # enableDefaultConfig = true;
         matchBlocks = "*";
         extraConfig = ''
           Host *
