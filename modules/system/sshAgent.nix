@@ -11,10 +11,21 @@ in
 
   config = {
     home-manager.users.${user.name} = {
-      #Only for 1pass for now
       programs.ssh = mkIf _1passwordAgent {
-        # enableDefaultConfig = true;
-        # matchBlocks = "*";
+        enable = true;
+        enableDefaultConfig = false;
+        matchBlocks."*" = {
+          forwardAgent = false;
+          addKeysToAgent = "no";
+          compression = false;
+          serverAliveInterval = 0;
+          serverAliveCountMax = 3;
+          hashKnownHosts = false;
+          userKnownHostsFile = "~/.ssh/known_hosts";
+          controlMaster = "no";
+          controlPath = "~/.ssh/master-%r@%n:%p";
+          controlPersist = "no";
+        };
         extraConfig = ''
           Host *
               IdentityAgent ~/.1password/agent.sock              

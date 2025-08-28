@@ -33,7 +33,6 @@ in
 
   config = mkIf cfg.enable {
     mine.system.allowUnfree.enable = true;
-    # Enable gh if the plugin is enabled
     mine.cli-tools.gh.enable = mkIf cfg.ghPlugin true;
 
     programs._1password.enable = true;
