@@ -48,6 +48,7 @@ in
         ${optionalString (mine.system.hostName == "redtruck") ''
                 output "DP-1" {
                 mode "3440x1440@174.963"
+                variable-refresh-rate on-demand=true
             }
         ''}
 
@@ -79,6 +80,14 @@ in
             layer-rule {
                 match namespace="^wallpaper$"
                 place-within-backdrop true
+            }
+        ''}
+
+        ${optionalString (mine.system.hostName == "redtruck") ''
+            window-rule {
+                match app-id="gamescope"
+                variable-refresh-rate 
+
             }
         ''}
 
