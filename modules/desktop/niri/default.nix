@@ -86,7 +86,7 @@ in
         ${optionalString (mine.system.hostName == "redtruck") ''
             window-rule {
                 match app-id="gamescope"
-                variable-refresh-rate 
+                variable-refresh-rate true
 
             }
         ''}
