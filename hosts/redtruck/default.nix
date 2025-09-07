@@ -51,7 +51,6 @@
         };
       };
       cli-tools = {
-        gamescope.overlay = true;
         direnv.enable = true;
         eza.enable = true;
         gh.enable = true;

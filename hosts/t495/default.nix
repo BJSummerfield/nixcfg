@@ -48,10 +48,8 @@
         };
       };
       cli-tools = {
-
         direnv.enable = true;
         eza.enable = true;
-        gamescope.overlay = true;
         gh.enable = true;
         git.enable = true;
         helix = {
