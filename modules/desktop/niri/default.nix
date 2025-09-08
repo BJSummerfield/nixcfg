@@ -8,29 +8,12 @@ in
 {
   options.mine.desktop.niri = {
     enable = mkEnableOption "Enable niri config";
-    overlay = mkEnableOption "Use Niri Overlay";
   };
 
   config = mkIf cfg.enable {
     programs.niri.enable = true;
     mine.desktop.xwayland-satellite.enable = true;
     mine.apps._1password.silentStartOnGraphical = true;
-
-    nixpkgs.overlays = mkIf cfg.overlay [
-      (self: super: {
-        niri = super.niri.overrideAttrs {
-          version = "25.05.1";
-          src = super.fetchFromGitHub {
-            owner = "YaLTeR";
-            repo = "niri";
-            tag = "v25.05.1";
-            fetchSubmodules = true;
-            hash = "sha256-MJlC+9nV3GWUbcN49mikpBrZZTqFIOZRAdm36r6QFlA=";
-          };
-          cargoHash = "";
-        };
-      })
-    ];
 
     home-manager.users.${user.name} = {
       xdg.portal = {
