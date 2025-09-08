@@ -47,7 +47,6 @@
         steam = {
           enable = true;
           gamescope = true;
-          remotePlay = true;
         };
       };
       cli-tools = {
