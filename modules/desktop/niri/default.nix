@@ -87,6 +87,13 @@ in
         ${optionalString (mine.system.hostName == "redtruck") ''
             window-rule {
                 match app-id="gamescope"
+                match app-id="dota2"
+                match app-id="Hollow Knight Silksong"
+                match app-id="steam_app_553850"
+                match app-id="hollow_knight.x86_64"
+                match app-id="steam_app_1239080"
+                match app-id="steam_app_2708450"
+
                 variable-refresh-rate true
 
             }
