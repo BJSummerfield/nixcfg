@@ -8,6 +8,7 @@ in
 {
   options.mine.desktop.niri = {
     enable = mkEnableOption "Enable niri config";
+    overlay = mkEnableOption "Use Niri Overlay";
   };
 
   config = mkIf cfg.enable {
@@ -30,6 +31,21 @@ in
         wl-clipboard
         xwayland-satellite
         nautilus
+      ];
+
+      nixpkgs.overlays = mkIf cfg.overlay [
+        (self: super: {
+          niri = super.niri.overrideAttrs {
+            version = "25.05.1";
+            src = super.fetchFromGitHub {
+              owner = "YaLTeR";
+              repo = "niri";
+              tag = "25.05.1";
+              fetchSubmodules = true;
+              hash = "";
+            };
+          };
+        })
       ];
 
       home.file.".config/niri/config.kdl".text = ''

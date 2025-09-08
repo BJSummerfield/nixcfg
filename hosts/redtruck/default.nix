@@ -20,7 +20,10 @@
         hypridle.enable = true;
         hyprlock.enable = true;
         mako.enable = true;
-        niri.enable = true;
+        niri = {
+          enable = true;
+          overlay = true;
+        };
         polkit-gnome.enable = true;
         swaybg.enable = true;
         theme = {
@@ -46,13 +49,14 @@
         };
         steam = {
           enable = true;
-          gamescope = true;
+          # gamescope = true;
           remotePlay = true;
         };
       };
       cli-tools = {
         direnv.enable = true;
         eza.enable = true;
+        # gamescope.overlay = true;
         gh.enable = true;
         git.enable = true;
         helix = {
