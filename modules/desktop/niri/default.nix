@@ -16,6 +16,22 @@ in
     mine.desktop.xwayland-satellite.enable = true;
     mine.apps._1password.silentStartOnGraphical = true;
 
+    nixpkgs.overlays = mkIf cfg.overlay [
+      (self: super: {
+        niri = super.niri.overrideAttrs {
+          version = "25.05.1";
+          src = super.fetchFromGitHub {
+            owner = "YaLTeR";
+            repo = "niri";
+            tag = "v25.05.1";
+            fetchSubmodules = true;
+            hash = "sha256-MJlC+9nV3GWUbcN49mikpBrZZTqFIOZRAdm36r6QFlA=";
+          };
+          cargoHash = "";
+        };
+      })
+    ];
+
     home-manager.users.${user.name} = {
       xdg.portal = {
         enable = true;
@@ -33,20 +49,6 @@ in
         nautilus
       ];
 
-      nixpkgs.overlays = mkIf cfg.overlay [
-        (self: super: {
-          niri = super.niri.overrideAttrs {
-            version = "25.05.1";
-            src = super.fetchFromGitHub {
-              owner = "YaLTeR";
-              repo = "niri";
-              tag = "25.05.1";
-              fetchSubmodules = true;
-              hash = "";
-            };
-          };
-        })
-      ];
 
       home.file.".config/niri/config.kdl".text = ''
         // https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
