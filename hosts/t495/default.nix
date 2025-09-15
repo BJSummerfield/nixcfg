@@ -44,7 +44,6 @@
         };
         steam = {
           enable = true;
-          gamescope = true;
         };
       };
       cli-tools = {
