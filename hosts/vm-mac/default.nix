@@ -10,7 +10,6 @@
     mine = {
       system = {
         hostName = "vm-mac";
-        bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
         fonts.enable = true;
         openssh.enable = true;
       };

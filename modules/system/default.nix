@@ -1,6 +1,6 @@
 { lib, pkgs, config, ... }:
 let
-  inherit (lib) mkOption types;
+  inherit (lib) mkOption mkIf types mkMerge;
   inherit (config.mine.system) bootPartitionUuid hostName;
 in
 {
@@ -17,8 +17,9 @@ in
 
   options.mine.system = {
     bootPartitionUuid = mkOption {
-      type = types.str;
+      type = lib.types.nullOr lib.types.str;
       description = "The UUID of the encrypted root partition.";
+      default = null;
     };
     hostName = mkOption {
       type = types.str;
@@ -26,35 +27,38 @@ in
     };
   };
 
-  config = {
-    system.stateVersion = "24.11";
+  config = mkMerge [
+    (mkIf (bootPartitionUuid != null) {
+      boot.initrd.luks.devices."luks-${bootPartitionUuid}".device = "/dev/disk/by-uuid/${bootPartitionUuid}";
+    })
+    {
+      system.stateVersion = "24.11";
 
-    nix = {
-      settings.experimental-features = [
-        "nix-command"
-        "flakes"
-      ];
-      gc = {
-        automatic = true;
-        options = "--delete-older-than 30d";
+      nix = {
+        settings.experimental-features = [
+          "nix-command"
+          "flakes"
+        ];
+        gc = {
+          automatic = true;
+          options = "--delete-older-than 30d";
+        };
+        optimise.automatic = true;
       };
-      optimise.automatic = true;
-    };
 
-    boot.loader.systemd-boot.enable = true;
-    boot.loader.efi.canTouchEfiVariables = true;
-    boot.initrd.luks.devices."luks-${bootPartitionUuid}".device = "/dev/disk/by-uuid/${bootPartitionUuid}";
+      boot.loader.systemd-boot.enable = true;
+      boot.loader.efi.canTouchEfiVariables = true;
+      networking.networkmanager.enable = true;
+      networking.hostName = hostName;
 
-    networking.networkmanager.enable = true;
-    networking.hostName = hostName;
+      time.timeZone = "America/Chicago";
 
-    time.timeZone = "America/Chicago";
-
-    environment.systemPackages = with pkgs; [
-      wget
-      git
-      helix
-      bottom
-    ];
-  };
+      environment.systemPackages = with pkgs; [
+        wget
+        git
+        helix
+        bottom
+      ];
+    }
+  ];
 }
