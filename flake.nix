@@ -25,6 +25,12 @@
           };
           modules = [ ./hosts/redtruck ];
         };
+        vm-mac = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/vm-mac ];
+        };
       };
     };
 }
