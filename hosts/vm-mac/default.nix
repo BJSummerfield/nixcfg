@@ -15,8 +15,6 @@
       };
       desktop = {
         fuzzel.enable = true;
-        hypridle.enable = true;
-        hyprlock.enable = true;
         mako.enable = true;
         niri.enable = true;
         polkit-gnome.enable = true;
@@ -35,7 +33,6 @@
         };
         alacritty.enable = true;
         firefox.enable = true;
-        keybase.enable = true;
       };
       cli-tools = {
         direnv.enable = true;
@@ -52,7 +49,6 @@
         };
         lazygit.enable = true;
         starship.enable = true;
-        tailscale.enable = true;
         zoxide.enable = true;
       };
     };
