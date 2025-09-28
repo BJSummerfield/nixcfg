@@ -12,9 +12,9 @@ in
       programs.helix = {
         languages = {
           language-server = {
-            ty = {
-              command = "ty";
-              args = [ "server" ];
+            ruff = {
+              command = "ruff-lsp";
+              config.settings.args = [ "--ignore" "E501" ];
             };
           };
           language = [{
@@ -22,7 +22,9 @@ in
             auto-format = true;
           }];
         };
-        # extraPackages = with pkgs; [ ];
+        extraPackages = with pkgs; [
+          ruff-lsp
+        ];
       };
     };
   };
