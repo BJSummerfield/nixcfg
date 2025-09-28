@@ -11,19 +11,13 @@ in
     home-manager.users.${user.name} = {
       programs.helix = {
         languages = {
-          language-server = {
-            ruff = {
-              command = "ruff-lsp";
-              config.settings.args = [ "--ignore" "E501" ];
-            };
-          };
           language = [{
             name = "python";
             auto-format = true;
           }];
         };
         extraPackages = with pkgs; [
-          ruff-lsp
+          ruff
         ];
       };
     };
