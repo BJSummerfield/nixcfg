@@ -54,9 +54,12 @@
         helix = {
           enable = true;
           lsp = {
+            json.enable = true;
             markdown.enable = true;
             nix.enable = true;
             rust.enable = true;
+            toml.enable = true;
+            yaml.enable = true;
           };
         };
         lazygit.enable = true;
