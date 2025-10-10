@@ -218,6 +218,7 @@ in
             Mod+7 { focus-workspace 7; }
             Mod+8 { focus-workspace 8; }
             Mod+9 { focus-workspace 9; }
+
             Mod+Shift+1 { move-column-to-workspace 1; }
             Mod+Shift+2 { move-column-to-workspace 2; }
             Mod+Shift+3 { move-column-to-workspace 3; }
@@ -227,6 +228,16 @@ in
             Mod+Shift+7 { move-column-to-workspace 7; }
             Mod+Shift+8 { move-column-to-workspace 8; }
             Mod+Shift+9 { move-column-to-workspace 9; }
+
+            Ctrl+Shift+1 { move-column-to-workspace 1 --focus=false; }
+            Ctrl+Shift+2 { move-column-to-workspace 2 --focus=false; }
+            Ctrl+Shift+3 { move-column-to-workspace 3 --focus=false; }
+            Ctrl+Shift+4 { move-column-to-workspace 4 --focus=false; }
+            Ctrl+Shift+5 { move-column-to-workspace 5 --focus=false; }
+            Ctrl+Shift+6 { move-column-to-workspace 6 --focus=false; }
+            Ctrl+Shift+7 { move-column-to-workspace 7 --focus=false; }
+            Ctrl+Shift+8 { move-column-to-workspace 8 --focus=false; }
+            Ctrl+Shift+9 { move-column-to-workspace 9 --focus=false; }
             
             Mod+BracketLeft  { consume-or-expel-window-left; }
             Mod+BracketRight { consume-or-expel-window-right; }
