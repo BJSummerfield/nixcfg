@@ -15,7 +15,7 @@ in
         ffmpeg
         subtitleedit
         makemkv
-        # abcde
+        abcde
         picard
       ];
     };
