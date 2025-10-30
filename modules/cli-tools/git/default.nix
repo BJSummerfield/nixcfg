@@ -14,10 +14,12 @@ in
     home-manager.users.${user.name} = {
       programs.git = {
         enable = true;
-        userName = "${user.git-user}";
-        userEmail = "${user.email}";
-        extraConfig = mkMerge [
+        settings = mkMerge [
           {
+            user = {
+              name = "${user.git-user}";
+              email = "${user.email}";
+            };
             init.defaultBranch = "main";
           }
           (mkIf _1passSigning {
