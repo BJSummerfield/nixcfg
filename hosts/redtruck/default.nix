@@ -14,7 +14,7 @@
         fonts.enable = true;
         openssh.enable = true;
       };
-      groupings.encoding = {
+      encoding = {
         encode_queue = true;
         ffmpeg = true;
         subtitleedit = true;
@@ -46,7 +46,6 @@
         docker.enable = true;
         firefox.enable = true;
         keybase.enable = true;
-        jellyfin.enable = true;
         obs-studio.enable = true;
         printer = {
           enable = true;
@@ -70,6 +69,7 @@
             rust.enable = true;
           };
         };
+        jellyfin-tui.enable = true;
         lazygit.enable = true;
         starship.enable = true;
         tailscale.enable = true;

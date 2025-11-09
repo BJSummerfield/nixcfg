@@ -6,6 +6,7 @@
     ./gh
     ./git
     ./helix
+    ./jellyfin-tui.nix
     ./lazygit
     ./mpls.nix
     ./starship
