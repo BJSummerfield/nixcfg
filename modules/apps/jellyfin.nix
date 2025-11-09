@@ -1,4 +1,4 @@
-{ lib, config, ... }:
+{ pkgs, lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
@@ -6,14 +6,14 @@ let
 in
 {
   options.mine.apps.jellyfin = {
-    tui = mkEnableOption "Enable Jellyfin tui";
-    media-player = mkEnableOption "Enable Jellyfin Media Player";
+    enable = mkEnableOption "Enable Jellyfin-tui config";
   };
 
-  config = {
+  config = mkIf cfg.enable {
     home-manager.users.${user.name} = {
-      programs.jellyfin-tui = mkIf cfg.tui;
-      programs.jellyfin-media-player = mkIf cfg.mediaplayer;
+      home.packages = with pkgs; [
+        jellyfin-tui
+      ];
     };
   };
 }
