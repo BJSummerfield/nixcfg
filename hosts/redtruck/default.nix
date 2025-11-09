@@ -14,7 +14,14 @@
         fonts.enable = true;
         openssh.enable = true;
       };
-      groupings.encoding.enable = true;
+      groupings.encoding = {
+        encode_queue = true;
+        ffmpeg = true;
+        subtitleedit = true;
+        makemkv = true;
+        abcde = true;
+        picard = true;
+      };
       desktop = {
         fuzzel.enable = true;
         hypridle.enable = true;
@@ -39,10 +46,7 @@
         docker.enable = true;
         firefox.enable = true;
         keybase.enable = true;
-        jellyfin = {
-          media-player = true;
-          tui = true;
-        };
+        jellyfin.enable = true;
         obs-studio.enable = true;
         printer = {
           enable = true;
