@@ -39,6 +39,10 @@
         docker.enable = true;
         firefox.enable = true;
         keybase.enable = true;
+        jellyfin = {
+          media-player = true;
+          tui = true;
+        };
         obs-studio.enable = true;
         printer = {
           enable = true;
