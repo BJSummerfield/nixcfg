@@ -37,9 +37,6 @@
         };
         alacritty.enable = true;
         firefox.enable = true;
-        jellyfin = {
-          tui.enable = true;
-        };
         keybase.enable = true;
         printer = {
           enable = true;
@@ -65,6 +62,7 @@
             yaml.enable = true;
           };
         };
+        jellyfin-tui.enable = true;
         lazygit.enable = true;
         starship.enable = true;
         tailscale.enable = true;
