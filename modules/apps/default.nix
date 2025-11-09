@@ -5,6 +5,7 @@
     ./docker.nix
     ./firefox.nix
     ./ghostty.nix
+    ./jellyfin
     ./keybase.nix
     ./obs-studio.nix
     ./printer.nix
