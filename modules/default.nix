@@ -3,7 +3,7 @@
     ./apps
     ./user
     ./system
-    ./groupings
+    ./encoding
     ./cli-tools
     ./desktop
   ];

@@ -37,6 +37,9 @@
         };
         alacritty.enable = true;
         firefox.enable = true;
+        jellyfin = {
+          tui.enable = true;
+        };
         keybase.enable = true;
         printer = {
           enable = true;
