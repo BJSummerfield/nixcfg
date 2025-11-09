@@ -38,6 +38,10 @@
         alacritty.enable = true;
         firefox.enable = true;
         keybase.enable = true;
+        jellyfinMediaPlayer = {
+          enable = true;
+          overlay = true;
+        };
         printer = {
           enable = true;
           avahi = true;

@@ -2,10 +2,10 @@
 let
   inherit (lib) mkEnableOption mkIf optionals;
   inherit (config.mine) user;
-  cfg = config.mine.apps."jellyfin-media-player";
+  cfg = config.mine.apps.jellyfinMediaPlayer;
 in
 {
-  options.mine.apps."jellyfin-media-player" = {
+  options.mine.apps.jellyfinMediaPlayer = {
     enable = mkEnableOption "Enable Jellyfin Media Player";
     overlay = mkEnableOption "Use Qt6 overlay build (Recommended)";
   };
@@ -22,7 +22,7 @@ in
     nixpkgs.overlays = mkIf cfg.overlay [
       (self: super: {
         jellyfin-media-player =
-          super.callPackage ../pkgs/jellyfin-media-player.package.nix { };
+          super.callPackage ./jellyfin-media-player.package.nix { };
       })
     ];
   };
