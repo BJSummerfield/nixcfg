@@ -2,10 +2,10 @@
 let
   inherit (lib) mkEnableOption mkIf optionals;
   inherit (config.mine) user;
-  cfg = config.mine.groupings.encoding;
+  cfg = config.mine.encoding;
 in
 {
-  options.mine.groupings.encoding = {
+  options.mine.encoding = {
     encode_queue = mkEnableOption "Enable encode_queue cli tool";
     ffmpeg = mkEnableOption "Enable ffmpeg";
     subtitleedit = mkEnableOption "Enable subtitleedit";
