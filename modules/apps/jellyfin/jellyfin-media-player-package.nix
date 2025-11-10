@@ -1,6 +1,10 @@
 # Code from 
 # https://github.com/mio-19/nurpkgs/blob/bba2f2e4f1459ac2c98ff601dbaf1891160fc30a/pkgs/jellyfin-media-player/default.nix
 
+#
+# THIS IS THE FULL, CORRECTED FILE
+# pkgs/jellyfin-media-player/default.nix
+#
 { lib
 , fetchFromGitHub
 , fetchpatch
@@ -23,8 +27,8 @@
 , qtwayland
 , qtwebchannel
 , qtwebengine
-, wrapQtAppsHook
-, withDbus ? stdenv.hostPlatform.isLinux
+, # wrapQtAppsHook,  <-- WE ARE REMOVING THIS
+  withDbus ? stdenv.hostPlatform.isLinux
 ,
 }:
 
@@ -67,11 +71,7 @@ stdenv.mkDerivation rec {
     ninja
     pkg-config
     python3
-  ]
-  ++ lib.optionals (!stdenv.hostPlatform.isDarwin) [
-    wrapQtAppsHook
   ];
-
   cmakeFlags = [
     "-DQTROOT=${qtbase}"
     "-GNinja"
@@ -85,10 +85,47 @@ stdenv.mkDerivation rec {
     "-DCMAKE_SKIP_INSTALL_RPATH=ON"
   ];
 
-  # On Darwin, we handle Qt environment setup manually to avoid broken library wrapping
-  dontWrapQtApps = stdenv.hostPlatform.isDarwin;
+  dontWrapQtApps = true;
 
-  postInstall = lib.optionalString stdenv.hostPlatform.isDarwin ''
+  postInstall = lib.optionalString stdenv.hostPlatform.isLinux ''
+    # The real binary is at $out/bin/jellyfinmediaplayer.
+    # We move it and replace it with our script.
+    mv $out/bin/jellyfinmediaplayer $out/bin/.jellyfinmediaplayer-wrapped
+
+    # Create our new wrapper script
+    cat > "$out/bin/jellyfinmediaplayer" << 'EOF'
+    #!/binsh
+
+    # THIS IS THE FIX: Force the UTF-8 locale
+    export LANG="en_US.UTF-8"
+    export LC_ALL="en_US.UTF-8"
+
+    # Manually set all the Qt plugin paths that wrapQtAppsHook
+    # was supposed to set. (These are copied from your Darwin script)
+    export QT_PLUGIN_PATH="${qtbase}/${qtbase.qtPluginPrefix}:${qtwebengine}/${qtbase.qtPluginPrefix}"
+    export QT_QPA_PLATFORM_PLUGIN_PATH="${qtbase}/${qtbase.qtPluginPrefix}/platforms"
+    export QML2_IMPORT_PATH="${qtbase}/${qtbase.qtQmlPrefix}:${qtdeclarative}/${qtbase.qtQmlPrefix}:${qtwebchannel}/${qtbase.qtQmlPrefix}:${qtwebengine}/${qtbase.qtQmlPrefix}"
+
+    # Also fix the "DisplayManager" error by forcing Wayland
+    export QT_QPA_PLATFORM="wayland"
+
+    # Execute the real binary
+    exec "$out/bin/.jellyfinmediaplayer-wrapped" "$@"
+    EOF
+
+    # Substitute the Nix store paths into our new script
+    substituteInPlace "$out/bin/jellyfinmediaplayer" \
+      --replace-fail '$out' "$out" \
+      --replace-fail '${qtbase}' "${qtbase}" \
+      --replace-fail '${qtdeclarative}' "${qtdeclarative}" \
+      --replace-fail '${qtwebchannel}' "${qtwebchannel}" \
+      --replace-fail '${qtwebengine}' "${qtwebengine}"
+
+    # Make the script executable
+    chmod +x "$out/bin/jellyfinmediaplayer"
+  ''
+  # The original Darwin postInstall script follows:
+  + lib.optionalString stdenv.hostPlatform.isDarwin ''
     mkdir -p $out/bin $out/Applications
     mv "$out/Jellyfin Media Player.app" $out/Applications
 
@@ -120,7 +157,7 @@ stdenv.mkDerivation rec {
 
   postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
     # Fix all Qt framework references to point to Nix store instead of app bundle
-    binary="$out/Applications/Jellyfin Media Player.app/Contents/MacOS/Jellyfin Media Player"
+    binary="$out/Applications/Jellyfin Media Player.app/Contents/MacOS/JJellyfin Media Player"
 
     # Change Qt framework paths from @executable_path to Nix store
     for framework in QtCore QtGui QtWidgets QtNetwork QtQml QtQuick QtWebChannel QtWebEngineCore QtWebEngineQuick QtCore5Compat QtOpenGL QtPositioning QtQmlModels QtQmlWorkerScript QtWebChannelQuick QtDBus QtXml QtQmlMeta; do
