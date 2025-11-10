@@ -22,7 +22,9 @@ in
     nixpkgs.overlays = mkIf cfg.overlay [
       (self: super: {
         jellyfin-media-player =
-          super.qt6Packages.callPackage ./jellyfin-media-player-package.nix { };
+          super.qt6Packages.callPackage ./jellyfin-media-player-package.nix {
+            glibcLocales = super.glibcLocales;
+          };
       })
     ];
   };
