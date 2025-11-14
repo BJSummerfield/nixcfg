@@ -93,6 +93,7 @@ in
                 match app-id="hollow_knight.x86_64"
                 match app-id="steam_app_1239080"
                 match app-id="steam_app_2708450"
+                match title="ARC Raiders"
 
                 variable-refresh-rate true
 
