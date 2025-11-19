@@ -43,7 +43,15 @@
           enable = true;
           lsp = {
             bicep.enable = true;
+            css = {
+              enable = true;
+              enableTailwind = true;
+            };
             graphql.enable = true;
+            html = {
+              enable = true;
+              enableTailwind = true;
+            };
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;

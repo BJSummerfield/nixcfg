@@ -1,7 +1,9 @@
 {
   imports = [
     ./bicep.nix
+    ./css.nix
     ./graphql.nix
+    ./html.nix
     ./javascript.nix
     ./json.nix
     ./jsx.nix
