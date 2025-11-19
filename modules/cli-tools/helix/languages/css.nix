@@ -17,15 +17,15 @@ in
           vscode-css-language-server = {
             command = "vscode-css-language-server";
             args = [ "--stdio" ];
+            config = {
+              provideFormatter = false;
+              css = { validate = true; lint = { unknownAtRules = "ignore"; }; };
+              scss = { validate = true; lint = { unknownAtRules = "ignore"; }; };
+            };
           };
 
           tailwindcss-language-server = mkIf cfg.enableTailwind {
             command = "tailwindcss-language-server";
-          };
-
-          biome = {
-            command = "biome";
-            args = [ "lsp-proxy" ];
           };
         };
 
@@ -36,18 +36,17 @@ in
             ++ optional cfg.enableTailwind "tailwindcss-language-server";
 
           formatter = {
-            command = "biome";
-            args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.css" ];
+            command = "prettier";
+            args = [ "--parser" "css" ];
           };
-
           auto-format = true;
         }];
 
         extraPackages = with pkgs; [
           nodePackages.vscode-langservers-extracted
-          biome
+          nodePackages.prettier
         ]
-        ++ optional cfg.enableTailwind nodePackages.tailwindcss-language-server;
+        ++ optional cfg.enableTailwind tailwindcss-language-server;
       };
     };
   };

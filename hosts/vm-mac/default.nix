@@ -45,12 +45,11 @@
             bicep.enable = true;
             css = {
               enable = true;
-              enableTailWind = true;
+              enableTailwind = true;
             };
             graphql.enable = true;
             html = {
               enable = true;
-              enableHtmx = true;
               enableTailwind = true;
             };
             javascript.enable = true;
