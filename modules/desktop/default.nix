@@ -9,6 +9,7 @@
     ./niri
     ./stylix.nix
     ./swaybg.nix
+    ./swayidle.nix
     ./polkit-gnome.nix
     ./xwayland-satellite.nix
   ];
