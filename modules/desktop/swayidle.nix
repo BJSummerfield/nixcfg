@@ -7,7 +7,7 @@ let
   brightnessctl = "${pkgs.brightnessctl}/bin/brightnessctl";
   niri = "${pkgs.niri}/bin/niri";
   swaylock = "${pkgs.swaylock-effects}/bin/swaylock";
-  lock = "${swaylock} -f --daemonize";
+  lock = "${swaylock} --ignore-empty-password --daemonize";
   display = status: "${niri} msg action power-${status}-monitors";
 
   brightness_dim = "${brightnessctl} -s set 10";
