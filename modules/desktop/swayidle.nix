@@ -1,13 +1,17 @@
-{ lib, config, ... }:
+{ pkgs, lib, config, ... }:
 
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
   cfg = config.mine.desktop.swayidle;
-  lock = "swaylock -f --daemonize";
-  display = status: "niri msg action power-${status}-monitors";
-  brightness_dim = "brightnessctl -s set 10";
-  brightness_restore = "brightnessctl -r";
+  brightnessctl = "${pkgs.brightnessctl}/bin/brightnessctl";
+  niri = "${pkgs.niri}/bin/niri";
+  swaylock = "${pkgs.swaylock-effects}/bin/swaylock";
+  lock = "${swaylock} -f --daemonize";
+  display = status: "${niri} msg action power-${status}-monitors";
+
+  brightness_dim = "${brightnessctl} -s set 10";
+  brightness_restore = "${brightnessctl} -r";
 in
 {
   options.mine.desktop.swayidle.enable = mkEnableOption "Enable swayidle config for Niri";
@@ -35,7 +39,7 @@ in
           }
           {
             timeout = 1800;
-            command = "systemctl suspend";
+            command = "${pkgs.systemd}/bin/systemctl suspend";
           }
         ];
 
