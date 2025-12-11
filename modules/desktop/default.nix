@@ -10,6 +10,7 @@
     ./stylix.nix
     ./swaybg.nix
     ./swayidle.nix
+    ./swaylock.nix
     ./polkit-gnome.nix
     ./xwayland-satellite.nix
   ];

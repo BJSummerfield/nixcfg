@@ -18,7 +18,7 @@
         battery-notifications.enable = true;
         fuzzel.enable = true;
         swayidle.enable = true;
-        hyprlock.enable = true;
+        swaylock.enable = true;
         mako.enable = true;
         niri.enable = true;
         polkit-gnome.enable = true;
