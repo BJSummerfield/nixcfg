@@ -30,6 +30,7 @@ in
           helix.enable = mkIf theme-ables.cli-tools.helix.enable false;
           fish.enable = mkIf theme-ables.system.shell.fish.enable false;
           hyprlock.enable = mkIf theme-ables.desktop.hyprlock.enable false;
+          swaylock.enable = mkIf theme-ables.desktop.swaylock.enable false;
         };
 
         cursor = {
