@@ -24,8 +24,8 @@
       };
       desktop = {
         fuzzel.enable = true;
-        hypridle.enable = true;
-        hyprlock.enable = true;
+        swayidle.enable = true;
+        swaylock.enable = true;
         mako.enable = true;
         niri.enable = true;
         polkit-gnome.enable = true;
