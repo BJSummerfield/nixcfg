@@ -31,6 +31,12 @@
           };
           modules = [ ./hosts/vm-mac ];
         };
+        elitebook = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/elitebook ];
+        };
       };
     };
 }
