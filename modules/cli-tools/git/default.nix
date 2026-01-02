@@ -1,7 +1,6 @@
 { pkgs, lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf mkMerge;
-  inherit (config.mine) user;
   cfg = config.mine.cli-tools.git;
   _1passSigning = config.mine.apps._1password.gitSigning;
 in
@@ -11,27 +10,18 @@ in
   };
 
   config = mkIf cfg.enable {
-    home-manager.users.${user.name} = {
+    home-manager.sharedModules = [{
       programs.git = {
         enable = true;
         settings = mkMerge [
           {
-            user = {
-              name = "${user.git-user}";
-              email = "${user.email}";
-            };
             init.defaultBranch = "main";
           }
           (mkIf _1passSigning {
-            user.signingkey = user.gitSigningKey;
-            gpg = {
-              ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
-              format = "ssh";
-            };
-            commit.gpgSign = true;
+            gpg.ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
           })
         ];
       };
-    };
+    }];
   };
 }

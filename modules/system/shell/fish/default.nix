@@ -1,9 +1,7 @@
 { lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  inherit (config.mine) user;
   cfg = config.mine.system.shell.fish;
-  cli-tools = config.mine.cli-tools;
 in
 {
   options.mine.system.shell.fish = {
@@ -15,7 +13,7 @@ in
     # system level fish shell for auto-complete
     programs.fish.enable = true;
 
-    home-manager.users.${user.name} = {
+    home-manager.sharedModules = [{
       programs.fish = {
         enable = true;
         interactiveShellInit = ''
@@ -25,10 +23,7 @@ in
         loginShellInit = ''
           set fish_greeting # Disable greeting
         '';
-        shellAliases = {
-          lg = mkIf cli-tools.lazygit.enable "lazygit";
-        };
       };
-    };
+    }];
   };
 }

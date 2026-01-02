@@ -1,7 +1,7 @@
 { ... }: {
   imports = [
     ./apps
-    ./user
+    # ./user
     ./system
     ./encoding
     ./cli-tools

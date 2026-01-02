@@ -54,10 +54,10 @@ in
       time.timeZone = "America/Chicago";
 
       environment.systemPackages = with pkgs; [
-        wget
-        git
-        helix
-        bottom
+        # wget
+        # git
+        # helix
+        # bottom
       ];
     }
   ];

@@ -1,7 +1,6 @@
 { lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  inherit (config.mine) user;
   cfg = config.mine.cli-tools.lazygit;
 in
 {
@@ -10,15 +9,18 @@ in
   };
 
   config = mkIf cfg.enable {
-    home-manager.users.${user.name} = {
-      programs.lazygit = {
-        enable = true;
-        settings = {
-          gui = {
-            language = "en";
+    home-manager.sharedModules = [{
+      programs = {
+        lazygit = {
+          enable = true;
+          settings = {
+            gui.language = "en";
           };
         };
+        fish.shellAliases = {
+          lg = "lazygit";
+        };
       };
-    };
+    }];
   };
 }
