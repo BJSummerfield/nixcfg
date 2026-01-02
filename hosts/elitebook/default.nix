@@ -10,7 +10,6 @@
     mine = {
       system = {
         hostName = "elitebook";
-        bootPartitionUuid = "TODO";
         fonts.enable = true;
         openssh.enable = true;
       };
