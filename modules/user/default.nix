@@ -61,6 +61,8 @@ in
   };
 
   config = {
+    # This belongs in makemkv
+    boot.kernelModules = [ "sg" ];
     mine.system.shell.fish.enable = mkIf (user.shell.package == pkgs.fish) true;
     nix.settings.trusted-users = [ "${user.name}" ];
 
