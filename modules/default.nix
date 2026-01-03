@@ -7,5 +7,6 @@
     ./cli-tools
     # ./desktop
     ./git.nix
+    ./openssh.nix
   ];
 }

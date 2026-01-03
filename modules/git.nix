@@ -21,11 +21,10 @@ let
   };
 in
 {
-  options.mine.system.git.enable = lib.mkEnableOption "Enable System Git";
+  options.mine.system.git.enable = mkEnableOption "Enable System Git";
 
-  config = lib.mkIf config.mine.system.git.enable {
-    environment.systemPackages = [ pkgs.git ];
+  config = {
+    environment.systemPackages = mkIf config.mine.system.git.enable [ pkgs.git ];
+    home-manager.sharedModules = [ homeConfig ];
   };
-
-  home-manager.sharedModules = [ homeConfig ];
 }
