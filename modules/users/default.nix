@@ -9,15 +9,13 @@ in
   # Import home manager
   imports = [
     inputs.home-manager.nixosModules.home-manager
-    ./waktu.nix
-    ./dummy.nix
   ];
 
   options.mine.users = mkOption {
     type = types.attrsOf (types.submodule {
       options = {
         isSuperUser = mkOption { type = types.bool; default = false; };
-        description = mkOption { type = types.str; };
+        description = mkOption { type = types.str; default = ""; };
         initialHashedPassword = mkOption { type = types.str; default = ""; };
         sshKeys = mkOption { type = types.listOf types.str; default = [ ]; };
         shell = mkOption { type = types.package; default = config.users.defaultUserShell; };

@@ -6,6 +6,8 @@
     # ./encoding
     # ./cli-tools
     # ./desktop
+    ./fish
+    ./lazygit
     ./git
     ./users
     ./tailscale

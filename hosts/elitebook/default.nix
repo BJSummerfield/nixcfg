@@ -4,6 +4,8 @@
     [
       ./hardware-configuration.nix
       ../../modules
+      ../../modules/users/waktu.nix
+      ../../modules/users/dummy.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -20,11 +22,6 @@
       tailscale.enable = true;
       git.enable = true;
       lazygit.enable = true;
-      bottom.enable = true;
-    };
-    users = {
-      waktu = { inherit pkgs; };
-      dummy = { inherit pkgs; };
     };
   };
 
