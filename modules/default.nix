@@ -4,9 +4,11 @@
     # ./user
     ./system
     # ./encoding
-    ./cli-tools
+    # ./cli-tools
     # ./desktop
-    ./git.nix
-    ./openssh.nix
+    ./git
+    ./users
+    ./tailscale
+    ./openssh
   ];
 }

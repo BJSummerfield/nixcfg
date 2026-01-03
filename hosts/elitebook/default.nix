@@ -1,50 +1,43 @@
 { pkgs, ... }:
-let
-  waktuProfile = import ../../users/waktu.nix;
-  dummyProfile = import ../../users/dummy.nix;
-in
 {
   imports =
     [
       ./hardware-configuration.nix
       ../../modules
-      ../../users
     ];
 
-  config = {
-    mine = {
-      system = {
-        hostName = "elitebook";
-        shell.fish.enable = true;
-        openssh.enable = true;
-        tailscale.enable = true;
+  environment.systemPackages = with pkgs; [
+    git
+    bottom
+    helix
+  ];
+
+  mine = {
+    system = {
+      hostName = "elitebook";
+      shell.fish.enable = true;
+      openssh.enable = true;
+      tailscale.enable = true;
+      git.enable = true;
+      lazygit.enable = true;
+      bottom.enable = true;
+    };
+    users = {
+      waktu = { inherit pkgs; };
+      dummy = { inherit pkgs; };
+    };
+  };
+
+  home-manager.users = {
+    waktu = {
+      mine.user = {
+        git.enable = true;
+        lazygit.enable = true;
       };
-      users = {
-        "waktu" = waktuProfile {
-          inherit pkgs;
-          modules = [
-            {
-              mine = {
-                user = {
-                  git.enable = true;
-                  lazygit.enable = true;
-                };
-              };
-            }
-          ];
-        };
-        "dummy" = dummyProfile {
-          inherit pkgs;
-          modules = [
-            {
-              mine = {
-                user = {
-                  git.enable = true;
-                };
-              };
-            }
-          ];
-        };
+    };
+    dummy = {
+      mine.user = {
+        git.enable = true;
       };
     };
   };

@@ -9,6 +9,8 @@ in
   # Import home manager
   imports = [
     inputs.home-manager.nixosModules.home-manager
+    ./waktu.nix
+    ./dummy.nix
   ];
 
   options.mine.users = mkOption {

@@ -1,19 +1,9 @@
-{ lib, pkgs, config, ... }:
+{ lib, config, ... }:
 let
   inherit (lib) mkOption mkIf types mkMerge;
   inherit (config.mine.system) bootPartitionUuid hostName;
 in
 {
-
-  # TODO Fix system imports file structure
-  imports = [
-    ./shell/fish
-    ./openssh.nix
-    # ./fonts.nix
-    # ./allowUnfree.nix
-    # ./polkit.nix
-    # ./sshAgent.nix
-  ];
 
   options.mine.system = {
     bootPartitionUuid = mkOption {
@@ -45,20 +35,11 @@ in
         };
         optimise.automatic = true;
       };
-
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
       networking.networkmanager.enable = true;
       networking.hostName = hostName;
-
       time.timeZone = "America/Chicago";
-
-      environment.systemPackages = with pkgs; [
-        # wget
-        git
-        # helix
-        # bottom
-      ];
     }
   ];
 }

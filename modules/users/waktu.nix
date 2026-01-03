@@ -1,4 +1,4 @@
-{ modules ? [ ], ... }:
+{ ... }:
 {
   description = "Brian Summerfield";
   isSuperUser = true;
@@ -20,5 +20,5 @@
         commit.gpgSign = true;
       };
     }
-  ] ++ modules;
+  ];
 }
