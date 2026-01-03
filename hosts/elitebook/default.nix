@@ -15,10 +15,8 @@ in
     mine = {
       system = {
         hostName = "elitebook";
-        openssh.enable = true;
         shell.fish.enable = true;
-      };
-      cli-tools = {
+        openssh.enable = true;
         tailscale.enable = true;
       };
       users = {
@@ -42,7 +40,6 @@ in
               mine = {
                 user = {
                   git.enable = true;
-                  # lazygit.enable = true;
                 };
               };
             }
