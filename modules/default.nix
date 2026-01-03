@@ -1,10 +1,10 @@
 { ... }: {
   imports = [
-    ./apps
+    # ./apps
     # ./user
     ./system
-    ./encoding
+    # ./encoding
     ./cli-tools
-    ./desktop
+    # ./desktop
   ];
 }

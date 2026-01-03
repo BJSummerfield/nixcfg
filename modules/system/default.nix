@@ -9,10 +9,10 @@ in
   imports = [
     ./shell/fish
     ./openssh.nix
-    ./fonts.nix
-    ./allowUnfree.nix
-    ./polkit.nix
-    ./sshAgent.nix
+    # ./fonts.nix
+    # ./allowUnfree.nix
+    # ./polkit.nix
+    # ./sshAgent.nix
   ];
 
   options.mine.system = {
@@ -55,7 +55,7 @@ in
 
       environment.systemPackages = with pkgs; [
         # wget
-        # git
+        git
         # helix
         # bottom
       ];

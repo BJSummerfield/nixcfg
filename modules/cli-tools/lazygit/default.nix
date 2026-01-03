@@ -1,26 +1,27 @@
-{ lib, config, ... }:
+{ pkgs, lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.cli-tools.lazygit;
 in
 {
-  options.mine.cli-tools.lazygit = {
-    enable = mkEnableOption "lazygit config";
-  };
+  options.mine.system.lazygit.enable = mkEnableOption "System Lazygit";
 
-  config = mkIf cfg.enable {
-    home-manager.sharedModules = [{
-      programs = {
-        lazygit = {
-          enable = true;
-          settings = {
-            gui.language = "en";
+  config = {
+    # System logic
+    environment.systemPackages = mkIf config.mine.system.lazygit.enable [ pkgs.lazygit ];
+
+    # User logic
+    home-manager.sharedModules = [
+      ({ config, ... }: {
+        options.mine.user.lazygit.enable = mkEnableOption "User Lazygit";
+
+        config = mkIf config.mine.user.lazygit.enable {
+          programs.lazygit = {
+            enable = true;
+            settings.gui.language = "en";
           };
+          programs.fish.shellAliases.lg = "lazygit";
         };
-        fish.shellAliases = {
-          lg = "lazygit";
-        };
-      };
-    }];
+      })
+    ];
   };
 }

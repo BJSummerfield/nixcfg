@@ -1,6 +1,7 @@
 { pkgs, ... }:
 let
   waktuProfile = import ../../users/waktu.nix;
+  dummyProfile = import ../../users/dummy.nix;
 in
 {
   imports =
@@ -21,13 +22,27 @@ in
         tailscale.enable = true;
       };
       users = {
-        "waktu" = waktuProfile { inherit pkgs; } // {
+        "waktu" = waktuProfile {
+          inherit pkgs;
           modules = [
             {
               mine = {
-                cli-tools = {
+                user = {
                   git.enable = true;
                   lazygit.enable = true;
+                };
+              };
+            }
+          ];
+        };
+        "dummy" = dummyProfile {
+          inherit pkgs;
+          modules = [
+            {
+              mine = {
+                user = {
+                  git.enable = true;
+                  # lazygit.enable = true;
                 };
               };
             }

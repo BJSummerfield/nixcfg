@@ -1,10 +1,16 @@
-{ lib, config, pkgs, ... }:
+{ lib, config, pkgs, inputs, ... }:
 let
   inherit (lib) mkOption types;
   cfg = config.mine.users;
   adminUsernames = lib.attrNames (lib.filterAttrs (n: u: u.isSuperUser) cfg);
 in
 {
+
+  # Import home manager
+  imports = [
+    inputs.home-manager.nixosModules.home-manager
+  ];
+
   options.mine.users = mkOption {
     type = types.attrsOf (types.submodule {
       options = {
@@ -46,16 +52,20 @@ in
       cfg;
 
     # Map the users to home-manager
-    home-manager.users = lib.mapAttrs
-      (name: user: {
-        imports = user.home-modules ++ [
-          {
-            home.username = name;
-            home.homeDirectory = "/home/${name}";
-            home.stateVersion = "24.05";
-          }
-        ];
-      })
-      cfg;
+    home-manager = {
+      useUserPackages = true;
+      extraSpecialArgs = { inherit inputs; };
+      users = lib.mapAttrs
+        (name: user: {
+          imports = user.home-modules ++ [
+            {
+              home.username = name;
+              home.homeDirectory = "/home/${name}";
+              home.stateVersion = "24.05";
+            }
+          ];
+        })
+        cfg;
+    };
   };
 }
