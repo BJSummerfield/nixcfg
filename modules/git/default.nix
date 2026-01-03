@@ -7,7 +7,7 @@
       environment.systemPackages = lib.mkIf config.mine.system.git.enable [ pkgs.git ];
     }
     {
-      home-manager.sharedModules = [ ./home.nix ];
+      home-manager.sharedModules = [ ./git.nix ];
     }
   ];
 }
