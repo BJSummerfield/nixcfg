@@ -6,5 +6,6 @@
     # ./encoding
     ./cli-tools
     # ./desktop
+    ./git.nix
   ];
 }

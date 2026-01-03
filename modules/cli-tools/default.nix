@@ -4,7 +4,7 @@
     # ./direnv
     # ./eza
     # ./gh
-    ./git
+    # ./git
     # ./helix
     # ./jellyfin-tui.nix
     ./lazygit
