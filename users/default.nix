@@ -18,7 +18,7 @@ in
         description = mkOption { type = types.str; };
         initialHashedPassword = mkOption { type = types.str; default = ""; };
         sshKeys = mkOption { type = types.listOf types.str; default = [ ]; };
-        shell = mkOption { type = types.package; default = pkgs.fish; };
+        shell = mkOption { type = types.package; default = config.users.defaultUserShell; };
 
         home-modules = mkOption {
           type = types.listOf types.attrs;
@@ -31,7 +31,7 @@ in
 
   config = {
     # Allow admins to use nix
-    nix.settings.trusted-users = [ ] ++ adminUsernames;
+    nix.settings.trusted-users = [ "root" ] ++ adminUsernames;
 
     # Make sure there is always at least 1 admin user
     assertions = [
