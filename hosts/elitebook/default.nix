@@ -36,6 +36,7 @@
         alacritty.enable = true;
         fuzzel.enable = true;
         firefox.enable = true;
+        keybase.enable = true;
       };
     };
     dummy = {
