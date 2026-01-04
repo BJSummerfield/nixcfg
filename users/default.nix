@@ -1,4 +1,4 @@
-{ lib, config, pkgs, inputs, ... }:
+{ lib, config, inputs, ... }:
 let
   inherit (lib) mkOption types;
   cfg = config.mine.users;
@@ -9,8 +9,6 @@ in
   # Import home manager
   imports = [
     inputs.home-manager.nixosModules.home-manager
-    ./dummy.nix
-    ./waktu.nix
   ];
 
   options.mine.users = mkOption {

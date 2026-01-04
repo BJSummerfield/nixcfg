@@ -5,6 +5,8 @@
       ./hardware-configuration.nix
       ../../modules
       ../../users
+      ../../users/waktu.nix
+      ../../users/dummy.nix
     ];
 
   environment.systemPackages = with pkgs; [
