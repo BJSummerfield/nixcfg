@@ -4,6 +4,7 @@
     ./_1password
     ./polkit_gnome
     ./keybase
+    ./obs-studio
     ./alacritty
     ./fuzzel
     ./niri
