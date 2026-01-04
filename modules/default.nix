@@ -9,7 +9,6 @@
     ./fish
     ./lazygit
     ./git
-    ./users
     ./tailscale
     ./openssh
   ];

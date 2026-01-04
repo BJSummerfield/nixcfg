@@ -4,8 +4,7 @@
     [
       ./hardware-configuration.nix
       ../../modules
-      ../../modules/users/waktu.nix
-      ../../modules/users/dummy.nix
+      ../../users
     ];
 
   environment.systemPackages = with pkgs; [
