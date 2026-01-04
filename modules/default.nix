@@ -3,6 +3,7 @@
     ./docker
     ./_1password
     ./polkit_gnome
+    ./keybase
     ./alacritty
     ./fuzzel
     ./niri
