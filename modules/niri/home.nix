@@ -60,8 +60,8 @@ in
       
     binds {
         Mod+Shift+Slash { show-hotkey-overlay; }
-        ${optionalString mine.modules.user.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
-        ${optionalString mine.modules.user.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
+        ${optionalString mine.user.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
+        ${optionalString mine.user.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
     
         XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
         XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
