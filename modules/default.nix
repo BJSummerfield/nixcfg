@@ -7,6 +7,7 @@
     ./obs-studio
     ./printing
     ./avahi
+    ./steam
     ./alacritty
     ./fuzzel
     ./niri

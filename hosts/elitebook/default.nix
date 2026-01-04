@@ -24,6 +24,10 @@
       tailscale.enable = true;
       niri.enable = true;
       docker.enable = true;
+      avahi.enable = true;
+      printing.enable = true;
+      steam.enable = true;
+      gamescope.enable = true;
     };
   };
   home-manager.users = {
