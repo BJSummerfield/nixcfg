@@ -1,5 +1,8 @@
 { ... }: {
   imports = [
+    ./alacritty
+    ./fuzzel
+    ./niri
     # ./apps
     # ./user
     ./system

@@ -8,6 +8,6 @@ in
   config = lib.mkIf cfg.enable {
     programs.fish.enable = true;
     users.defaultUserShell = pkgs.fish;
-    home-manager.sharedModules = [ ./fish.nix ];
+    home-manager.sharedModules = [ ./home.nix ];
   };
 }

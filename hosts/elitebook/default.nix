@@ -22,8 +22,7 @@
       shell.fish.enable = true;
       openssh.enable = true;
       tailscale.enable = true;
-      git.enable = true;
-      lazygit.enable = true;
+      niri.enable = true;
     };
   };
 
@@ -32,6 +31,8 @@
       mine.user = {
         git.enable = true;
         lazygit.enable = true;
+        alacritty.enable = true;
+        fuzzel.enable = true;
       };
     };
     dummy = {

@@ -1,6 +1,6 @@
 { config, lib, ... }:
 let
-  cfg = config.mine.desktop.niri;
+  cfg = config.mine.system.niri;
 in
 {
   options.mine.system.niri = {
