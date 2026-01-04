@@ -5,6 +5,8 @@
     ./polkit_gnome
     ./keybase
     ./obs-studio
+    ./printing
+    ./avahi
     ./alacritty
     ./fuzzel
     ./niri
