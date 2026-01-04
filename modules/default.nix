@@ -14,5 +14,6 @@
     ./git
     ./tailscale
     ./openssh
+    ./xwayland-satellite
   ];
 }
