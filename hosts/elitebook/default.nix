@@ -37,6 +37,7 @@
     dummy = {
       mine.user = {
         git.enable = true;
+        alacritty.enable = true;
       };
     };
   };

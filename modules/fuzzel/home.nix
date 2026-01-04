@@ -8,5 +8,6 @@
         border.radius = 0;
       };
     };
+    mine.user.niri.extraBinds = '' Mod+Space { spawn "fuzzel"; } '';
   };
 }

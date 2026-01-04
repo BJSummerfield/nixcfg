@@ -1,7 +1,4 @@
 { config, lib, ... }:
-let
-  cfg = config.mine.system.niri;
-in
 {
   options.mine.system.niri = {
     enable = lib.mkEnableOption "Enable niri config";
@@ -33,10 +30,8 @@ in
       description = "List of KDL window-rule blocks to append to config";
     };
   };
-  config = lib.mkIf cfg.enable {
+  config = lib.mkIf config.mine.system.niri.enable {
     programs.niri.enable = true;
-    mine.user.xwayland-satellite.enable = true;
-    # mine.apps._1password.silentStartOnGraphical = true;
     home-manager.sharedModules = [ ./home.nix ];
   };
 }

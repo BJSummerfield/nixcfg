@@ -30,5 +30,7 @@ in
     home.sessionVariables = {
       TERMINAL = "alacritty";
     };
+
+    mine.user.niri.extraBinds = ''Mod+Return { spawn "alacritty"; }'';
   };
 }
