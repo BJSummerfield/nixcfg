@@ -29,6 +29,7 @@
     waktu = {
       mine.user = {
         _1password.enable = true;
+        polkit-gnome.enable = true;
         git.enable = true;
         lazygit.enable = true;
         alacritty.enable = true;
