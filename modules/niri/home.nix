@@ -1,8 +1,4 @@
 { pkgs, config, lib, ... }:
-let
-  inherit (lib) optionalString;
-  inherit (config) mine;
-in
 {
   xdg.portal = {
     enable = true;
@@ -16,10 +12,8 @@ in
   home.packages = with pkgs; [
     brightnessctl
     wl-clipboard
-    xwayland-satellite
     nautilus
   ];
-
 
   home.file.".config/niri/config.kdl".text = ''
     // https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
@@ -33,6 +27,14 @@ in
             natural-scroll
         }
     }
+
+    ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: output: ''
+        output "${name}" {
+          mode "${output.mode}"
+          scale ${toString output.scale}
+          variable-refresh-rate ${if output.variableRefreshRate then "on-demand=true" else "off"}
+        }
+    '') config.mine.system.niri.outputs)}
 
     layout {
         gaps 10
@@ -55,13 +57,16 @@ in
             off
         }
     }
+
+    ${lib.concatStringsSep "\n" config.mine.system.niri.extraWindowRules}
+
     prefer-no-csd
     screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
       
     binds {
         Mod+Shift+Slash { show-hotkey-overlay; }
-        ${optionalString mine.user.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
-        ${optionalString mine.user.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
+        ${lib.optionalString config.mine.user.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
+        ${lib.optionalString config.mine.user.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
     
         XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
         XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }

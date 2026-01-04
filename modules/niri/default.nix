@@ -35,7 +35,7 @@ in
   };
   config = lib.mkIf cfg.enable {
     programs.niri.enable = true;
-    # mine.desktop.xwayland-satellite.enable = true;
+    mine.user.xwayland-satellite.enable = true;
     # mine.apps._1password.silentStartOnGraphical = true;
     home-manager.sharedModules = [ ./home.nix ];
   };
