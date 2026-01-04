@@ -1,8 +1,41 @@
-{ pkgs, config, lib, osConfig, ... }:
-let
-  niriCfg = osConfig.mine.system.niri;
-in
+{ pkgs, config, lib, ... }:
 {
+  options.mine.user.niri = {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "User Niri Config";
+    };
+    outputs = lib.mkOption {
+      description = "Monitor configuration";
+      default = { };
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            mode = lib.mkOption {
+              type = lib.types.str;
+            };
+            scale = lib.mkOption {
+              type = lib.types.float;
+              default = 1.0;
+            };
+            variableRefreshRate = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+            };
+          };
+        });
+    };
+    extraBinds = lib.mkOption {
+      type = lib.types.lines;
+      default = "";
+    };
+    extraWindowRules = lib.mkOption {
+      type = lib.types.lines;
+      default = "";
+    };
+  };
+
   config = {
     mine.user.xwayland-satellite.enable = true;
     # mine.apps._1password.silentStartOnGraphical = true;
@@ -40,7 +73,7 @@ in
             scale ${toString output.scale}
             variable-refresh-rate ${if output.variableRefreshRate then "on-demand=true" else "off"}
           }
-      '') niriCfg.outputs)}
+      '') config.mine.user.niri.outputs)}
 
       layout {
           gaps 10
@@ -64,15 +97,14 @@ in
           }
       }
 
-      ${lib.concatStringsSep "\n" niriCfg.extraWindowRules}
+      ${config.mine.user.niri.extraWindowRules}
 
       prefer-no-csd
       screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
       
       binds {
+          ${config.mine.user.niri.extraBinds}
           Mod+Shift+Slash { show-hotkey-overlay; }
-          ${lib.optionalString config.mine.user.alacritty.enable ''Mod+Return { spawn "alacritty"; }''}
-          ${lib.optionalString config.mine.user.fuzzel.enable ''Mod+Space { spawn "fuzzel"; } ''}
     
           XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1+"; }
           XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.1-"; }
