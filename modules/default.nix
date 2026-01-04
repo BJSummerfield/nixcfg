@@ -1,5 +1,6 @@
 { ... }: {
   imports = [
+    ./docker
     ./_1password
     ./polkit_gnome
     ./alacritty
@@ -12,6 +13,7 @@
     # ./cli-tools
     # ./desktop
     ./fish
+    ./firefox
     ./lazygit
     ./git
     ./tailscale

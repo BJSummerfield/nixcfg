@@ -23,6 +23,7 @@
       openssh.enable = true;
       tailscale.enable = true;
       niri.enable = true;
+      docker.enable = true;
     };
   };
   home-manager.users = {
@@ -34,12 +35,14 @@
         lazygit.enable = true;
         alacritty.enable = true;
         fuzzel.enable = true;
+        firefox.enable = true;
       };
     };
     dummy = {
       mine.user = {
         git.enable = true;
         alacritty.enable = true;
+        firefox.enable = true;
       };
     };
   };
