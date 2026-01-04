@@ -17,6 +17,7 @@
 
   mine = {
     system = {
+      _1password.enable = true;
       hostName = "elitebook";
       shell.fish.enable = true;
       openssh.enable = true;
@@ -24,10 +25,10 @@
       niri.enable = true;
     };
   };
-
   home-manager.users = {
     waktu = {
       mine.user = {
+        _1password.enable = true;
         git.enable = true;
         lazygit.enable = true;
         alacritty.enable = true;

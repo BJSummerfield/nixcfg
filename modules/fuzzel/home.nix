@@ -8,6 +8,6 @@
         border.radius = 0;
       };
     };
-    mine.user.niri.extraBinds = '' Mod+Space { spawn "fuzzel"; } '';
+    mine.user.niri.extraBinds = '' Mod+Space { spawn "${lib.getExe config.programs.fuzzel.package}"; '';
   };
 }

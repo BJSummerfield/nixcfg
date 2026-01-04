@@ -1,5 +1,7 @@
 { ... }: {
   imports = [
+    ./_1password
+    ./polkit_gnome
     ./alacritty
     ./fuzzel
     ./niri

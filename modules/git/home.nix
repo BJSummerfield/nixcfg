@@ -7,13 +7,9 @@
   config = lib.mkIf config.mine.user.git.enable {
     programs.git = {
       enable = true;
-      settings = lib.mkMerge [
-        { init.defaultBranch = "main"; }
-        { }
-        # (mkIf _1passSigning {
-        #   gpg.ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
-        # })
-      ];
+      settings = {
+        init.defaultBranch = "main";
+      };
     };
   };
 }

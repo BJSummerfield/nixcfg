@@ -31,6 +31,6 @@ in
       TERMINAL = "alacritty";
     };
 
-    mine.user.niri.extraBinds = ''Mod+Return { spawn "alacritty"; }'';
+    mine.user.niri.extraBinds = ''Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }'';
   };
 }
