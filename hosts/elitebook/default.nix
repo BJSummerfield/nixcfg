@@ -13,7 +13,6 @@
     git
     bottom
     helix
-    lazygit
   ];
 
   mine = {
