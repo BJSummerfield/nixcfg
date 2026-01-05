@@ -4,13 +4,13 @@ let
   cfg = config.mine.user.catppuccin;
 in
 {
+  imports = [
+    inputs.catppuccin.homeModules.catppuccin
+  ];
 
   options.mine.user.catppuccin.enable = mkEnableOption "Catppuccin flake theme styles";
-  config = mkIf cfg.enable {
-    imports = [
-      inputs.catppuccin.homeModules.catppuccin
-    ];
 
+  config = mkIf cfg.enable {
     catppuccin = {
       flavor = "mocha";
       accent = "blue";

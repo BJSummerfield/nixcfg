@@ -1,6 +1,7 @@
 { lib, config, ... }: {
   imports = [
     ./docker
+    ./mako
     ./direnv
     ./catppuccin
     ./encode_queue

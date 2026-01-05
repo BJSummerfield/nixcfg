@@ -64,6 +64,7 @@
         catppuccin.enable = true;
         battery-notifications.enable = true;
         encode_queue.enable = true;
+        mako.enable = true;
         git.enable = true;
         gh.enable = true;
         lazygit.enable = true;
