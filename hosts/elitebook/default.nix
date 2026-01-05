@@ -42,6 +42,7 @@
         firefox.enable = true;
         keybase.enable = true;
         obs-studio.enable = true;
+        direnv.enable = true;
       };
     };
     dummy = {

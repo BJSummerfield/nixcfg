@@ -14,7 +14,6 @@ in
   config = lib.mkIf cfg.enable {
     mine.system.allowedUnfree = [
       "1password"
-      # "1password-gui"
       "1password-cli"
     ];
 
