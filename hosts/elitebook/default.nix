@@ -20,9 +20,6 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      docker.enable = true;
-      gamescope.enable = true;
-      makemkv.enable = true;
       niri.enable = true;
       openssh.enable = true;
       printing.enable = true;
@@ -43,7 +40,6 @@
         battery-notifications.enable = true;
         catppuccin.enable = true;
         direnv.enable = true;
-        encode_queue.enable = true;
         firefox.enable = true;
         fish.enable = true;
         fuzzel.enable = true;
@@ -52,16 +48,13 @@
         helix = {
           enable = true;
           lsp = {
-            bicep.enable = true;
             css.enable = true;
-            graphql.enable = true;
             html.enable = true;
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;
             markdown.enable = true;
             nix.enable = true;
-            python.enable = true;
             rust.enable = true;
             toml.enable = true;
             tsx.enable = true;
@@ -72,7 +65,6 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
-        obs-studio.enable = true;
         polkit-gnome.enable = true;
         stylix.enable = true;
         swaybg.enable = true;
@@ -84,13 +76,6 @@
         starship.enable = true;
         zoxide.enable = true;
       };
-      home.packages = with pkgs; [
-        abcde
-        ffmpeg
-        jellyfin-tui
-        picard
-        subtitleedit
-      ];
     };
     dummy = {
       mine.user = {

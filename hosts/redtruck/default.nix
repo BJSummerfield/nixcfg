@@ -7,9 +7,7 @@
       ./extraconfig.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
-      ../../users/dummy.nix
     ];
-
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -93,13 +91,6 @@
         picard
         subtitleedit
       ];
-    };
-    dummy = {
-      mine.user = {
-        git.enable = true;
-        alacritty.enable = true;
-        firefox.enable = true;
-      };
     };
   };
 }
