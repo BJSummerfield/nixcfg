@@ -22,7 +22,6 @@
       _1password.enable = true;
       avahi.enable = true;
       docker.enable = true;
-      gamescope.enable = true;
       makemkv.enable = true;
       niri.enable = true;
       openssh.enable = true;
