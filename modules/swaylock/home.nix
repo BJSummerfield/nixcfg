@@ -28,5 +28,6 @@ in
       };
     };
     catppuccin.swaylock.enable = true;
+    stylix.targets.swaylock.enable = false;
   };
 }
