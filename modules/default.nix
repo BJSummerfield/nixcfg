@@ -5,6 +5,8 @@
     ./direnv
     ./catppuccin
     ./stylix
+    ./swaybg
+    ./swayidle
     ./encode_queue
     ./bicep-langserver
     ./_1password

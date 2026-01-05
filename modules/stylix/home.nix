@@ -15,7 +15,7 @@ in
       autoEnable = true;
 
       polarity = "dark";
-      image = "../wallpapers/${wallpaper}";
+      image = "${../wallpapers/${wallpaper}}";
       base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
       cursor = {
         name = "Vanilla-DMZ";

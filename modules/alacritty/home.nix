@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
-  stylixEnabled = config.mine.desktop.theme.stylix.enable;
+  stylixEnabled = config.mine.user.stylix.enable;
 in
 {
   options.mine.user.alacritty = {

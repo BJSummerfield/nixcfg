@@ -1,7 +1,6 @@
 { pkgs, config, lib, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  inherit (config.mine) user;
   cfg = config.mine.user.swaybg;
   wallpaper = "mountain.jpg";
 in
@@ -25,7 +24,7 @@ in
       Service = {
         Type = "simple";
         ExecStart = ''
-          ${pkgs.swaybg}/bin/swaybg -m fill -i "${user.homeDir}/.config/swaybg/${user.wallpaper}"
+          ${pkgs.swaybg}/bin/swaybg -m fill -i "${config.home.homeDirectory}/.config/swaybg/${wallpaper}"
         '';
         Restart = "on-failure";
         RestartSec = "1s";
