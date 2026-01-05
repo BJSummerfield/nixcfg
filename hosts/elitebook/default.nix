@@ -69,6 +69,8 @@
         gh.enable = true;
         lazygit.enable = true;
         alacritty.enable = true;
+        swaybg.enable = true;
+        stylix.enable = true;
         fuzzel.enable = true;
         firefox.enable = true;
         keybase.enable = true;

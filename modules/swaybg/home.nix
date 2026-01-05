@@ -37,6 +37,13 @@ in
       };
     };
 
+    mine.user.niri.extraWindowRules = ''
+      layer-rule {
+          match namespace="^wallpaper$"
+          place-within-backdrop true
+      }
+    '';
+
     home.packages = with pkgs; [
       swaybg
     ];
