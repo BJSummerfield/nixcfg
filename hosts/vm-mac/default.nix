@@ -1,57 +1,48 @@
-{ ... }:
+{ pkgs, ... }:
 {
   imports =
     [
       ./hardware-configuration.nix
-      ../../modules
+      ../../modules/nixos.nix
+      ../../users/waktu.nix
     ];
 
-  config = {
-    mine = {
-      system = {
-        hostName = "vm-mac";
-        fonts.enable = true;
-        openssh.enable = true;
-      };
-      desktop = {
-        fuzzel.enable = true;
-        mako.enable = true;
-        niri.enable = true;
-        polkit-gnome.enable = true;
-        swaybg.enable = true;
-        theme = {
-          catppuccin.enable = true;
-          stylix.enable = true;
-        };
-      };
-      apps = {
+  environment.systemPackages = with pkgs; [
+    bottom
+    git
+    helix
+  ];
+
+  mine = {
+    system = {
+      hostName = "vm-mac";
+      fish.enable = true;
+      _1password.enable = true;
+      niri.enable = true;
+    };
+  };
+  home-manager.users = {
+    waktu = {
+      mine.user = {
         _1password = {
           enable = true;
-          sshAgent = true;
-          gitSigning = true;
-          ghPlugin = true;
+          sshAgent.enable = true;
+          gitSigning.enable = true;
+          ghPlugin.enable = true;
         };
         alacritty.enable = true;
-        firefox.enable = true;
-      };
-      cli-tools = {
+        catppuccin.enable = true;
         direnv.enable = true;
-        eza.enable = true;
+        firefox.enable = true;
+        fish.enable = true;
+        fuzzel.enable = true;
         gh.enable = true;
         git.enable = true;
         helix = {
           enable = true;
           lsp = {
-            bicep.enable = true;
-            css = {
-              enable = true;
-              enableTailwind = true;
-            };
-            graphql.enable = true;
-            html = {
-              enable = true;
-              enableTailwind = true;
-            };
+            css.enable = true;
+            html.enable = true;
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;
@@ -60,18 +51,24 @@
             rust.enable = true;
             toml.enable = true;
             tsx.enable = true;
-            typescript = {
-              enable = true;
-              formatter = "prettier";
-            };
+            typescript.enable = true;
             yaml.enable = true;
-
           };
         };
         lazygit.enable = true;
+        mako.enable = true;
+        polkit-gnome.enable = true;
+        stylix.enable = true;
+        swaybg.enable = true;
+        swayidle.enable = true;
+        swaylock.enable = true;
+      };
+      programs = {
+        eza.enable = true;
         starship.enable = true;
         zoxide.enable = true;
       };
     };
   };
 }
+
