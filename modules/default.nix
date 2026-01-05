@@ -15,6 +15,7 @@
     ./gamescope
     ./printing
     ./alacritty
+    ./gh
     ./fuzzel
     ./niri
     # ./apps

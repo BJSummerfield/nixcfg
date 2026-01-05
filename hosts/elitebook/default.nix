@@ -32,8 +32,9 @@
   };
   home-manager.users = {
     waktu = {
-      programs.eza.enable = true;
+
       mine.user = {
+        eza.enable = true;
         _1password.enable = true;
         polkit-gnome.enable = true;
         git.enable = true;
