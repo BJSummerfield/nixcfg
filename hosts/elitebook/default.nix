@@ -18,12 +18,7 @@
   mine = {
     system = {
       hostName = "elitebook";
-      _1password = {
-        enable = true;
-        sshAgent.enable = true;
-        gitSigning.enable = true;
-        ghPlugin.enable = true;
-      };
+      _1password.enable = true;
       shell.fish.enable = true;
       makemkv.enable = true;
       openssh.enable = true;
@@ -38,7 +33,6 @@
   };
   home-manager.users = {
     waktu = {
-      service.printing.enable = true;
       programs = {
         eza.enable = true;
         starship.enable = true;
@@ -65,7 +59,12 @@
             yaml.enable = true;
           };
         };
-        _1password.enable = true;
+        _1password = {
+          enable = true;
+          sshAgent = true;
+          gitSigning = true;
+          ghPlugin = true;
+        };
         polkit-gnome.enable = true;
         encode_queue.enable = true;
         git.enable = true;
@@ -77,7 +76,6 @@
         keybase.enable = true;
         obs-studio.enable = true;
         direnv.enable = true;
-        makemkv.enable = true;
       };
       home.packages = with pkgs; [
         jellyfin-tui
