@@ -20,7 +20,7 @@
   mine = {
     system = {
       hostName = "redtruck";
-      shell.fish.enable = true;
+      fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
       docker.enable = true;
@@ -47,6 +47,7 @@
         direnv.enable = true;
         encode_queue.enable = true;
         firefox.enable = true;
+        fish.enable = true;
         fuzzel.enable = true;
         gh.enable = true;
         git.enable = true;

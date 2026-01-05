@@ -12,6 +12,7 @@
         };
         extraWindowRules = lib.mkMerge [
           ''
+            // VRR settings for Games
             window-rule {
                 match app-id="gamescope"
                 match app-id="dota2"
@@ -21,6 +22,7 @@
             }
           ''
           (lib.mkIf (config.mine.user.alacritty.enable) ''
+            // Wider Alacritty windows
             window-rule {
                 match app-id="Alacritty"
                 default-column-width { proportion 0.33333; }

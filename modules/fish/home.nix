@@ -1,12 +1,8 @@
 { lib, config, ... }:
 {
-  options.mine.user.shell.fish.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = "User Fish Config";
-  };
+  options.mine.user.fish.enable = lib.mkEnableOption "User Fish Config";
 
-  config = lib.mkIf config.mine.user.shell.fish.enable {
+  config = lib.mkIf config.mine.user.fish.enable {
     programs.fish = {
       enable = true;
       interactiveShellInit = ''

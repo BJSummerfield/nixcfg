@@ -1,11 +1,7 @@
 { pkgs, config, lib, ... }:
 {
   options.mine.user.niri = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "User Niri Config";
-    };
+    enable = lib.mkEnableOption "User Niri Config";
     outputs = lib.mkOption {
       description = "Monitor configuration";
       default = { };
