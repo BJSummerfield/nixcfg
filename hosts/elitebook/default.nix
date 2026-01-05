@@ -36,9 +36,9 @@
       mine.user = {
         _1password = {
           enable = true;
-          sshAgent = true;
-          gitSigning = true;
-          ghPlugin = true;
+          sshAgent.enable = true;
+          gitSigning.enable = true;
+          ghPlugin.enable = true;
         };
         alacritty.enable = true;
         battery-notifications.enable = true;

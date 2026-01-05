@@ -9,10 +9,10 @@ in
 
   options.mine.user._1password = {
     enable = mkEnableOption "1Password User Config";
-    silentStart = mkEnableOption "Start 1Password silently with graphical session";
-    ghPlugin = mkEnableOption "Enable GitHub CLI integration";
-    gitSigning = mkEnableOption "Enable signing commits with 1Password";
-    sshAgent = mkEnableOption "Enable SSH Agent config for Git";
+    silentStart.enable = mkEnableOption "Start 1Password silently with graphical session";
+    ghPlugin.enable = mkEnableOption "Enable GitHub CLI integration";
+    gitSigning.enable = mkEnableOption "Enable signing commits with 1Password";
+    sshAgent.enable = mkEnableOption "Enable SSH Agent config for Git";
   };
 
   config = mkIf cfg.enable {
@@ -32,19 +32,19 @@ in
       };
     };
 
-    programs._1password-shell-plugins = mkIf cfg.ghPlugin {
+    programs._1password-shell-plugins = mkIf cfg.ghPlugin.enable {
       enable = true;
       plugins = [ pkgs.gh ];
     };
 
-    programs.git = mkIf cfg.gitSigning {
+    programs.git = mkIf cfg.gitSigning.enable {
       enable = true;
       settings = {
         gpg.ssh.program = "${lib.getExe' pkgs._1password-gui "op-ssh-sign"}";
       };
     };
 
-    programs.ssh = mkIf cfg.sshAgent {
+    programs.ssh = mkIf cfg.sshAgent.enable {
       enable = true;
       enableDefaultConfig = false;
       matchBlocks."*" = {
@@ -66,7 +66,7 @@ in
     };
 
     # makes a systemd service that runs 1password --silent on execution.
-    systemd.user.services."1password-silent" = mkIf cfg.silentStart {
+    systemd.user.services."1password-silent" = mkIf cfg.silentStart.enable {
       Unit = {
         Description = "Start 1Password in the background";
         PartOf = [ "graphical-session.target" ];
@@ -76,7 +76,7 @@ in
       Service = {
         Type = "simple";
         Environment = [ "DISPLAY=:0" ];
-        ExecStart = "${lib.getExe pkgs._1password-gui}/bin/1password --silent";
+        ExecStart = "${lib.getExe' pkgs._1password-gui}/bin/1password --silent";
         Restart = "on-failure";
         RestartSec = "1s";
       };

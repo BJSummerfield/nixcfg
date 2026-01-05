@@ -38,7 +38,7 @@
 
   config = {
     mine.user.xwayland-satellite.enable = true;
-    mine.user._1password.silentStart = true;
+    mine.user._1password.silentStart.enable = true;
 
     xdg.portal = {
       enable = true;
