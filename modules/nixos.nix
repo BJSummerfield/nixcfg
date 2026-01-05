@@ -10,6 +10,7 @@
     ./openssh/nixos.nix
     ./printing/nixos.nix
     ./steam/nixos.nix
+    ./system/nixos.nix
     ./tailscale/nixos.nix
     ./unfree
     ./users/nixos.nix

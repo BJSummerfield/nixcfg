@@ -11,7 +11,7 @@ in
 {
   options.mine.system._1password.enable = lib.mkEnableOption "1Password System Integration";
   config = lib.mkIf cfg.enable {
-    mine.system.allowedUnfree = [
+    mine.allowedUnfree = [
       "1password"
       "1password-cli"
     ];

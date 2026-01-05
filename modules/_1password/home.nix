@@ -16,6 +16,11 @@ in
   };
 
   config = mkIf cfg.enable {
+    mine.allowedUnfree = [
+      "1password"
+      "1password-cli"
+    ];
+
     mine.user.niri.extraWindowRules = ''
       // Security: Hide 1Password from screencasts/sharing
       window-rule {

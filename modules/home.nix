@@ -19,7 +19,6 @@
     ./mpls/home.nix
     ./niri/home.nix
     ./obs-studio/home.nix
-    ./openssh/home.nix
     ./polkit_gnome/home.nix
     ./stylix/home.nix
     ./swaybg/home.nix

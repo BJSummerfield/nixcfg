@@ -3,7 +3,7 @@
   imports =
     [
       ./hardware-configuration.nix
-      ../../modules
+      ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/dummy.nix
     ];
