@@ -37,7 +37,7 @@
     ./xwayland-satellite
   ];
 
-  # This takes all our unfree packages and adds them to the predicate
+  # This takes all our unfree packages and adds them to the predicate for system and home-manager
   options.mine.system = {
     allowedUnfree = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -48,5 +48,12 @@
   config = {
     nixpkgs.config.allowUnfreePredicate = pkg:
       builtins.elem (lib.getName pkg) config.mine.system.allowedUnfree;
+
+    home-manager.sharedModules = [
+      ({ lib, ... }: {
+        nixpkgs.config.allowUnfreePredicate = pkg:
+          builtins.elem (lib.getName pkg) config.mine.system.allowedUnfree;
+      })
+    ];
   };
 }
