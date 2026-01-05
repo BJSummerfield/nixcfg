@@ -6,11 +6,11 @@ in
 {
   options.mine.user.helix.lsp.bicep.enable = mkEnableOption "Enable bicep lsp for helix";
   config = mkIf cfg.enable {
-    mine.user.bicep-langserver.expose = true;
     programs.helix = {
       extraPackages = with pkgs; [
         bicep-langserver
       ];
     };
+    home.packages = [ pkgs.bicep-langserver ];
   };
 }
