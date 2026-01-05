@@ -10,30 +10,45 @@
     ];
 
   environment.systemPackages = with pkgs; [
-    git
     bottom
+    git
     helix
   ];
 
   mine = {
     system = {
       hostName = "elitebook";
-      _1password.enable = true;
       shell.fish.enable = true;
-      makemkv.enable = true;
-      openssh.enable = true;
-      tailscale.enable = true;
-      niri.enable = true;
-      docker.enable = true;
+      _1password.enable = true;
       avahi.enable = true;
+      docker.enable = true;
+      gamescope.enable = true;
+      makemkv.enable = true;
+      niri.enable = true;
+      openssh.enable = true;
       printing.enable = true;
       steam.enable = true;
-      gamescope.enable = true;
+      tailscale.enable = true;
     };
   };
   home-manager.users = {
     waktu = {
       mine.user = {
+        _1password = {
+          enable = true;
+          sshAgent = true;
+          gitSigning = true;
+          ghPlugin = true;
+        };
+        alacritty.enable = true;
+        battery-notifications.enable = true;
+        catppuccin.enable = true;
+        direnv.enable = true;
+        encode_queue.enable = true;
+        firefox.enable = true;
+        fuzzel.enable = true;
+        gh.enable = true;
+        git.enable = true;
         helix = {
           enable = true;
           lsp = {
@@ -54,30 +69,15 @@
             yaml.enable = true;
           };
         };
-        _1password = {
-          enable = true;
-          sshAgent = true;
-          gitSigning = true;
-          ghPlugin = true;
-        };
-        polkit-gnome.enable = true;
-        catppuccin.enable = true;
-        battery-notifications.enable = true;
-        encode_queue.enable = true;
-        mako.enable = true;
-        git.enable = true;
-        gh.enable = true;
+        keybase.enable = true;
         lazygit.enable = true;
-        alacritty.enable = true;
-        swaybg.enable = true;
+        mako.enable = true;
+        obs-studio.enable = true;
+        polkit-gnome.enable = true;
         stylix.enable = true;
+        swaybg.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
-        fuzzel.enable = true;
-        firefox.enable = true;
-        keybase.enable = true;
-        obs-studio.enable = true;
-        direnv.enable = true;
       };
       programs = {
         eza.enable = true;
@@ -85,11 +85,11 @@
         zoxide.enable = true;
       };
       home.packages = with pkgs; [
-        jellyfin-tui
-        ffmpeg
-        subtitleedit
         abcde
+        ffmpeg
+        jellyfin-tui
         picard
+        subtitleedit
       ];
     };
     dummy = {
