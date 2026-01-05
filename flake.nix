@@ -13,29 +13,29 @@
   outputs = { nixpkgs, ... }@inputs:
     {
       nixosConfigurations = {
-        # t495 = nixpkgs.lib.nixosSystem {
-        #   specialArgs = {
-        #     inherit inputs;
-        #   };
-        #   modules = [ ./hosts/t495 ];
-        # };
+        elitebook = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/elitebook ];
+        };
         redtruck = nixpkgs.lib.nixosSystem {
           specialArgs = {
             inherit inputs;
           };
           modules = [ ./hosts/redtruck ];
         };
-        # vm-mac = nixpkgs.lib.nixosSystem {
-        #   specialArgs = {
-        #     inherit inputs;
-        #   };
-        #   modules = [ ./hosts/vm-mac ];
-        # };
-        elitebook = nixpkgs.lib.nixosSystem {
+        t495 = nixpkgs.lib.nixosSystem {
           specialArgs = {
             inherit inputs;
           };
-          modules = [ ./hosts/elitebook ];
+          modules = [ ./hosts/t495 ];
+        };
+        vm-mac = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/vm-mac ];
         };
       };
     };
