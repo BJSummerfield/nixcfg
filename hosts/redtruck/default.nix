@@ -7,6 +7,7 @@
       ./extraconfig.nix
       ../../modules
       ../../users/waktu.nix
+      ../../users/dummy.nix
     ];
 
 
@@ -42,7 +43,6 @@
           ghPlugin.enable = true;
         };
         alacritty.enable = true;
-        battery-notifications.enable = true;
         catppuccin.enable = true;
         direnv.enable = true;
         encode_queue.enable = true;
@@ -92,6 +92,13 @@
         picard
         subtitleedit
       ];
+    };
+    dummy = {
+      mine.user = {
+        git.enable = true;
+        alacritty.enable = true;
+        firefox.enable = true;
+      };
     };
   };
 }

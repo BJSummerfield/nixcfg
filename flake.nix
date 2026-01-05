@@ -19,12 +19,12 @@
         #   };
         #   modules = [ ./hosts/t495 ];
         # };
-        # redtruck = nixpkgs.lib.nixosSystem {
-        #   specialArgs = {
-        #     inherit inputs;
-        #   };
-        #   modules = [ ./hosts/redtruck ];
-        # };
+        redtruck = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/redtruck ];
+        };
         # vm-mac = nixpkgs.lib.nixosSystem {
         #   specialArgs = {
         #     inherit inputs;
