@@ -16,6 +16,7 @@
     ./printing
     ./alacritty
     ./gh
+    ./mpls
     ./helix
     ./fuzzel
     ./niri

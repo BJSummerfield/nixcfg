@@ -1,11 +1,11 @@
 { pkgs, lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkOption types mkIf;
-  cfg = config.mine.user.encode_queue;
+  cfg = config.mine.user.mpls;
 in
 {
-  options.mine.user.encode_queue = {
-    enable = mkEnableOption "Encode Queue Tool";
+  options.mine.user.mpls = {
+    enable = mkEnableOption "Mpls markdown language server";
     package = mkOption {
       type = types.package;
       default = pkgs.callPackage ./package.nix { };
