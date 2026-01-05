@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
-  # fonts = config.mine.system.fonts;
+  stylixEnabled = config.mine.desktop.theme.stylix.enable;
 in
 {
   options.mine.user.alacritty = {
@@ -14,7 +14,7 @@ in
       enable = true;
       settings = {
         font = {
-          # normal.family = mkIf fonts.enable fonts.name;
+          normal.family = mkIf stylixEnabled config.stylix.fonts.monospace.name;
           size = 14;
         };
         window = {
@@ -32,6 +32,7 @@ in
     };
 
     catppuccin.alacritty.enable = true;
+    stylix.targets.alacritty.enable = false;
     mine.user.niri.extraBinds = ''Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }'';
   };
 }

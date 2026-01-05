@@ -4,6 +4,7 @@
     ./mako
     ./direnv
     ./catppuccin
+    ./stylix
     ./encode_queue
     ./bicep-langserver
     ./_1password

@@ -18,5 +18,6 @@
       '';
     };
     catppuccin.fish.enable = true;
+    stylix.targets.fish.enable = false;
   };
 }
