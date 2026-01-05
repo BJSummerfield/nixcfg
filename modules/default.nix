@@ -2,6 +2,7 @@
   imports = [
     ./docker
     ./direnv
+    ./encode_queue
     ./bicep-langserver
     ./_1password
     ./polkit_gnome
@@ -38,7 +39,6 @@
       description = "List of unfree packages to allow.";
     };
   };
-
   config = {
     nixpkgs.config.allowUnfreePredicate = pkg:
       builtins.elem (lib.getName pkg) config.mine.system.allowedUnfree;
