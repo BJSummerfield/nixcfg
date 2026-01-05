@@ -16,6 +16,7 @@
     ./printing
     ./alacritty
     ./gh
+    ./helix
     ./fuzzel
     ./niri
     # ./apps
