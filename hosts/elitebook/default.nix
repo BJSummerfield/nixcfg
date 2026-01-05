@@ -33,11 +33,6 @@
   };
   home-manager.users = {
     waktu = {
-      programs = {
-        eza.enable = true;
-        starship.enable = true;
-        zoxide.enable = true;
-      };
       mine.user = {
         helix = {
           enable = true;
@@ -76,6 +71,11 @@
         keybase.enable = true;
         obs-studio.enable = true;
         direnv.enable = true;
+      };
+      programs = {
+        eza.enable = true;
+        starship.enable = true;
+        zoxide.enable = true;
       };
       home.packages = with pkgs; [
         jellyfin-tui

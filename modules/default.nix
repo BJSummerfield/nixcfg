@@ -29,6 +29,7 @@
     ./firefox
     ./lazygit
     ./git
+    ./battery-notifications
     ./tailscale
     ./openssh
     ./xwayland-satellite

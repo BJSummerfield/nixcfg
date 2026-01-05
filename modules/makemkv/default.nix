@@ -7,6 +7,10 @@ in
   options.mine.system.makemkv.enable = mkEnableOption "Enable makemkv";
 
   config = mkIf cfg.enable {
+
+    mine.system.allowedUnfree = [
+      "makemkv"
+    ];
     boot.kernelModules = [ "sg" ];
     environment.systemPackages = [ pkgs.makemkv ];
   };
