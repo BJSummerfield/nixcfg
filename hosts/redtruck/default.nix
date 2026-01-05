@@ -5,7 +5,7 @@
       ./hardware-configuration.nix
       ./filesystems.nix
       ./extraconfig.nix
-      ../../modules
+      ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/dummy.nix
     ];

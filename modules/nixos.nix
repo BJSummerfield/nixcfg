@@ -1,40 +1,17 @@
 { lib, config, ... }: {
   imports = [
-    ./_1password
-    ./alacritty
-    ./avahi
-    ./battery-notifications
-    ./bicep-langserver
-    ./catppuccin
-    ./direnv
-    ./docker
-    ./encode_queue
-    ./firefox
-    ./fish
-    ./fuzzel
-    ./gamescope
-    ./gh
-    ./git
-    ./helix
-    ./keybase
-    ./lazygit
-    ./makemkv
-    ./mako
-    ./mpls
-    ./niri
-    ./obs-studio
-    ./openssh
-    ./polkit_gnome
-    ./printing
-    ./steam
-    ./stylix
-    ./swaybg
-    ./swayidle
-    ./swaylock
-    ./system
-    ./tailscale
-    ./users
-    ./xwayland-satellite
+    ./_1password/nixos.nix
+    ./avahi/nixos.nix
+    ./docker/nixos.nix
+    ./fish/nixos.nix
+    ./gamescope/nixos.nix
+    ./makemkv/nixos.nix
+    ./niri/nixos.nix
+    ./openssh/nixos.nix
+    ./printing/nixos.nix
+    ./steam/nixos.nix
+    ./tailscale/nixos.nix
+    ./users/nixos.nix
   ];
 
   # This takes all our unfree packages and adds them to the predicate for system and home-manager
@@ -48,7 +25,6 @@
   config = {
     nixpkgs.config.allowUnfreePredicate = pkg:
       builtins.elem (lib.getName pkg) config.mine.system.allowedUnfree;
-
     home-manager.sharedModules = [
       ({ lib, ... }: {
         nixpkgs.config.allowUnfreePredicate = pkg:

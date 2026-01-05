@@ -9,7 +9,6 @@ let
   allowedUsers = lib.attrNames usersWith1Pass;
 in
 {
-  home-manager.sharedModules = [ ./home.nix ];
   options.mine.system._1password.enable = lib.mkEnableOption "1Password System Integration";
   config = lib.mkIf cfg.enable {
     mine.system.allowedUnfree = [

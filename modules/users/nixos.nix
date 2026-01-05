@@ -5,8 +5,6 @@ let
   adminUsernames = lib.attrNames (lib.filterAttrs (n: u: u.isSuperUser) cfg);
 in
 {
-
-  # Import home manager
   imports = [
     inputs.home-manager.nixosModules.home-manager
   ];

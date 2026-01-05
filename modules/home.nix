@@ -1,0 +1,30 @@
+{ ... }: {
+  home-manager.sharedModules = [
+    ./_1password/home.nix
+    ./alacritty/home.nix
+    ./battery-notifications/home.nix
+    ./bicep-langserver/home.nix
+    ./catppuccin/home.nix
+    ./direnv/home.nix
+    ./encode_queue/home.nix
+    ./firefox/home.nix
+    ./fish/home.nix
+    ./fuzzel/home.nix
+    ./gh/home.nix
+    ./git/home.nix
+    ./helix/home.nix
+    ./keybase/home.nix
+    ./lazygit/home.nix
+    ./mako/home.nix
+    ./mpls/home.nix
+    ./niri/home.nix
+    ./obs-studio/home.nix
+    ./openssh/home.nix
+    ./polkit_gnome/home.nix
+    ./stylix/home.nix
+    ./swaybg/home.nix
+    ./swayidle/home.nix
+    ./swaylock/home.nix
+    ./xwayland-satellite/home.nix
+  ];
+}
