@@ -1,6 +1,7 @@
 { lib, config, ... }: {
   imports = [
     ./docker
+    ./direnv
     ./bicep-langserver
     ./_1password
     ./polkit_gnome
