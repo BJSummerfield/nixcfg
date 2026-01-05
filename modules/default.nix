@@ -12,10 +12,10 @@
     ./avahi
     ./steam
     ./gamescope
-    ./printing
     ./alacritty
     ./gh
     ./mpls
+    ./makemkv
     ./helix
     ./fuzzel
     ./niri

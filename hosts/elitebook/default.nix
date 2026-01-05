@@ -17,9 +17,15 @@
 
   mine = {
     system = {
-      _1password.enable = true;
       hostName = "elitebook";
+      _1password = {
+        enable = true;
+        sshAgent.enable = true;
+        gitSigning.enable = true;
+        ghPlugin.enable = true;
+      };
       shell.fish.enable = true;
+      makemkv.enable = true;
       openssh.enable = true;
       tailscale.enable = true;
       niri.enable = true;
@@ -59,11 +65,11 @@
             yaml.enable = true;
           };
         };
-        eza.enable = true;
         _1password.enable = true;
         polkit-gnome.enable = true;
         encode_queue.enable = true;
         git.enable = true;
+        gh.enable = true;
         lazygit.enable = true;
         alacritty.enable = true;
         fuzzel.enable = true;
@@ -71,7 +77,15 @@
         keybase.enable = true;
         obs-studio.enable = true;
         direnv.enable = true;
+        makemkv.enable = true;
       };
+      home.packages = with pkgs; [
+        jellyfin-tui
+        ffmpeg
+        subtitleedit
+        abcde
+        picard
+      ];
     };
     dummy = {
       mine.user = {
