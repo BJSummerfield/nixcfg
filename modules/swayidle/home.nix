@@ -2,7 +2,7 @@
 
 let
   inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.desktop.swayidle;
+  cfg = config.mine.user.swayidle;
   brightnessctl = "${pkgs.brightnessctl}/bin/brightnessctl";
   niri = "${pkgs.niri}/bin/niri";
   swaylock = "${pkgs.swaylock-effects}/bin/swaylock";
@@ -13,7 +13,7 @@ let
   brightness_restore = "${brightnessctl} -r";
 in
 {
-  options.mine.desktop.swayidle.enable = mkEnableOption "Enable swayidle config for Niri";
+  options.mine.user.swayidle.enable = mkEnableOption "Enable swayidle config for Niri";
 
   config = mkIf cfg.enable {
     services.swayidle = {

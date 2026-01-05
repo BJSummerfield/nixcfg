@@ -2,11 +2,11 @@
 
 let
   inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.desktop.swaylock;
-  stylix = config.mine.user.stylix;
+  cfg = config.mine.user.swaylock;
+  stylixEnabled = config.mine.user.stylix.enable;
 in
 {
-  options.mine.desktop.swaylock.enable = mkEnableOption "Enable swaylock config";
+  options.mine.user.swaylock.enable = mkEnableOption "Enable swaylock config";
 
   config = mkIf cfg.enable {
     programs.swaylock = {
@@ -23,7 +23,7 @@ in
         effect-vignette = "0.5:0.5";
         # grace = 2;
         fade-in = 1;
-        font = stylix.fonts.monospace.name;
+        font = mkIf stylixEnabled config.stylix.fonts.monospace.name;
         font-size = 24;
       };
     };

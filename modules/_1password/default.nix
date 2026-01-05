@@ -4,7 +4,7 @@ let
   # allowedUsers is the names of all users that have 1password enabled
   hmUsers = config.home-manager.users;
   usersWith1Pass = lib.filterAttrs
-    (name: userConfig: userConfig.mine.user.apps._1password.enable or false)
+    (name: userConfig: userConfig.mine.user._1password.enable or false)
     hmUsers;
   allowedUsers = lib.attrNames usersWith1Pass;
 in

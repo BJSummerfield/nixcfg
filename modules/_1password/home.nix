@@ -76,7 +76,7 @@ in
       Service = {
         Type = "simple";
         Environment = [ "DISPLAY=:0" ];
-        ExecStart = "${config.programs._1password-gui.package}/bin/1password --silent";
+        ExecStart = "${lib.getExe pkgs._1password-gui}/bin/1password --silent";
         Restart = "on-failure";
         RestartSec = "1s";
       };

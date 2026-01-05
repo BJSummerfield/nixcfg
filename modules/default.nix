@@ -7,6 +7,7 @@
     ./stylix
     ./swaybg
     ./swayidle
+    ./swaylock
     ./encode_queue
     ./bicep-langserver
     ./_1password
