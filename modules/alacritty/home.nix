@@ -2,7 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
-  stylixEnabled = config.mine.user.stylix.enable;
+  stylix = config.mine.user.stylix;
 in
 {
   options.mine.user.alacritty = {
@@ -14,7 +14,7 @@ in
       enable = true;
       settings = {
         font = {
-          normal.family = mkIf stylixEnabled config.stylix.fonts.monospace.name;
+          normal.family = mkIf stylix.enabled stylix.fonts.monospace.name;
           size = 14;
         };
         window = {

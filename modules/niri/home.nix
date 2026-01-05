@@ -38,7 +38,8 @@
 
   config = {
     mine.user.xwayland-satellite.enable = true;
-    # mine.apps._1password.silentStartOnGraphical = true;
+    mine.user._1password.silentStart = true;
+
     xdg.portal = {
       enable = true;
       extraPortals = with pkgs; [

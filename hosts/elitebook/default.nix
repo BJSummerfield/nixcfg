@@ -71,6 +71,8 @@
         alacritty.enable = true;
         swaybg.enable = true;
         stylix.enable = true;
+        swayidle.enable = true;
+        swaylock.enable = true;
         fuzzel.enable = true;
         firefox.enable = true;
         keybase.enable = true;
