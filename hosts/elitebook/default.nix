@@ -32,6 +32,12 @@
   };
   home-manager.users = {
     waktu = {
+      service.printing.enable = true;
+      programs = {
+        eza.enable = true;
+        starship.enable = true;
+        zoxide.enable = true;
+      };
       mine.user = {
         helix = {
           enable = true;
@@ -43,6 +49,7 @@
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;
+            markdown.enable = true;
             nix.enable = true;
             python.enable = true;
             rust.enable = true;
@@ -55,6 +62,7 @@
         eza.enable = true;
         _1password.enable = true;
         polkit-gnome.enable = true;
+        encode_queue.enable = true;
         git.enable = true;
         lazygit.enable = true;
         alacritty.enable = true;

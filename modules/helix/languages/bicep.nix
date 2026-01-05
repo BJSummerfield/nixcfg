@@ -12,6 +12,8 @@ in
         bicepModule.package
       ];
     };
-    home.packages = [ pkgs.bicep-langserver ];
+    # home.packages = [
+    #   bicepModule.package
+    # ];
   };
 }
