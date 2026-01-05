@@ -14,5 +14,10 @@ in
       enable = true;
       remotePlay.openFirewall = mkIf cfg.remotePlay true;
     };
+
+    mine.system.allowedUnfree = [
+      "steam"
+      "steam-unwrapped"
+    ];
   };
 }

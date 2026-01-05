@@ -2,7 +2,7 @@
 {
   options.mine.user.firefox.enable = lib.mkEnableOption "Enable firefox config";
 
-  config = lib.mkIf config.mine.apps.firefox.enable {
+  config = lib.mkIf config.mine.user.firefox.enable {
     programs.firefox = {
       enable = true;
       policies = {

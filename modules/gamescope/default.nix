@@ -1,10 +1,10 @@
 { config, lib, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.cli-tools.gamescope;
+  cfg = config.mine.system.gamescope;
 in
 {
-  options.mine.cli-tools.gamescope = {
+  options.mine.system.gamescope = {
     enable = mkEnableOption "Enable gamescope compositor";
     overlay = mkEnableOption "User Gamescope Overlay";
   };

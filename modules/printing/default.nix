@@ -1,8 +1,8 @@
 { lib, config, ... }:
 {
-  options.mine.system.printer.enable = lib.mkEnableOption "Enable printing service";
+  options.mine.system.printing.enable = lib.mkEnableOption "Enable printing service";
 
-  config = lib.mkIf config.mine.system.printer.enable {
+  config = lib.mkIf config.mine.system.printing.enable {
     services.printing.enable = true;
   };
 }

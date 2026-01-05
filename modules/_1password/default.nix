@@ -12,14 +12,13 @@ in
   options.mine.system._1password.enable = lib.mkEnableOption "1Password System Integration";
 
   config = lib.mkIf cfg.enable {
-    nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+    mine.system.allowedUnfree = [
       "1password"
       # "1password-gui"
       "1password-cli"
     ];
 
     programs._1password.enable = true;
-
     programs._1password-gui = {
       enable = true;
       polkitPolicyOwners = allowedUsers;

@@ -22,12 +22,6 @@ in
           match app-id="1Password"
           block-out-from "screen-capture"
       }
-      
-      // usability: Always float the "Quick Access" bar
-      window-rule {
-          match title="1Password"
-          open-floating true
-      }
     '';
 
     programs.firefox.policies.ExtensionSettings = {
