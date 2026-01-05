@@ -3,6 +3,7 @@
     ./docker
     ./direnv
     ./encode_queue
+    ./eza
     ./bicep-langserver
     ./_1password
     ./polkit_gnome
