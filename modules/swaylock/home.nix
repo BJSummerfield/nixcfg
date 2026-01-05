@@ -27,5 +27,6 @@ in
         font-size = 24;
       };
     };
+    catppuccin.swaylock.enable = true;
   };
 }
