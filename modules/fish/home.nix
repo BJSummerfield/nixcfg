@@ -17,5 +17,6 @@
         set fish_greeting # Disable greeting
       '';
     };
+    catppuccin.fish.enable = true;
   };
 }

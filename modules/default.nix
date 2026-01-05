@@ -2,6 +2,7 @@
   imports = [
     ./docker
     ./direnv
+    ./catppuccin
     ./encode_queue
     ./bicep-langserver
     ./_1password

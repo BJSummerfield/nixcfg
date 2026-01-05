@@ -61,6 +61,8 @@
           ghPlugin = true;
         };
         polkit-gnome.enable = true;
+        catppuccin.enable = true;
+        battery-notifications.enable = true;
         encode_queue.enable = true;
         git.enable = true;
         gh.enable = true;

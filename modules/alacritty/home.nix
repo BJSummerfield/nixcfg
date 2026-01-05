@@ -31,6 +31,7 @@ in
       TERMINAL = "alacritty";
     };
 
+    catppuccin.alacritty.enable = true;
     mine.user.niri.extraBinds = ''Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }'';
   };
 }

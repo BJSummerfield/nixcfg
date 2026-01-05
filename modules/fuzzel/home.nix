@@ -9,5 +9,6 @@
       };
     };
     mine.user.niri.extraBinds = '' Mod+Space { spawn "${lib.getExe config.programs.fuzzel.package}"; } '';
+    catppuccin.fuzzel.enable = true;
   };
 }
