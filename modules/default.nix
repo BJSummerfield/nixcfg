@@ -33,6 +33,7 @@
     ./swaylock
     ./system
     ./tailscale
+    ./users
     ./xwayland-satellite
   ];
 

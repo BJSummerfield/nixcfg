@@ -53,7 +53,6 @@ in
 
     # Map the users to home-manager
     home-manager = {
-      useGlobalPkgs = true;
       useUserPackages = true;
       extraSpecialArgs = { inherit inputs; };
       users = lib.mapAttrs
