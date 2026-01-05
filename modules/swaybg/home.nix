@@ -2,16 +2,15 @@
 let
   inherit (lib) mkEnableOption mkIf;
   inherit (config.mine) user;
-  cfg = config.mine.desktop.swaybg;
+  cfg = config.mine.user.swaybg;
   wallpaper = "mountain.jpg";
 in
 {
-  options.mine.desktop.swaybg = {
+  options.mine.user.swaybg = {
     enable = mkEnableOption "Enable swaybg config";
   };
 
   config = mkIf cfg.enable {
-
     home.file = {
       ".config/swaybg/${wallpaper}".source = ../wallpapers/${wallpaper};
     };
