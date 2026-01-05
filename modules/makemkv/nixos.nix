@@ -8,7 +8,7 @@ in
 
   config = mkIf cfg.enable {
 
-    mine.system.allowedUnfree = [
+    mine.allowedUnfree = [
       "makemkv"
     ];
     boot.kernelModules = [ "sg" ];

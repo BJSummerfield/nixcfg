@@ -1,5 +1,5 @@
 { ... }: {
-  home-manager.sharedModules = [
+  imports = [
     ./_1password/home.nix
     ./alacritty/home.nix
     ./battery-notifications/home.nix
@@ -25,6 +25,7 @@
     ./swaybg/home.nix
     ./swayidle/home.nix
     ./swaylock/home.nix
+    ./unfree
     ./xwayland-satellite/home.nix
   ];
 }
