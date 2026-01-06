@@ -67,8 +67,6 @@
         polkit-gnome.enable = true;
         stylix.enable = true;
         swaybg.enable = true;
-        swayidle.enable = true;
-        swaylock.enable = true;
       };
       programs = {
         eza.enable = true;
