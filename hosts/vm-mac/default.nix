@@ -41,17 +41,23 @@
         helix = {
           enable = true;
           lsp = {
+            bicep.enable = true;
             css.enable = true;
+            graphql.enable = true;
             html.enable = true;
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;
             markdown.enable = true;
             nix.enable = true;
+            python.enable = true;
             rust.enable = true;
             toml.enable = true;
             tsx.enable = true;
-            typescript.enable = true;
+            typescript = {
+              enable = true;
+              formatter = "prettier";
+            };
             yaml.enable = true;
           };
         };
