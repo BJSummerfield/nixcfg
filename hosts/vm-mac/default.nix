@@ -14,6 +14,7 @@
   ];
 
   mine = {
+    allowedUnfree = [ "prl-tools" ];
     system = {
       hostName = "vm-mac";
       fish.enable = true;
