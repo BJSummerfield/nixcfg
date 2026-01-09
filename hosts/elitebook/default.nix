@@ -6,6 +6,7 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/dummy.nix
+      ../../users/sumriri.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -75,6 +76,24 @@
         eza.enable = true;
         starship.enable = true;
         zoxide.enable = true;
+      };
+    };
+    sumriri = {
+      mine.user = {
+        _1password = {
+          enable = true;
+        };
+        alacritty.enable = true;
+        battery-notifications.enable = true;
+        catppuccin.enable = true;
+        fish.enable = true;
+        fuzzel.enable = true;
+        mako.enable = true;
+        polkit-gnome.enable = true;
+        stylix.enable = true;
+        swaybg.enable = true;
+        swayidle.enable = true;
+        swaylock.enable = true;
       };
     };
     dummy = {
