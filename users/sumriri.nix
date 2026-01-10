@@ -7,7 +7,9 @@
       {
         programs.fish.loginShellInit = ''
           if test -z "$WAYLAND_DISPLAY" -a "$XDG_VTNR" = 1
-            exec niri-session -l
+            exec gamescope -W 1920 -H 1080 -r 60 \
+            -f -e --xwayland-count 2 \
+            -- steam -gamepadui 
           end
         '';
       }

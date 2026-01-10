@@ -9,6 +9,14 @@
       ../../users/sumriri.nix
     ];
 
+
+
+  programs.gamescope = {
+    enable = true;
+    capSysNice = true;
+  };
+  programs.steam.gamescopeSession.enable = true;
+
   environment.systemPackages = with pkgs; [
     bottom
     git
@@ -80,20 +88,8 @@
     };
     sumriri = {
       mine.user = {
-        _1password = {
-          enable = true;
-        };
-        alacritty.enable = true;
-        battery-notifications.enable = true;
-        catppuccin.enable = true;
         fish.enable = true;
-        fuzzel.enable = true;
-        mako.enable = true;
-        polkit-gnome.enable = true;
-        stylix.enable = true;
-        swaybg.enable = true;
-        swayidle.enable = true;
-        swaylock.enable = true;
+
       };
     };
     dummy = {
