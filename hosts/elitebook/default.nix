@@ -21,6 +21,7 @@
     bottom
     git
     helix
+    jellyfin-media-player
   ];
 
   mine = {
