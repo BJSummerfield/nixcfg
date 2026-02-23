@@ -28,6 +28,7 @@
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
+      teamspeak-client.enable = true;
     };
   };
   home-manager.users = {

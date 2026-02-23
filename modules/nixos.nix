@@ -12,6 +12,7 @@
     ./steam/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
+    ./teamspeak-client/nixos.nix
     ./unfree
     ./users/nixos.nix
   ];
