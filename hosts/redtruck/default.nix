@@ -80,6 +80,7 @@
         swayidle.enable = true;
         swaylock.enable = true;
       };
+
       programs = {
         eza.enable = true;
         starship.enable = true;
