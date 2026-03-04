@@ -5,6 +5,7 @@
     ./docker/nixos.nix
     ./fish/nixos.nix
     ./gamescope/nixos.nix
+    ./jellyfin-server/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
     ./openssh/nixos.nix
