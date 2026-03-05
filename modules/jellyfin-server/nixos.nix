@@ -4,22 +4,6 @@
 
   config = lib.mkIf config.mine.system.jellyfin-server.enable {
 
-    # systemd.services."container-jellyfin-network" = {
-    #   description = "Bring up ve-jellyfin interface and restart container tailscale";
-    #   after = [ "container@jellyfin.service" ];
-    #   requires = [ "container@jellyfin.service" ];
-    #   wantedBy = [ "multi-user.target" ];
-    #   serviceConfig = {
-    #     Type = "oneshot";
-    #     RemainAfterExit = true;
-    #   };
-    #   script = ''
-    #     ${pkgs.iproute2}/bin/ip link set ve-jellyfin up
-    #     ${pkgs.iproute2}/bin/ip addr add 192.168.100.10/24 dev ve-jellyfin || true
-    #     sleep 2
-    #     ${pkgs.nixos-container}/bin/nixos-container run jellyfin -- systemctl restart tailscaled
-    #   '';
-    # };
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-jellyfin" ];
@@ -78,6 +62,8 @@
         networking = {
           firewall = {
             enable = true;
+
+            trustedInterfaces = [ "tailscale0" ];
             allowedTCPPorts = [ 8096 ];
             allowedUDPPorts = [ config.services.tailscale.port ];
           };
