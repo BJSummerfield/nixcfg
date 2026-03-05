@@ -32,7 +32,10 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.enable = true;
-      jellyfin-server.enable = true;
+      jellyfin-server = {
+        enable = true;
+        externalInterface = "wlp0s20f3";
+      };
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
