@@ -24,7 +24,7 @@ in
     mine.user.niri.extraWindowRules = ''
       // Security: Hide 1Password from screencasts/sharing
       window-rule {
-          match app-id="1Password"
+          match app-id="1password"
           block-out-from "screen-capture"
       }
     '';
