@@ -21,7 +21,7 @@
     bottom
     git
     helix
-    jellyfin-media-player
+    # jellyfin-media-player
   ];
 
   mine = {
@@ -32,6 +32,7 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.enable = true;
+      jellyfin-server.enable = true;
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
