@@ -22,7 +22,10 @@
       _1password.enable = true;
       avahi.enable = true;
       docker.enable = true;
-      jellyfin-server.enable = true;
+      jellyfin-server = {
+        enable = true;
+        externalInterface = "enp34s0";
+      };
       makemkv.enable = true;
       niri.enable = true;
       openssh.enable = true;

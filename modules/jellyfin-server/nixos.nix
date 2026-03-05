@@ -1,20 +1,27 @@
 { lib, config, pkgs, ... }:
 {
-  options.mine.system.jellyfin-server.enable = lib.mkEnableOption "Enable Jellyfin-server container";
+  options.mine.system.jellyfin-server = {
+    enable = lib.mkEnableOption "Enable Jellyfin-server container";
+    externalInterface = lib.mkOption {
+      type = lib.types.str;
+      description = "External network interface for NAT";
+    };
+  };
 
   config = lib.mkIf config.mine.system.jellyfin-server.enable {
 
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-jellyfin" ];
-      externalInterface = "enp34s0";
+      externalInterface = config.mine.system.jellyfin-server.externalInterface;
     };
 
-    # networking.firewall = {
-    #   checkReversePath = "loose";
-    #   trustedInterfaces = [ "ve-+" ];
-    # };
-    # 
+    system.activationScripts.jellyfin-dirs = ''
+      mkdir -p /srv/media
+      mkdir -p /var/lib/tailscale-jellyfin
+      chmod 755 /srv/media
+      chmod 700 /var/lib/tailscale-jellyfin
+    '';
 
     containers.jellyfin = {
       autoStart = true;
@@ -27,8 +34,6 @@
         { modifier = "rwm"; node = "/dev/net/tun"; }
       ];
 
-      # extraFlags = [ "--property=DeviceAllow=/dev/net/tun" ];
-
       bindMounts = {
         "/media" = {
           hostPath = "/srv/media";
@@ -37,18 +42,24 @@
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # "/var/lib/tailscale" = {
-        #   hostPath = "/var/lib/tailscale-jellyfin";
-        #   isReadOnly = false;
-        # };
+        "/var/lib/tailscale" = {
+          hostPath = "/var/lib/tailscale-jellyfin";
+          isReadOnly = false;
+        };
         "/run/tailscale-auth" = {
           hostPath = "/etc/tailscale-jellyfin-key";
           isReadOnly = true;
         };
       };
       config = { config, pkgs, lib, ... }: {
+        systemd.services.tailscaled-autoconnect = {
+          serviceConfig = {
+            Type = lib.mkForce "simple";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
 
-        systemd.services.tailscaled-autoconnect.serviceConfig.Type = lib.mkForce "simple";
         services.tailscale = {
           enable = true;
           authKeyFile = "/run/tailscale-auth";
@@ -58,23 +69,31 @@
           ];
         };
 
+        systemd.services.tailscale-serve = {
+          description = "Tailscale Serve for Jellyfin";
+          after = [ "tailscaled-autoconnect.service" "jellyfin.service" ];
+          wants = [ "tailscaled-autoconnect.service" "jellyfin.service" ];
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 10;
+          };
+          script = ''
+            ${pkgs.tailscale}/bin/tailscale serve --bg 8096
+          '';
+        };
+
         services.jellyfin.enable = true;
         networking = {
+          nameservers = [ "1.1.1.1" "8.8.8.8" ];
           firewall = {
             enable = true;
-
             trustedInterfaces = [ "tailscale0" ];
-            allowedTCPPorts = [ 8096 ];
             allowedUDPPorts = [ config.services.tailscale.port ];
           };
         };
-
-        # systemd.tmpfiles.rules = [
-        #   "d /var/lib/tailscale-jellyfin 0700 root root -"
-        #   "d /var/lib/nixos-containers/jellyfin/dev/net 0755 root root -"
-        #   "f /var/lib/nixos-containers/jellyfin/dev/net/tun 0666 root root -"
-        #   "d /run/secrets 0700 root root -"
-        # ];
 
         systemd.services.jellyfin = {
           serviceConfig = {
