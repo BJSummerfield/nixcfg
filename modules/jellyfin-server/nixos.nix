@@ -1,6 +1,6 @@
 # Required: Create the Tailscale OAuth key file before enabling:
-#   echo "tskey-client-..." | sudo tee /etc/tailscale-jellyfin-key
-#   sudo chmod 600 /etc/tailscale-jellyfin-key
+#   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
+#   sudo chmod 600 /etc/tailscale-solo-node-key
 
 { lib, config, pkgs, ... }:
 {
@@ -115,7 +115,7 @@
           };
           # where to find the auth key
           "/run/tailscale-auth" = {
-            hostPath = "/etc/tailscale-jellyfin-key";
+            hostPath = "/etc/tailscale-solo-node-key";
             isReadOnly = true;
           };
         };
