@@ -57,7 +57,7 @@
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
+      config = { config, lib, ... }: {
 
         systemd.services.tailscaled-autoconnect = {
           serviceConfig = {
@@ -74,7 +74,7 @@
           authKeyFile = "/run/tailscale-auth";
           extraUpFlags = [
             "--hostname=teamspeaktest"
-            "--advertise-tags=tag:container"
+            "--advertise-tags=tag:solo-node"
           ];
         };
 
