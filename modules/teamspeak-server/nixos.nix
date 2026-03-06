@@ -2,13 +2,9 @@
 #   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
 #   sudo chmod 600 /etc/tailscale-solo-node-key
 #
-# Note: teamspeak-server is unfree, ensure your nixpkgs config allows it:
-#   nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-#     "teamspeak-server"
-#   ];
-#
 # First login: check /var/log/teamspeak3-server inside the container
 # for the ServerAdmin privilege key.
+# sudo nixos-container run teamspeak-server -- cat /var/log/teamspeak3-server | grep serveradmin
 
 { lib, config, ... }:
 {

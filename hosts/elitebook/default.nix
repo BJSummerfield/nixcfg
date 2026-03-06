@@ -40,6 +40,7 @@
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
+      teamspeak-server.enable = true;
     };
   };
   home-manager.users = {
