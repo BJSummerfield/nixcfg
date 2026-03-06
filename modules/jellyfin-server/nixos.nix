@@ -40,10 +40,9 @@
         };
       };
 
-
       hardware.graphics = {
         enable = true;
-        extraPackages = [ pkgs.intel-media-driver ];
+        extraPackages = [ pkgs.intel-media-driver pkgs.vpl-gpu-rt ];
       };
 
       # host level group id for nfs mount
@@ -51,6 +50,7 @@
 
       # for hardware acceleration
       users.groups.render.gid = renderGid;
+
       # Expose app to lan - not needed if only being accessed through tailnet
       networking.firewall.allowedTCPPorts = [ 8096 ];
       networking.nat.forwardPorts = [
@@ -89,7 +89,6 @@
           { modifier = "rwm"; node = "/dev/dri/renderD128"; }
         ];
 
-
         bindMounts = {
           "/media" = {
             hostPath = "/mnt/secure/nas";
@@ -103,7 +102,13 @@
           "/dev/dri" = {
             hostPath = "/dev/dri";
             isReadOnly = false;
-          }; # persists the tailscale node
+          };
+          # GPU drivers from host - avoids duplicating hardware.graphics in container
+          "/run/opengl-driver" = {
+            hostPath = "/run/opengl-driver";
+            isReadOnly = true;
+          };
+          # persists the tailscale node
           "/var/lib/tailscale" = {
             hostPath = "/var/lib/tailscale-jellyfin";
             isReadOnly = false;
@@ -118,13 +123,9 @@
           # container level gid for the media group and nfs mount
           users.groups.media.gid = 65540;
 
-          hardware.graphics = {
-            enable = true;
-            extraPackages = [ pkgs.intel-media-driver ];
-          };
-
           # for hardware acceleration
           users.groups.render.gid = renderGid;
+
           systemd.services.tailscaled-autoconnect = {
             serviceConfig = {
               # fix for tailscale not creating the veth for the container
@@ -180,20 +181,11 @@
             environment = { LIBVA_DRIVER_NAME = "iHD"; };
             serviceConfig = {
               DynamicUser = lib.mkForce true;
-
-              # add the service to the media group
               SupplementaryGroups = [ "media" "render" ];
               StateDirectory = "jellyfin";
               CacheDirectory = "jellyfin";
-              ProtectSystem = lib.mkForce "strict";
               ProtectHome = lib.mkForce true;
               PrivateTmp = lib.mkForce true;
-              PrivateDevices = lib.mkForce true;
-              # for hardware acceleration
-              DeviceAllow = [ "/dev/dri/renderD128 rwm" ];
-              BindReadOnlyPaths = [
-                "/run/opengl-driver"
-              ];
               ProtectControlGroups = lib.mkForce true;
               ProtectKernelTunables = lib.mkForce true;
               NoNewPrivileges = lib.mkForce true;
