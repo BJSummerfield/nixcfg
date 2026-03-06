@@ -35,6 +35,7 @@
       jellyfin-server = {
         enable = true;
         externalInterface = "wlp0s20f3";
+        renderGroupGid = 303;
       };
       printing.enable = true;
       steam.enable = true;
