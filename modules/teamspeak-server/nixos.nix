@@ -1,6 +1,6 @@
 # Required: Create the Tailscale OAuth key file before enabling:
-#   echo "tskey-client-..." | sudo tee /etc/tailscale-teamspeak-key
-#   sudo chmod 600 /etc/tailscale-teamspeak-key
+#   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
+#   sudo chmod 600 /etc/tailscale-solo-node-key
 #
 # Note: teamspeak-server is unfree, ensure your nixpkgs config allows it:
 #   nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
@@ -17,6 +17,9 @@
   };
 
   config = lib.mkIf config.mine.system.teamspeak-server.enable {
+    mine.allowedUnfree = [
+      "teamspeak-server"
+    ];
 
     # Make needed directories
     system.activationScripts.teamspeak-dirs = ''
@@ -49,7 +52,7 @@
         };
         # where to find the auth key
         "/run/tailscale-auth" = {
-          hostPath = "/etc/tailscale-teamspeak-key";
+          hostPath = "/etc/tailscale-solo-node-key";
           isReadOnly = true;
         };
       };
