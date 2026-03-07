@@ -2,9 +2,8 @@
 #   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
 #   sudo chmod 600 /etc/tailscale-solo-node-key
 #
-# First login: check /var/log/teamspeak3-server inside the container
-# for the ServerAdmin privilege key.
-# sudo nixos-container run teamspeak-server -- cat /var/log/teamspeak3-server | grep serveradmin
+# First login get the ServerAdmin privilege key.
+# sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
 
 { lib, config, ... }:
 {
@@ -13,15 +12,18 @@
   };
 
   config = lib.mkIf config.mine.system.teamspeak-server.enable {
-    mine.allowedUnfree = [
-      "teamspeak-server"
-    ];
-
     # Make needed directories
     system.activationScripts.teamspeak-dirs = ''
       mkdir -p /var/lib/tailscale-teamspeak
       chmod 700 /var/lib/tailscale-teamspeak
     '';
+
+
+    networking.nat = {
+      enable = true;
+      internalInterfaces = [ "ve-teamspeak" ];
+      externalInterface = config.mine.system.externalInterface;
+    };
 
     containers.teamspeak = {
 
@@ -54,6 +56,9 @@
       };
 
       config = { config, lib, ... }: {
+        nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+          "teamspeak-server"
+        ];
 
         systemd.services.tailscaled-autoconnect = {
           serviceConfig = {
@@ -92,6 +97,7 @@
             DynamicUser = lib.mkForce true;
             StateDirectory = "teamspeak3-server";
             CacheDirectory = "teamspeak3-server";
+            LogsDirectory = "teamspeak3-server";
             ProtectHome = lib.mkForce true;
             PrivateTmp = lib.mkForce true;
             ProtectControlGroups = lib.mkForce true;

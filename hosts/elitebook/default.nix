@@ -27,19 +27,18 @@
   mine = {
     system = {
       hostName = "elitebook";
+      externalInterface = "wlp0s20f3";
+      renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
       niri.enable = true;
       openssh.enable = true;
-      jellyfin-server = {
-        enable = true;
-        externalInterface = "wlp0s20f3";
-        renderGroupGid = 303;
-      };
+      jellyfin-server.enable = true;
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
+      teamspeak-client.enable = true;
       teamspeak-server.enable = true;
     };
   };

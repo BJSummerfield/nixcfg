@@ -15,6 +15,16 @@ in
       type = types.str;
       description = "The hostname";
     };
+    externalInterface = mkOption {
+      type = lib.types.nullOr lib.types.str;
+      description = "External network interface for container NAT";
+      default = null;
+    };
+    renderGroupGid = mkOption {
+      type = lib.types.nullOr lib.types.int;
+      description = "GID of the render group on the host for GPU passthrough";
+      default = null;
+    };
   };
 
   config = mkMerge [
