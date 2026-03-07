@@ -34,12 +34,10 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.enable = true;
-      jellyfin-server.enable = true;
       printing.enable = true;
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
-      teamspeak-server.enable = true;
     };
   };
   home-manager.users = {
@@ -95,14 +93,6 @@
     sumriri = {
       mine.user = {
         fish.enable = true;
-
-      };
-    };
-    dummy = {
-      mine.user = {
-        git.enable = true;
-        alacritty.enable = true;
-        firefox.enable = true;
       };
     };
   };
