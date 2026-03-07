@@ -6,19 +6,11 @@
 {
   options.mine.system.jellyfin-server = {
     enable = lib.mkEnableOption "Enable Jellyfin-server container";
-    externalInterface = lib.mkOption {
-      type = lib.types.str;
-      description = "External network interface for NAT";
-    };
-    renderGroupGid = lib.mkOption {
-      type = lib.types.int;
-      description = "GID of the render group on the host for GPU passthrough";
-    };
   };
 
   config =
     let
-      renderGid = config.mine.system.jellyfin-server.renderGroupGid;
+      renderGid = config.mine.system.renderGroupGid;
     in
     lib.mkIf config.mine.system.jellyfin-server.enable {
       # ensures nfs will work on any machine
@@ -65,7 +57,7 @@
       networking.nat = {
         enable = true;
         internalInterfaces = [ "ve-jellyfin" ];
-        externalInterface = config.mine.system.jellyfin-server.externalInterface;
+        externalInterface = config.mine.system.externalInterface;
       };
 
       # Make needed directories
