@@ -3,6 +3,7 @@
   imports =
     [
       ./hardware-configuration.nix
+      ../../modules/nixos.nix
       ../../users/waktu.nix
     ];
 
@@ -14,16 +15,16 @@
   ];
 
 
-  system.autoUpgrade = {
-    enable = true;
-    flake = "github:BJSummerfield/nixcfg";
-    dates = "04:00";
-    allowReboot = true;
-    rebootWindow = {
-      lower = "03:00";
-      upper = "05:00";
-    };
-  };
+  # system.autoUpgrade = {
+  #   enable = true;
+  #   flake = "github:BJSummerfield/nixcfg";
+  #   dates = "04:00";
+  #   allowReboot = true;
+  #   rebootWindow = {
+  #     lower = "03:00";
+  #     upper = "05:00";
+  #   };
+  # };
 
   mine = {
     system = {
@@ -37,7 +38,6 @@
   home-manager.users = {
     waktu = {
       mine.user = {
-        alacritty.enable = true;
         fish.enable = true;
         git.enable = true;
         helix = {
