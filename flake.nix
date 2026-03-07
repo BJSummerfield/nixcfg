@@ -31,6 +31,12 @@
           };
           modules = [ ./hosts/t495 ];
         };
+        paynefield = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/paynefield ];
+        };
         vm-mac = nixpkgs.lib.nixosSystem {
           specialArgs = {
             inherit inputs;
