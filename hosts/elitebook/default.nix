@@ -5,7 +5,6 @@
       ./hardware-configuration.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
-      ../../users/dummy.nix
       ../../users/sumriri.nix
     ];
 
