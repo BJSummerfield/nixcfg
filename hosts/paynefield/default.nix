@@ -38,6 +38,8 @@
       renderGroupGid = 303;
       fish.enable = true;
       tailscale.enable = true;
+      teamspeak-server.enable = true;
+      jellyfin-server.enable = true;
     };
   };
   home-manager.users = {
