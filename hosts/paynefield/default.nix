@@ -14,6 +14,11 @@
     intel-gpu-tools
   ];
 
+  environment.pathsToLink = [
+    "/share/applications"
+    "/share/xdg-desktop-portal"
+  ];
+
 
   system.autoUpgrade = {
     enable = true;
@@ -29,7 +34,7 @@
   mine = {
     system = {
       hostName = "paynefield";
-      externalInterface = "wlp0s20f3";
+      externalInterface = "enp1s0";
       renderGroupGid = 303;
       fish.enable = true;
       tailscale.enable = true;
