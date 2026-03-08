@@ -135,7 +135,7 @@
             enable = true;
             authKeyFile = "/run/tailscale-auth";
             extraUpFlags = [
-              "--hostname=jellyfintest"
+              "--hostname=jellyfin"
               "--advertise-tags=tag:solo-node"
             ];
           };
