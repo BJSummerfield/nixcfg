@@ -74,7 +74,7 @@
           enable = true;
           authKeyFile = "/run/tailscale-auth";
           extraUpFlags = [
-            "--hostname=teamspeaktest"
+            "--hostname=teamspeak"
             "--advertise-tags=tag:solo-node"
           ];
         };

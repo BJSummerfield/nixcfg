@@ -17,8 +17,8 @@
       boot.supportedFilesystems = [ "nfs" ];
       services.rpcbind.enable = true;
       fileSystems = {
-        "/mnt/secure/nas" = {
-          device = "192.168.1.234:/volume1/data";
+        "/mnt/secure/nas/media" = {
+          device = "192.168.1.234:/volume1/media";
           fsType = "nfs";
           options = [
             "x-systemd.automount"
@@ -83,7 +83,7 @@
 
         bindMounts = {
           "/media" = {
-            hostPath = "/mnt/secure/nas";
+            hostPath = "/mnt/secure/nas/media";
           };
           # needed for tailscale network
           "/dev/net/tun" = {
