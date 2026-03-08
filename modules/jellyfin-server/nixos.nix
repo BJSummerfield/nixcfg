@@ -34,7 +34,10 @@
 
       hardware.graphics = {
         enable = true;
-        extraPackages = [ pkgs.intel-media-driver pkgs.vpl-gpu-rt ];
+        extraPackages = [
+          pkgs.intel-media-driver
+          pkgs.vpl-gpu-rt
+        ];
       };
 
       # host level group id for nfs mount

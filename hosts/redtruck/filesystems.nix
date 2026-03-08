@@ -31,8 +31,21 @@ in
       options = stdOptions;
     };
 
-    "/mnt/secure/nas" = {
+    "/mnt/secure/nas/data" = {
       device = "192.168.1.234:/volume1/data";
+      fsType = "nfs";
+      options = [
+        "x-systemd.automount"
+        "noauto"
+        "x-systemd.idle-timeout=600"
+        "nfsvers=3"
+        "soft"
+        "timeo=150"
+        "retrans=2"
+      ];
+    };
+    "/mnt/secure/nas/media" = {
+      device = "192.168.1.234:/volume1/media";
       fsType = "nfs";
       options = [
         "x-systemd.automount"
