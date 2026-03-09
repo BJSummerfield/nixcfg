@@ -23,11 +23,11 @@
           options = [
             "x-systemd.automount"
             "noauto"
-            "x-systemd.idle-timeout=600"
             "nfsvers=3"
-            "soft"
+            "hard"
+            "intr"
             "timeo=150"
-            "retrans=2"
+            "retrans=5"
           ];
         };
       };
