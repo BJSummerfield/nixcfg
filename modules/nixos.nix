@@ -9,6 +9,7 @@
     ./makemkv/nixos.nix
     ./niri/nixos.nix
     ./openssh/nixos.nix
+    ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./steam/nixos.nix
     ./system/nixos.nix
