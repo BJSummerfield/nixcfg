@@ -88,6 +88,10 @@
         starship.enable = true;
         zoxide.enable = true;
       };
+
+      home.packages = with pkgs; [
+        jellyfin-tui
+      ];
     };
     sumriri = {
       mine.user = {
