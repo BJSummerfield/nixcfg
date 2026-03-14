@@ -98,5 +98,10 @@
         fish.enable = true;
       };
     };
+    link = {
+      mine.user = {
+        fish.enable = true;
+      };
+    };
   };
 }
