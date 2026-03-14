@@ -6,6 +6,7 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/sumriri.nix
+      ../../users/link.nix
     ];
 
 
