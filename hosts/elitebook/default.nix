@@ -94,15 +94,7 @@
         jellyfin-tui
       ];
     };
-    sumriri = {
-      mine.user = {
-        fish.enable = true;
-      };
-    };
-    link = {
-      mine.user = {
-        fish.enable = true;
-      };
-    };
+    sumriri.mine.user.steambox.enable = true;
+    link.mine.user.steambox.enable = true;
   };
 }

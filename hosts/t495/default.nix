@@ -5,7 +5,15 @@
       ./hardware-configuration.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      ../../users/sumriri.nix
+      ../../users/link.nix
     ];
+
+  programs.gamescope = {
+    enable = true;
+    capSysNice = true;
+  };
+  programs.steam.gamescopeSession.enable = true;
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -76,6 +84,20 @@
         starship.enable = true;
         zoxide.enable = true;
       };
+    };
+
+    sumriri.mine.user.steambox = {
+      enable = true;
+      displayWidth = 1366;
+      displayHeight = 768;
+      displayFramerate = 60;
+    };
+
+    link.mine.user.steambox = {
+      enable = true;
+      displayWidth = 1366;
+      displayHeight = 768;
+      displayFramerate = 60;
     };
   };
 }
