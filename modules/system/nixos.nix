@@ -25,6 +25,23 @@ in
       description = "GID of the render group on the host for GPU passthrough";
       default = null;
     };
+    display = {
+      width = mkOption {
+        type = types.nullOr types.int;
+        description = "Display width in pixels";
+        default = null;
+      };
+      height = mkOption {
+        type = types.nullOr types.int;
+        description = "Display height in pixels";
+        default = null;
+      };
+      framerate = mkOption {
+        type = types.nullOr types.int;
+        description = "Display refresh rate in Hz";
+        default = null;
+      };
+    };
   };
 
   config = mkMerge [

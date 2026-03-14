@@ -25,6 +25,11 @@
     system = {
       hostName = "t495";
       bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      display = {
+        width = 1366;
+        heigth = 768;
+        framerate = 60;
+      };
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
@@ -85,19 +90,7 @@
         zoxide.enable = true;
       };
     };
-
-    sumriri.mine.user.steambox = {
-      enable = true;
-      displayWidth = 1366;
-      displayHeight = 768;
-      displayFramerate = 60;
-    };
-
-    link.mine.user.steambox = {
-      enable = true;
-      displayWidth = 1366;
-      displayHeight = 768;
-      displayFramerate = 60;
-    };
+    sumriri.mine.user.steambox.enable = true;
+    link.mine.user.steambox.enable = true;
   };
 }
