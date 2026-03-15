@@ -2,37 +2,27 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.steambox;
-  display = systemCfg.display;
+  monitors = systemCfg.monitors;
+  primary = builtins.head (lib.attrValues monitors);
 in
 {
   options.mine.user.steambox = {
     enable = mkEnableOption "Steambox auto-launch";
   };
-
   config = mkIf cfg.enable {
     assertions = [
       {
-        assertion = display.width != null;
-        message = "mine.system.display.width must be set to use steambox";
-      }
-      {
-        assertion = display.height != null;
-        message = "mine.system.display.height must be set to use steambox";
-      }
-      {
-        assertion = display.framerate != null;
-        message = "mine.system.display.framerate must be set to use steambox";
+        assertion = monitors != { };
+        message = "Steambox requires at least one monitor defined in mine.system.monitors";
       }
     ];
-
     mine.user.fish.enable = true;
     programs.fish.loginShellInit = ''
       if test -z "$WAYLAND_DISPLAY" -a "$XDG_VTNR" = 1
-        exec gamescope -W ${toString display.width} -H ${toString display.height} -r ${toString display.framerate} \
+        exec gamescope -W ${toString primary.width} -H ${toString primary.height} -r ${primary.refreshRate} \
         -f -e --xwayland-count 2 \
         -- steam -gamepadui
       end
     '';
   };
-} 
-
+}

@@ -42,14 +42,13 @@ in
             description = "GID for read-only access group";
           };
         };
-      }));
-      default = {
-        media = {
-          roGid = 65540;
-          rwGid = 65541;
+
+        config = lib.mkIf (name == "media") {
+          rwGid = lib.mkDefault 65541;
+          roGid = lib.mkDefault 65540;
         };
-        data = { };
-      };
+      }));
+      default = { };
     };
   };
 
@@ -149,9 +148,11 @@ in
       })
       enabledShares;
 
-    home-manager.sharedModules = [{
-      home.file."nas".source =
-        config.lib.file.mkOutOfStoreSymlink "/mnt/secure/nas";
-    }];
+    home-manager.sharedModules = [
+      ({ config, ... }: {
+        home.file."nas".source =
+          config.lib.file.mkOutOfStoreSymlink "/mnt/secure/nas";
+      })
+    ];
   };
 }

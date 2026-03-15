@@ -25,22 +25,17 @@ in
       description = "GID of the render group on the host for GPU passthrough";
       default = null;
     };
-    display = {
-      width = mkOption {
-        type = types.nullOr types.int;
-        description = "Display width in pixels";
-        default = null;
-      };
-      height = mkOption {
-        type = types.nullOr types.int;
-        description = "Display height in pixels";
-        default = null;
-      };
-      framerate = mkOption {
-        type = types.nullOr types.int;
-        description = "Display refresh rate in Hz";
-        default = null;
-      };
+    monitors = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          width = mkOption { type = types.int; };
+          height = mkOption { type = types.int; };
+          refreshRate = mkOption { type = types.str; default = "60.000"; };
+          vrr = mkOption { type = types.bool; default = false; };
+          scale = mkOption { type = types.float; default = 1.0; };
+        };
+      });
+      default = { };
     };
   };
 

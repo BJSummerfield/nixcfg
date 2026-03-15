@@ -13,6 +13,7 @@
     ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./steam/nixos.nix
+    ./steambox/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix

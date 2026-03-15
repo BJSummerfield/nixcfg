@@ -7,6 +7,7 @@
       ./extraconfig.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      ../../users/link.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -19,6 +20,12 @@
     system = {
       hostName = "redtruck";
       externalInterface = "enp34s0";
+      monitors."DP-1" = {
+        width = 3440;
+        height = 1440;
+        refreshRate = "174.963";
+        vrr = true;
+      };
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
@@ -98,5 +105,6 @@
         subtitleedit
       ];
     };
+    link.mine.user.steambox.enable = true;
   };
 }
