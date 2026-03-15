@@ -115,6 +115,7 @@ in
       config = { config, pkgs, lib, ... }: {
         # container level gid for the media group and nfs mount
         users.groups.media-ro.gid = mediaRoGid;
+
         # for hardware acceleration
         users.groups.render.gid = renderGid;
 
@@ -173,7 +174,7 @@ in
           environment = { LIBVA_DRIVER_NAME = "iHD"; };
           serviceConfig = {
             DynamicUser = lib.mkForce true;
-            SupplementaryGroups = [ "media" "render" ];
+            SupplementaryGroups = [ "media-ro" "render" ];
             StateDirectory = "jellyfin";
             CacheDirectory = "jellyfin";
             ProtectHome = lib.mkForce true;
