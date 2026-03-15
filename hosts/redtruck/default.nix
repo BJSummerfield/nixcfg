@@ -39,6 +39,7 @@
       pipewire.sample-switch.enable = true;
       printing.enable = true;
       steam.enable = true;
+      steambox.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
     };
@@ -105,6 +106,6 @@
         subtitleedit
       ];
     };
-    link.mine.user.steambox.enable = true;
+    link.mine.user.steambox.autoStart.enable = true;
   };
 }

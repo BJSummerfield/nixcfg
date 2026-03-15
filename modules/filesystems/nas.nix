@@ -44,8 +44,8 @@ in
         };
 
         config = lib.mkIf (name == "media") {
-          rwGid = lib.mkDefault 65541;
           roGid = lib.mkDefault 65540;
+          rwGid = lib.mkDefault 65541;
         };
       }));
       default = { };
