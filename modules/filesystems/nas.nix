@@ -4,12 +4,11 @@ let
     mapAttrs' mapAttrsToList filterAttrs optionalAttrs;
   cfg = config.mine.system.nas;
   enabledShares = filterAttrs (_: s: s.enable) cfg.shares;
+  hasEnabledShares = enabledShares != { };
   usersCfg = config.mine.users;
 in
 {
   options.mine.system.nas = {
-    enable = mkEnableOption "NAS mounts";
-
     host = mkOption {
       type = types.str;
       default = "192.168.1.234";
@@ -64,7 +63,7 @@ in
     });
   };
 
-  config = mkIf cfg.enable {
+  config = mkIf hasEnabledShares {
     boot.supportedFilesystems = [ "nfs" ];
     services.rpcbind.enable = true;
 
