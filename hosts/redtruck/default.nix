@@ -24,7 +24,8 @@
       avahi.enable = true;
       makemkv.enable = true;
       nas = {
-        enable = true;
+        shares.media.enable = true;
+        shares.data.enable = true;
       };
       niri.enable = true;
       openssh.enable = true;
