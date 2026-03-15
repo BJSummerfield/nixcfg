@@ -3,6 +3,7 @@
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./docker/nixos.nix
+    ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
     ./jellyfin-server/nixos.nix

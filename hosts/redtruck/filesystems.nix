@@ -4,7 +4,6 @@ let
 in
 {
   mine.system.bootPartitionUuid = "360f73f5-1bf7-4111-aff0-be9b1a4dd579";
-  services.rpcbind.enable = true;
 
   fileSystems = {
     "/mnt/media" = {
@@ -30,41 +29,11 @@ in
       fsType = "ext4";
       options = stdOptions;
     };
-
-    "/mnt/secure/nas/data" = {
-      device = "192.168.1.234:/volume1/data";
-      fsType = "nfs";
-      options = [
-        "x-systemd.automount"
-        "noauto"
-        "x-systemd.idle-timeout=600"
-        "nfsvers=3"
-        "soft"
-        "timeo=150"
-        "retrans=2"
-      ];
-    };
-    "/mnt/secure/nas/media" = {
-      device = "192.168.1.234:/volume1/media";
-      fsType = "nfs";
-      options = [
-        "x-systemd.automount"
-        "noauto"
-        "x-systemd.idle-timeout=600"
-        "nfsvers=3"
-        "soft"
-        "timeo=150"
-        "retrans=2"
-      ];
-    };
   };
 
+  # Steam writes to this directory
   systemd.tmpfiles.rules = [
     "d /mnt/games 2770 root users -"
-    "d /mnt/media 0770 root wheel -"
-    "d /mnt/data1 0770 root wheel -"
-    "d /mnt/data2 0770 root wheel -"
-    "d /mnt/secure 0770 root wheel -"
   ];
 
   home-manager.sharedModules = [
@@ -78,7 +47,6 @@ in
           "media".source = mkLink "/mnt/media";
           "data1".source = mkLink "/mnt/data1";
           "data2".source = mkLink "/mnt/data2";
-          "nas".source = mkLink "/mnt/secure/nas";
         };
       })
   ];
