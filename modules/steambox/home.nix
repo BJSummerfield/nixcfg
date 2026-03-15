@@ -1,8 +1,8 @@
-{ lib, config, ... }:
+{ lib, config, systemCfg, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.steambox;
-  display = config.mine.system.display;
+  display = systemCfg.display;
 in
 {
   options.mine.user.steambox = {

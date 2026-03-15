@@ -27,7 +27,7 @@
       bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
       display = {
         width = 1366;
-        heigth = 768;
+        height = 768;
         framerate = 60;
       };
       fish.enable = true;
