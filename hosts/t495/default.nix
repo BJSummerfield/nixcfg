@@ -5,7 +5,15 @@
       ./hardware-configuration.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      ../../users/sumriri.nix
+      ../../users/link.nix
     ];
+
+  programs.gamescope = {
+    enable = true;
+    capSysNice = true;
+  };
+  programs.steam.gamescopeSession.enable = true;
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -17,6 +25,11 @@
     system = {
       hostName = "t495";
       bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      display = {
+        width = 1366;
+        height = 768;
+        framerate = 60;
+      };
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
@@ -77,5 +90,7 @@
         zoxide.enable = true;
       };
     };
+    sumriri.mine.user.steambox.enable = true;
+    link.mine.user.steambox.enable = true;
   };
 }

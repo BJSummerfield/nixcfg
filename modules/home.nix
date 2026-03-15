@@ -20,6 +20,7 @@
     ./niri/home.nix
     ./obs-studio/home.nix
     ./polkit_gnome/home.nix
+    ./steambox/home.nix
     ./stylix/home.nix
     ./swaybg/home.nix
     ./swayidle/home.nix

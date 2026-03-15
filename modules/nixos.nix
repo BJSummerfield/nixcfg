@@ -3,6 +3,7 @@
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./docker/nixos.nix
+    ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
     ./jellyfin-server/nixos.nix
@@ -12,6 +13,7 @@
     ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./steam/nixos.nix
+    ./steambox/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix

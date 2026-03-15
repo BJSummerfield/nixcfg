@@ -7,10 +7,8 @@
       ./extraconfig.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      ../../users/link.nix
     ];
-
-  users.groups.media-rw.gid = 65541;
-  users.users.waktu.extraGroups = [ "media-rw" ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -22,15 +20,26 @@
     system = {
       hostName = "redtruck";
       externalInterface = "enp34s0";
+      monitors."DP-1" = {
+        width = 3440;
+        height = 1440;
+        refreshRate = "174.963";
+        vrr = true;
+      };
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
       makemkv.enable = true;
+      nas = {
+        shares.media.enable = true;
+        shares.data.enable = true;
+      };
       niri.enable = true;
       openssh.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
       steam.enable = true;
+      steambox.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
     };
@@ -97,5 +106,6 @@
         subtitleedit
       ];
     };
+    link.mine.user.steambox.autoStart.enable = true;
   };
 }

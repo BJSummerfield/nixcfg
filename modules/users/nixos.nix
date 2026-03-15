@@ -52,7 +52,7 @@ in
     # Map the users to home-manager
     home-manager = {
       useUserPackages = true;
-      extraSpecialArgs = { inherit inputs; };
+      extraSpecialArgs = { inherit inputs; systemCfg = config.mine.system; };
       users = lib.mapAttrs
         (name: user: {
           imports = user.home-modules ++ [

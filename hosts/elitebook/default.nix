@@ -9,8 +9,6 @@
       ../../users/link.nix
     ];
 
-
-
   programs.gamescope = {
     enable = true;
     capSysNice = true;
@@ -28,6 +26,11 @@
     system = {
       hostName = "elitebook";
       externalInterface = "wlp0s20f3";
+      display = {
+        width = 1920;
+        heigth = 1080;
+        framerate = 60;
+      };
       renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;
@@ -94,15 +97,7 @@
         jellyfin-tui
       ];
     };
-    sumriri = {
-      mine.user = {
-        fish.enable = true;
-      };
-    };
-    link = {
-      mine.user = {
-        fish.enable = true;
-      };
-    };
+    sumriri.mine.user.steambox.enable = true;
+    link.mine.user.steambox.enable = true;
   };
 }
