@@ -9,6 +9,9 @@
       ../../users/waktu.nix
     ];
 
+  users.groups.media-rw.gid = 65541;
+  users.users.waktu.extraGroups = [ "media-rw" ];
+
   environment.systemPackages = with pkgs; [
     bottom
     git
