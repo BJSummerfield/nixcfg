@@ -48,7 +48,7 @@
         output "${name}" {
           mode "${toString mon.width}x${toString mon.height}@${mon.refreshRate}"
           scale ${toString mon.scale}
-          variable-refresh-rate ${if mon.vrr then "on-demand=true" else "off"}
+          variable-refresh-rate ${if mon.vrr then "on-demand=true" else ""}
          }
        '') systemCfg.monitors)}
     
