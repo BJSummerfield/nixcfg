@@ -43,10 +43,15 @@ in
           };
         };
 
-        config = lib.mkIf (name == "media") {
-          roGid = lib.mkDefault 65540;
-          rwGid = lib.mkDefault 65541;
-        };
+        config = lib.mkMerge [
+          (lib.mkIf (name == "media") {
+            roGid = lib.mkDefault 65540;
+            rwGid = lib.mkDefault 65541;
+          })
+          (lib.mkIf (name == "home") {
+            roGid = lib.mkDefault 65542;
+          })
+        ];
       }));
       default = { };
     };

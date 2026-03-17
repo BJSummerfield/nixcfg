@@ -10,6 +10,7 @@
     ];
     nasAccess = {
       media = "rw";
+      homes = "ro";
     };
 
     home-modules = [
