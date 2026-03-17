@@ -9,7 +9,7 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILtTarFZkhNoHtu39C6eCRaS84jb6SPoY92gn64Q2D3O"
     ];
     nasAccess = {
-      media = "rw";
+      media = "ro";
       homes = "ro";
     };
 

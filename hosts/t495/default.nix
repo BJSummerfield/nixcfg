@@ -19,11 +19,13 @@
     system = {
       hostName = "t495";
       bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      externalInterface = "wlp1s0";
       monitors."eDP-1" = {
         width = 1920;
         height = 1080;
         refreshRate = "60.003";
       };
+      renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;

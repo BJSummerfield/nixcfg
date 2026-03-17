@@ -4,8 +4,8 @@ let
   cfg = config.mine.system.immich-server;
   nasCfg = config.mine.system.nas;
   renderGid = config.mine.system.renderGroupGid;
-  homeRoGid = nasCfg.shares.home.roGid;
-  homeMountPoint = nasCfg.shares.home.mountPoint;
+  homesRoGid = nasCfg.shares.homes.roGid;
+  homesMountPoint = nasCfg.shares.homes.mountPoint;
 in
 {
   options.mine.system.immich-server = {
@@ -13,7 +13,7 @@ in
     photosSubdir = lib.mkOption {
       type = lib.types.str;
       default = "photos";
-      description = "Subdirectory under the home NAS mount where photos live";
+      description = "Subdirectory under the homes NAS mount where photos live";
     };
   };
 
@@ -24,13 +24,13 @@ in
         message = "mine.system.renderGroupGid must be set to use immich-server";
       }
       {
-        assertion = homeRoGid != null;
-        message = "NAS home share must have roGid defined to use immich-server";
+        assertion = homesRoGid != null;
+        message = "NAS homes share must have roGid defined to use immich-server";
       }
     ];
 
-    # Enable the NAS home share as persistent
-    mine.system.nas.shares.home = {
+    # Enable the NAS homes share as persistent
+    mine.system.nas.shares.homes = {
       enable = true;
       persistent = true;
     };
@@ -79,7 +79,7 @@ in
       bindMounts = {
         # NAS photos directory (read-only — add as External Library in Immich UI)
         "/mnt/photos" = {
-          hostPath = "${homeMountPoint}/${cfg.photosSubdir}";
+          hostPath = "${homesMountPoint}/${cfg.photosSubdir}";
           isReadOnly = true;
         };
         # GPU passthrough
@@ -100,7 +100,7 @@ in
 
       config = { config, pkgs, lib, ... }: {
         # NAS group for reading photos
-        users.groups.home-ro.gid = homeRoGid;
+        users.groups.homes-ro.gid = homesRoGid;
 
         # GPU group
         users.groups.render.gid = renderGid;
@@ -115,7 +115,7 @@ in
         };
 
         # Add immich user to the NAS and render groups
-        users.users.immich.extraGroups = [ "home-ro" "render" "video" ];
+        users.users.immich.extraGroups = [ "homes-ro" "render" "video" ];
 
         networking = {
           nameservers = [ "1.1.1.1" "8.8.8.8" ];
@@ -129,7 +129,7 @@ in
         systemd.services.immich-server = {
           environment = { LIBVA_DRIVER_NAME = "radeonsi"; };
           serviceConfig = {
-            SupplementaryGroups = [ "home-ro" "render" ];
+            SupplementaryGroups = [ "homes-ro" "render" ];
             ProtectHome = lib.mkForce true;
             PrivateTmp = lib.mkForce true;
             ProtectControlGroups = lib.mkForce true;

@@ -48,7 +48,7 @@ in
             roGid = lib.mkDefault 65540;
             rwGid = lib.mkDefault 65541;
           })
-          (lib.mkIf (name == "home") {
+          (lib.mkIf (name == "homes") {
             roGid = lib.mkDefault 65542;
           })
         ];
@@ -108,8 +108,8 @@ in
           (username: user:
             mapAttrsToList
               (shareName: level: {
-                assertion = cfg.shares ? ${shareName};
-                message = "User ${username} has nasAccess for '${shareName}' but that share is not defined in mine.system.nas.shares";
+                assertion = !(cfg.shares ? ${shareName}) || cfg.shares.${shareName}.enable;
+                message = "User ${username} has nasAccess for '${shareName}' but that share is not enabled in mine.system.nas.shares";
               })
               user.nasAccess
           )
@@ -121,8 +121,9 @@ in
               let share = cfg.shares.${shareName} or { rwGid = null; roGid = null; }; in
               {
                 assertion =
-                  (level == "rw" -> share.rwGid != null) &&
-                  (level == "ro" -> share.roGid != null);
+                  !(cfg.shares ? ${shareName}) ||
+                  ((level == "rw" -> share.rwGid != null) &&
+                  (level == "ro" -> share.roGid != null));
                 message = "User ${username} has nasAccess.${shareName} = \"${level}\" but that share has no ${level}Gid defined";
               }
             )
