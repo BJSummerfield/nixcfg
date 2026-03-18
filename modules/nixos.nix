@@ -7,6 +7,7 @@
     ./fish/nixos.nix
     ./gamescope/nixos.nix
     ./immich-server/nixos.nix
+    ./immich-ml/nixos.nix
     ./jellyfin-server/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
