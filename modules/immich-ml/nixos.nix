@@ -3,7 +3,7 @@
   options.mine.system.immich-ml.enable = lib.mkEnableOption "Immich Machine Learning (ROCm)";
 
   config = lib.mkIf config.mine.system.immich-ml.enable {
-    config.mine.system.docker.enable = true;
+    mine.system.docker.enable = true;
     networking.firewall.allowedTCPPorts = [ 3003 ];
     virtualisation.oci-containers = {
       backend = "docker";

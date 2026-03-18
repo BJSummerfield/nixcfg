@@ -30,7 +30,7 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      immich-ml.enable = true;
+      # immich-ml.enable = true;
       makemkv.enable = true;
       nas = {
         shares.media.enable = true;
