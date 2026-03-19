@@ -1,4 +1,3 @@
-# Immich photo server - LAN only
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.immich-server;
@@ -6,10 +5,13 @@ let
   renderGid = config.mine.system.renderGroupGid;
   homesRoGid = nasCfg.shares.homes.roGid;
   homesMountPoint = nasCfg.shares.homes.mountPoint;
+  immichRwGid = nasCfg.shares.immich.rwGid;
+  immichMountPoint = nasCfg.shares.immich.mountPoint;
 in
 {
   options.mine.system.immich-server = {
     enable = lib.mkEnableOption "Enable Immich photo server container";
+
     photosSubdir = lib.mkOption {
       type = lib.types.str;
       default = "photos";
@@ -27,10 +29,19 @@ in
         assertion = homesRoGid != null;
         message = "NAS homes share must have roGid defined to use immich-server";
       }
+      {
+        assertion = immichRwGid != null;
+        message = "NAS immich share must have rwGid defined to use immich-server";
+      }
     ];
 
-    # Enable the NAS homes share as persistent
+    # Enable the NAS shares as persistent
     mine.system.nas.shares.homes = {
+      enable = true;
+      persistent = true;
+    };
+
+    mine.system.nas.shares.immich = {
       enable = true;
       persistent = true;
     };
@@ -59,7 +70,7 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Persistent dirs for immich state
+    # Persistent dirs for immich state (local SSD)
     system.activationScripts.immich-dirs = ''
       mkdir -p /var/lib/immich-data
       chmod 700 /var/lib/immich-data
@@ -76,13 +87,38 @@ in
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
       ];
 
+      # Make sure upload, library, encoded-video, backups dirs exist on the nas!
       bindMounts = {
-        # NAS photos directory (read-only — add as External Library in Immich UI)
+        "/var/lib/immich" = {
+          hostPath = "/var/lib/immich-data";
+          isReadOnly = false;
+        };
+
+        "/var/lib/immich/upload" = {
+          hostPath = "${immichMountPoint}/upload";
+          isReadOnly = false;
+        };
+
+        "/var/lib/immich/library" = {
+          hostPath = "${immichMountPoint}/library";
+          isReadOnly = false;
+        };
+
+        "/var/lib/immich/encoded-video" = {
+          hostPath = "${immichMountPoint}/encoded-video";
+          isReadOnly = false;
+        };
+
+        "/var/lib/immich/backups" = {
+          hostPath = "${immichMountPoint}/backups";
+          isReadOnly = false;
+        };
+
         "/mnt/photos" = {
           hostPath = "${homesMountPoint}/${cfg.photosSubdir}";
           isReadOnly = true;
         };
-        # GPU passthrough
+
         "/dev/dri" = {
           hostPath = "/dev/dri";
           isReadOnly = false;
@@ -91,16 +127,14 @@ in
           hostPath = "/run/opengl-driver";
           isReadOnly = true;
         };
-        # Persistent immich data (db, uploads, thumbnails, etc.)
-        "/var/lib/immich" = {
-          hostPath = "/var/lib/immich-data";
-          isReadOnly = false;
-        };
       };
 
       config = { config, pkgs, lib, ... }: {
-        # NAS group for reading photos
+        # NAS read-only group (existing photos)
         users.groups.homes-ro.gid = homesRoGid;
+
+        # NAS read-write group (uploads, encoded-video, backups)
+        users.groups.immich-rw.gid = immichRwGid;
 
         # GPU group
         users.groups.render.gid = renderGid;
@@ -112,10 +146,16 @@ in
           openFirewall = true;
           mediaLocation = "/var/lib/immich";
           accelerationDevices = [ "/dev/dri/renderD128" ];
+
         };
 
-        # Add immich user to the NAS and render groups
-        users.users.immich.extraGroups = [ "homes-ro" "render" "video" ];
+        # Add immich user to all required groups
+        users.users.immich.extraGroups = [
+          "homes-ro" # read existing photos from NAS
+          "immich-rw" # write uploads/encoded-video/backups on NAS
+          "render" # GPU access
+          "video" # GPU access
+        ];
 
         networking = {
           nameservers = [ "1.1.1.1" "8.8.8.8" ];
@@ -129,20 +169,13 @@ in
         systemd.services.immich-server = {
           environment = { LIBVA_DRIVER_NAME = "radeonsi"; };
           serviceConfig = {
-            SupplementaryGroups = [ "homes-ro" "render" ];
+            SupplementaryGroups = [ "homes-ro" "immich-rw" "render" ];
             ProtectHome = lib.mkForce true;
             PrivateTmp = lib.mkForce true;
             ProtectControlGroups = lib.mkForce true;
             ProtectKernelTunables = lib.mkForce true;
             NoNewPrivileges = lib.mkForce true;
             RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-          };
-        };
-
-        systemd.services.immich-machine-learning = {
-          environment = { LIBVA_DRIVER_NAME = "radeonsi"; };
-          serviceConfig = {
-            SupplementaryGroups = [ "render" ];
           };
         };
 

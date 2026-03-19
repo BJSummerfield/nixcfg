@@ -21,6 +21,7 @@
     system = {
       hostName = "redtruck";
       externalInterface = "enp34s0";
+      renderGroupGid = 303;
       monitors."DP-1" = {
         width = 3440;
         height = 1440;
@@ -31,6 +32,11 @@
       _1password.enable = true;
       avahi.enable = true;
       makemkv.enable = true;
+      # immich-ml.enable = true;
+      # immich-server = {
+      #   enable = true;
+      #   photosSubdir = "Arielle/Photos";
+      # };
       nas = {
         shares.media.enable = true;
         shares.data.enable = true;
