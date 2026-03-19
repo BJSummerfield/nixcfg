@@ -50,6 +50,10 @@ in
           })
           (lib.mkIf (name == "homes") {
             roGid = lib.mkDefault 65542;
+            rwGid = lib.mkDefault 65543;
+          })
+          (lib.mkIf (name == "immich") {
+            rwGid = lib.mkDefault 65544;
           })
         ];
       }));
