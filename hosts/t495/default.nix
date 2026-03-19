@@ -29,10 +29,6 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      immich-server = {
-        enable = true;
-        photosSubdir = "Arielle/Photos";
-      };
       niri.enable = true;
       openssh.enable = true;
       printing.enable = true;
