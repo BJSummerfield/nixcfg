@@ -7,7 +7,6 @@
       ./extraconfig.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
-      ../../users/link.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -46,7 +45,6 @@
       pipewire.sample-switch.enable = true;
       printing.enable = true;
       steam.enable = true;
-      steambox.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
     };
@@ -113,6 +111,5 @@
         subtitleedit
       ];
     };
-    link.mine.user.steambox.autoStart.enable = true;
   };
 }
