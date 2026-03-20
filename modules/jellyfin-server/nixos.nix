@@ -1,7 +1,3 @@
-# Required: Create the Tailscale OAuth key file before enabling:
-#   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
-#   sudo chmod 600 /etc/tailscale-solo-node-key
-
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.jellyfin-server;
@@ -61,35 +57,31 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Make needed directories
-    system.activationScripts.jellyfin-dirs = ''
-      mkdir -p /var/lib/tailscale-jellyfin
-      chmod 700 /var/lib/tailscale-jellyfin
-    '';
+    mine.system.tailscale-container.jellyfin = {
+      enable = true;
+      hostname = "jellyfin";
+      serve = {
+        enable = true;
+        port = 8096;
+        afterService = "jellyfin.service";
+      };
+    };
 
     containers.jellyfin = {
-
       # Mapping container to a local port
       autoStart = true;
       privateNetwork = true;
       hostAddress = "192.168.100.10";
       localAddress = "192.168.100.11";
 
-      # tun is needed for tailscale network
       # renderD128 for hardware acceleration
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
       ];
 
       bindMounts = {
         "/media" = {
           hostPath = mediaMountPoint;
-        };
-        # needed for tailscale network
-        "/dev/net/tun" = {
-          hostPath = "/dev/net/tun";
-          isReadOnly = false;
         };
         # GPU passthrough for hardware acceleration
         "/dev/dri" = {
@@ -101,71 +93,23 @@ in
           hostPath = "/run/opengl-driver";
           isReadOnly = true;
         };
-        # persists the tailscale node
-        "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-jellyfin";
-          isReadOnly = false;
-        };
-        # where to find the auth key
-        "/run/tailscale-auth" = {
-          hostPath = "/etc/tailscale-solo-node-key";
-          isReadOnly = true;
-        };
       };
-      config = { config, pkgs, lib, ... }: {
+
+      config = { lib, ... }: {
         # container level gid for the media group and nfs mount
         users.groups.media-ro.gid = mediaRoGid;
 
         # for hardware acceleration
         users.groups.render.gid = renderGid;
 
-        systemd.services.tailscaled-autoconnect = {
-          serviceConfig = {
-            # fix for tailscale not creating the veth for the container
-            Type = lib.mkForce "simple";
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-        };
-
-        # sets the tailscale params
-        services.tailscale = {
-          enable = true;
-          authKeyFile = "/run/tailscale-auth";
-          extraUpFlags = [
-            "--hostname=jellyfin"
-            "--advertise-tags=tag:solo-node"
-          ];
-        };
-
-        # runs tailscale serve once the apps are ready
-        systemd.services.tailscale-serve = {
-          description = "Tailscale Serve for Jellyfin";
-          after = [ "tailscaled-autoconnect.service" "jellyfin.service" ];
-          wants = [ "tailscaled-autoconnect.service" "jellyfin.service" ];
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-            Restart = "on-failure";
-            RestartSec = 10;
-          };
-          script = ''
-            ${pkgs.tailscale}/bin/tailscale serve --bg 8096
-          '';
-        };
-
         services.jellyfin.enable = true;
+
         networking = {
           # needed to get the dns for https nameserver
-          nameservers = [ "1.1.1.1" "8.8.8.8" ];
           firewall = {
             enable = true;
             # Lan access
             allowedTCPPorts = [ 8096 ];
-            # allows connection from other tailscale devices
-            trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
           };
         };
 

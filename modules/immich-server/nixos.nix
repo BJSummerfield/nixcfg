@@ -3,7 +3,7 @@ let
   cfg = config.mine.system.immich-server;
   nasCfg = config.mine.system.nas;
   renderGid = config.mine.system.renderGroupGid;
-  homesRoGid = nasCfg.shares.homes.roGid;
+  homesRwGid = nasCfg.shares.homes.rwGid;
   homesMountPoint = nasCfg.shares.homes.mountPoint;
   immichRwGid = nasCfg.shares.immich.rwGid;
   immichMountPoint = nasCfg.shares.immich.mountPoint;
@@ -26,8 +26,8 @@ in
         message = "mine.system.renderGroupGid must be set to use immich-server";
       }
       {
-        assertion = homesRoGid != null;
-        message = "NAS homes share must have roGid defined to use immich-server";
+        assertion = homesRwGid != null;
+        message = "NAS homes share must have rwGid defined to use immich-server";
       }
       {
         assertion = immichRwGid != null;
@@ -35,7 +35,6 @@ in
       }
     ];
 
-    # Enable the NAS shares as persistent
     mine.system.nas.shares.homes = {
       enable = true;
       persistent = true;
@@ -46,23 +45,15 @@ in
       persistent = true;
     };
 
-    # Mesa/radeonsi provides VAAPI for Vega iGPU out of the box
     hardware.graphics = {
       enable = true;
+      extraPackages = [
+        pkgs.intel-media-driver
+        pkgs.vpl-gpu-rt
+      ];
     };
 
     users.groups.render.gid = renderGid;
-
-    # LAN access on Immich default port
-    networking.firewall.allowedTCPPorts = [ 2283 ];
-
-    networking.nat.forwardPorts = [
-      {
-        sourcePort = 2283;
-        destination = "192.168.100.21:2283";
-        proto = "tcp";
-      }
-    ];
 
     networking.nat = {
       enable = true;
@@ -70,11 +61,20 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Persistent dirs for immich state (local SSD)
     system.activationScripts.immich-dirs = ''
       mkdir -p /var/lib/immich-data
       chmod 700 /var/lib/immich-data
     '';
+
+    mine.system.tailscale-container.immich = {
+      enable = true;
+      hostname = "immich";
+      serve = {
+        enable = true;
+        port = 2283;
+        afterService = "immich-server.service";
+      };
+    };
 
     containers.immich = {
       autoStart = true;
@@ -82,12 +82,10 @@ in
       hostAddress = "192.168.100.20";
       localAddress = "192.168.100.21";
 
-      # GPU for hardware transcoding
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
       ];
 
-      # Make sure upload, library, encoded-video, backups dirs exist on the nas!
       bindMounts = {
         "/var/lib/immich" = {
           hostPath = "/var/lib/immich-data";
@@ -129,47 +127,33 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
-        # NAS read-only group (existing photos)
-        users.groups.homes-ro.gid = homesRoGid;
-
-        # NAS read-write group (uploads, encoded-video, backups)
+      config = { lib, ... }: {
+        users.groups.homes-rw.gid = homesRwGid;
         users.groups.immich-rw.gid = immichRwGid;
-
-        # GPU group
         users.groups.render.gid = renderGid;
 
         services.immich = {
           enable = true;
           port = 2283;
           host = "0.0.0.0";
-          openFirewall = true;
+          openFirewall = false;
           mediaLocation = "/var/lib/immich";
           accelerationDevices = [ "/dev/dri/renderD128" ];
-
         };
 
-        # Add immich user to all required groups
         users.users.immich.extraGroups = [
-          "homes-ro" # read existing photos from NAS
-          "immich-rw" # write uploads/encoded-video/backups on NAS
-          "render" # GPU access
-          "video" # GPU access
+          "homes-rw"
+          "immich-rw"
+          "render"
+          "video"
         ];
 
-        networking = {
-          nameservers = [ "1.1.1.1" "8.8.8.8" ];
-          firewall = {
-            enable = true;
-            allowedTCPPorts = [ 2283 ];
-          };
-        };
+        networking.firewall.enable = true;
 
-        # Hardening
         systemd.services.immich-server = {
-          environment = { LIBVA_DRIVER_NAME = "radeonsi"; };
+          environment = { LIBVA_DRIVER_NAME = "iHD"; };
           serviceConfig = {
-            SupplementaryGroups = [ "homes-ro" "immich-rw" "render" ];
+            SupplementaryGroups = [ "homes-rw" "immich-rw" "render" ];
             ProtectHome = lib.mkForce true;
             PrivateTmp = lib.mkForce true;
             ProtectControlGroups = lib.mkForce true;
