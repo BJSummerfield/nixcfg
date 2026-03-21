@@ -23,6 +23,7 @@
         width = 1920;
         height = 1080;
       };
+      renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
@@ -33,6 +34,9 @@
       steambox.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
+      teamspeak-server.enable = true;
+      jellyfin-server.enable = true;
+      immich-server.enable = true;
     };
   };
   home-manager.users = {

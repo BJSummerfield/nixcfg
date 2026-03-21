@@ -18,7 +18,6 @@
     ./steambox/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
-    ./tailscale-container/nixos.nix
     ./teamspeak-client/nixos.nix
     ./teamspeak-server/nixos.nix
     ./unfree
