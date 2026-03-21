@@ -19,7 +19,6 @@
 { lib, config, ... }:
 let
   cfg = config.mine.system.tailscale-container;
-  enabledContainers = lib.filterAttrs (_: v: v.enable) cfg;
 in
 {
   options.mine.system.tailscale-container = lib.mkOption {
@@ -64,79 +63,79 @@ in
     description = "Per-container Tailscale configuration. The attrset key must match the container name.";
   };
 
-  config = lib.mkIf (enabledContainers != { }) (lib.mkMerge (lib.mapAttrsToList
-    (name: tsCfg: {
+  config = lib.mkMerge
+    (lib.mapAttrsToList
+      (name: tsCfg: lib.mkIf tsCfg.enable {
+        system.activationScripts."tailscale-${name}-dirs" = ''
+          mkdir -p /var/lib/tailscale-${name}
+          chmod 700 /var/lib/tailscale-${name}
+        '';
 
-      system.activationScripts."tailscale-${name}-dirs" = ''
-        mkdir -p /var/lib/tailscale-${name}
-        chmod 700 /var/lib/tailscale-${name}
-      '';
+        containers.${name} = {
+          allowedDevices = [
+            { modifier = "rwm"; node = "/dev/net/tun"; }
+          ];
 
-      containers.${name} = {
-        allowedDevices = [
-          { modifier = "rwm"; node = "/dev/net/tun"; }
-        ];
-
-        bindMounts = {
-          "/dev/net/tun" = {
-            hostPath = "/dev/net/tun";
-            isReadOnly = false;
-          };
-          "/var/lib/tailscale" = {
-            hostPath = "/var/lib/tailscale-${name}";
-            isReadOnly = false;
-          };
-          "/run/tailscale-auth" = {
-            hostPath = tsCfg.authKeyFile;
-            isReadOnly = true;
-          };
-        };
-
-        config = { config, pkgs, lib, ... }: {
-
-          systemd.services.tailscaled-autoconnect.serviceConfig = {
-            Type = lib.mkForce "simple";
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-
-          services.tailscale = {
-            enable = true;
-            authKeyFile = "/run/tailscale-auth";
-            extraUpFlags = [
-              "--hostname=${tsCfg.hostname}"
-              "--advertise-tags=tag:${tsCfg.tag}"
-            ];
-          };
-
-          networking = {
-            nameservers = [ "1.1.1.1" "8.8.8.8" ];
-            firewall = {
-              trustedInterfaces = [ "tailscale0" ];
-              allowedUDPPorts = [ config.services.tailscale.port ];
+          bindMounts = {
+            "/dev/net/tun" = {
+              hostPath = "/dev/net/tun";
+              isReadOnly = false;
+            };
+            "/var/lib/tailscale" = {
+              hostPath = "/var/lib/tailscale-${name}";
+              isReadOnly = false;
+            };
+            "/run/tailscale-auth" = {
+              hostPath = tsCfg.authKeyFile;
+              isReadOnly = true;
             };
           };
 
-          systemd.services.tailscale-serve = lib.mkIf tsCfg.serve.enable {
-            description = "Tailscale Serve for ${tsCfg.hostname}";
-            after = [ "tailscaled-autoconnect.service" ]
-              ++ lib.optional (tsCfg.serve.afterService != "") tsCfg.serve.afterService;
-            wants = [ "tailscaled-autoconnect.service" ]
-              ++ lib.optional (tsCfg.serve.afterService != "") tsCfg.serve.afterService;
-            wantedBy = [ "multi-user.target" ];
-            serviceConfig = {
-              Type = "oneshot";
-              RemainAfterExit = true;
+          config = { config, pkgs, lib, ... }: {
+
+            systemd.services.tailscaled-autoconnect.serviceConfig = {
+              Type = lib.mkForce "simple";
               Restart = "on-failure";
-              RestartSec = 10;
+              RestartSec = 5;
             };
-            script = ''
-              ${pkgs.tailscale}/bin/tailscale serve --bg ${toString tsCfg.serve.port}
-            '';
+
+            services.tailscale = {
+              enable = true;
+              authKeyFile = "/run/tailscale-auth";
+              extraUpFlags = [
+                "--hostname=${tsCfg.hostname}"
+                "--advertise-tags=tag:${tsCfg.tag}"
+              ];
+            };
+
+            networking = {
+              nameservers = [ "1.1.1.1" "8.8.8.8" ];
+              firewall = {
+                trustedInterfaces = [ "tailscale0" ];
+                allowedUDPPorts = [ config.services.tailscale.port ];
+              };
+            };
+
+            systemd.services.tailscale-serve = lib.mkIf tsCfg.serve.enable {
+              description = "Tailscale Serve for ${tsCfg.hostname}";
+              after = [ "tailscaled-autoconnect.service" ]
+                ++ lib.optional (tsCfg.serve.afterService != "") tsCfg.serve.afterService;
+              wants = [ "tailscaled-autoconnect.service" ]
+                ++ lib.optional (tsCfg.serve.afterService != "") tsCfg.serve.afterService;
+              wantedBy = [ "multi-user.target" ];
+              serviceConfig = {
+                Type = "oneshot";
+                RemainAfterExit = true;
+                Restart = "on-failure";
+                RestartSec = 10;
+              };
+              script = ''
+                ${pkgs.tailscale}/bin/tailscale serve --bg ${toString tsCfg.serve.port}
+              '';
+            };
           };
         };
-      };
 
-    })
-    enabledContainers));
+      })
+      cfg);
 }
