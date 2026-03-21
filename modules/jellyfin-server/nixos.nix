@@ -122,12 +122,13 @@ in
         systemd.services.tailscaled-autoconnect = {
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
+          startLimitBurst = 5;
+          startLimitIntervalSec = 60;
           serviceConfig = {
-            TimeoutStartSec = "15s";
+            Type = lib.mkForce "simple";
+            SuccessExitStatus = "1";
             Restart = "on-failure";
             RestartSec = 5;
-            StartLimitBurst = 5;
-            StartLimitIntervalSec = 60;
           };
         };
 
