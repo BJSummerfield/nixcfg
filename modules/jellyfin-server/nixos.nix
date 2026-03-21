@@ -120,11 +120,14 @@ in
         users.groups.render.gid = renderGid;
 
         systemd.services.tailscaled-autoconnect = {
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
           serviceConfig = {
-            # fix for tailscale not creating the veth for the container
-            Type = lib.mkForce "simple";
+            TimeoutStartSec = "15s";
             Restart = "on-failure";
             RestartSec = 5;
+            StartLimitBurst = 5;
+            StartLimitIntervalSec = 60;
           };
         };
 
