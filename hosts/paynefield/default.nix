@@ -40,6 +40,7 @@
       tailscale.enable = true;
       teamspeak-server.enable = true;
       jellyfin-server.enable = true;
+      immich-serve.enable = true;
     };
   };
   home-manager.users = {

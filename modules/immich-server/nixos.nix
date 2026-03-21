@@ -11,12 +11,6 @@ in
 {
   options.mine.system.immich-server = {
     enable = lib.mkEnableOption "Enable Immich photo server container";
-
-    photosSubdir = lib.mkOption {
-      type = lib.types.str;
-      default = "photos";
-      description = "Subdirectory under the homes NAS mount where photos live";
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -113,7 +107,7 @@ in
         };
 
         "/mnt/photos" = {
-          hostPath = "${homesMountPoint}/${cfg.photosSubdir}";
+          hostPath = "${homesMountPoint}";
           isReadOnly = true;
         };
 
