@@ -34,9 +34,6 @@
       steambox.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
-      teamspeak-server.enable = true;
-      jellyfin-server.enable = true;
-      immich-server.enable = true;
     };
   };
   home-manager.users = {
