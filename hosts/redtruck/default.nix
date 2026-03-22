@@ -32,10 +32,6 @@
       avahi.enable = true;
       makemkv.enable = true;
       # immich-ml.enable = true;
-      # immich-server = {
-      #   enable = true;
-      #   photosSubdir = "Arielle/Photos";
-      # };
       nas = {
         shares.media.enable = true;
         shares.data.enable = true;

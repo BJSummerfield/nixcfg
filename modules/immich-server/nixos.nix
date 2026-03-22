@@ -1,9 +1,12 @@
+# Required: Create the Tailscale OAuth key file before enabling:
+#   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
+#   sudo chmod 600 /etc/tailscale-solo-node-key
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.immich-server;
   nasCfg = config.mine.system.nas;
   renderGid = config.mine.system.renderGroupGid;
-  homesRoGid = nasCfg.shares.homes.roGid;
+  homesRwGid = nasCfg.shares.homes.rwGid;
   homesMountPoint = nasCfg.shares.homes.mountPoint;
   immichRwGid = nasCfg.shares.immich.rwGid;
   immichMountPoint = nasCfg.shares.immich.mountPoint;
@@ -11,12 +14,6 @@ in
 {
   options.mine.system.immich-server = {
     enable = lib.mkEnableOption "Enable Immich photo server container";
-
-    photosSubdir = lib.mkOption {
-      type = lib.types.str;
-      default = "photos";
-      description = "Subdirectory under the homes NAS mount where photos live";
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -26,8 +23,8 @@ in
         message = "mine.system.renderGroupGid must be set to use immich-server";
       }
       {
-        assertion = homesRoGid != null;
-        message = "NAS homes share must have roGid defined to use immich-server";
+        assertion = homesRwGid != null;
+        message = "NAS homes share must have rwGid defined to use immich-server";
       }
       {
         assertion = immichRwGid != null;
@@ -35,7 +32,6 @@ in
       }
     ];
 
-    # Enable the NAS shares as persistent
     mine.system.nas.shares.homes = {
       enable = true;
       persistent = true;
@@ -46,34 +42,30 @@ in
       persistent = true;
     };
 
-    # Mesa/radeonsi provides VAAPI for Vega iGPU out of the box
     hardware.graphics = {
       enable = true;
+      extraPackages = [
+        pkgs.intel-media-driver
+        pkgs.vpl-gpu-rt
+      ];
     };
 
+    # for hardware acceleration
     users.groups.render.gid = renderGid;
 
-    # LAN access on Immich default port
-    networking.firewall.allowedTCPPorts = [ 2283 ];
-
-    networking.nat.forwardPorts = [
-      {
-        sourcePort = 2283;
-        destination = "192.168.100.21:2283";
-        proto = "tcp";
-      }
-    ];
-
+    # Allow traffic to enter the container
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-immich" ];
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Persistent dirs for immich state (local SSD)
+    # Make needed directories
     system.activationScripts.immich-dirs = ''
       mkdir -p /var/lib/immich-data
       chmod 700 /var/lib/immich-data
+      mkdir -p /var/lib/tailscale-immich
+      chmod 700 /var/lib/tailscale-immich
     '';
 
     containers.immich = {
@@ -82,94 +74,144 @@ in
       hostAddress = "192.168.100.20";
       localAddress = "192.168.100.21";
 
-      # GPU for hardware transcoding
+      # tun is needed for tailscale network
+      # renderD128 for hardware acceleration
       allowedDevices = [
+        { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
       ];
 
-      # Make sure upload, library, encoded-video, backups dirs exist on the nas!
       bindMounts = {
         "/var/lib/immich" = {
           hostPath = "/var/lib/immich-data";
           isReadOnly = false;
         };
-
         "/var/lib/immich/upload" = {
           hostPath = "${immichMountPoint}/upload";
           isReadOnly = false;
         };
-
         "/var/lib/immich/library" = {
           hostPath = "${immichMountPoint}/library";
           isReadOnly = false;
         };
-
         "/var/lib/immich/encoded-video" = {
           hostPath = "${immichMountPoint}/encoded-video";
           isReadOnly = false;
         };
-
         "/var/lib/immich/backups" = {
           hostPath = "${immichMountPoint}/backups";
           isReadOnly = false;
         };
-
         "/mnt/photos" = {
-          hostPath = "${homesMountPoint}/${cfg.photosSubdir}";
+          hostPath = homesMountPoint;
           isReadOnly = true;
         };
-
+        # needed for tailscale network
+        "/dev/net/tun" = {
+          hostPath = "/dev/net/tun";
+          isReadOnly = false;
+        };
+        # GPU passthrough for hardware acceleration
         "/dev/dri" = {
           hostPath = "/dev/dri";
           isReadOnly = false;
         };
+        # GPU drivers from host - avoids duplicating hardware.graphics in container
         "/run/opengl-driver" = {
           hostPath = "/run/opengl-driver";
+          isReadOnly = true;
+        };
+        # persists the tailscale node
+        "/var/lib/tailscale" = {
+          hostPath = "/var/lib/tailscale-immich";
+          isReadOnly = false;
+        };
+        # where to find the auth key
+        "/run/tailscale-auth" = {
+          hostPath = "/etc/tailscale-solo-node-key";
           isReadOnly = true;
         };
       };
 
       config = { config, pkgs, lib, ... }: {
-        # NAS read-only group (existing photos)
-        users.groups.homes-ro.gid = homesRoGid;
-
-        # NAS read-write group (uploads, encoded-video, backups)
+        # container level gids for nfs mounts
+        users.groups.homes-rw.gid = homesRwGid;
         users.groups.immich-rw.gid = immichRwGid;
 
-        # GPU group
+        # for hardware acceleration
         users.groups.render.gid = renderGid;
 
         services.immich = {
           enable = true;
-          port = 2283;
           host = "0.0.0.0";
-          openFirewall = true;
+          openFirewall = false;
           mediaLocation = "/var/lib/immich";
           accelerationDevices = [ "/dev/dri/renderD128" ];
-
         };
 
-        # Add immich user to all required groups
         users.users.immich.extraGroups = [
-          "homes-ro" # read existing photos from NAS
-          "immich-rw" # write uploads/encoded-video/backups on NAS
-          "render" # GPU access
-          "video" # GPU access
+          "homes-rw"
+          "immich-rw"
+          "render"
+          "video"
         ];
 
-        networking = {
-          nameservers = [ "1.1.1.1" "8.8.8.8" ];
-          firewall = {
-            enable = true;
-            allowedTCPPorts = [ 2283 ];
+        systemd.services.tailscaled-autoconnect = {
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          startLimitBurst = 5;
+          startLimitIntervalSec = 60;
+          serviceConfig = {
+            Type = lib.mkForce "simple";
+            SuccessExitStatus = "1";
+            Restart = "on-failure";
+            RestartSec = 5;
           };
         };
 
-        # Hardening
-        systemd.services.immich-server = {
-          environment = { LIBVA_DRIVER_NAME = "radeonsi"; };
+        # sets the tailscale params
+        services.tailscale = {
+          enable = true;
+          authKeyFile = "/run/tailscale-auth";
+          extraUpFlags = [
+            "--hostname=immich"
+            "--advertise-tags=tag:solo-node"
+          ];
+        };
+
+        # runs tailscale serve once the apps are ready
+        systemd.services.tailscale-serve = {
+          description = "Tailscale Serve for Immich";
+          after = [ "tailscaled-autoconnect.service" "immich-server.service" ];
+          wants = [ "tailscaled-autoconnect.service" "immich-server.service" ];
+          wantedBy = [ "multi-user.target" ];
           serviceConfig = {
-            SupplementaryGroups = [ "homes-ro" "immich-rw" "render" ];
+            Type = "oneshot";
+            RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 10;
+          };
+          script = ''
+            ${pkgs.tailscale}/bin/tailscale serve --bg 2283
+          '';
+        };
+
+        networking = {
+          # needed to get the dns for https nameserver
+          nameservers = [ "1.1.1.1" "8.8.8.8" ];
+          firewall = {
+            enable = true;
+            # allows connection from other tailscale devices
+            trustedInterfaces = [ "tailscale0" ];
+            allowedUDPPorts = [ config.services.tailscale.port ];
+          };
+        };
+
+        # Hardening the container
+        systemd.services.immich-server = {
+          environment = { LIBVA_DRIVER_NAME = "iHD"; };
+          serviceConfig = {
+            SupplementaryGroups = [ "homes-rw" "immich-rw" "render" ];
             ProtectHome = lib.mkForce true;
             PrivateTmp = lib.mkForce true;
             ProtectControlGroups = lib.mkForce true;

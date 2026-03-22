@@ -23,6 +23,7 @@
         width = 1920;
         height = 1080;
       };
+      renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
