@@ -31,7 +31,6 @@
       _1password.enable = true;
       avahi.enable = true;
       makemkv.enable = true;
-      immich-ml.enable = true;
       nas = {
         shares.media.enable = true;
         shares.data.enable = true;
