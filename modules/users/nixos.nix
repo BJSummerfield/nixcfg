@@ -59,7 +59,7 @@ in
             {
               home.username = name;
               home.homeDirectory = "/home/${name}";
-              home.stateVersion = "24.05";
+              home.stateVersion = "26.05";
             }
           ];
         })
