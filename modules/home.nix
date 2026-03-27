@@ -26,6 +26,5 @@
     ./swayidle/home.nix
     ./swaylock/home.nix
     ./unfree
-    ./xwayland-satellite/home.nix
   ];
 }
