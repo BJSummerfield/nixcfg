@@ -64,7 +64,7 @@
         };
         lazygit.enable = true;
         mako.enable = true;
-        polkit-gnome.enable = true;
+        polkit-kde.enable = true;
         stylix.enable = true;
         swaybg.enable = true;
       };
