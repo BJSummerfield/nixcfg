@@ -13,7 +13,7 @@
   };
 
   config = {
-    mine.user.xwayland-satellite.enable = true;
+    # mine.user.xwayland-satellite.enable = true;
     mine.user._1password.silentStart.enable = true;
 
     xdg.portal = {
@@ -29,15 +29,12 @@
       brightnessctl
       wl-clipboard
       nautilus
+      xwayland-satellite
     ];
 
     home.file.".config/niri/config.kdl".text = ''
        // https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
         
-       environment {
-           DISPLAY ":0"
-       }
-
        input {
            touchpad {
                natural-scroll

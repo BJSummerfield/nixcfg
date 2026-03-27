@@ -19,7 +19,7 @@
     ./mpls/home.nix
     ./niri/home.nix
     ./obs-studio/home.nix
-    ./polkit_gnome/home.nix
+    ./polkit_kde/home.nix
     ./steambox/home.nix
     ./stylix/home.nix
     ./swaybg/home.nix
