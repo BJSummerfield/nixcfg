@@ -41,8 +41,8 @@ in
       }];
 
       extraPackages = with pkgs; [
-        nodePackages.vscode-langservers-extracted
-        nodePackages.prettier
+        vscode-langservers-extracted
+        prettier
       ]
       ++ optional cfg.enableTailwind tailwindcss-language-server;
     };

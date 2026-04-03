@@ -32,7 +32,7 @@ in
       };
       extraPackages = with pkgs; [
         biome
-        nodePackages.typescript-language-server
+        typescript-language-server
         typescript
       ];
     };

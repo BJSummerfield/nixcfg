@@ -45,9 +45,9 @@ in
       };
       extraPackages = with pkgs; [
         biome
-        nodePackages.typescript-language-server
+        typescript-language-server
         typescript
-      ] ++ optional (cfg.formatter == "prettier") nodePackages.prettier;
+      ] ++ optional (cfg.formatter == "prettier") prettier;
     };
   };
 }

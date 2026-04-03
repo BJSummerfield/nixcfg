@@ -19,8 +19,8 @@ in
         }];
       };
       extraPackages = with pkgs; [
-        nodePackages.graphql-language-service-cli
-        nodePackages.prettier
+        graphql-language-service-cli
+        prettier
       ];
     };
   };

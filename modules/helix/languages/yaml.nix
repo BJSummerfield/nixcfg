@@ -20,7 +20,7 @@ in
       };
       extraPackages = with pkgs; [
         yaml-language-server
-        nodePackages.prettier
+        prettier
       ];
     };
   };
