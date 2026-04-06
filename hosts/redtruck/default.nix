@@ -78,7 +78,10 @@
             rust.enable = true;
             toml.enable = true;
             tsx.enable = true;
-            typescript.enable = true;
+            typescript = {
+              enable = true;
+              formatter = "prettier";
+            };
             yaml.enable = true;
           };
         };
