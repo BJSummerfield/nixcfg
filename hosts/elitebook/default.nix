@@ -7,6 +7,7 @@
       ../../users/waktu.nix
       ../../users/sumriri.nix
       ../../users/link.nix
+      ../../users/jellyuser.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -14,6 +15,8 @@
     git
     helix
   ];
+
+
 
   mine = {
     system = {
@@ -27,6 +30,7 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
+      jellybox.enable = true;
       niri.enable = true;
       openssh.enable = true;
       printing.enable = true;
@@ -91,5 +95,6 @@
     };
     sumriri.mine.user.steambox.autoStart.enable = true;
     link.mine.user.steambox.autoStart.enable = true;
+    jellyuser.mine.user.jellybox.autoStart.enable = true;
   };
 }
