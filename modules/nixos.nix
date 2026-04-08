@@ -10,6 +10,7 @@
     ./immich-server/nixos.nix
     ./immich-ml/nixos.nix
     ./jellyfin-server/nixos.nix
+    ./jellybox/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
     ./openssh/nixos.nix
