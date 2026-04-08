@@ -37,7 +37,6 @@
       steam.enable = true;
       steambox.enable = true;
       tailscale.enable = true;
-      teamspeak-client.enable = true;
     };
   };
   home-manager.users = {

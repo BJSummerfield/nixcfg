@@ -12,10 +12,9 @@ in
     mine.user.fish.enable = true;
 
     programs.fish.loginShellInit = ''
-      if test -z "$WAYLAND_DISPLAY" -a "$XDG_VTNR" = 1; and grep -q jellybox /proc/cmdline
-        exec gamescope \
-        -f -e \
-        -- jellyfin-media-player --fullscreen --tv
+      if test -z "$WAYLAND_DISPLAY" -a "$XDG_VTNR" = 1 
+      wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.8
+      exec gamescope -f -- jellyfin-media-player --fullscreen --tv
       end
     '';
   };
