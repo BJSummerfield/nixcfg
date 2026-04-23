@@ -18,7 +18,7 @@ in
   config = mkIf cfg.enable {
     services.swayidle = {
       enable = true;
-      systemdTarget = "graphical-session.target";
+      systemdTargets = [ "graphical-session.target" ];
 
       timeouts = [
         {
