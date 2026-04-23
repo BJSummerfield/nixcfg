@@ -22,7 +22,7 @@ in
           name = "json";
           language-servers = [
             { name = "vscode-json-language-server"; except-features = [ "format" ]; }
-            "biome"
+            { name = "biome"; }
           ];
           formatter = {
             command = "biome";

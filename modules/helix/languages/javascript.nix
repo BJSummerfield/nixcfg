@@ -23,7 +23,7 @@ in
           name = "javascript";
           language-servers = [
             { name = "typescript-language-server"; except-features = [ "format" ]; }
-            "biome"
+            { name = "biome"; }
           ];
           auto-format = true;
         }];

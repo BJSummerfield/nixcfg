@@ -30,7 +30,7 @@ in
           name = "typescript";
           language-servers = [
             { name = "typescript-language-server"; except-features = [ "format" ]; }
-            "biome"
+            { name = "biome"; }
           ];
           formatter =
             if cfg.formatter == "biome" then {
