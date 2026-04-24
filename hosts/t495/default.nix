@@ -29,7 +29,6 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      dns-server.enable = true;
       niri.enable = true;
       openssh.enable = true;
       printing.enable = true;
