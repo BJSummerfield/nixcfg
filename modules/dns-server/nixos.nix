@@ -1,3 +1,8 @@
+# Once the container is running log into it with
+# sudo nixos-container root-login dns
+# tailscale up --hostname=dnstest --advertise-tags=tag:solo-node --accept-dns=false
+# tailscale serve --bg 3000
+
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.dns-server;
@@ -124,14 +129,13 @@ in
           };
         };
 
-        # ---- AdGuard Home ----
         services.adguardhome = {
           enable = true;
           openFirewall = false;
           mutableSettings = true;
+          host = "0.0.0.0";
+          port = cfg.webPort;
           settings = {
-            bind_host = "0.0.0.0";
-            bind_port = cfg.webPort;
             dns = {
               bind_hosts = [ "0.0.0.0" ];
               port = cfg.lanPort;
@@ -148,6 +152,7 @@ in
             };
           };
         };
+
         services.tailscale.enable = true;
 
         networking = {
@@ -160,7 +165,6 @@ in
           };
         };
 
-        # Hardening
         systemd.services.unbound.serviceConfig = {
           ProtectHome = lib.mkForce true;
           PrivateTmp = lib.mkForce true;
@@ -171,6 +175,7 @@ in
         };
 
         systemd.services.adguardhome.serviceConfig = {
+          DynamicUser = lib.mkForce false;
           ProtectHome = lib.mkForce true;
           PrivateTmp = lib.mkForce true;
           ProtectControlGroups = lib.mkForce true;
@@ -178,7 +183,6 @@ in
           NoNewPrivileges = lib.mkForce true;
           RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
         };
-
         system.stateVersion = "24.11";
       };
     };
