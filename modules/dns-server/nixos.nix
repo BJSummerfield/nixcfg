@@ -136,6 +136,15 @@ in
           host = "0.0.0.0";
           port = cfg.webPort;
           settings = {
+            # make admin user and password with:
+            # nix shell nixpkgs#apacheHttpd
+            # htpasswd -B -C 10 -n admin
+            users = [
+              {
+                name = "admin";
+                password = "$2y$10$c9v44L8TQVKoAAZqHiO9peVSoMWNShGzL9nOdLgE5R8H8sEh0FoJi";
+              }
+            ];
             dns = {
               bind_hosts = [ "0.0.0.0" ];
               port = cfg.lanPort;
