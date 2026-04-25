@@ -2,6 +2,7 @@
   imports = [
     ./_1password/nixos.nix
     ./avahi/nixos.nix
+    ./dns-server/nixos.nix
     ./docker/nixos.nix
     ./filesystems
     ./fish/nixos.nix

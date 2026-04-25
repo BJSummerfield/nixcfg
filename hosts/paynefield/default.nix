@@ -36,6 +36,7 @@
       hostName = "paynefield";
       externalInterface = "enp1s0";
       renderGroupGid = 303;
+      dns-server.enable = true;
       fish.enable = true;
       tailscale.enable = true;
       teamspeak-server.enable = true;
