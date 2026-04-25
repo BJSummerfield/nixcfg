@@ -1,6 +1,6 @@
 # Once the container is running log into it with
 # sudo nixos-container root-login dns
-# tailscale up --hostname=dnstest --advertise-tags=tag:solo-node --accept-dns=false
+# tailscale up --hostname=dns --advertise-tags=tag:solo-node --accept-dns=false
 # tailscale serve --bg 3000
 
 { lib, config, pkgs, ... }:
