@@ -100,6 +100,8 @@ in
               hide-identity = true;
               hide-version = true;
 
+              auto-trust-anchor-file = "/var/lib/unbound/root.key";
+
               harden-glue = true;
               harden-dnssec-stripped = true;
               harden-below-nxdomain = true;

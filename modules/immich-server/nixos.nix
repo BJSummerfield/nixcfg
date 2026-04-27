@@ -1,6 +1,8 @@
-# Required: Create the Tailscale OAuth key file before enabling:
-#   echo "tskey-client-..." | sudo tee /etc/tailscale-solo-node-key
-#   sudo chmod 600 /etc/tailscale-solo-node-key
+# Once the container is running log into it with
+# sudo nixos-container root-login immich
+# tailscale up --hostname=immich --advertise-tags=tag:solo-node 
+# tailscale serve --bg 2283
+
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.immich-server;
@@ -126,11 +128,6 @@ in
           hostPath = "/var/lib/tailscale-immich";
           isReadOnly = false;
         };
-        # where to find the auth key
-        "/run/tailscale-auth" = {
-          hostPath = "/etc/tailscale-solo-node-key";
-          isReadOnly = true;
-        };
       };
 
       config = { config, pkgs, lib, ... }: {
@@ -156,49 +153,12 @@ in
           "video"
         ];
 
-        systemd.services.tailscaled-autoconnect = {
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-          startLimitBurst = 5;
-          startLimitIntervalSec = 60;
-          serviceConfig = {
-            Type = lib.mkForce "simple";
-            SuccessExitStatus = "1";
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-        };
-
         # sets the tailscale params
-        services.tailscale = {
-          enable = true;
-          authKeyFile = "/run/tailscale-auth";
-          extraUpFlags = [
-            "--hostname=immich"
-            "--advertise-tags=tag:solo-node"
-          ];
-        };
-
-        # runs tailscale serve once the apps are ready
-        systemd.services.tailscale-serve = {
-          description = "Tailscale Serve for Immich";
-          after = [ "tailscaled-autoconnect.service" "immich-server.service" ];
-          wants = [ "tailscaled-autoconnect.service" "immich-server.service" ];
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-            Restart = "on-failure";
-            RestartSec = 10;
-          };
-          script = ''
-            ${pkgs.tailscale}/bin/tailscale serve --bg 2283
-          '';
-        };
+        services.tailscale.enable = true;
 
         networking = {
           # needed to get the dns for https nameserver
-          nameservers = [ "1.1.1.1" "8.8.8.8" ];
+          nameservers = [ "9.9.9.9" "1.1.1.1" ];
           firewall = {
             enable = true;
             # allows connection from other tailscale devices
