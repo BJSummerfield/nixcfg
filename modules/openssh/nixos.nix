@@ -5,33 +5,48 @@ let
 in
 {
   options.mine.system.openssh = {
-    enable = lib.mkEnableOption "OpenSSH server";
+    inbound = {
+      enable = lib.mkEnableOption "Accept incoming SSH connections (sshd)";
 
-    openOnExternalInterface = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        Whether to allow SSH on the host's external (LAN/WAN) interface
-        defined in mine.system.externalInterface.
-        Enable for stationary machines on a trusted LAN.
-        Leave false for laptops and VPSes — those rely on tailnet access only.
-      '';
-    };
-  };
-
-  config = lib.mkIf cfg.enable {
-    services.openssh = {
-      enable = true;
-      openFirewall = false;
-      settings = {
-        PermitRootLogin = "no";
-        PasswordAuthentication = false;
-        KbdInteractiveAuthentication = false;
+      openOnExternalInterface = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Allow SSH on mine.system.externalInterface.
+          Use for stationary machines on a trusted LAN.
+        '';
       };
     };
 
-    networking.firewall.interfaces = lib.mkIf cfg.openOnExternalInterface {
-      ${externalInterface}.allowedTCPPorts = [ 22 ];
+    outbound = {
+      enable = lib.mkEnableOption "Outgoing SSH client config and agent";
     };
   };
+
+  config = lib.mkMerge [
+    (lib.mkIf cfg.inbound.enable {
+      services.openssh = {
+        enable = true;
+        openFirewall = false;
+        settings = {
+          PermitRootLogin = "no";
+          PasswordAuthentication = false;
+          KbdInteractiveAuthentication = false;
+        };
+      };
+
+      networking.firewall.interfaces = lib.mkIf cfg.inbound.openOnExternalInterface {
+        ${externalInterface}.allowedTCPPorts = [ 22 ];
+      };
+    })
+
+    (lib.mkIf cfg.outbound.enable {
+      programs.ssh = {
+        startAgent = true;
+        extraConfig = ''
+          AddKeysToAgent yes
+        '';
+      };
+    })
+  ];
 }
