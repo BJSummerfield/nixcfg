@@ -25,12 +25,7 @@
   home-manager.users = {
     waktu = {
       mine.user = {
-        _1password = {
-          enable = true;
-          sshAgent.enable = true;
-          gitSigning.enable = true;
-          ghPlugin.enable = true;
-        };
+        _1password.enable = true;
         alacritty.enable = true;
         catppuccin.enable = true;
         direnv.enable = true;
