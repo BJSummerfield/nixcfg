@@ -42,7 +42,6 @@ in
 
     (lib.mkIf cfg.outbound.enable {
       programs.ssh = {
-        startAgent = true;
         extraConfig = ''
           AddKeysToAgent yes
         '';
