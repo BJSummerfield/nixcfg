@@ -4,6 +4,10 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     catppuccin.url = "github:catppuccin/nix";
     stylix.url = "github:danth/stylix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -41,6 +45,12 @@
             inherit inputs;
           };
           modules = [ ./hosts/vm-mac ];
+        };
+        vps = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/vps ];
         };
       };
     };

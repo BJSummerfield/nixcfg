@@ -28,11 +28,13 @@
       _1password.enable = true;
       avahi.enable = true;
       niri.enable = true;
-      openssh.enable = true;
       printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
-      tailscale.enable = true;
+      tailscale = {
+        enable = true;
+        ssh = true;
+      };
       teamspeak-client.enable = true;
     };
   };
