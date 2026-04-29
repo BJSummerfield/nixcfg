@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   imports =
     [
@@ -8,11 +8,26 @@
       ../../users/waktu.nix
     ];
 
+  environment.pathsToLink = [
+    "/share/applications"
+    "/share/xdg-desktop-portal"
+  ];
+
   environment.systemPackages = with pkgs; [
     bottom
     git
     helix
   ];
+
+  # TODO make this an option on mine boot
+  boot.loader.systemd-boot.enable = lib.mkForce false;
+  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
+  boot.loader.grub = {
+    enable = true;
+    efiSupport = false;
+  };
+
+  security.sudo.wheelNeedsPassword = false;
 
   system.autoUpgrade = {
     enable = true;
@@ -28,13 +43,14 @@
   mine = {
     system = {
       hostName = "vps";
-      # externalInterface = "enp1s0";
+      externalInterface = "enp1s0";
       # renderGroupGid = 303;
       fish.enable = true;
       openssh.inbound = {
         enable = true;
         openOnExternalInterface = true;
       };
+      # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
         enable = true;
         ssh = true;

@@ -1,5 +1,9 @@
-{ lib, ... }:
+{ lib, inputs, ... }:
 {
+  imports = [
+    inputs.disko.nixosModules.disko
+  ];
+
   disko.devices = {
     disk.disk1 = {
       device = lib.mkDefault "/dev/sda";
@@ -11,17 +15,6 @@
             name = "boot";
             size = "1M";
             type = "EF02";
-          };
-          esp = {
-            name = "ESP";
-            size = "512M";
-            type = "EF00";
-            content = {
-              type = "filesystem";
-              format = "vfat";
-              mountpoint = "/boot";
-              mountOptions = [ "umask=0077" ];
-            };
           };
           root = {
             name = "root";
