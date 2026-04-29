@@ -21,7 +21,7 @@
           user = {
             name = "BJSummerfield";
             email = "brianjsummerfield@gmail.com";
-            user.signingkey = "/home/waktu/.ssh/id_ed25519.pub";
+            signingkey = "/home/waktu/.ssh/id_ed25519.pub";
           };
           gpg.format = "ssh";
           commit.gpgSign = true;
