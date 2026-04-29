@@ -38,7 +38,10 @@
       renderGroupGid = 303;
       dns-server.enable = true;
       fish.enable = true;
-      openssh.outbound.enable = true;
+      openssh.inbound = {
+        enable = true;
+        openOnExternalInterface = true;
+      };
       tailscale = {
         enable = true;
         ssh = true;
@@ -53,7 +56,6 @@
     waktu = {
       mine.user = {
         fish.enable = true;
-        git.enable = true;
         helix = {
           enable = true;
           lsp = {
@@ -62,7 +64,6 @@
             yaml.enable = true;
           };
         };
-        lazygit.enable = true;
       };
       programs = {
         eza.enable = true;
