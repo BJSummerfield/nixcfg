@@ -1,19 +1,51 @@
 { lib, config, ... }:
+let
+  cfg = config.mine.system.openssh;
+  externalInterface = config.mine.system.externalInterface;
+in
 {
   options.mine.system.openssh = {
-    enable = lib.mkEnableOption "Enable open SSH";
-  };
+    inbound = {
+      enable = lib.mkEnableOption "Accept incoming SSH connections (sshd)";
 
-  config = lib.mkIf config.mine.system.openssh.enable {
-    services.openssh = {
-      enable = true;
-      settings = {
-        PermitRootLogin = "no";
-        PasswordAuthentication = false;
+      openOnExternalInterface = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Allow SSH on mine.system.externalInterface.
+          Use for stationary machines on a trusted LAN.
+        '';
       };
     };
 
-    # ssh is disabled on boot, use systemctl to turn it on when needed with 'start'
-    systemd.services.sshd.wantedBy = lib.mkForce [ ];
+    outbound = {
+      enable = lib.mkEnableOption "Outgoing SSH client config and agent";
+    };
   };
+
+  config = lib.mkMerge [
+    (lib.mkIf cfg.inbound.enable {
+      services.openssh = {
+        enable = true;
+        openFirewall = false;
+        settings = {
+          PermitRootLogin = "no";
+          PasswordAuthentication = false;
+          KbdInteractiveAuthentication = false;
+        };
+      };
+
+      networking.firewall.interfaces = lib.mkIf cfg.inbound.openOnExternalInterface {
+        ${externalInterface}.allowedTCPPorts = [ 22 ];
+      };
+    })
+
+    (lib.mkIf cfg.outbound.enable {
+      programs.ssh = {
+        extraConfig = ''
+          AddKeysToAgent yes
+        '';
+      };
+    })
+  ];
 }

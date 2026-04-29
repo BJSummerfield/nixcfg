@@ -38,11 +38,16 @@
       renderGroupGid = 303;
       dns-server.enable = true;
       fish.enable = true;
-      tailscale.enable = true;
+      openssh.outbound.enable = true;
+      tailscale = {
+        enable = true;
+        ssh = true;
+      };
       teamspeak-server.enable = true;
       jellyfin-server.enable = true;
       immich-server.enable = true;
     };
+    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
   };
   home-manager.users = {
     waktu = {

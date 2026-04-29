@@ -15,7 +15,26 @@ in
         isSuperUser = mkOption { type = types.bool; default = false; };
         description = mkOption { type = types.str; default = ""; };
         initialHashedPassword = mkOption { type = types.str; default = ""; };
-        sshKeys = mkOption { type = types.listOf types.str; default = [ ]; };
+
+        sshKeys = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          description = ''
+            Named registry of public SSH keys belonging to this user.
+            Keys are not authorized by default. Hosts must opt in via
+            authorizedKeys.
+          '';
+        };
+
+        authorizedKeys = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          description = ''
+            Names of keys from sshKeys that are authorized to log in as
+            this user on this host. Set per-host.
+          '';
+        };
+
         shell = mkOption { type = types.package; default = config.users.defaultUserShell; };
 
         home-modules = mkOption {
@@ -35,9 +54,18 @@ in
     assertions = [
       {
         assertion = lib.any (user: user.isSuperUser) (lib.attrValues cfg);
-        message = "DANGER: You are building a system with no Administrator (isSuperUser). You will be locked out of sudo!";
+        message = "DANGER: You are building a system with no Administrator (isSuperUser).";
       }
-    ];
+    ] ++ lib.concatLists (lib.mapAttrsToList
+      (userName: user:
+        map
+          (keyName: {
+            assertion = lib.hasAttr keyName user.sshKeys;
+            message = "User '${userName}' authorizedKeys references unknown key '${keyName}'. Available: ${lib.concatStringsSep ", " (lib.attrNames user.sshKeys)}";
+          })
+          user.authorizedKeys
+      )
+      cfg);
 
     # Map the users to some defaults
     users.users = lib.mapAttrs
@@ -45,7 +73,7 @@ in
         isNormalUser = true;
         inherit (user) description initialHashedPassword shell;
         extraGroups = [ "networkmanager" ] ++ lib.optional user.isSuperUser "wheel";
-        openssh.authorizedKeys.keys = user.sshKeys;
+        openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
       })
       cfg;
 

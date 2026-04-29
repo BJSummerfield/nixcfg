@@ -30,22 +30,22 @@
       _1password.enable = true;
       avahi.enable = true;
       niri.enable = true;
-      openssh.enable = true;
+      openssh.outbound.enable = true;
       printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
-      tailscale.enable = true;
+      tailscale = {
+        enable = true;
+        ssh = true;
+      };
     };
+
+    users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
   };
   home-manager.users = {
     waktu = {
       mine.user = {
-        _1password = {
-          enable = true;
-          sshAgent.enable = true;
-          gitSigning.enable = true;
-          ghPlugin.enable = true;
-        };
+        _1password.enable = true;
         alacritty.enable = true;
         battery-notifications.enable = true;
         catppuccin.enable = true;
