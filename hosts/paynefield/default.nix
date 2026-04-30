@@ -49,6 +49,7 @@
       teamspeak-server.enable = true;
       jellyfin-server.enable = true;
       immich-server.enable = true;
+      redlib-server.enable = true;
     };
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
   };

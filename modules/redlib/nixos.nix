@@ -51,7 +51,7 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
+      config = { config, lib, ... }: {
         services.tailscale.enable = true;
 
         services.redlib = {
