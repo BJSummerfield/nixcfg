@@ -15,6 +15,7 @@
     ./openssh/nixos.nix
     ./pipewire/nixos.nix
     ./printing/nixos.nix
+    ./redlib/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix
     ./system/nixos.nix
