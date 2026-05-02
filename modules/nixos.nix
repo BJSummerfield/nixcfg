@@ -22,6 +22,7 @@
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix
     ./teamspeak-server/nixos.nix
+    ./terraria-server/nixos.nix
     ./unfree
     ./users/nixos.nix
   ];
