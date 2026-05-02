@@ -42,7 +42,6 @@
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
-      terraria-server.enable = true;
     };
   };
   home-manager.users = {

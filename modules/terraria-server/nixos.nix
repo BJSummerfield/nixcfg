@@ -65,15 +65,18 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
+      config = { config, lib, ... }: {
+        nixpkgs.config.allowUnfreePredicate = pkg:
+          builtins.elem (lib.getName pkg) [ "terraria-server" ];
+
         services.terraria = {
           enable = true;
           port = cfg.port;
           maxPlayers = cfg.maxPlayers;
           password = cfg.password;
-          openFirewall = false; # tailnet only
+          openFirewall = false;
           autoCreatedWorldSize = "large";
-          worldName = "beefcake";
+          worldPath = "/var/lib/terraria/worlds/beefcake.wld";
         };
 
         services.tailscale.enable = true;
