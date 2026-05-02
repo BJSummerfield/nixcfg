@@ -15,29 +15,11 @@
     helix
   ];
 
-  services.greetd = {
-    enable = true;
-    settings.default_session = {
-      command = ''
-        ${pkgs.tuigreet}/bin/tuigreet \
-          --time \
-          --time-format "  %A, %B %d   %I:%M %p  " \
-          --remember \
-          --remember-user-session \
-          --asterisks \
-          --asterisks-char "•" \
-          --window-padding 4 \
-          --container-padding 2 \
-          --prompt-padding 1 \
-      '';
-      user = "greeter";
-    };
-  };
 
   mine = {
     system = {
       hostName = "t495";
-      bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      boot.partitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
       externalInterface = "wlp1s0";
       monitors."eDP-1" = {
         width = 1920;
@@ -57,6 +39,7 @@
         enable = true;
         ssh = true;
       };
+      tuigreet.enable = true;
     };
 
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];

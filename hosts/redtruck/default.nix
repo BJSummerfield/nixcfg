@@ -42,6 +42,7 @@
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
+      tuigreet.enable = true;
     };
   };
   home-manager.users = {

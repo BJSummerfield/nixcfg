@@ -3,7 +3,7 @@ let
   stdOptions = [ "defaults" "nofail" ];
 in
 {
-  mine.system.bootPartitionUuid = "360f73f5-1bf7-4111-aff0-be9b1a4dd579";
+  mine.system.boot.partitionUuid = "360f73f5-1bf7-4111-aff0-be9b1a4dd579";
 
   fileSystems = {
     "/mnt/media" = {
