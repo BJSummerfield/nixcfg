@@ -4,7 +4,6 @@
     [
       ./hardware-configuration.nix
       ./filesystems.nix
-      ./extraconfig.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
     ];
@@ -21,12 +20,6 @@
       hostName = "redtruck";
       externalInterface = "enp34s0";
       renderGroupGid = 303;
-      monitors."DP-1" = {
-        width = 3440;
-        height = 1440;
-        refreshRate = "174.963";
-        vrr = true;
-      };
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
@@ -35,7 +28,10 @@
         shares.media.enable = true;
         shares.data.enable = true;
       };
-      niri.enable = true;
+      niri = {
+        enable = true;
+        hostConfig = ./niri.kdl;
+      };
       openssh.outbound.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
