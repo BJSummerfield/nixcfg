@@ -57,19 +57,6 @@ in
         description = "The UUID of the encrypted LUKS root partition.";
       };
     };
-
-    monitors = mkOption {
-      type = types.attrsOf (types.submodule {
-        options = {
-          width = mkOption { type = types.int; };
-          height = mkOption { type = types.int; };
-          refreshRate = mkOption { type = types.str; default = "60.000"; };
-          vrr = mkOption { type = types.bool; default = false; };
-          scale = mkOption { type = types.float; default = 1.0; };
-        };
-      });
-      default = { };
-    };
   };
 
   config = mkMerge [

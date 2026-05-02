@@ -19,10 +19,6 @@
     system = {
       hostName = "elitebook";
       externalInterface = "wlp0s20f3";
-      monitors."eDP-1" = {
-        width = 1920;
-        height = 1080;
-      };
       renderGroupGid = 303;
       fish.enable = true;
       _1password.enable = true;

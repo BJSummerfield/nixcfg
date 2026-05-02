@@ -17,14 +17,6 @@ in
       "1password-cli"
     ];
 
-    mine.user.niri.extraWindowRules = ''
-      // Security: Hide 1Password from screencasts/sharing
-      window-rule {
-          match app-id="1password"
-          block-out-from "screen-capture"
-      }
-    '';
-
     programs.firefox.policies.ExtensionSettings = {
       "{d634138d-c276-4fc8-924b-40a0ea21d284}" = {
         install_url = "https://addons.mozilla.org/firefox/downloads/latest/1password-x-password-manager/latest.xpi";
