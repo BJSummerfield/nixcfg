@@ -81,11 +81,14 @@ in
         }
       ];
 
+      boot.consoleLogLevel = 3;
+
       system.stateVersion = "24.11";
 
       networking.networkmanager.enable = true;
       networking.hostName = cfg.hostName;
       time.timeZone = "America/Chicago";
+
 
       security.sudo.wheelNeedsPassword = cfg.wheelNeedsPassword;
 

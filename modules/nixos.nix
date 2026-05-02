@@ -22,7 +22,6 @@
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix
     ./teamspeak-server/nixos.nix
-    ./tuigreet/nixos.nix
     ./unfree
     ./users/nixos.nix
   ];

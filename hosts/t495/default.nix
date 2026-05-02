@@ -39,7 +39,6 @@
         enable = true;
         ssh = true;
       };
-      tuigreet.enable = true;
     };
 
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
