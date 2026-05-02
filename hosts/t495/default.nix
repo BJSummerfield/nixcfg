@@ -15,10 +15,11 @@
     helix
   ];
 
+
   mine = {
     system = {
       hostName = "t495";
-      bootPartitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
+      boot.partitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
       externalInterface = "wlp1s0";
       monitors."eDP-1" = {
         width = 1920;

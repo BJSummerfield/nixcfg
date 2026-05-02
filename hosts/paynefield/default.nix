@@ -19,23 +19,12 @@
     "/share/xdg-desktop-portal"
   ];
 
-
-  system.autoUpgrade = {
-    enable = true;
-    flake = "github:BJSummerfield/nixcfg";
-    dates = "04:00";
-    allowReboot = true;
-    rebootWindow = {
-      lower = "03:00";
-      upper = "05:00";
-    };
-  };
-
   mine = {
     system = {
       hostName = "paynefield";
       externalInterface = "enp1s0";
       renderGroupGid = 303;
+      autoUpgrade.enable = true;
       dns-server.enable = true;
       fish.enable = true;
       openssh.inbound = {
