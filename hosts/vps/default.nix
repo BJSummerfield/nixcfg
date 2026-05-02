@@ -19,30 +19,12 @@
     helix
   ];
 
-  # TODO make this an option on mine boot
-  boot.loader.systemd-boot.enable = lib.mkForce false;
-  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
-  boot.loader.grub = {
-    enable = true;
-    efiSupport = false;
-  };
-
-  security.sudo.wheelNeedsPassword = false;
-
-  system.autoUpgrade = {
-    enable = true;
-    flake = "github:BJSummerfield/nixcfg";
-    dates = "04:00";
-    allowReboot = true;
-    rebootWindow = {
-      lower = "03:00";
-      upper = "05:00";
-    };
-  };
-
   mine = {
     system = {
+      boot.grub.enable = true;
       hostName = "vps";
+      autoUpgrade.enable = true;
+      wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       # renderGroupGid = 303;
       fish.enable = true;

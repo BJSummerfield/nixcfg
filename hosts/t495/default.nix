@@ -29,7 +29,6 @@
           --window-padding 4 \
           --container-padding 2 \
           --prompt-padding 1 \
-          --theme "border=magenta;title=magenta;text=white;time=cyan;prompt=green;input=white;action=blue;button=yellow;container=black"
       '';
       user = "greeter";
     };
