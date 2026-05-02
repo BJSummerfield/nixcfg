@@ -4,8 +4,7 @@ let
 in
 {
   options.mine.user.niri = {
-    enable = lib.mkEnableOption "User Niri Config";
-
+    enable = lib.mkEnableOption "Enable niri home config";
     userConfig = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;

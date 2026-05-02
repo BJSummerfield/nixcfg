@@ -21,6 +21,7 @@ in
     {
       environment.sessionVariables.NIXOS_OZONE_WL = "1";
       programs.niri.enable = true;
+      home-manager.sharedModules = [{ mine.user.niri.enable = true; }];
     }
 
     (lib.mkIf (cfg.hostConfig != null) {
