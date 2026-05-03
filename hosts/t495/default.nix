@@ -25,7 +25,10 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      niri.enable = true;
+      niri = {
+        enable = true;
+        hostConfig = ./niri.kdl;
+      };
       openssh.outbound.enable = true;
       printing.enable = true;
       steam.enable = true;
