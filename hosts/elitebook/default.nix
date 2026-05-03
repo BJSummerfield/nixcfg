@@ -37,6 +37,7 @@
       };
       teamspeak-client.enable = true;
     };
+    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
   };
   home-manager.users = {
     waktu = {
@@ -45,12 +46,9 @@
         alacritty.enable = true;
         battery-notifications.enable = true;
         catppuccin.enable = true;
-        direnv.enable = true;
         firefox.enable = true;
         fish.enable = true;
         fuzzel.enable = true;
-        gh.enable = true;
-        git.enable = true;
         helix = {
           enable = true;
           lsp = {
@@ -69,7 +67,6 @@
           };
         };
         keybase.enable = true;
-        lazygit.enable = true;
         mako.enable = true;
         polkit-kde.enable = true;
         stylix.enable = true;
