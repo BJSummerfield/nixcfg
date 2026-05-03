@@ -4,6 +4,12 @@ input {
     }
 }
 
+gestures {
+    hot-corners {
+        off
+    }
+}
+
 layout {
     gaps 10
     background-color "transparent"
@@ -53,6 +59,7 @@ binds {
     XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "s" "10%-"; }
 
     Mod+Q { close-window; }
+    Mod+Tab { toggle-overview; }
 
     Mod+Left  { focus-column-left; }
     Mod+Down  { focus-window-down; }
