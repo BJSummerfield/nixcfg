@@ -7,6 +7,7 @@
     ./javascript.nix
     ./json.nix
     ./jsx.nix
+    ./kdl.nix
     ./markdown.nix
     ./nix.nix
     ./python.nix

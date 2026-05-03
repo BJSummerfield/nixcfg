@@ -62,6 +62,7 @@
             javascript.enable = true;
             json.enable = true;
             jsx.enable = true;
+            kdl.enable = true;
             markdown.enable = true;
             nix.enable = true;
             rust.enable = true;
