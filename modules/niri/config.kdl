@@ -408,4 +408,5 @@ include optional=true "~/.config/niri/terminal.kdl"
 include optional=true "~/.config/niri/launcher.kdl"
 include optional=true "/etc/niri/host.kdl"
 include optional=true "~/.config/niri/user.kdl"
+include optional=true "~/.config/niri/tests.kdl"
 
