@@ -2,6 +2,19 @@
 # sudo nixos-container root-login dns
 # tailscale up --hostname=dns --advertise-tags=tag:solo-node --accept-dns=false
 # tailscale serve --bg 3000
+#
+# create an admin password with
+# mkpasswd -m bcrypt
+#
+# add the password to the config
+# sudo nixos-container root-login dns
+#  cd /var/lib/AdGuardHome
+#  hx AdGuardHome.yaml
+#
+# replace the users block
+#  users:
+#  - name: admin
+#    password: $2a$10...
 
 { lib, config, pkgs, ... }:
 let
@@ -85,6 +98,11 @@ in
       };
 
       config = { config, pkgs, lib, ... }: {
+
+        environment.systemPackages = with pkgs; [
+          helix
+        ];
+
         services.unbound = {
           enable = true;
           settings = {
@@ -138,8 +156,6 @@ in
           host = "0.0.0.0";
           port = cfg.webPort;
           settings = {
-            # intentionally left empty to have the setup wizard create the admin user
-            users = [ ];
             dns = {
               bind_hosts = [ "0.0.0.0" ];
               port = cfg.lanPort;
@@ -187,6 +203,8 @@ in
           NoNewPrivileges = lib.mkForce true;
           RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
         };
+
+
         system.stateVersion = "24.11";
       };
     };
