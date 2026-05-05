@@ -138,21 +138,14 @@ in
           host = "0.0.0.0";
           port = cfg.webPort;
           settings = {
-            # make admin user and password with:
-            # nix shell nixpkgs#apacheHttpd
-            # htpasswd -B -C 10 -n admin
-            users = [
-              {
-                name = "admin";
-                password = "$2y$10$c9v44L8TQVKoAAZqHiO9peVSoMWNShGzL9nOdLgE5R8H8sEh0FoJi";
-              }
-            ];
+            # intentionally left empty to have the setup wizard create the admin user
+            users = [ ];
             dns = {
               bind_hosts = [ "0.0.0.0" ];
               port = cfg.lanPort;
               upstream_dns = [ "127.0.0.1:5335" ];
               bootstrap_dns = [ "9.9.9.9" "1.1.1.1" ];
-              enable_dnssec = false;
+              enable_dnssec = true;
               cache_size = 4194304;
               cache_ttl_min = 60;
               cache_ttl_max = 86400;
