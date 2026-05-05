@@ -1,7 +1,8 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 {
   imports =
     [
+      inputs.sops-nix.nixosModules.sops
       ./hardware-configuration.nix
       ./filesystems.nix
       ../../modules/nixos.nix
