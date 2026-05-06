@@ -21,7 +21,9 @@ creation_rules:
       - age:
           - *waktu_redtruck
           - *waktu_t495
+
           - *host_redtruck
+          - *host_t495
 
   - path_regex: secrets/hosts/redtruck\.yaml$
     key_groups:
