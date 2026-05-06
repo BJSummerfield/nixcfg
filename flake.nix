@@ -18,7 +18,23 @@
   };
 
   outputs = { nixpkgs, ... }@inputs:
+
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+    in
+
     {
+      devShells = forAllSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              sops
+            ];
+          };
+        });
+
       nixosConfigurations = {
         elitebook = nixpkgs.lib.nixosSystem {
           specialArgs = {
