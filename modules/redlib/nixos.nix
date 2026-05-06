@@ -16,6 +16,15 @@ in
       default = 8080;
       description = "Port redlib listens on inside the container";
     };
+
+    tailscaleAuthKeyFile = lib.mkOption {
+      type = lib.types.path;
+      description = ''
+        Host path to a file containing a Tailscale auth key. Bind-mounted
+        into the container; used to register the redlib node with the
+        tailnet on first start.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -49,10 +58,21 @@ in
           hostPath = "/var/lib/tailscale-redlib";
           isReadOnly = false;
         };
+        "/run/secrets/tailscale_auth_key" = {
+          hostPath = toString cfg.tailscaleAuthKeyFile;
+          isReadOnly = true;
+        };
       };
 
-      config = { config, lib, ... }: {
-        services.tailscale.enable = true;
+      config = { pkgs, config, lib, ... }: {
+        services.tailscale = {
+          enable = true;
+          authKeyFile = "/run/secrets/tailscale_auth_key";
+          extraUpFlags = [
+            "--hostname=redlib"
+            "--advertise-tags=tag:solo-node"
+          ];
+        };
 
         services.redlib = {
           enable = true;
@@ -65,6 +85,27 @@ in
             REDLIB_DEFAULT_BLUR_NSFW = "on";
             REDLIB_DEFAULT_USE_HLS = "on";
           };
+        };
+
+        systemd.services.tailscale-serve = {
+          description = "Configure tailscale serve for redlib";
+          after = [ "tailscaled.service" "network-online.target" "redlib.service" ];
+          wants = [ "tailscaled.service" "network-online.target" ];
+          wantedBy = [ "multi-user.target" ];
+
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+
+          script = ''
+            # Wait until tailscale is authenticated and reachable.
+            until ${pkgs.tailscale}/bin/tailscale status --self=false >/dev/null 2>&1; do
+              sleep 2
+            done
+
+            ${pkgs.tailscale}/bin/tailscale serve --bg --https=443 http://localhost:${toString cfg.port}
+          '';
         };
 
         networking = {
