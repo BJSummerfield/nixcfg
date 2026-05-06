@@ -74,6 +74,16 @@ in
           ];
         };
 
+        # Without Type = "simple", tailscaled-autoconnect blocks container boot
+        # before the host finishes setting up the veth, causing a deadlock.
+        systemd.services.tailscaled-autoconnect = {
+          serviceConfig = {
+            Type = lib.mkForce "simple";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
+
         services.redlib = {
           enable = true;
           openFirewall = false;
@@ -84,26 +94,26 @@ in
             REDLIB_DEFAULT_SHOW_NSFW = "off";
             REDLIB_DEFAULT_BLUR_NSFW = "on";
             REDLIB_DEFAULT_USE_HLS = "on";
+            REDLIB_ROBOTS_DISABLE_INDEXING = "on";
+            REDLIB_SKIP_OAUTH_REGISTRATION = "on";
           };
         };
 
         systemd.services.tailscale-serve = {
           description = "Configure tailscale serve for redlib";
-          after = [ "tailscaled.service" "network-online.target" "redlib.service" ];
-          wants = [ "tailscaled.service" "network-online.target" ];
+          after = [ "tailscaled-autoconnect.service" "redlib.service" ];
+          wants = [ "tailscaled-autoconnect.service" "redlib.service" ];
           wantedBy = [ "multi-user.target" ];
-
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 10;
           };
-
           script = ''
-            # Wait until tailscale is authenticated and reachable.
             until ${pkgs.tailscale}/bin/tailscale status --self=false >/dev/null 2>&1; do
               sleep 2
             done
-
             ${pkgs.tailscale}/bin/tailscale serve --bg --https=443 http://localhost:${toString cfg.port}
           '';
         };
