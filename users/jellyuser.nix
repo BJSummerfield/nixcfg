@@ -1,15 +1,15 @@
 { config, ... }:
 {
   config = {
-    sops.secrets."jellyfin/password_hash" = {
-      sopsFile = ../secrets/users/jellyfin.yaml;
+    sops.secrets."jellyuser/password_hash" = {
+      sopsFile = ../secrets/users/jellyuser.yaml;
       key = "password_hash";
       neededForUsers = true;
     };
 
-    mine.users.jellyfin = {
+    mine.users.jellyuser = {
       description = "jellyfin user";
-      hashedPasswordFile = config.sops.secrets."jellyfin/password_hash".path;
+      hashedPasswordFile = config.sops.secrets."jellyuser/password_hash".path;
     };
   };
 }
