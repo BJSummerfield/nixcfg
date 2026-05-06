@@ -21,7 +21,11 @@
 
   mine = {
     system = {
-      boot.grub.enable = true;
+      # TODO Fix this jank
+      boot = {
+        grub.enable = true;
+        systemd-boot.enable = false;
+      };
       hostName = "vps";
       autoUpgrade.enable = true;
       wheelNeedsPassword = false;
