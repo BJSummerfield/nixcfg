@@ -47,6 +47,7 @@ in
   };
 
   config = {
+    users.mutableUsers = false;
     # Allow admins to use nix
     nix.settings.trusted-users = [ "root" ] ++ adminUsernames;
 
