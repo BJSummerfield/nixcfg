@@ -8,7 +8,6 @@
 # GETTING A HOSTS KEY
 #
 # sudo nix shell nixpkgs#ssh-to-age -c sh -c 'ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub'
-
 keys:
   - &waktu_redtruck age1rd9d5xr3v4adrec0umhvwvrcgxgy3qylzg3ngcqr8cnjpy5faafsl3u7fs
   - &host_redtruck age16a96arz6f3jnetmeq77q6vcfwdylj59hekg7v09eyfsrtamlc9vqudj8dd
@@ -19,3 +18,8 @@ creation_rules:
       - age:
           - *waktu_redtruck
           - *host_redtruck
+
+  - path_regex: secrets/.*\.yaml$
+    key_groups:
+      - age:
+          - *waktu_redtruck
