@@ -1,5 +1,6 @@
-{ ... }: {
+{ inputs, ... }: {
   imports = [
+    inputs.sops-nix.nixosModules.sops
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./dns-server/nixos.nix

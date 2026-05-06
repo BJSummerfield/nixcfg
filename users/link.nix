@@ -1,7 +1,15 @@
-{ ... }:
+{ config, ... }:
 {
-  config.mine.users.link = {
-    description = "Martin";
-    initialHashedPassword = "$y$j9T$HtGcPgOzaeTS8KN3YLr5u1$K2kgyoNKP8i4SgkI0wAZFBDfmYuJYAKl1Cta7gINwp5";
+  config = {
+    sops.secrets."link/password_hash" = {
+      sopsFile = ../secrets/users/link.yaml;
+      key = "password_hash";
+      neededForUsers = true;
+    };
+
+    mine.users.link = {
+      description = "Martin";
+      hashedPasswordFile = config.sops.secrets."link/password_hash".path;
+    };
   };
 }

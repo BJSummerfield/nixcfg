@@ -1,11 +1,11 @@
-# CREATING A USERS KEY
+# CREATING A USER KEY
 #
 # mkdir -p ~/.config/sops/age
 # nix shell nixpkgs#age -c age-keygen -o ~/.config/sops/age/keys.txt
 # chmod 600 ~/.config/sops/age/keys.txt
 #
 #
-# GETTING A HOSTS KEY
+# GETTING A HOST KEY
 #
 # sudo nix shell nixpkgs#ssh-to-age -c sh -c 'ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub'
 keys:
