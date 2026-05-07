@@ -13,16 +13,28 @@ keys:
   - &waktu_t495 age152xerule7rz46clp2ex0kst2d3xwj2k224wf4pner07k20hgaf3qkg9khw
 
   - &host_redtruck age16a96arz6f3jnetmeq77q6vcfwdylj59hekg7v09eyfsrtamlc9vqudj8dd
-  - &host_t495 age1xks7nnz4yst29agpvucaktdxlrlp3d2ggy3saxwuxc9lrscdmugq0xsmnf
+  - &host_t495 age1n2nqtfcxp4jsh7fxp5nv4qzh6mqc4h3ckajxtp2h9fduvlsqpacst0vs2h
 
-creation_rules:
   - path_regex: secrets/users/waktu\.yaml$
     key_groups:
       - age:
           - *waktu_redtruck
           - *waktu_t495
-
           - *host_redtruck
+          - *host_t495
+
+  - path_regex: secrets/users/sumriri\.yaml$
+    key_groups:
+      - age:
+          - *waktu_redtruck
+          - *waktu_t495
+          - *host_t495
+
+  - path_regex: secrets/users/link\.yaml$
+    key_groups:
+      - age:
+          - *waktu_redtruck
+          - *waktu_t495
           - *host_t495
 
   - path_regex: secrets/hosts/redtruck\.yaml$
