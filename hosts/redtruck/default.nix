@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 {
   imports =
     [
@@ -14,6 +14,13 @@
     helix
   ];
 
+  sops = {
+    age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+    secrets."tailscale/redlib_auth_key" = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      key = "tailscale/redlib_auth_key";
+    };
+  };
 
   mine = {
     system = {
@@ -35,6 +42,10 @@
       openssh.outbound.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
+      redlib-server = {
+        enable = true;
+        tailscaleAuthKeyFile = config.sops.secrets."tailscale/redlib_auth_key".path;
+      };
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;

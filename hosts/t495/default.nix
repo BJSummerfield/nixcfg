@@ -3,6 +3,7 @@
   imports =
     [
       ./hardware-configuration.nix
+      ./disko.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/sumriri.nix
@@ -16,10 +17,17 @@
   ];
 
 
+  boot.initrd.systemd.enable = true;
+
+  # TODO fix this mount - btfs
+  systemd.tmpfiles.rules = [
+    "d /games 2775 root users - -"
+    "d /games/steam 2775 root users - -"
+  ];
+
   mine = {
     system = {
       hostName = "t495";
-      boot.partitionUuid = "5cccbb79-6ae4-4a43-add1-9b5fa0a03e18";
       externalInterface = "wlp1s0";
       renderGroupGid = 303;
       fish.enable = true;

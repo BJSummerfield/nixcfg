@@ -14,7 +14,7 @@ in
       options = {
         isSuperUser = mkOption { type = types.bool; default = false; };
         description = mkOption { type = types.str; default = ""; };
-        initialHashedPassword = mkOption { type = types.str; default = ""; };
+        hashedPasswordFile = mkOption { type = types.str; };
 
         sshKeys = mkOption {
           type = types.attrsOf types.str;
@@ -47,6 +47,7 @@ in
   };
 
   config = {
+    users.mutableUsers = false;
     # Allow admins to use nix
     nix.settings.trusted-users = [ "root" ] ++ adminUsernames;
 
@@ -71,7 +72,7 @@ in
     users.users = lib.mapAttrs
       (name: user: {
         isNormalUser = true;
-        inherit (user) description initialHashedPassword shell;
+        inherit (user) description hashedPasswordFile shell;
         extraGroups = [ "networkmanager" ] ++ lib.optional user.isSuperUser "wheel";
         openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
       })
