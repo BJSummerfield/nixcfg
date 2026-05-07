@@ -18,6 +18,8 @@
 
 
   boot.initrd.systemd.enable = true;
+
+  # TODO fix this mount - btfs
   systemd.tmpfiles.rules = [
     "d /games 2775 root users - -"
     "d /games/steam 2775 root users - -"
