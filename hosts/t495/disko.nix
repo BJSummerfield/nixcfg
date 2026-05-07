@@ -1,5 +1,10 @@
-{ ... }:
+{ inputs, ... }:
 {
+
+  imports = [
+    inputs.disko.nixosModules.disko
+  ];
+
   disko.devices = {
     disk = {
       main = {
@@ -22,16 +27,9 @@
             swap = {
               size = "4G";
               content = {
-                type = "luks";
-                name = "cryptswap";
-                settings = {
-                  keyFile = "/dev/urandom";
-                  randomEncryption = true;
-                };
-                content = {
-                  type = "swap";
-                  discardPolicy = "both";
-                };
+                type = "swap";
+                randomEncryption = true;
+                discardPolicy = "both";
               };
             };
             root = {

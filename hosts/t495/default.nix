@@ -18,7 +18,10 @@
 
 
   boot.initrd.systemd.enable = true;
-
+  systemd.tmpfiles.rules = [
+    "d /games 2775 root users - -"
+    "d /games/steam 2775 root users - -"
+  ];
 
   mine = {
     system = {
