@@ -42,10 +42,7 @@
       openssh.outbound.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
-      redlib-server = {
-        enable = true;
-        tailscaleAuthKeyFile = config.sops.secrets."tailscale/redlib_auth_key".path;
-      };
+      redlib-server.enable = true;
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
