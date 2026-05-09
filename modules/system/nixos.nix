@@ -78,6 +78,7 @@ in
 
 
       security.sudo.wheelNeedsPassword = cfg.wheelNeedsPassword;
+      sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
       nix = {
         settings.experimental-features = [ "nix-command" "flakes" ];
