@@ -39,7 +39,6 @@
       };
       openssh.outbound.enable = true;
       printing.enable = true;
-      redlib-server.enable = true;
       steam.enable = true;
       steambox.enable = true;
       tailscale = {
