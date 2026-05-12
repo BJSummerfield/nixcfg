@@ -35,7 +35,11 @@
         enable = true;
         ssh = true;
       };
-      teamspeak-server.enable = true;
+      teamspeak-server = {
+        enable = true;
+        publicAccess = false;
+        tailscaleAccess = true;
+      };
       jellyfin-server.enable = true;
       immich-server.enable = true;
       terraria-server.enable = true;

@@ -12,11 +12,12 @@ in
 {
   options.mine.system.teamspeak-server = {
     enable = lib.mkEnableOption "Enable TeamSpeak server container";
+    tailscaleAccess = lib.mkEnableOption "Enable Tailscale access (private network)";
     publicAccess = lib.mkEnableOption "Enable public access (port forwarding)";
   };
 
   config = lib.mkIf cfg.enable {
-    system.activationScripts.teamspeak-dirs = ''
+    system.activationScripts.teamspeak-dirs = lib.mkIf cfg.tailscaleAccess ''
       mkdir -p /var/lib/tailscale-teamspeak
       chmod 700 /var/lib/tailscale-teamspeak
     '';
@@ -28,8 +29,8 @@ in
     };
 
     networking.firewall = lib.mkIf cfg.publicAccess {
-      allowedUDPPorts = [ 9987 ];
-      allowedTCPPorts = [ 30033 ];
+      allowedUDPPorts = [ 9987 ]; # Voice
+      allowedTCPPorts = [ 30033 ]; # File Transfer
     };
 
     containers.teamspeak = {
@@ -43,10 +44,11 @@ in
         { protocol = "tcp"; hostPort = 30033; containerPort = 30033; } # File Transfer
       ];
 
-      # tun is needed for tailscale network
-      allowedDevices = [{ modifier = "rwm"; node = "/dev/net/tun"; }];
+      allowedDevices = lib.mkIf cfg.tailscaleAccess [
+        { modifier = "rwm"; node = "/dev/net/tun"; }
+      ];
 
-      bindMounts = {
+      bindMounts = lib.mkIf cfg.tailscaleAccess {
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
@@ -62,7 +64,7 @@ in
           "teamspeak-server"
         ];
 
-        services.tailscale.enable = true;
+        services.tailscale.enable = cfg.tailscaleAccess;
         services.teamspeak3.enable = true;
 
         networking = {
@@ -70,10 +72,9 @@ in
           firewall = {
             enable = true;
 
-            # Trust Tailscale traffic internally
-            trustedInterfaces = [ "tailscale0" ];
+            trustedInterfaces = lib.mkIf cfg.tailscaleAccess [ "tailscale0" ];
 
-            allowedUDPPorts = [ config.services.tailscale.port ]
+            allowedUDPPorts = (lib.optionals cfg.tailscaleAccess [ config.services.tailscale.port ])
               ++ (lib.optionals cfg.publicAccess [ 9987 ]);
 
             allowedTCPPorts = lib.optionals cfg.publicAccess [ 30033 ];
