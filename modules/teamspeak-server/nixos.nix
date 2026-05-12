@@ -16,7 +16,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    system.activationScripts.teamspeak-dirs = lib.mkIf cfg.tailscaleAccess ''
+    system.activationScripts.teamspeak-dirs = ''
       mkdir -p /var/lib/tailscale-teamspeak
       chmod 700 /var/lib/tailscale-teamspeak
     '';
