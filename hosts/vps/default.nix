@@ -41,6 +41,11 @@
         enable = true;
         ssh = true;
       };
+      teamspeak-server = {
+        enable = true;
+        publicAccess = true;
+        tailscaleAccess = false;
+      };
     };
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
   };

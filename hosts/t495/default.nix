@@ -45,6 +45,7 @@
         enable = true;
         ssh = true;
       };
+      teamspeak-client.enable = true;
     };
 
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
