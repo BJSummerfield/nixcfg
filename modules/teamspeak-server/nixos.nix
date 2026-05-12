@@ -1,19 +1,22 @@
 # Once the container is running log into it with
 # sudo nixos-container root-login teamspeak
-# tailscale up --hostname=teamspeak --advertise-tags=tag:solo-node 
+# tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node 
 
 # First login get the ServerAdmin privilege key.
 # sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
 
 { lib, config, ... }:
+let
+  cfg = config.mine.system.teamspeak-server;
+in
 {
   options.mine.system.teamspeak-server = {
     enable = lib.mkEnableOption "Enable TeamSpeak server container";
+    publicAccess = lib.mkEnableOption "Enable public access (port forwarding)";
   };
 
-  config = lib.mkIf config.mine.system.teamspeak-server.enable {
-    # Make needed directories
-    system.activationScripts.teamspeak-dirs = ''
+  config = lib.mkIf cfg.enable {
+    system.activationScripts.teamspeak-dirs = lib.mkIf cfg.tailscaleAccess ''
       mkdir -p /var/lib/tailscale-teamspeak
       chmod 700 /var/lib/tailscale-teamspeak
     '';
@@ -24,24 +27,30 @@
       externalInterface = config.mine.system.externalInterface;
     };
 
+    networking.firewall = lib.mkIf cfg.publicAccess {
+      allowedUDPPorts = [ 9987 ];
+      allowedTCPPorts = [ 30033 ];
+    };
+
     containers.teamspeak = {
       autoStart = true;
       privateNetwork = true;
       hostAddress = "192.168.100.12";
       localAddress = "192.168.100.13";
 
-      # tun is needed for tailscale network
-      allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+      forwardPorts = lib.mkIf cfg.publicAccess [
+        { protocol = "udp"; hostPort = 9987; containerPort = 9987; } # Voice
+        { protocol = "tcp"; hostPort = 30033; containerPort = 30033; } # File Transfer
       ];
 
+      # tun is needed for tailscale network
+      allowedDevices = [{ modifier = "rwm"; node = "/dev/net/tun"; }];
+
       bindMounts = {
-        # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # persists the tailscale node
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-teamspeak";
           isReadOnly = false;
@@ -60,9 +69,14 @@
           nameservers = [ "9.9.9.9" "1.1.1.1" ];
           firewall = {
             enable = true;
-            # allows connection from other tailscale devices
+
+            # Trust Tailscale traffic internally
             trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
+
+            allowedUDPPorts = [ config.services.tailscale.port ]
+              ++ (lib.optionals cfg.publicAccess [ 9987 ]);
+
+            allowedTCPPorts = lib.optionals cfg.publicAccess [ 30033 ];
           };
         };
 
