@@ -32,9 +32,9 @@ in
       fonts = {
         sizes = {
           applications = 12;
-          terminal = 14;
+          terminal = 13;
           desktop = 12;
-          popups = 10;
+          popups = 11;
         };
         serif = {
           package = pkgs.nerd-fonts.monaspace;

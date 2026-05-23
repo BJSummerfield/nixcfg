@@ -16,7 +16,7 @@ in
         enable = true;
         settings = {
           font = {
-            size = 12;
+            size = 14;
             normal = {
               family = "MonaspiceNe Nerd Font";
               style = "Regular";
