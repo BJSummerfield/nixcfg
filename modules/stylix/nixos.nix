@@ -62,5 +62,15 @@ in
         qt.enable = true;
       };
     };
+
+    home-manager.sharedModules = [
+      {
+        stylix.targets = {
+          gtk.enable = true;
+          qt.enable = true;
+          fontconfig.enable = true;
+        };
+      }
+    ];
   };
 }

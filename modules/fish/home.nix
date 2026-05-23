@@ -3,7 +3,7 @@
   options.mine.user.fish.enable = lib.mkEnableOption "User Fish Config";
 
   config = lib.mkIf config.mine.user.fish.enable {
-    xdg.configFile."fish/themes/Catppuccin Mocha.theme".source = ./catppuccin-mocha.theme;
+    # xdg.configFile."fish/themes/Catppuccin Mocha.theme".source = ./catppuccin-mocha.theme;
     programs.fish = {
       enable = true;
       interactiveShellInit = ''
@@ -15,6 +15,5 @@
         set fish_greeting # Disable greeting
       '';
     };
-    stylix.targets.fish.enable = false;
   };
 }
