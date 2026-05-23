@@ -41,6 +41,7 @@
       printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
+      stylix.enable = true;
       tailscale = {
         enable = true;
         ssh = true;
@@ -85,7 +86,6 @@
         lazygit.enable = true;
         mako.enable = true;
         polkit-kde.enable = true;
-        stylix.enable = true;
         swaybg.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;

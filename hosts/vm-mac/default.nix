@@ -20,6 +20,7 @@
       fish.enable = true;
       _1password.enable = true;
       niri.enable = true;
+      stylix.enable = true;
     };
   };
   home-manager.users = {
@@ -60,7 +61,6 @@
         lazygit.enable = true;
         mako.enable = true;
         polkit-kde.enable = true;
-        stylix.enable = true;
         swaybg.enable = true;
       };
       programs = {

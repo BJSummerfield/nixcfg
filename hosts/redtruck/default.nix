@@ -37,6 +37,7 @@
       openssh.outbound.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
+      stylix.enable = true;
       steam.enable = true;
       tailscale.enable = true;
       teamspeak-client.enable = true;
@@ -83,7 +84,6 @@
         mako.enable = true;
         obs-studio.enable = true;
         polkit-kde.enable = true;
-        stylix.enable = true;
         swaybg.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;

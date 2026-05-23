@@ -20,6 +20,7 @@
     ./redlib/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix
+    ./stylix/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix
