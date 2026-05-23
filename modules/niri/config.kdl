@@ -29,16 +29,43 @@ layout {
 }
 prefer-no-csd
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
 // Security: Hide 1Password from screencasts/sharing
 window-rule {
     match app-id="1password"
     block-out-from "screen-capture"
 }
-//SwayBG config
+ 
+// SwayBG config
 layer-rule {
     match namespace="^wallpaper$"
     place-within-backdrop true
 }
+
+// Visual and blur
+blur {
+    passes 3
+    offset 3
+    noise 0.02
+    saturation 1.5
+}
+
+// Blur terminal
+window-rule {
+    match app-id="^Alacritty$"
+    background-effect {
+        blur true
+    }
+}
+
+// Blur fuzzel
+layer-rule {
+    match namespace="^launcher$"
+    background-effect {
+        blur true
+    }
+}
+
 binds {
     Mod+Shift+Slash {
         show-hotkey-overlay
