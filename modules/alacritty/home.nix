@@ -15,7 +15,25 @@ in
       programs.alacritty = {
         enable = true;
         settings = {
-          font.size = 12;
+          font = {
+            size = 12;
+            normal = {
+              family = "MonaspiceNe Nerd Font";
+              style = "Regular";
+            };
+            bold = {
+              family = "MonaspiceNe Nerd Font";
+              style = "Bold";
+            };
+            italic = {
+              family = "MonaspiceNe Nerd Font";
+              style = "Italic";
+            };
+            bold_italic = {
+              family = "MonaspiceNe Nerd Font";
+              style = "Bold Italic";
+            };
+          };
           colors = {
             primary = {
               background = "#1e1e2e";
