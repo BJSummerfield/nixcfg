@@ -15,7 +15,6 @@ in
           border.radius = 0;
         };
       };
-      catppuccin.fuzzel.enable = true;
     }
 
     (mkIf niriCfg.enable {

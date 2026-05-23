@@ -12,7 +12,6 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    catppuccin.url = "github:catppuccin/nix";
     stylix.url = "github:danth/stylix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };

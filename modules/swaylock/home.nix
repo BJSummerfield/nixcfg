@@ -1,9 +1,8 @@
-{ pkgs, config, osConfig, lib, ... }:
+{ pkgs, config, lib, ... }:
 
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.swaylock;
-  stylixEnabled = osConfig.mine.system.stylix.enable;
 in
 {
   options.mine.user.swaylock.enable = mkEnableOption "Enable swaylock config";
@@ -23,11 +22,7 @@ in
         effect-vignette = "0.5:0.5";
         # grace = 2;
         fade-in = 1;
-        font = mkIf stylixEnabled config.stylix.fonts.monospace.name;
-        font-size = 24;
       };
     };
-    catppuccin.swaylock.enable = true;
-    stylix.targets.swaylock.enable = false;
   };
 }
