@@ -78,8 +78,19 @@ in
       })
       cfg;
 
+    # Bridge: propagate per-user mine.allowedUnfree up to system scope
+    # so the system-level allowUnfreePredicate sees them. Required because
+    # home-manager.useGlobalPkgs = true forbids HM modules from writing
+    # nixpkgs.config directly.
+    mine.allowedUnfree = lib.concatLists (
+      lib.mapAttrsToList
+        (userName: userCfg: userCfg.mine.allowedUnfree or [ ])
+        config.home-manager.users
+    );
+
     # Map the users to home-manager
     home-manager = {
+      useGlobalPkgs = true;
       useUserPackages = true;
       extraSpecialArgs = { inherit inputs; systemCfg = config.mine.system; };
       users = lib.mapAttrs

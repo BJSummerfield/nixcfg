@@ -20,7 +20,10 @@
       externalInterface = "enp34s0";
       renderGroupGid = 303;
       fish.enable = true;
-      _1password.enable = true;
+      _1password = {
+        enable = true;
+        overlay.enable = true;
+      };
       avahi.enable = true;
       makemkv.enable = true;
       nas = {

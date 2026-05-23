@@ -26,6 +26,6 @@
     ./swaybg/home.nix
     ./swayidle/home.nix
     ./swaylock/home.nix
-    ./unfree
+    ./unfree/home.nix
   ];
 }
