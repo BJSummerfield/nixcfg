@@ -6,7 +6,7 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/sumriri.nix
-      ../../users/link.nix
+      ../../users/sword.nix
       ../../users/jellyuser.nix
     ];
 
@@ -84,7 +84,7 @@
       ];
     };
     sumriri.mine.user.steambox.autoStart.enable = true;
-    link.mine.user.steambox.autoStart.enable = true;
+    sword.mine.user.steambox.autoStart.enable = true;
     jellyuser.mine.user.jellybox.autoStart.enable = true;
   };
 }
