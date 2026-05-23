@@ -12,6 +12,10 @@ in
       enable = true;
       autoEnable = true;
       polarity = "dark";
+      opacity = {
+        terminal = 0.8;
+        popups = 0.8;
+      };
       image = "${../wallpapers/${wallpaper}}";
       base16Scheme = "${pkgs.base16-schemes}/share/themes/catppuccin-mocha.yaml";
       cursor = {
@@ -26,6 +30,12 @@ in
         light = "Papirus-Light";
       };
       fonts = {
+        sizes = {
+          applications = 12;
+          terminal = 12;
+          desktop = 12;
+          popups = 10;
+        };
         serif = {
           package = pkgs.nerd-fonts.monaspace;
           name = "MonaspiceNe Nerd Font";

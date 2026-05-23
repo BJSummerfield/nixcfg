@@ -15,7 +15,6 @@
         set fish_greeting # Disable greeting
       '';
     };
-    catppuccin.fish.enable = false;
     stylix.targets.fish.enable = false;
   };
 }

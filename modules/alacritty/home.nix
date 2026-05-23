@@ -1,9 +1,8 @@
-{ lib, osConfig, config, ... }:
+{ lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf mkMerge;
   cfg = config.mine.user.alacritty;
   niriCfg = config.mine.user.niri;
-  stylixEnabled = osConfig.mine.system.stylix.enable;
 
 in
 {
@@ -16,12 +15,7 @@ in
       programs.alacritty = {
         enable = true;
         settings = {
-          font = {
-            normal.family = mkIf stylixEnabled config.stylix.fonts.monospace.name;
-            size = 14;
-          };
           window = {
-            opacity = 0.8;
             decorations = "buttonless";
             padding = {
               x = 5;
@@ -33,9 +27,6 @@ in
       home.sessionVariables = {
         TERMINAL = "alacritty";
       };
-
-      catppuccin.alacritty.enable = true;
-      stylix.targets.alacritty.enable = false;
     }
 
     (mkIf niriCfg.enable {
