@@ -6,6 +6,7 @@
       enable = true;
       settings.gui.language = "en";
     };
+    stylix.targets.lazygit.enable = true;
     home.shellAliases.lg = "lazygit";
   };
 }

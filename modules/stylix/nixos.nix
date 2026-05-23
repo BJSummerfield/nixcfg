@@ -10,7 +10,7 @@ in
   config = mkIf cfg.enable {
     stylix = {
       enable = true;
-      autoEnable = true;
+      autoEnable = false;
       polarity = "dark";
       opacity = {
         terminal = 0.8;
@@ -32,7 +32,7 @@ in
       fonts = {
         sizes = {
           applications = 12;
-          terminal = 12;
+          terminal = 14;
           desktop = 12;
           popups = 10;
         };
@@ -52,6 +52,14 @@ in
           package = pkgs.noto-fonts-color-emoji;
           name = "Noto Color Emoji";
         };
+      };
+      targets = {
+        font-packages.enable = true;
+        fontconfig.enable = true;
+        gtk.enable = true;
+        gtksourceview.enable = true;
+        nixos-icons.enable = true;
+        qt.enable = true;
       };
     };
   };

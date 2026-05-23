@@ -24,5 +24,6 @@ in
         fade-in = 1;
       };
     };
+    stylix.targets.swaylock.enable = true;
   };
 }

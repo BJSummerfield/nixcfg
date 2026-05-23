@@ -13,5 +13,6 @@ in
         default-timeout = 6000;
       };
     };
+    stylix.targets.mako.enable = true;
   };
 }

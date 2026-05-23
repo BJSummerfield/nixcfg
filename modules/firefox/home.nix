@@ -77,6 +77,9 @@
         };
       };
     };
-    stylix.targets.firefox.profileNames = [ "default" ];
+    stylix.targets.firefox = {
+      enable = true;
+      profileNames = [ "default" ];
+    };
   };
 }
