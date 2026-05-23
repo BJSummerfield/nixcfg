@@ -115,10 +115,7 @@ in
       home.sessionVariables = {
         TERMINAL = "alacritty";
       };
-
-      stylix.targets.alacritty.enable = false;
     }
-
 
     (mkIf niriCfg.enable {
       xdg.configFile."niri/terminal.kdl".text = ''
