@@ -5,7 +5,7 @@
   config = lib.mkIf config.mine.system.steambox.enable {
     mine.system.steam.enable = true;
     mine.system.gamescope.enable = true;
-    programs.gamescope.capSysNice = true;
+    # programs.gamescope.capSysNice = true;
     programs.steam.gamescopeSession.enable = true;
   };
 }
