@@ -60,7 +60,6 @@
         _1password.enable = true;
         alacritty.enable = true;
         battery-notifications.enable = true;
-        catppuccin.enable = true;
         direnv.enable = true;
         firefox.enable = true;
         fish.enable = true;
