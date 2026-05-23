@@ -7,7 +7,7 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
       ../../users/sumriri.nix
-      ../../users/link.nix
+      ../../users/sword.nix
     ];
 
   environment.systemPackages = with pkgs; [
@@ -31,7 +31,10 @@
       externalInterface = "wlp1s0";
       renderGroupGid = 303;
       fish.enable = true;
-      _1password.enable = true;
+      _1password = {
+        enable = true;
+        overlay.enable = true;
+      };
       avahi.enable = true;
       niri = {
         enable = true;
@@ -97,6 +100,6 @@
       };
     };
     sumriri.mine.user.steambox.autoStart.enable = true;
-    link.mine.user.steambox.autoStart.enable = true;
+    sword.mine.user.steambox.autoStart.enable = true;
   };
 }

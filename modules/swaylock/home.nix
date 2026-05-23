@@ -1,9 +1,9 @@
-{ pkgs, config, lib, ... }:
+{ pkgs, config, osConfig, lib, ... }:
 
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.swaylock;
-  stylixEnabled = config.mine.user.stylix.enable;
+  stylixEnabled = osConfig.mine.system.stylix.enable;
 in
 {
   options.mine.user.swaylock.enable = mkEnableOption "Enable swaylock config";

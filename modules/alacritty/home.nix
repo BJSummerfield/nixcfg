@@ -1,9 +1,10 @@
-{ lib, config, ... }:
+{ lib, osConfig, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf mkMerge;
   cfg = config.mine.user.alacritty;
   niriCfg = config.mine.user.niri;
-  stylixEnabled = config.mine.user.stylix.enable;
+  stylixEnabled = osConfig.mine.system.stylix.enable;
+
 in
 {
   options.mine.user.alacritty = {
