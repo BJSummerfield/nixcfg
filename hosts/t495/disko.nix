@@ -1,10 +1,8 @@
 { inputs, ... }:
 {
-
   imports = [
     inputs.disko.nixosModules.disko
   ];
-
   disko.devices = {
     disk = {
       main = {
@@ -42,34 +40,11 @@
                   allowDiscards = true;
                 };
                 content = {
-                  type = "btrfs";
-                  extraArgs = [ "-f" "-L" "nixos" ];
-                  subvolumes = {
-                    "@root" = {
-                      mountpoint = "/";
-                      mountOptions = [ "compress=zstd:3" "noatime" ];
-                    };
-                    "@home" = {
-                      mountpoint = "/home";
-                      mountOptions = [ "compress=zstd:3" "noatime" ];
-                    };
-                    "@nix" = {
-                      mountpoint = "/nix";
-                      mountOptions = [ "compress=zstd:3" "noatime" ];
-                    };
-                    "@log" = {
-                      mountpoint = "/var/log";
-                      mountOptions = [ "compress=zstd:3" "noatime" ];
-                    };
-                    "@games" = {
-                      mountpoint = "/games";
-                      mountOptions = [ "compress=no" "noatime" "nodatacow" ];
-                    };
-                    "@snapshots" = {
-                      mountpoint = "/.snapshots";
-                      mountOptions = [ "compress=zstd:3" "noatime" ];
-                    };
-                  };
+                  type = "filesystem";
+                  format = "ext4";
+                  mountpoint = "/";
+                  mountOptions = [ "noatime" ];
+                  extraArgs = [ "-L" "nixos" ];
                 };
               };
             };
