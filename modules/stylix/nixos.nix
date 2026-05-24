@@ -56,6 +56,7 @@ in
       targets = {
         font-packages.enable = true;
         fontconfig.enable = true;
+        gnome.enable = true;
         gtk.enable = true;
         gtksourceview.enable = true;
         nixos-icons.enable = true;
@@ -66,6 +67,7 @@ in
     home-manager.sharedModules = [
       {
         stylix.targets = {
+          gnome.enable = true;
           gtk.enable = true;
           qt.enable = true;
           fontconfig.enable = true;
