@@ -16,13 +16,15 @@ in
         font = "MonaspiceNe Nerd Font 13";
         anchor = "top-right";
         layer = "overlay";
-        margin = "10";
+        margin = "0";
         padding = "10";
         width = 400;
         max-visible = 5;
         border-size = 1;
+        outer-margin = "0";
 
-        default-timeout = 12000;
+
+        default-timeout = 10000;
         sort = "-time";
         history = true;
 
