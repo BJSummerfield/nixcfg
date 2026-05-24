@@ -4,6 +4,10 @@
   config = lib.mkIf config.mine.user.firefox.enable {
     programs.firefox = {
       enable = true;
+      profiles.default = {
+        id = 0;
+        isDefault = true;
+      };
       policies = {
         DisableTelemetry = true;
         DisableFirefoxStudies = true;
