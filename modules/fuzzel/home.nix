@@ -13,9 +13,21 @@ in
         enable = true;
         settings = {
           border.radius = 0;
+          colors = {
+            background = "1e1e2edd";
+            text = "cdd6f4ff";
+            prompt = "bac2deff";
+            placeholder = "7f849cff";
+            input = "cdd6f4ff";
+            match = "89b4faff";
+            selection = "585b70ff";
+            selection-text = "cdd6f4ff";
+            selection-match = "89b4faff";
+            counter = "7f849cff";
+            border = "89b4faff";
+          };
         };
       };
-      stylix.targets.fuzzel.enable = true;
     }
 
     (mkIf niriCfg.enable {
