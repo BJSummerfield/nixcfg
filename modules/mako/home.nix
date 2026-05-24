@@ -22,7 +22,7 @@ in
         max-visible = 5;
         border-size = 1;
 
-        default-timeout = 6000;
+        default-timeout = 12000;
         sort = "-time";
         history = true;
 
@@ -36,7 +36,6 @@ in
           background-color = "#1e1e2ecc";
           text-color = "#cdd6f4";
           border-color = "#6c7086";
-          default-timeout = 3000;
         };
       };
     };
