@@ -10,7 +10,7 @@
 # sudo nix shell nixpkgs#ssh-to-age -c sh -c 'ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub'
 keys:
   - &waktu_redtruck age1rd9d5xr3v4adrec0umhvwvrcgxgy3qylzg3ngcqr8cnjpy5faafsl3u7fs
-  - &waktu_t495 age19unwz2yux3uew0gqcrrfnqxr0kcr5xj7au2e9n75y8d3cj0gp58sqz6305
+  - &waktu_t495 age1flyfl2tnuanutd96e320hrpa74akk2dl0zqxskz27ts939jytg2q4sxg5r
 
   - &host_redtruck age16a96arz6f3jnetmeq77q6vcfwdylj59hekg7v09eyfsrtamlc9vqudj8dd
   - &host_t495 age1rym6aylq50jucfelkgj28a8j27ag6ajzeazysxyls5n3pvsa5vssuvc9wq
