@@ -25,10 +25,7 @@
       externalInterface = "wlp1s0";
       renderGroupGid = 303;
       fish.enable = true;
-      _1password = {
-        enable = true;
-        overlay.enable = true;
-      };
+      _1password.enable = true;
       avahi.enable = true;
       niri = {
         enable = true;
