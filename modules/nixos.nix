@@ -28,6 +28,7 @@
     ./terraria-server/nixos.nix
     ./unfree/nixos.nix
     ./users/nixos.nix
+    ./vikunja-server/nixos.nix
   ];
 
   home-manager.sharedModules = [

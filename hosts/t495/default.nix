@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 {
   imports =
     [
@@ -16,8 +16,12 @@
     helix
   ];
 
-
   boot.initrd.systemd.enable = true;
+
+  sops.secrets.vikunja-jwt-secret = {
+    sopsFile = ../../secrets/hosts/t495.yaml;
+    mode = "0400";
+  };
 
   mine = {
     system = {
@@ -38,6 +42,10 @@
         ssh = true;
       };
       teamspeak-client.enable = true;
+      vikunja-server = {
+        enable = true;
+        jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
+      };
     };
 
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
