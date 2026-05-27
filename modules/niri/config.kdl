@@ -29,38 +29,12 @@ layout {
 }
 prefer-no-csd
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-// Security: Hide 1Password from screencasts/sharing
-window-rule {
-    match app-id="1password"
-    block-out-from "screen-capture"
-}
-// SwayBG config
-layer-rule {
-    match namespace="^wallpaper$"
-    place-within-backdrop true
-}
+
 // Visual and blur
 blur {
-    passes 3
-    offset 3
-    noise 0.02
-    saturation 1.5
+    off
 }
-// Blur terminal
-window-rule {
-    match app-id="^Alacritty$"
-    background-effect {
-        blur true
-    }
-}
-// Blur fuzzel and mako
-layer-rule {
-    match namespace="^launcher$"
-    match namespace="^notifications$"
-    background-effect {
-        blur true
-    }
-}
+
 binds {
     Mod+Shift+Slash {
         show-hotkey-overlay
@@ -426,9 +400,8 @@ binds {
         power-off-monitors
     }
 }
-include optional=true "~/.config/niri/terminal.kdl"
-include optional=true "~/.config/niri/launcher.kdl"
-include optional=true "/etc/niri/host.kdl"
-include optional=true "~/.config/niri/user.kdl"
-include optional=true "~/.config/niri/tests.kdl"
 
+include optional=true "/etc/niri/host.kdl"
+include optional=true "~/.config/niri/dynamic.kdl"
+include optional=true "~/.config/niri/binds.kdl"
+include optional=true "~/.config/niri/tests.kdl"

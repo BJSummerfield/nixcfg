@@ -31,11 +31,9 @@ in
     }
 
     (mkIf niriCfg.enable {
-      xdg.configFile."niri/launcher.kdl".text = ''
-        binds {
-            Mod+Space {
-                spawn-sh "${lib.getExe config.programs.fuzzel.package} --placeholder \"$(date)\""
-            }
+      mine.user.niri.extraBinds = ''
+        Mod+Space {
+            spawn-sh "${lib.getExe config.programs.fuzzel.package} --placeholder \"$(date)\""
         }
       '';
     })

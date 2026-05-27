@@ -75,12 +75,12 @@
             yaml.enable = true;
           };
         };
+        hyprlax.enable = true;
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
         obs-studio.enable = true;
         polkit-kde.enable = true;
-        swaybg.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
       };
