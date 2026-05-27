@@ -31,11 +31,9 @@ in
     }
 
     (mkIf niriCfg.enable {
-      mine.user.niri.extraConfig = ''
-        binds {
-            Mod+Space {
-                spawn-sh "${lib.getExe config.programs.fuzzel.package} --placeholder \"$(date)\""
-            }
+      mine.user.niri.extraBinds = ''
+        Mod+Space {
+            spawn-sh "${lib.getExe config.programs.fuzzel.package} --placeholder \"$(date)\""
         }
       '';
     })

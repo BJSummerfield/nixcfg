@@ -14,6 +14,11 @@ in
         ~/.config/niri/dynamic.kdl, which is included by the base config.
       '';
     };
+    extraBinds = lib.mkOption {
+      type = lib.types.lines;
+      default = "";
+      description = "Keybind contributions, wrapped in a binds { } block in binds.kdl";
+    };
   };
   config = lib.mkIf cfg.enable {
     mine.user._1password.silentStart.enable = true;
@@ -33,5 +38,10 @@ in
     ];
     xdg.configFile."niri/config.kdl".source = ./config.kdl;
     xdg.configFile."niri/dynamic.kdl".text = cfg.extraConfig;
+    xdg.configFile."niri/binds.kdl".text = lib.optionalString (cfg.extraBinds != "") ''
+      binds {
+      ${cfg.extraBinds}
+      }
+    '';
   };
 }

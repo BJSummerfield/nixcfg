@@ -403,4 +403,5 @@ binds {
 
 include optional=true "/etc/niri/host.kdl"
 include optional=true "~/.config/niri/dynamic.kdl"
+include optional=true "~/.config/niri/binds.kdl"
 include optional=true "~/.config/niri/tests.kdl"

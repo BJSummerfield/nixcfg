@@ -27,10 +27,7 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      niri = {
-        enable = true;
-        hostConfig = ./niri.kdl;
-      };
+      niri.enable = true;
       openssh.outbound.enable = true;
       printing.enable = true;
       steam.enable = true;
@@ -75,11 +72,11 @@
             yaml.enable = true;
           };
         };
+        hyprlax.enable = true;
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
         polkit-kde.enable = true;
-        swaybg.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
       };

@@ -118,10 +118,8 @@ in
     }
 
     (mkIf niriCfg.enable {
-      mine.user.niri.extraConfig = ''
-        binds {
-            Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }
-        }
+      mine.user.niri.extraBinds = ''
+        Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }
       '';
     })
   ]);
