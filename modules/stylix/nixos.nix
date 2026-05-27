@@ -7,19 +7,8 @@ in
 {
   imports = [ inputs.stylix.nixosModules.stylix ];
   options.mine.system.stylix.enable = mkEnableOption "Enable Stylix Theme";
-  config = {
-    home-manager.sharedModules = [
-      inputs.stylix.homeModules.stylix
-    ] ++ lib.optional cfg.enable {
-      stylix.targets = {
-        gnome.enable = true;
-        gtk.enable = true;
-        qt.enable = true;
-        fontconfig.enable = true;
-      };
-    };
-
-    stylix = mkIf cfg.enable {
+  config = mkIf cfg.enable {
+    stylix = {
       enable = true;
       autoEnable = false;
       polarity = "dark";
@@ -74,5 +63,15 @@ in
         qt.enable = true;
       };
     };
+    home-manager.sharedModules = [
+      {
+        stylix.targets = {
+          gnome.enable = true;
+          gtk.enable = true;
+          qt.enable = true;
+          fontconfig.enable = true;
+        };
+      }
+    ];
   };
 }
