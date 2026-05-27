@@ -30,12 +30,11 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Make needed directories on the host
+    # Tailscale state is the only thing we persist on the host directly.
+    # Vikunja files + Postgres data live inside the container's own filesystem
+    # at /var/lib/nixos-containers/vikunja/, which survives restarts and rebuilds.
+    # Back that path up with restic for disaster recovery.
     system.activationScripts.vikunja-dirs = ''
-      mkdir -p /var/lib/vikunja-data
-      chmod 700 /var/lib/vikunja-data
-      mkdir -p /var/lib/vikunja-postgres
-      chmod 700 /var/lib/vikunja-postgres
       mkdir -p /var/lib/tailscale-vikunja
       chmod 700 /var/lib/tailscale-vikunja
     '';
@@ -52,22 +51,12 @@ in
       ];
 
       bindMounts = {
-        # Vikunja file uploads (attachments, avatars, backgrounds) + nightly DB dump
-        "/var/lib/vikunja" = {
-          hostPath = "/var/lib/vikunja-data";
-          isReadOnly = false;
-        };
-        # Postgres data dir — persisted on host so DB survives container rebuilds
-        "/var/lib/postgresql" = {
-          hostPath = "/var/lib/vikunja-postgres";
-          isReadOnly = false;
-        };
         # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # persists the tailscale node
+        # persists the tailscale node identity across container restarts
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-vikunja";
           isReadOnly = false;
@@ -84,7 +73,7 @@ in
           enable = true;
           # Tailscale serve terminates TLS in front of us
           frontendScheme = "https";
-          frontendHostname = "vikunja.mist-gamma.ts.net"; # change to your tailnet name
+          frontendHostname = "vikunja.mist-gamma.ts.net";
           port = 3456;
           environmentFiles = [ "/run/secrets/vikunja-jwt-secret" ];
           database = {
@@ -110,8 +99,9 @@ in
           }];
         };
 
-        # Nightly DB dump so restic has a consistent file to grab.
-        # Lands inside /var/lib/vikunja so one backup path covers files + DB.
+        # Nightly DB dump. Lives inside /var/lib/vikunja (the DynamicUser
+        # state dir), so the vikunja user can write it. Restic on the host
+        # backs up the container's whole state dir, capturing files + dump.
         systemd.services.vikunja-db-dump = {
           description = "Dump Vikunja Postgres DB for backup";
           serviceConfig = {
@@ -119,11 +109,11 @@ in
             User = "postgres";
           };
           script = ''
-            mkdir -p /var/lib/vikunja/db-dumps
+            mkdir -p /var/lib/postgresql/dumps
             ${config.services.postgresql.package}/bin/pg_dump \
-              -Fc vikunja > /var/lib/vikunja/db-dumps/vikunja.dump.tmp
-            mv /var/lib/vikunja/db-dumps/vikunja.dump.tmp \
-               /var/lib/vikunja/db-dumps/vikunja.dump
+              -Fc vikunja > /var/lib/postgresql/dumps/vikunja.dump.tmp
+            mv /var/lib/postgresql/dumps/vikunja.dump.tmp \
+               /var/lib/postgresql/dumps/vikunja.dump
           '';
         };
         systemd.timers.vikunja-db-dump = {
@@ -134,7 +124,7 @@ in
           };
         };
         systemd.tmpfiles.rules = [
-          "d /var/lib/vikunja/db-dumps 0750 postgres postgres -"
+          "d /var/lib/postgresql/dumps 0750 postgres postgres -"
         ];
 
         # sets the tailscale params
