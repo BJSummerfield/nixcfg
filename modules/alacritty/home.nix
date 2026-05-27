@@ -118,7 +118,7 @@ in
     }
 
     (mkIf niriCfg.enable {
-      xdg.configFile."niri/terminal.kdl".text = ''
+      mine.user.niri.extraConfig = ''
         binds {
             Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }
         }
