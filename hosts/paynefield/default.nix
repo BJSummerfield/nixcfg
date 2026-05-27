@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, config, ... }:
 {
   imports =
     [
@@ -13,6 +13,11 @@
     helix
     intel-gpu-tools
   ];
+
+  sops.secrets.vikunja-jwt-secret = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
 
   environment.pathsToLink = [
     "/share/applications"
@@ -38,6 +43,10 @@
       jellyfin-server.enable = true;
       immich-server.enable = true;
       terraria-server.enable = true;
+      vikunja-server = {
+        enable = true;
+        jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
+      };
     };
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
   };

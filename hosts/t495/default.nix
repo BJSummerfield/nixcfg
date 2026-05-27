@@ -16,7 +16,6 @@
     helix
   ];
 
-
   boot.initrd.systemd.enable = true;
 
   mine = {
