@@ -15,6 +15,7 @@ keys:
   - &host_redtruck age16a96arz6f3jnetmeq77q6vcfwdylj59hekg7v09eyfsrtamlc9vqudj8dd
   - &host_t495 age1rym6aylq50jucfelkgj28a8j27ag6ajzeazysxyls5n3pvsa5vssuvc9wq
   - &host_paynefield age1anxkzm9fplrrdcn5gpdjp0qz0lg4uawzudlps80veueeptwmk4ms6seu7j
+  - &host_elitebook age1xu59nswfpz5stszstedjvymcf2aw84nxyfj2qlzwdw78x0kghsrqa9ymyl
   - &host_vps age1e2uwgdjehu3xh0pk57hsnlz98rzntpfakaw5qvav9hl6u2vqza9sll5qz7
 
 creation_rules:
@@ -27,6 +28,7 @@ creation_rules:
           - *host_t495
           - *host_paynefield
           - *host_vps
+          - *host_elitebook
 
   - path_regex: secrets/users/sumriri\.yaml$
     key_groups:
@@ -34,6 +36,7 @@ creation_rules:
           - *waktu_redtruck
           - *waktu_t495
           - *host_t495
+          - *host_elitebook
 
   - path_regex: secrets/users/sword\.yaml$
     key_groups:
@@ -41,13 +44,14 @@ creation_rules:
           - *waktu_redtruck
           - *waktu_t495
           - *host_t495
+          - *host_elitebook
 
   - path_regex: secrets/users/jellyuser\.yaml$
     key_groups:
       - age:
           - *waktu_redtruck
           - *waktu_t495
-          - *host_t495
+          - *host_elitebook
 
   - path_regex: secrets/hosts/redtruck\.yaml$
     key_groups:
