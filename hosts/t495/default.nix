@@ -38,7 +38,6 @@
       };
       teamspeak-client.enable = true;
     };
-
     users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
   };
   home-manager.users = {

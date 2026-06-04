@@ -17,17 +17,20 @@
     helix
   ];
 
-
-
   mine = {
     system = {
       hostName = "elitebook";
       externalInterface = "wlp0s20f3";
       renderGroupGid = 303;
+      autoUpgrade.enable = true;
       fish.enable = true;
       jellybox.enable = true;
       steam.enable = true;
       steambox.enable = true;
+      openssh.inbound = {
+        enable = true;
+        openOnExternalInterface = true;
+      };
       tailscale = {
         enable = true;
         ssh = true;
