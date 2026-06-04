@@ -31,6 +31,7 @@
         enable = true;
         openOnExternalInterface = true;
       };
+      pipewire.enable = true;
       tailscale = {
         enable = true;
         ssh = true;
