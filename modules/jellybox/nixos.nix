@@ -11,11 +11,6 @@ in
   options.mine.system.jellybox.enable = lib.mkEnableOption "Jellybox system dependencies";
 
   config = lib.mkIf cfg.enable {
-
-    imports = [
-      ../../users/jellyuser.nix
-    ];
-
     services.greetd = {
       enable = true;
       settings = {
