@@ -8,7 +8,6 @@
       ../../users/waktu.nix
       ../../users/sumriri.nix
       ../../users/sword.nix
-      ../../users/jellyuser.nix
     ];
 
   environment.systemPackages = with pkgs; [
