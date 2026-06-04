@@ -1,28 +1,54 @@
 { lib, config, pkgs, ... }:
+let
+  cfg = config.mine.system.jellybox;
+  jellyfinBin = lib.getExe pkgs.jellyfin-media-player;
+  jellyfinKiosk = pkgs.writeShellScript "jellyfin-kiosk" ''
+    exec ${lib.getExe pkgs.gamescope} -f -- ${jellyfinBin} --fullscreen --tv
+  '';
+in
 {
+
   options.mine.system.jellybox.enable = lib.mkEnableOption "Jellybox system dependencies";
-  config = lib.mkIf config.mine.system.jellybox.enable {
 
-    # boot.loader.timeout = 5;
-    # boot.kernelParams = [ "jellybox" ];
-    # services.getty.autologinUser = "jellyuser";
+  config = lib.mkIf cfg.enable {
 
+    imports = [
+      ../../users/jellyuser.nix
+    ];
 
-    specialisation.jellybox.configuration = {
-      # boot.kernelParams = lib.mkForce [ ];
-      # services.getty.autologinUser = lib.mkForce null;
-
-      # this is to stop laptop power events with the screen
-      services.logind.lidSwitch = lib.mkForce "suspend";
-      services.logind.lidSwitchDocked = lib.mkForce "ignore";
-      services.logind.lidSwitchExternalPower = lib.mkForce "ignore";
+    services.greetd = {
+      enable = true;
+      settings = {
+        initial_session = {
+          command = "${jellyfinKiosk}";
+          user = "jellyuser";
+        };
+        # Quit Jellyfin -> the appliance comes straight back (no prompt).
+        # During bring-up you may prefer a recoverable prompt instead; swap the
+        # block below for:
+        #   default_session.command =
+        #     "${pkgs.greetd.greetd}/bin/agreety --cmd ${pkgs.fish}/bin/fish";
+        default_session = {
+          command = "${jellyfinKiosk}";
+          user = "jellyuser";
+        };
+      };
     };
+
+    # closing the lid shouldn't kill playback when docked / on AC.
+    services.logind.lidSwitch = lib.mkDefault "suspend";
+    services.logind.lidSwitchDocked = lib.mkDefault "ignore";
+    services.logind.lidSwitchExternalPower = lib.mkDefault "ignore";
 
     mine.system.gamescope.enable = true;
     programs.gamescope.capSysNice = true;
 
-    environment.systemPackages = with pkgs; [
-      jellyfin-media-player
-    ];
+    environment.systemPackages = [ pkgs.jellyfin-media-player ];
+    specialisation.maintenance.configuration = {
+      services.greetd.enable = lib.mkForce false;
+      services.logind.lidSwitch = lib.mkForce "suspend";
+      services.logind.lidSwitchDocked = lib.mkForce "suspend";
+      services.logind.lidSwitchExternalPower = lib.mkForce "suspend";
+    };
   };
 }
