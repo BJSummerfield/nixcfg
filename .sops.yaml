@@ -42,6 +42,13 @@ creation_rules:
           - *waktu_t495
           - *host_t495
 
+  - path_regex: secrets/users/jellyuser\.yaml$
+    key_groups:
+      - age:
+          - *waktu_redtruck
+          - *waktu_t495
+          - *host_t495
+
   - path_regex: secrets/hosts/redtruck\.yaml$
     key_groups:
       - age:
