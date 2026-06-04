@@ -36,7 +36,6 @@ in
     services.logind.lidSwitchExternalPower = lib.mkDefault "ignore";
 
     mine.system.gamescope.enable = true;
-    programs.gamescope.capSysNice = true;
 
     environment.systemPackages = [ pkgs.jellyfin-media-player ];
     specialisation.maintenance.configuration = {
