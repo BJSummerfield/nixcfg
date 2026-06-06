@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 {
   imports =
     [
@@ -19,6 +19,19 @@
     helix
   ];
 
+  sops.secrets.stalwart-admin-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
+  sops.secrets.restic-stalwart-b2-env = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
+  sops.secrets.restic-stalwart-repo-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
+
   mine = {
     system = {
       # TODO Fix this jank
@@ -35,6 +48,19 @@
       openssh.inbound = {
         enable = true;
         openOnExternalInterface = true;
+      };
+
+      stalwart-server = {
+        enable = true;
+        hostname = "mx1.brianjs.com";
+        domains = [ "brianjs.com" ];
+        acmeContact = "postmaster@brianjs.com";
+        adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
+        backup = {
+          b2EnvFile = config.sops.secrets.restic-stalwart-b2-env.path;
+          repoPasswordFile = config.sops.secrets.restic-stalwart-repo-pw.path;
+          repository = "b2:spacefunk-mail-backups:stalwart";
+        };
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
