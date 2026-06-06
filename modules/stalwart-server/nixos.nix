@@ -192,7 +192,7 @@ in
           # We open ports via the container firewall explicitly below rather
           # than openFirewall, so the admin port stays internal.
           openFirewall = false;
-
+          stateVersion = "24.11";
           settings = {
             server = {
               hostname = cfg.hostname;
@@ -244,6 +244,20 @@ in
               directory = "https://acme-v02.api.letsencrypt.org/directory";
               contact = cfg.acmeContact;
               domains = cfg.domains ++ [ cfg.hostname ];
+            };
+
+
+            # ---- STORAGE ----
+            # The rocksdb store MUST be DEFINED here (with a path) before any
+            # storage role can reference it. When you supply your own settings
+            # (as the NixOS module does), Stalwart does NOT auto-create the
+            # default store block -- that only happens when Stalwart writes its
+            # own config (e.g. the Docker image). Referencing the store name
+            # without defining it is what caused:
+            #   "Store not configured / Failed to migrate database".
+            store.rocksdb = {
+              type = "rocksdb";
+              path = "/var/lib/stalwart/db";
             };
 
             # ---- AUTH + STORAGE ----
