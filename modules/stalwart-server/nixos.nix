@@ -268,6 +268,10 @@ in
               # catch-all addresses. On a MULTI-user server do NOT do this --
               # instead declare the few send-from addresses as real aliases.
               must-match-sender = false;
+              authentication.fallback-admin = {
+                user = "admin";
+                secret = "ChangeMeOnFirstLogin";
+              };
             };
 
           };
