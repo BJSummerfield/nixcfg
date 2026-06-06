@@ -1,19 +1,30 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login stalwart
-# tailscale up --hostname=stalwart --advertise-tags=tag:solo-node --accept-dns=false
-# tailscale serve --bg --https=8443 8080
-#   IMPORTANT: tailscale serve listens on 443 by default and would collide with
-#   Stalwart's public https (JMAP/CalDAV) listener on 443. Serve the admin UI on
-#   8443 instead so both coexist. Admin UI: https://stalwart.mist-gamma.ts.net:8443
+# Stalwart all-in-one mail server in a NixOS (nspawn) container.
 #
-# First-run bootstrap (after DNS + Hetzner port-25 unblock are in place):
-#   1. fallback-admin is set INLINE below (user 'admin', a throwaway plaintext
-#      password) 
-#   2. Change the admin password in the web UI (stored hashed in the DB,
-#      survives rebuilds). You may then delete the fallback-admin block.
-#   3. Create your real mail account, then register the domain:
-#        stalwart-cli --url https://stalwart.domain.ts.net:8443 domain create brianjs.com
-
+# DESIGN: minimal LOCAL config. Only the boot-critical keys live in this
+# read-only Nix store file -- store location, listeners, and the bootstrap
+# admin. EVERYTHING ELSE (ACME/TLS, domains, accounts, aliases, spam, sender
+# policy, DKIM/DMARC) is DATABASE-managed via the web UI and persists in
+# /var/lib/stalwart-mail (backed up by restic). This minimizes the chance of
+# fighting the server when upstream changes config-key layouts on upgrade.
+#
+# Bring-up:
+#   sudo nixos-container root-login stalwart
+#   tailscale up --hostname=stalwart --advertise-tags=tag:solo-node --accept-dns=false
+#   tailscale serve --bg --https=8443 8080
+#     (serve listens on 443 by default and collides with Stalwart's public
+#      https/JMAP/CalDAV listener -- use 8443. Admin UI:
+#      https://stalwart.mist-gamma.ts.net:8443)
+#
+# First login + config (all in the web UI):
+#   1. Log in: admin / the inline fallback password below. CHANGE it in the UI.
+#   2. Settings -> TLS/ACME: configure Let's Encrypt (directory, contact,
+#      domains = brianjs.com + mx1.brianjs.com). The cert won't issue until DNS
+#      points at the box.
+#   3. Settings -> Server/Hostname: set hostname to mx1.brianjs.com.
+#   4. Settings -> Authentication: set must-match-sender = true (multi-user safe).
+#   5. Domains: create brianjs.com -> read the generated DNS records (DKIM etc.)
+#      and add them at Namecheap.
+#   6. Accounts: create your real mailbox + aliases.
 
 { lib, config, pkgs, ... }:
 let
@@ -23,60 +34,34 @@ in
 {
   options.mine.system.stalwart-server = {
     enable = lib.mkEnableOption "Enable Stalwart all-in-one mail server container";
-
-    hostname = lib.mkOption {
-      type = lib.types.str;
-      example = "mx1.example.org";
+    adminPasswordFile = lib.mkOption {
+      type = lib.types.path;
       description = ''
-        The mail server hostname Stalwart announces (HELO/EHLO, cert CN). Your
-        VPS PTR (reverse DNS) record at Hetzner MUST resolve to this name, and
-        your SPF record must authorise this host's public IP. This is the single
-        most important value for outbound deliverability.
+        spot        Host path to the decrypted fallback-admin secret (e.g.
+                config.sops.secrets.stalwart-admin-pw.path). Owned by stalwartUid,
+                bind-mounted read-only into the container. Store an argon2 hash; log in
+                with the plaintext.
       '';
-    };
-
-    domains = lib.mkOption {
-      type = lib.types.nonEmptyListOf lib.types.str;
-      example = [ "example.org" "example.net" ];
-      description = ''
-        Mail domains handled by this server. The first entry is treated as the
-        primary (used for default lookups). ACME requests certs for every domain
-        plus the hostname. You still create each domain object and its DKIM/MX/
-        DMARC records per domain (via the admin UI / `domain create` + DNS).
-      '';
-    };
-
-    acmeContact = lib.mkOption {
-      type = lib.types.str;
-      example = "you@example.org";
-      description = "Contact email used for ACME (Let's Encrypt) registration.";
     };
 
     backup = {
       b2EnvFile = lib.mkOption {
         type = lib.types.path;
         description = ''
-          Host path to an env file containing the Backblaze B2 credentials for
-          restic, e.g. config.sops.secrets.restic-b2-env.path. Must define:
+          Host path to a restic B2 credentials env file containing:
             B2_ACCOUNT_ID=<keyID>
             B2_ACCOUNT_KEY=<applicationKey>
         '';
       };
-
       repoPasswordFile = lib.mkOption {
         type = lib.types.path;
-        description = ''
-          Host path to the restic repository password
-          (e.g. config.sops.secrets.restic-repo-pw.path).
-        '';
+        description = "Host path to the restic repository password.";
       };
-
       repository = lib.mkOption {
         type = lib.types.str;
-        example = "b2:my-mail-backups:vps/stalwart";
-        description = "restic repository URL (Backblaze B2 bucket + path).";
+        example = "b2:spacefunk-mail-backups:stalwart";
+        description = "restic repository URL (B2 bucket + path).";
       };
-
       schedule = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ "00:00" "12:00" ];
@@ -107,27 +92,28 @@ in
       ];
     };
 
+    # restic runs HOST-side, against the bind-mount source. The container has no
+    # access to the B2 key, so a mail-service compromise cannot touch backups.
+    # This backup carries ALL your DB-managed config (ACME, domains, accounts,
+    # aliases) -- it is the source of truth for everything not in this file.
     services.restic.backups.stalwart = {
       repository = cfg.backup.repository;
       passwordFile = cfg.backup.repoPasswordFile;
       environmentFile = cfg.backup.b2EnvFile;
-
       paths = [ hostStateDir ];
       timerConfig = {
         OnCalendar = cfg.backup.schedule;
         Persistent = true;
       };
-
       backupPrepareCommand = ''
         ${pkgs.nixos-container}/bin/nixos-container stop stalwart || true
       '';
       backupCleanupCommand = ''
         ${pkgs.nixos-container}/bin/nixos-container start stalwart || true
       '';
-
       pruneOpts = [
-        "--keep-daily 90"
-        "--keep-weekly 16"
+        "--keep-daily 30"
+        "--keep-weekly 12"
         "--keep-monthly 12"
       ];
     };
@@ -138,34 +124,24 @@ in
       hostAddress = "192.168.100.40";
       localAddress = "192.168.100.41";
 
-      # tun needed for the Tailscale node (admin UI access)
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        { modifier = "rwm"; node = "/dev/net/tun"; } # tun for Tailscale
       ];
 
       bindMounts = {
-        # Persistent state: RocksDB store + blobs + ACME cert cache.
-        # Target MUST match the module's StateDirectory (stalwart-mail),
-        # which is where the module's built-in 'db' store lives.
-        "/var/lib/stalwart-mail" = {
-          hostPath = hostStateDir;
-          isReadOnly = false;
-        };
-
-        # tun device for Tailscale
-        "/dev/net/tun" = {
-          hostPath = "/dev/net/tun";
-          isReadOnly = false;
-        };
-
-        # Persist the Tailscale node identity (admin-UI access)
-        "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-stalwart";
-          isReadOnly = false;
-        };
+        # Persistent state -- MUST be /var/lib/stalwart-mail to match the
+        # module's StateDirectory (where its built-in 'db' store lives).
+        "/var/lib/stalwart-mail" = { hostPath = hostStateDir; isReadOnly = false; };
+        "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
+        "/var/lib/tailscale" = { hostPath = "/var/lib/tailscale-stalwart"; isReadOnly = false; };
+        "/run/stalwart/admin-pw" = { hostPath = cfg.adminPasswordFile; isReadOnly = true; };
       };
 
       config = { config, pkgs, lib, ... }: {
+
+        systemd.services.stalwart.serviceConfig.LoadCredential = [
+          "admin-pw:/run/stalwart/admin-pw"
+        ];
 
         services.tailscale.enable = true;
 
@@ -174,84 +150,67 @@ in
           openFirewall = false;
           stateVersion = "24.11";
           settings = {
+            # ---- MINIMAL LOCAL CONFIG ----
+            # Only boot-critical keys are pinned local (read-only file). These
+            # are the stable settings the server needs BEFORE it can read the
+            # database: where the store is, what to listen on, and how to log in.
+            # Everything else is DB-managed in the web UI. Narrow patterns only;
+            # we deliberately avoid broad pins (no acme.*, no resolver.*) so a
+            # future upgrade adding sub-keys there won't fight us.
+            config.local-keys = [
+              "store.*"
+              "storage.data"
+              "storage.blob"
+              "storage.fts"
+              "storage.lookup"
+              "storage.directory"
+              "directory.*"
+              "server.listener.*"
+              "server.hostname"
+              "tracer.*"
+              "authentication.fallback-admin.*"
+            ];
+
             server = {
-              hostname = cfg.hostname;
-              tls = {
-                enable = true;
-                implicit = true;
-              };
+              # A bootstrap hostname so the server can start before you set the
+              # real one in the UI. Set the production hostname (mx1.brianjs.com)
+              # in the web UI; it then lives in the DB.
+              hostname = "mx1.brianjs.com";
+              tls = { enable = true; implicit = true; };
               listener = {
-                smtp = {
-                  protocol = "smtp";
-                  bind = "[::]:25";
-                };
-                submissions = {
-                  bind = "[::]:465";
-                  protocol = "smtp";
-                  tls.implicit = true;
-                };
-                imaps = {
-                  bind = "[::]:993";
-                  protocol = "imap";
-                  tls.implicit = true;
-                };
-                https = {
-                  bind = "[::]:443";
-                  protocol = "http";
-                  tls.implicit = true;
-                  url = "https://${cfg.hostname}";
-                };
-                # Admin/management: bound to localhost inside the container,
-                # reached via `tailscale serve 8080`. Never NAT-forwarded.
-                management = {
-                  bind = [ "127.0.0.1:8080" ];
-                  protocol = "http";
-                };
+                smtp = { protocol = "smtp"; bind = "[::]:25"; };
+                submissions = { protocol = "smtp"; bind = "[::]:465"; tls.implicit = true; };
+                imaps = { protocol = "imap"; bind = "[::]:993"; tls.implicit = true; };
+                https = { protocol = "http"; bind = "[::]:443"; tls.implicit = true; };
+                # Admin UI on localhost only; reached via Tailscale serve :8443.
+                management = { protocol = "http"; bind = [ "127.0.0.1:8080" ]; };
               };
             };
 
-            lookup.default = {
-              hostname = cfg.hostname;
-              # primary domain = first in the list
-              domain = builtins.head cfg.domains;
-            };
-
-            # ACME via Let's Encrypt. HTTP-01 over the public 443 listener works;
-            # switch to dns-01 (per the NixOS wiki) if you prefer not to expose
-            # the challenge or want wildcard certs. Requests a SAN cert covering
-            # every mail domain plus the announce hostname.
-            acme."letsencrypt" = {
-              directory = "https://acme-v02.api.letsencrypt.org/directory";
-              contact = cfg.acmeContact;
-              domains = cfg.domains ++ [ cfg.hostname ];
-            };
-
-            # ---- STORAGE ----
+            # Store: use the module's built-in 'db' RocksDB store at
+            # /var/lib/stalwart-mail/db. These role assignments are boot-critical
+            # (the server must know its store before reading DB config).
             storage = {
-              data = "db"; # message + metadata store
-              blob = "db"; # raw message blobs
-              fts = "db"; # full-text search index
-              lookup = "db"; # key-value lookups
+              data = "db";
+              blob = "db";
+              fts = "db";
+              lookup = "db";
               directory = "internal";
             };
+            directory.internal = { type = "internal"; store = "db"; };
 
-            directory.internal = {
-              type = "internal";
-              store = "db";
-            };
-
-            session.auth = {
-              mechanisms = "[plain]";
-              # Single-user server: allow sending from any of your alias /
-              # catch-all addresses. On a MULTI-user server do NOT do this --
-              # instead declare the few send-from addresses as real aliases.
-              must-match-sender = false;
-            };
-
+            # Break-glass admin. Secret read from the bind-mounted sops file,
+            # owned by stalwartUid (= the stalwart-mail service UID), mode 0400.
+            # Store an argon2 hash in the sops secret; log in with the plaintext.
+            # Local key (immutable via UI by design) -- change via sops + rebuild.
             authentication.fallback-admin = {
               user = "admin";
-              secret = "ChangeMeOnFirstLogin";
+              secret = "%{file:/run/credentials/stalwart.service/admin-pw}%";
             };
+
+            # NOTE: ACME/TLS, must-match-sender, spam, domains, accounts, and
+            # aliases are intentionally NOT set here -- configure them in the web
+            # UI so they live in the (writable, backed-up) database.
           };
         };
 
@@ -265,16 +224,13 @@ in
           };
         };
 
-        systemd.services.stalwart = {
-          serviceConfig = {
-            ProtectHome = lib.mkForce true;
-            PrivateTmp = lib.mkForce true;
-            ProtectControlGroups = lib.mkForce true;
-            ProtectKernelTunables = lib.mkForce true;
-            NoNewPrivileges = lib.mkForce true;
-            RestrictAddressFamilies =
-              lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-          };
+        systemd.services.stalwart.serviceConfig = {
+          ProtectHome = lib.mkForce true;
+          PrivateTmp = lib.mkForce true;
+          ProtectControlGroups = lib.mkForce true;
+          ProtectKernelTunables = lib.mkForce true;
+          NoNewPrivileges = lib.mkForce true;
+          RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
         };
 
         system.stateVersion = "24.11";

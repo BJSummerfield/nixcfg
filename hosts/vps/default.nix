@@ -7,18 +7,20 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
     ];
-
   environment.pathsToLink = [
     "/share/applications"
     "/share/xdg-desktop-portal"
   ];
-
   environment.systemPackages = with pkgs; [
     bottom
     git
     helix
   ];
 
+  sops.secrets.stalwart-admin-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
   sops.secrets.restic-stalwart-b2-env = {
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
@@ -45,12 +47,10 @@
         enable = true;
         openOnExternalInterface = true;
       };
-
       stalwart-server = {
         enable = true;
-        hostname = "mx1.brianjs.com";
-        domains = [ "brianjs.com" ];
-        acmeContact = "postmaster@brianjs.com";
+        # hostname, domains, ACME, and all mail config are set in the web UI
+        # (database-managed). Only the box + backup + break-glass admin here.
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
         backup = {
           b2EnvFile = config.sops.secrets.restic-stalwart-b2-env.path;
