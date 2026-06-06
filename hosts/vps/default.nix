@@ -19,10 +19,6 @@
     helix
   ];
 
-  sops.secrets.stalwart-admin-pw = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
-    mode = "0400";
-  };
   sops.secrets.restic-stalwart-b2-env = {
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";

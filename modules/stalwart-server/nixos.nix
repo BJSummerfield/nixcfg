@@ -13,7 +13,6 @@
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.stalwart-server;
-  adminPwInContainer = "/run/stalwart/admin-pw";
   hostStateDir = "/var/lib/stalwart-data";
 in
 {
@@ -164,12 +163,6 @@ in
           isReadOnly = false;
         };
 
-        # Decrypted sops secret, mapped read-only from the host.
-        "${adminPwInContainer}" = {
-          hostPath = cfg.adminPasswordFile;
-          isReadOnly = true;
-        };
-
         # tun device for Tailscale
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
@@ -287,11 +280,6 @@ in
               must-match-sender = false;
             };
 
-            # Fallback admin: bootstrap only. Create real accounts in the UI.
-            authentication.fallback-admin = {
-              user = "admin";
-              secret = "%{file:${adminPwInContainer}}%";
-            };
           };
         };
 
