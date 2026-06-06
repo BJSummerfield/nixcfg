@@ -1,13 +1,18 @@
 # Once the container is running log into it with
 # sudo nixos-container root-login stalwart
 # tailscale up --hostname=stalwart --advertise-tags=tag:solo-node --accept-dns=false
-# tailscale serve --bg 8080
+# tailscale serve --bg --https=8443 8080
+#   IMPORTANT: tailscale serve listens on 443 by default and would collide with
+#   Stalwart's public https (JMAP/CalDAV) listener on 443. Serve the admin UI on
+#   8443 instead so both coexist. Admin UI: https://stalwart.mist-gamma.ts.net:8443
 #
 # First-run bootstrap (after DNS + Hetzner port-25 unblock are in place):
-#   stalwart-cli --url https://stalwart.mist-gamma.ts.net domain create brianjs.com
-#   ...then create your real mail account in the web admin; its password is
-#   stored hashed in the persistent store and SURVIVES rebuilds (internal dir).
-#   The sops secret here is only the fallback-admin bootstrap password.
+#   1. fallback-admin is set INLINE below (user 'admin', a throwaway plaintext
+#      password) 
+#   2. Change the admin password in the web UI (stored hashed in the DB,
+#      survives rebuilds). You may then delete the fallback-admin block.
+#   3. Create your real mail account, then register the domain:
+#        stalwart-cli --url https://stalwart.domain.ts.net:8443 domain create brianjs.com
 
 
 { lib, config, pkgs, ... }:
@@ -45,15 +50,6 @@ in
       type = lib.types.str;
       example = "you@example.org";
       description = "Contact email used for ACME (Let's Encrypt) registration.";
-    };
-
-    adminPasswordFile = lib.mkOption {
-      type = lib.types.path;
-      description = ''
-        Host path to the decrypted fallback-admin bootstrap password
-        (e.g. config.sops.secrets.stalwart-admin-pw.path). Bind-mounted
-        read-only into the container.
-      '';
     };
 
     backup = {
@@ -122,8 +118,6 @@ in
         Persistent = true;
       };
 
-      # Consistency: pause the mail server for the few seconds the snapshot
-      # takes so we never capture a torn write.
       backupPrepareCommand = ''
         ${pkgs.nixos-container}/bin/nixos-container stop stalwart || true
       '';
@@ -132,11 +126,6 @@ in
       '';
 
       pruneOpts = [
-        # Retention sits ABOVE the bucket's 60-day object lock so auto-prune
-        # never tries to delete a still-locked object (90 > 60, ~30-day margin).
-        # Auto-prune is safe to leave on: it runs HOST-side with a delete-capable
-        # key the container never sees, and only ever removes 90+ day-old data
-        # whose object lock expired ~30 days earlier.
         "--keep-daily 90"
         "--keep-weekly 16"
         "--keep-monthly 12"
@@ -182,8 +171,6 @@ in
 
         services.stalwart = {
           enable = true;
-          # We open ports via the container firewall explicitly below rather
-          # than openFirewall, so the admin port stays internal.
           openFirewall = false;
           stateVersion = "24.11";
           settings = {
@@ -240,13 +227,6 @@ in
             };
 
             # ---- STORAGE ----
-            # The NixOS module ALREADY defines a default RocksDB store named
-            # "db" at /var/lib/stalwart-mail/db (that's why the unit's
-            # ExecStartPre creates that directory). Do NOT define a second
-            # store -- just point the storage roles at the existing "db" store.
-            # (The earlier "Store not configured" was caused by pointing the
-            #  roles at a separately-defined "rocksdb" store whose path didn't
-            #  match the module-prepared directory.)
             storage = {
               data = "db"; # message + metadata store
               blob = "db"; # raw message blobs
@@ -255,8 +235,6 @@ in
               directory = "internal";
             };
 
-            # Internal directory (accounts/aliases) persisted in the "db"
-            # store, so runtime-created accounts survive rebuilds.
             directory.internal = {
               type = "internal";
               store = "db";
@@ -268,12 +246,12 @@ in
               # catch-all addresses. On a MULTI-user server do NOT do this --
               # instead declare the few send-from addresses as real aliases.
               must-match-sender = false;
-              authentication.fallback-admin = {
-                user = "admin";
-                secret = "ChangeMeOnFirstLogin";
-              };
             };
 
+            authentication.fallback-admin = {
+              user = "admin";
+              secret = "ChangeMeOnFirstLogin";
+            };
           };
         };
 
