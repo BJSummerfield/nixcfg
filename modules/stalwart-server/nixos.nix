@@ -187,16 +187,6 @@ in
           openFirewall = false;
           stateVersion = "24.11";
           settings = {
-            # The spam filter rules + webadmin UI ship INSIDE the stalwart
-            # package but the NixOS module does not auto-wire them. Without
-            # spam-filter.resource, startup fails at "Failed to load spam
-            # filter model" (which then aborts the DB migration). Point both
-            # at the files shipped in the package.
-            spam-filter.resource =
-              "file://${config.services.stalwart.package}/etc/stalwart/spamfilter.toml";
-            webadmin.resource =
-              "file://${config.services.stalwart.package.webadmin}/webadmin.zip";
-
             server = {
               hostname = cfg.hostname;
               tls = {
