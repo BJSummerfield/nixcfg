@@ -124,7 +124,7 @@ in
       };
 
       # Consistency: pause the mail server for the few seconds the snapshot
-      # takes so we never capture a torn SQLite write.
+      # takes so we never capture a torn write.
       backupPrepareCommand = ''
         ${pkgs.nixos-container}/bin/nixos-container stop stalwart || true
       '';
@@ -156,15 +156,15 @@ in
       ];
 
       bindMounts = {
-        # Persistent state: SQLite DB + blobs + ACME cert cache
-        "/var/lib/stalwart" = {
+        # Persistent state: RocksDB store + blobs + ACME cert cache.
+        # Target MUST match the module's StateDirectory (stalwart-mail),
+        # which is where the module's built-in 'db' store lives.
+        "/var/lib/stalwart-mail" = {
           hostPath = hostStateDir;
           isReadOnly = false;
         };
 
-        # Decrypted sops secrets, mapped read-only from the host.
-        # These reference config.sops.secrets.<x>.path on the host, which is
-        # decrypted before the container starts.
+        # Decrypted sops secret, mapped read-only from the host.
         "${adminPwInContainer}" = {
           hostPath = cfg.adminPasswordFile;
           isReadOnly = true;
@@ -194,6 +194,16 @@ in
           openFirewall = false;
           stateVersion = "24.11";
           settings = {
+            # The spam filter rules + webadmin UI ship INSIDE the stalwart
+            # package but the NixOS module does not auto-wire them. Without
+            # spam-filter.resource, startup fails at "Failed to load spam
+            # filter model" (which then aborts the DB migration). Point both
+            # at the files shipped in the package.
+            spam-filter.resource =
+              "file://${config.services.stalwart.package}/etc/stalwart/spamfilter.toml";
+            webadmin.resource =
+              "file://${config.services.stalwart.package.webadmin}/webadmin.zip";
+
             server = {
               hostname = cfg.hostname;
               tls = {
@@ -246,39 +256,27 @@ in
               domains = cfg.domains ++ [ cfg.hostname ];
             };
 
-
             # ---- STORAGE ----
-            # The rocksdb store MUST be DEFINED here (with a path) before any
-            # storage role can reference it. When you supply your own settings
-            # (as the NixOS module does), Stalwart does NOT auto-create the
-            # default store block -- that only happens when Stalwart writes its
-            # own config (e.g. the Docker image). Referencing the store name
-            # without defining it is what caused:
-            #   "Store not configured / Failed to migrate database".
-            store.rocksdb = {
-              type = "rocksdb";
-              path = "/var/lib/stalwart/db";
-            };
-
-            # ---- AUTH + STORAGE ----
-            # SQLite-backed internal directory so accounts AND runtime-created
-            # aliases persist across rebuilds (NOT the in-memory example).
+            # The NixOS module ALREADY defines a default RocksDB store named
+            # "db" at /var/lib/stalwart-mail/db (that's why the unit's
+            # ExecStartPre creates that directory). Do NOT define a second
+            # store -- just point the storage roles at the existing "db" store.
+            # (The earlier "Store not configured" was caused by pointing the
+            #  roles at a separately-defined "rocksdb" store whose path didn't
+            #  match the module-prepared directory.)
             storage = {
-              data = "rocksdb"; # metadata store
-              blob = "rocksdb";
-              fts = "rocksdb";
-              lookup = "rocksdb";
+              data = "db"; # message + metadata store
+              blob = "db"; # raw message blobs
+              fts = "db"; # full-text search index
+              lookup = "db"; # key-value lookups
               directory = "internal";
             };
 
-            # NOTE: Stalwart's "internal" directory keeps principals in its data
-            # store. If you specifically want the directory in SQLite, set
-            # store.sqlite + directory.internal.store accordingly; rocksdb is the
-            # zero-config default and is fine for a single-user server. Either
-            # way, accounts/aliases created at runtime persist.
+            # Internal directory (accounts/aliases) persisted in the "db"
+            # store, so runtime-created accounts survive rebuilds.
             directory.internal = {
               type = "internal";
-              store = "rocksdb";
+              store = "db";
             };
 
             session.auth = {
