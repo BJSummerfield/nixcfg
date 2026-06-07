@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 {
   imports =
     [
@@ -7,17 +7,28 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
     ];
-
   environment.pathsToLink = [
     "/share/applications"
     "/share/xdg-desktop-portal"
   ];
-
   environment.systemPackages = with pkgs; [
     bottom
     git
     helix
   ];
+
+  sops.secrets.stalwart-admin-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
+  sops.secrets.restic-stalwart-b2-env = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
+  sops.secrets.restic-stalwart-repo-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
 
   mine = {
     system = {
@@ -35,6 +46,17 @@
       openssh.inbound = {
         enable = true;
         openOnExternalInterface = true;
+      };
+      stalwart-server = {
+        enable = true;
+        # hostname, domains, ACME, and all mail config are set in the web UI
+        # (database-managed). Only the box + backup + break-glass admin here.
+        adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
+        backup = {
+          b2EnvFile = config.sops.secrets.restic-stalwart-b2-env.path;
+          repoPasswordFile = config.sops.secrets.restic-stalwart-repo-pw.path;
+          repository = "b2:spacefunk-mail-backups:stalwart";
+        };
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {

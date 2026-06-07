@@ -18,6 +18,7 @@
     ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./redlib/nixos.nix
+    ./stalwart-server/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix
     ./stylix/nixos.nix
