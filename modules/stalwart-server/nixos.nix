@@ -97,6 +97,7 @@ in
     # This backup carries ALL your DB-managed config (ACME, domains, accounts,
     # aliases) -- it is the source of truth for everything not in this file.
     services.restic.backups.stalwart = {
+      initialize = true;
       repository = cfg.backup.repository;
       passwordFile = cfg.backup.repoPasswordFile;
       environmentFile = cfg.backup.b2EnvFile;
