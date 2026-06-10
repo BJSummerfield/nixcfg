@@ -17,6 +17,13 @@
     helix
   ];
 
+  environment.etc."wireplumber/wireplumber.conf.d/51-default-volume.conf".text = ''
+    wireplumber.settings = {
+      device.routes.default-sink-volume = 0.8
+      device.routes.default-source-volume = 0.8
+    }
+  '';
+
   mine = {
     system = {
       hostName = "elitebook";
