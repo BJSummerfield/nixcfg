@@ -13,15 +13,16 @@ in
   config = lib.mkIf cfg.enable {
     services.ollama = {
       enable = true;
-      acceleration = "rocm";
-
+      package = pkgs.ollama-rocm;
       environmentVariables = {
         HCC_AMDGPU_TARGET = "gfx1100";
       };
 
       # qwen2.5-coder:14b ~10GB of VRAM (blazing fast, leaves room for other apps)
       # qwen2.5-coder:32b ~20GB VRAM
-      loadModels = [ "qwen2.5-coder:14b" ];
+      loadModels = [
+        "qwen3.6:27b"
+      ];
     };
 
     # 2. Enable Open-WebUI for the frontend interface
@@ -35,6 +36,8 @@ in
         WEBUI_AUTH = "False";
       };
     };
+
+    mine.allowedUnfree = [ "open-webui" ];
 
     environment.systemPackages = with pkgs; [
       # aichat
