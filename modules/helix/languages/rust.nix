@@ -18,7 +18,7 @@ in
         language = [{
           name = "rust";
           formatter = {
-            command = "cargo fmt";
+            command = "rustfmt";
           };
           auto-format = true;
         }];
