@@ -17,9 +17,6 @@ in
         };
         language = [{
           name = "rust";
-          formatter = {
-            command = "cargo fmt";
-          };
           auto-format = true;
         }];
       };
