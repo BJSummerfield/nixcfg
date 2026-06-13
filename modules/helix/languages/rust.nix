@@ -17,9 +17,6 @@ in
         };
         language = [{
           name = "rust";
-          formatter = {
-            command = "rustfmt";
-          };
           auto-format = true;
         }];
       };
