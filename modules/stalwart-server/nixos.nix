@@ -182,7 +182,7 @@ in
                 smtp = { protocol = "smtp"; bind = "[::]:25"; };
                 submissions = { protocol = "smtp"; bind = "[::]:465"; tls.implicit = true; };
                 imaps = { protocol = "imap"; bind = "[::]:993"; tls.implicit = true; };
-                https = { protocol = "http"; bind = "[::]:443"; tls.implicit = true; };
+                https = { protocol = "http"; bind = "192.168.100.41:443"; tls.implicit = true; };
                 # Admin UI on localhost only; reached via Tailscale serve :8443.
                 management = { protocol = "http"; bind = [ "127.0.0.1:8080" ]; };
               };
