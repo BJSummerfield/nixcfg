@@ -1,3 +1,6 @@
+hotkey-overlay {
+    skip-at-startup
+}
 input {
     touchpad {
         natural-scroll
@@ -29,12 +32,10 @@ layout {
 }
 prefer-no-csd
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-
 // Visual and blur
 blur {
     off
 }
-
 binds {
     Mod+Shift+Slash {
         show-hotkey-overlay
@@ -400,8 +401,8 @@ binds {
         power-off-monitors
     }
 }
-
 include optional=true "/etc/niri/host.kdl"
 include optional=true "~/.config/niri/dynamic.kdl"
 include optional=true "~/.config/niri/binds.kdl"
 include optional=true "~/.config/niri/tests.kdl"
+
