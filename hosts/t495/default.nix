@@ -74,8 +74,17 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
-        opencode.enable = true;
-        opencode.robinllm.enable = true;
+        opencode = {
+          enable = true;
+          theme = "system";
+          robinllm = {
+            enable = true;
+            ipAddress = "84.216.57.22";
+            port = 8080;
+            model = "unsloth/Qwen3-Coder-Next-GGUF:Q8_0";
+          };
+          additionalEndpoints = {};
+        };
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
