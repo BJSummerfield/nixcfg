@@ -76,9 +76,7 @@
         mako.enable = true;
         opencode = {
           enable = true;
-          theme = "system";
           robinllm.enable = true;
-          localLLM.enable = true;
         };
         polkit-kde.enable = true;
         swayidle.enable = true;

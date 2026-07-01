@@ -38,43 +38,45 @@ in
       opencode
     ];
 
-    xdg.configFile."opencode/opencode.json".text = let
-      robinllmConfig = lib.optionalString cfg.robinllm.enable ''
-        "robinllm": {
-          "npm": "@ai-sdk/openai-compatible",
-          "name": "RobinLLM",
-          "options": {
-            "baseURL": "http://84.216.57.22:8080/v1"
+    xdg.configFile."opencode/opencode.json".text =
+      let
+        robinllmConfig = lib.optionalString cfg.robinllm.enable ''
+          "robinllm": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "RobinLLM",
+            "options": {
+              "baseURL": "http://84.216.57.22:8080/v1"
+            },
+            "models": {
+              "unsloth/Qwen3-Coder-Next-GGUF:Q8_0": {}
+            }
           },
-          "models": {
-            "unsloth/Qwen3-Coder-Next-GGUF:Q8_0": {}
-          }
-        },
-      '';
-      
-      localllmConfig = lib.optionalString cfg.localLLM.enable ''
-        "localllm": {
-          "npm": "@ai-sdk/openai-compatible",
-          "name": "LocalLLM",
-          "options": {
-            "baseURL": "http://127.0.0.1:8080/v1"
+        '';
+
+        localllmConfig = lib.optionalString cfg.localLLM.enable ''
+          "localllm": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "LocalLLM",
+            "options": {
+              "baseURL": "http://127.0.0.1:8080/v1"
+            },
+            "models": {
+              "unsloth/Qwen3-Coder-Next-GGUF:Q8_0": {}
+            }
           },
-          "models": {
-            "unsloth/Qwen3-Coder-Next-GGUF:Q8_0": {}
+        '';
+      in
+      ''
+        {
+          "$schema": "https://opencode.ai/config.json",
+          "model": "robinllm/unsloth/Qwen3-Coder-Next-GGUF:Q8_0",
+          "enabled_providers": ["robinllm", "localllm"],
+          "provider": {
+            ${robinllmConfig}
+            ${localllmConfig}
           }
-        },
-      '';
-    in ''
-      {
-        "$schema": "https://opencode.ai/config.json",
-        "model": "robinllm/unsloth/Qwen3-Coder-Next-GGUF:Q8_0",
-        "enabled_providers": ["robinllm", "localllm"],
-        "provider": {
-          ${robinllmConfig}
-          ${localllmConfig}
         }
-      }
-    '';
+      '';
 
     xdg.configFile."opencode/tui.json".text = ''
       {
