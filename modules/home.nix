@@ -20,6 +20,7 @@
     ./mpls/home.nix
     ./niri/home.nix
     ./obs-studio/home.nix
+    ./opencode/home.nix
     ./polkit_kde/home.nix
     ./steambox/home.nix
     ./swaybg/home.nix

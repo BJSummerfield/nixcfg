@@ -68,8 +68,6 @@
             yaml.enable = true;
           };
         };
-        opencode.enable = true;
-        opencode.robinllm.enable = true;
       };
       programs = {
         eza.enable = true;
