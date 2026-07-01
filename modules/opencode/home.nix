@@ -50,27 +50,20 @@ in
       };
     };
 
-    additionalEndpoints = mkOption {
-      type = lib.types.attrsOf (lib.types.submodule {
-        options = {
-          enable = mkEnableOption "Enable this endpoint";
+    localLLM = {
+      enable = mkEnableOption "Enable local LLM endpoint";
 
-          baseURL = mkOption {
-            type = lib.types.str;
-            description = "Base URL for the endpoint (e.g., http://localhost:3000/v1)";
-          };
+      port = mkOption {
+        type = lib.types.int;
+        default = 8080;
+        description = "Port of the local LLM server.";
+      };
 
-          model = mkOption {
-            type = lib.types.str;
-            description = "Model to use with this endpoint.";
-          };
-        };
-      });
-      default = {};
-      description = ''
-        Additional endpoints to configure. Each endpoint can be enabled/disabled independently.
-        Example: additionalEndpoints.my-llm = { enable = true; baseURL = "..."; model = "..."; };
-      '';
+      model = mkOption {
+        type = lib.types.str;
+        default = "unsloth/Qwen3-Coder-Next-GGUF:Q8_0";
+        description = "Default model to use with local LLM.";
+      };
     };
   };
 
@@ -81,33 +74,21 @@ in
 
     xdg.configFile."opencode/opencode.json".text = let
       robinModel = cfg.robinllm.model;
-      
-      robinllmProvider = lib.optionalAttrs cfg.robinllm.enable {
+      localModel = cfg.localLLM.model;
+
+      providers = {
         "llama.cpp" = {
           npm = "@ai-sdk/openai-compatible";
+          name = "llama.cpp";
+          options.baseURL = "http://127.0.0.1:${toString cfg.localLLM.port}/v1";
+          models."${localModel}" = {};
+        } // lib.optionalAttrs cfg.robinllm.enable {
           name = "RobinLLM";
           options.baseURL = "http://${cfg.robinllm.ipAddress}:${toString cfg.robinllm.port}/v1";
-          models = {
-            "${robinModel}" = {};
-          };
         };
       };
 
-      additionalProviders = lib.mapAttrs' (name: epCfg: {
-        name = name;
-        value = {
-          npm = "@ai-sdk/openai-compatible";
-          name = name;
-          options.baseURL = epCfg.baseURL;
-          models = {
-            "${epCfg.model}" = {};
-          };
-        };
-      }) (lib.filterAttrs (n: c: c.enable) cfg.additionalEndpoints);
-
-      allProviders = robinllmProvider // additionalProviders;
-      
-      providerKeys = lib.attrNames allProviders;
+      providerKeys = lib.filter (k: providers.${k} != null) (lib.attrNames providers);
     in ''
       {
         "$schema": "https://opencode.ai/config.json",
@@ -117,7 +98,7 @@ in
           ${lib.concatStringsSep ",\n" (lib.mapAttrs' (name: cfg: {
             name = "  \"${name}\"";
             value = lib.generators.toJSON {} cfg;
-          }) allProviders)}
+          }) providers)}
         }
       }
     '';
