@@ -74,6 +74,7 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
+        opencode.enable = true;
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
