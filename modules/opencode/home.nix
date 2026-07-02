@@ -15,7 +15,6 @@ in
       enable = true;
       settings = {
         "$schema" = "https://opencode.ai/config.json";
-        theme = theme;
         model = "robinllm/unsloth/Qwen3-Coder-Next-GGUF:Q8_0";
         provider.robinllm = {
           npm = "@ai-sdk/openai-compatible";
@@ -24,6 +23,9 @@ in
           models."unsloth/Qwen3-Coder-Next-GGUF:Q8_0" = { };
         };
         enabled_providers = [ "robinllm" ];
+        tui = {
+          theme = theme;
+        };
       };
     };
     home.file.".config/opencode/themes/${theme}.json".source = ./${theme}.json;
