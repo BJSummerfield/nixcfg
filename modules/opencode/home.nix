@@ -3,6 +3,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.opencode;
+  theme = "catppuccin-mocha-transparent";
 in
 {
   options.mine.user.opencode = {
@@ -14,6 +15,7 @@ in
       enable = true;
       settings = {
         "$schema" = "https://opencode.ai/config.json";
+        theme = theme;
         model = "robinllm/unsloth/Qwen3-Coder-Next-GGUF:Q8_0";
         provider.robinllm = {
           npm = "@ai-sdk/openai-compatible";
@@ -24,5 +26,7 @@ in
         enabled_providers = [ "robinllm" ];
       };
     };
+    home.file.".config/opencode/themes/${theme}.json".source = ./${theme}.json;
   };
 }
+
