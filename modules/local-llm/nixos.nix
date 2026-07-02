@@ -109,7 +109,7 @@ in
 
           systemd.services.fetch-qwen-thinking = {
             description = "Download ${qwenFile} if absent";
-            before = [ "llama-cpp.service" ];
+            wantedBy = [ "multi-user.target" ];
             after = [ "network-online.target" ]; # need network to download
             wants = [ "network-online.target" ];
             path = [ pkgs.curl pkgs.coreutils ];
@@ -164,6 +164,7 @@ in
             after = [ "network.target" "fetch-qwen-thinking.service" ];
             wants = [ "fetch-qwen-thinking.service" ];
             wantedBy = [ "multi-user.target" ];
+            unitConfig.ConditionPathExists = qwenPath;
             environment = {
               HSA_OVERRIDE_GFX_VERSION = "11.0.0";
               ROCR_VISIBLE_DEVICES = "0";
