@@ -11,7 +11,7 @@ let
   qwenFile = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
   qwenModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${qwenName}/resolve/main/${qwenFile}";
-    hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    hash = "sha256-cHpVqKQ5fs3kTeDEmdPmjBrR0kDR2mWCa0lJ0QQ/RFA=";
   };
 in
 {
