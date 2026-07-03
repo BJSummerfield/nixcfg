@@ -90,11 +90,9 @@ in
                   --alias unsloth/Qwen3.6-35B-A3B \
                   --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 \
                   --chat-template-kwargs '{"preserve_thinking":true}' \
-                  --ctx-size 32768 \
+                  --ctx-size 131072 \
                   --n-gpu-layers 99 \
-                  -ot ".ffn_.*_exps.=CPU" \
                   --flash-attn on \
-                  --parallel 2
               '';
               Restart = "on-failure";
               RestartSec = 10;
@@ -130,8 +128,6 @@ in
 
           nixpkgs.config.allowUnfreePredicate = pkg:
             builtins.elem (lib.getName pkg) [ "open-webui" ];
-
-          environment.systemPackages = with pkgs; [ amdgpu_top ];
 
           system.stateVersion = "24.11";
         };
