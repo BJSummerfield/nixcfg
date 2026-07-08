@@ -1,3 +1,7 @@
+cursor {
+    // xcursor-theme "Vanilla-DMZ"
+    xcursor-size 32
+}
 hotkey-overlay {
     skip-at-startup
 }
