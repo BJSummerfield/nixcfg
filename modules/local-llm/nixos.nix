@@ -8,20 +8,22 @@
 let
   cfg = config.mine.system.local-llm;
 
-  qwenName = "Qwen3.6-35B-A3B-GGUF";
-  qwenFile = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
-  qwenModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${qwenName}/resolve/main/${qwenFile}";
+  qwenMtpName = "Qwen3.6-35B-A3B-MTP-GGUF";
+  qwenMtpFile = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
+  qwenMtpModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/${qwenMtpName}/resolve/main/${qwenMtpFile}";
     hash = "sha256-cHpVqKQ5fs3kTeDEmdPmjBrR0kDR2mWCa0lJ0QQ/RFA=";
   };
-  qwenPath = "/var/lib/models/${qwenFile}";
-  coderName = "Qwen3-Coder-30B-A3B-Instruct-GGUF";
-  coderFile = "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf";
-  coderModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${coderName}/resolve/main/${coderFile}";
+  qwenMtpPath = "/var/lib/models/${qwenMtpFile}";
+
+  coderNextName = "Qwen3-Coder-Next-GGUF";
+  coderNextFile = "Qwen3-Coder-Next-UD-Q3_K_XL.gguf";
+  coderNextModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/${coderNextName}/resolve/main/${coderNextFile}";
     hash = "sha256-KEGqMU2RZDSGDPuJkDR1KNzf5cNQ28udFGHb7oj/JTM=";
   };
-  coderPath = "/var/lib/models/${coderFile}";
+  coderNextPath = "/var/lib/models/${coderNextFile}";
+
 in
 {
   options.mine.system.local-llm = {
@@ -68,8 +70,8 @@ in
         "/dev/kfd" = { hostPath = "/dev/kfd"; isReadOnly = false; };
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
-        "/var/lib/models/${qwenFile}" = { hostPath = "${qwenModel}"; isReadOnly = true; };
-        "/var/lib/models/${coderFile}" = { hostPath = "${coderModel}"; isReadOnly = true; };
+        "/var/lib/models/${qwenMtpFile}" = { hostPath = "${qwenMtpModel}"; isReadOnly = true; };
+        "/var/lib/models/${coderNextFile}" = { hostPath = "${coderNextModel}"; isReadOnly = true; };
       };
 
       config = { config, pkgs, lib, ... }:
@@ -78,35 +80,38 @@ in
           llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
             healthCheckTimeout: 300
             logLevel: info
-
             models:
-              "Qwen3.6-35B-A3B":
+              "Qwen3.6-35B-A3B-MTP":
                 ttl: 3600
                 cmd: |
                   ${llamaServer}
                   --host 127.0.0.1 --port ''${PORT}
-                  -m ${qwenPath}
-                  --alias Qwen3.6-35B-A3B
-                  --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+                  -m ${qwenMtpPath}
+                  --alias Qwen3.6-35B-A3B-MTP
+                  --temp 0.6
+                  --top-p 0.95
+                  --top-k 20
+                  --min-p 0.0
                   --chat-template-kwargs '{"preserve_thinking":true}'
                   --ctx-size 131072
+                  --spec-type draft-mtp
+                  --spec-draft-n-max 2 
                   --n-gpu-layers 99
-                  --flash-attn on
 
-              "Qwen3-Coder-30B-A3B":
+              "Qwen3-Coder-Next":
                 ttl: 3600
                 cmd: |
                   ${llamaServer}
                   --host 127.0.0.1 --port ''${PORT}
-                  -m ${coderPath}
-                  --alias Qwen3-Coder-30B-A3B
-                  --jinja
-                  --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0
-                  --repeat-penalty 1.05
+                  -m ${coderNextPath}
+                  --alias Qwen3-Coder-Next
+                  --temp 1.0
+                  --top-p 0.95
+                  --top-k 40
+                  --min-p 0.01
+                  --repeat-penalty 1.0
                   --ctx-size 131072
-                  --cache-type-k q8_0 --cache-type-v q8_0
                   --n-gpu-layers 99
-                  --flash-attn on
           '';
         in
         {
