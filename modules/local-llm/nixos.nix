@@ -9,7 +9,7 @@ let
   cfg = config.mine.system.local-llm;
 
   qwenMtpName = "Qwen3.6-35B-A3B-MTP-GGUF";
-  qwenMtpFile = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
+  qwenMtpFile = "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf";
   qwenMtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${qwenMtpName}/resolve/main/${qwenMtpFile}";
     hash = "sha256-cHpVqKQ5fs3kTeDEmdPmjBrR0kDR2mWCa0lJ0QQ/RFA=";
@@ -20,7 +20,7 @@ let
   coderNextFile = "Qwen3-Coder-Next-UD-Q3_K_XL.gguf";
   coderNextModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${coderNextName}/resolve/main/${coderNextFile}";
-    hash = "sha256-KEGqMU2RZDSGDPuJkDR1KNzf5cNQ28udFGHb7oj/JTM=";
+    hash = "sha256-kbko8oovS3ag2RR/FIMRv+hxasjklazDPreqzgrXYTU=";
   };
   coderNextPath = "/var/lib/models/${coderNextFile}";
 
@@ -94,9 +94,9 @@ in
                   --min-p 0.0
                   --chat-template-kwargs '{"preserve_thinking":true}'
                   --ctx-size 131072
-                  --spec-type draft-mtp
-                  --spec-draft-n-max 2 
+                  --spec-type draft-mtp --spec-draft-n-max 2 
                   --n-gpu-layers 99
+                  --n-cpu-moe 27
 
               "Qwen3-Coder-Next":
                 ttl: 3600
@@ -112,6 +112,7 @@ in
                   --repeat-penalty 1.0
                   --ctx-size 131072
                   --n-gpu-layers 99
+                  --n-cpu-moe 25
           '';
         in
         {
