@@ -94,6 +94,7 @@
       };
       home.packages = with pkgs; [
         abcde
+        amdgpu_top
         ffmpeg
         jellyfin-tui
         picard

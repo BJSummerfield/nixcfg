@@ -2,18 +2,26 @@
 # sudo nixos-container root-login local-llm
 # tailscale up --hostname=llm --advertise-tags=tag:solo-node
 # tailscale serve --bg --https=443 8080      # Open WebUI
-# tailscale serve --bg --https=8443 8081     # llama.cpp endpoint for OpenCode
+# tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for OpenCode
+
 { lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.local-llm;
+
   qwenName = "Qwen3.6-35B-A3B-GGUF";
   qwenFile = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
   qwenModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${qwenName}/resolve/main/${qwenFile}";
     hash = "sha256-cHpVqKQ5fs3kTeDEmdPmjBrR0kDR2mWCa0lJ0QQ/RFA=";
   };
-  # Path where the model is bind-mounted inside the container.
   qwenPath = "/var/lib/models/${qwenFile}";
+  coderName = "Qwen3-Coder-30B-A3B-Instruct-GGUF";
+  coderFile = "Qwen3-Coder-30B-A3B-Instruct-UD-Q4_K_XL.gguf";
+  coderModel = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/${coderName}/resolve/main/${coderFile}";
+    hash = "sha256-KEGqMU2RZDSGDPuJkDR1KNzf5cNQ28udFGHb7oj/JTM=";
+  };
+  coderPath = "/var/lib/models/${coderFile}";
 in
 {
   options.mine.system.local-llm = {
@@ -21,13 +29,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # AMD GPU drivers on the host
     hardware.graphics = {
       enable = true;
       extraPackages = [ pkgs.rocmPackages.clr.icd ];
     };
 
-    # Expose web UI + llama.cpp endpoint to lan (also reachable via tailnet)
     networking.firewall.allowedTCPPorts = [ 8080 8081 ];
     networking.nat = {
       enable = true;
@@ -50,7 +56,6 @@ in
       hostAddress = "192.168.100.24";
       localAddress = "192.168.100.25";
 
-      # tun for tailscale, plus AMD GPU devices for ROCm
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
@@ -64,18 +69,50 @@ in
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
         "/var/lib/models/${qwenFile}" = { hostPath = "${qwenModel}"; isReadOnly = true; };
+        "/var/lib/models/${coderFile}" = { hostPath = "${coderModel}"; isReadOnly = true; };
       };
 
       config = { config, pkgs, lib, ... }:
+        let
+          llamaServer = lib.getExe' pkgs.llama-cpp-rocm "llama-server";
+          llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
+            healthCheckTimeout: 300
+            logLevel: info
+
+            models:
+              "Qwen3.6-35B-A3B":
+                ttl: 3600
+                cmd: |
+                  ${llamaServer}
+                  --host 127.0.0.1 --port ''${PORT}
+                  -m ${qwenPath}
+                  --alias Qwen3.6-35B-A3B
+                  --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0
+                  --chat-template-kwargs '{"preserve_thinking":true}'
+                  --ctx-size 131072
+                  --n-gpu-layers 99
+                  --flash-attn on
+
+              "Qwen3-Coder-30B-A3B":
+                ttl: 3600
+                cmd: |
+                  ${llamaServer}
+                  --host 127.0.0.1 --port ''${PORT}
+                  -m ${coderPath}
+                  --alias Qwen3-Coder-30B-A3B
+                  --jinja
+                  --temp 0.7 --top-p 0.8 --top-k 20 --min-p 0.0
+                  --repeat-penalty 1.05
+                  --ctx-size 131072
+                  --cache-type-k q8_0 --cache-type-v q8_0
+                  --n-gpu-layers 99
+                  --flash-attn on
+          '';
+        in
         {
           services.tailscale.enable = true;
-
-          # llama.cpp - serves the thinking model on :8081 (OpenAI-compatible).
-          # No download service, no ConditionPathExists - the model is just
-          # there (bind-mounted from the store), so llama.cpp points straight
-          # at it and nothing gates on a download.
-          systemd.services.llama-cpp = {
-            description = "llama.cpp server (Qwen3.6-35B-A3B thinking)";
+          systemd.services.llama-swap = {
+            description = "llama-swap (model-swapping proxy for llama.cpp)";
             after = [ "network.target" ];
             wantedBy = [ "multi-user.target" ];
             environment = {
@@ -84,24 +121,17 @@ in
             };
             serviceConfig = {
               ExecStart = ''
-                ${pkgs.llama-cpp-rocm}/bin/llama-server \
-                  --host 0.0.0.0 --port 8081 \
-                  -m ${qwenPath} \
-                  --alias unsloth/Qwen3.6-35B-A3B \
-                  --temp 0.6 --top-p 0.95 --top-k 20 --min-p 0.0 \
-                  --chat-template-kwargs '{"preserve_thinking":true}' \
-                  --ctx-size 131072 \
-                  --n-gpu-layers 99 \
-                  --flash-attn on \
+                ${pkgs.llama-swap}/bin/llama-swap \
+                  --listen 0.0.0.0:8081 \
+                  --config ${llamaSwapConfig}
               '';
               Restart = "on-failure";
               RestartSec = 10;
               DynamicUser = true;
-              StateDirectory = "llama-cpp";
+              StateDirectory = "llama-swap";
             };
           };
 
-          # Open WebUI on :8080, pointed at the llama.cpp OpenAI endpoint.
           services.open-webui = {
             enable = true;
             host = "0.0.0.0";
