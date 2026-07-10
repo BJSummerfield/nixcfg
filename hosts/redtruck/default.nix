@@ -43,7 +43,7 @@
     };
   };
   home-manager.users = {
-    waktu = {
+    waktu = { config, ... }: {
       mine.user = {
         # _1password.enable = true;
         # alacritty.enable = true;
