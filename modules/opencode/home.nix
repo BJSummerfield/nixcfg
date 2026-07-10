@@ -18,23 +18,21 @@ in
         model = "redtruck/Qwen3.6-35B-A3B";
         provider."redtruck" = {
           options.baseURL = "https://llm.mist-gamma.ts.net:8443/v1";
-          models."Qwen3.6-35B-A3B" = {
+          models."Qwen3.6-35B-A3B-MTP" = {
             options = {
               temperature = 0.6;
               top_p = 0.95;
               top_k = 20;
               min_p = 0.0;
-              presence_penalty = 0.0;
-              repetition_penalty = 1.0;
             };
           };
-          models."Qwen3-Coder-30B-A3B" = {
+          models."Qwen3-Coder-Next" = {
             options = {
-              temperature = 0.7;
-              top_p = 0.8;
-              top_k = 20;
-              min_p = 0.0;
-              repetition_penalty = 1.05;
+              temperature = 1.0;
+              top_p = 0.95;
+              top_k = 40;
+              min_p = 0.01;
+              repetition_penalty = 1.0;
             };
           };
         };
