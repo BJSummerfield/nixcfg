@@ -61,7 +61,7 @@
             content = {
               type = "filesystem";
               format = "ext4";
-              mountpoint = "/mnt/media";
+              mountpoint = "/media";
               mountOptions = [ "nofail" ];
             };
           };
@@ -77,7 +77,7 @@
             content = {
               type = "filesystem";
               format = "ext4";
-              mountpoint = "/mnt/games";
+              mountpoint = "/games";
               mountOptions = [ "nofail" ];
             };
           };
@@ -93,7 +93,7 @@
             content = {
               type = "filesystem";
               format = "ext4";
-              mountpoint = "/mnt/data1";
+              mountpoint = "/data1";
               mountOptions = [ "nofail" ];
             };
           };
@@ -109,7 +109,7 @@
             content = {
               type = "filesystem";
               format = "ext4";
-              mountpoint = "/mnt/data2";
+              mountpoint = "/data2";
               mountOptions = [ "nofail" ];
             };
           };
