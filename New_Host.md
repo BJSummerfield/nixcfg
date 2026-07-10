@@ -288,3 +288,54 @@ If waktu's git commit signing uses `signingkey = "/home/waktu/.ssh/id_ed25519.pu
 - GitHub SSH signing keys (Settings → SSH and GPG keys → New SSH key,
   type "Signing Key")
 - Any `allowed_signers` files used to verify commit signatures locally
+
+## 11. Rotate the user age key (dev machines only)
+
+Skip this step if the new host isn't used for editing sops secrets —
+i.e. it doesn't have (and shouldn't have) a `waktu_<host>` anchor in
+`.sops.yaml`. Servers, appliances, and single-purpose hosts fall in
+this category.
+
+For a dev machine (anywhere you'll run `sops` to edit secrets in the
+flake), the user needs their own age identity separate from the host
+key. It lives at `~/.config/sops/age/keys.txt` and is what `sops` picks
+up when the user (not the system) decrypts files.
+
+On the target, as waktu:
+
+```bash
+mkdir -p ~/.config/sops/age
+nix shell nixpkgs#age -c age-keygen -o ~/.config/sops/age/keys.txt
+chmod 600 ~/.config/sops/age/keys.txt
+```
+
+The output includes both the private key (kept in the file) and a
+`# public key: age1...` comment line. Grab the public key:
+
+```bash
+grep 'public key' ~/.config/sops/age/keys.txt
+```
+
+On the builder, edit `.sops.yaml`:
+
+**Reinstalling an existing dev host:** replace the value of the matching
+anchor (e.g. `&waktu_redtruck`) with the new age key. No other changes
+needed — the anchor is already referenced everywhere it should be.
+
+```yaml
+- &waktu_redtruck age1newuserkey...
+```
+
+**Adding a brand-new dev host:** add a new `&waktu_<host>` anchor, then
+add it to every `creation_rules` entry the user should be able to
+decrypt. In this repo's model, that's typically all of them, since the
+user is a flake maintainer.
+
+Then re-encrypt every secret so the new user key is on the recipient
+list:
+
+```fish
+sops updatekeys ./secrets/**.yaml
+```
+
+Commit `.sops.yaml` and the updated secret files.
