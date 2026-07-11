@@ -101,6 +101,7 @@ in
                   --chat-template-kwargs '{"preserve_thinking":true}'
                   --ctx-size 131072
                   --spec-type draft-mtp --spec-draft-n-max 2
+                  --n-cpu-moe 4
                   --n-gpu-layers 99
 
               "Qwen3.6-27B-MTP-Q4":
@@ -115,7 +116,9 @@ in
                   --top-k 20
                   --min-p 0.0
                   --chat-template-kwargs '{"preserve_thinking":true}'
-                  --ctx-size 131072
+                  --cache-type-k q8_0
+                  --cache-type-v q8_0
+                  --ctx-size 88000
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
           '';
