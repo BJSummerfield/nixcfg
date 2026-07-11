@@ -1,0 +1,28 @@
+Qwen MTP Q8
+
+qwenMtpQ8Name = "Qwen3.6-35B-A3B-MTP-GGUF";
+qwenMtpQ8File = "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf";
+qwenMtpQ8Model = pkgs.fetchurl {
+url = "https://huggingface.co/unsloth/${qwenMtpQ8Name}/resolve/main/${qwenMtpQ8File}";
+hash = "sha256-bGuBZTerrZCyUKCXKzRUZgKNhh3f4xbV8N4xymRA94E=";
+};
+qwenMtpQ8Path = "/var/lib/models/${qwenMtpQ8File}";
+
+
+"Qwen3.6-35B-A3B-MTP-Q8":
+ttl: 3600
+cmd: |
+  ${llamaServer}
+  --host 127.0.0.1 --port ''${PORT}
+  -m ${qwenMtpQ8Path}
+  --alias Qwen3.6-35B-A3B-MTP-Q8
+  --temp 0.6
+  --top-p 0.95
+  --top-k 20
+  --min-p 0.0
+  --chat-template-kwargs '{"preserve_thinking":true}'
+  --ctx-size 131072
+  --spec-type draft-mtp --spec-draft-n-max 2
+  --n-gpu-layers 99
+
+##########

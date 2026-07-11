@@ -15,10 +15,10 @@ in
       };
       settings = {
         "$schema" = "https://opencode.ai/config.json";
-        model = "redtruck/Qwen3.6-35B-A3B";
+        model = "redtruck/Qwen3.6-35B-A3B-MTP-Q4";
         provider."redtruck" = {
           options.baseURL = "https://llm.mist-gamma.ts.net:8443/v1";
-          models."Qwen3.6-35B-A3B-MTP" = {
+          models."Qwen3.6-35B-A3B-MTP-Q4" = {
             options = {
               temperature = 0.6;
               top_p = 0.95;
@@ -26,13 +26,12 @@ in
               min_p = 0.0;
             };
           };
-          models."Qwen3-Coder-Next" = {
+          models."Qwen3.6-27B-MTP-Q4" = {
             options = {
-              temperature = 1.0;
+              temperature = 0.6;
               top_p = 0.95;
-              top_k = 40;
-              min_p = 0.01;
-              repetition_penalty = 1.0;
+              top_k = 20;
+              min_p = 0.0;
             };
           };
         };
