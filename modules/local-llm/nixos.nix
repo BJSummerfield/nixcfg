@@ -100,6 +100,8 @@ in
                   --min-p 0.0
                   --chat-template-kwargs '{"preserve_thinking":true}'
                   --ctx-size 131072
+                  --cache-type-k q8_0
+                  --cache-type-v q8_0
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-cpu-moe 4
                   --n-gpu-layers 99
@@ -118,7 +120,7 @@ in
                   --chat-template-kwargs '{"preserve_thinking":true}'
                   --cache-type-k q8_0
                   --cache-type-v q8_0
-                  --ctx-size 88000
+                  --ctx-size 96000
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
           '';
