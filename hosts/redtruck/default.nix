@@ -8,9 +8,6 @@
       ../../users/waktu.nix
     ];
 
-  systemd.tmpfiles.rules = [
-    "d /mnt/games 2770 root users -"
-  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -37,15 +34,14 @@
         hostConfig = ./niri.kdl;
       };
       openssh.outbound.enable = true;
-      openssh.inbound = {
-        enable = true;
-        openOnExternalInterface = true;
-      };
       pipewire.sample-switch.enable = true;
       printing.enable = true;
       stylix.enable = true;
       steam.enable = true;
-      tailscale.enable = true;
+      tailscale = {
+        enable = true;
+        ssh = true;
+      };
       teamspeak-client.enable = true;
     };
     users.waktu.authorizedKeys = [ "onepassword" "t495" ];
@@ -114,11 +110,18 @@
           mkLink = config.lib.file.mkOutOfStoreSymlink;
         in
         {
-          "media".source = mkLink "/mnt/media";
-          "games".source = mkLink "/mnt/games";
-          "data1".source = mkLink "/mnt/data1";
-          "data2".source = mkLink "/mnt/data2";
+          "media".source = mkLink "/media";
+          "games".source = mkLink "/games";
+          "data1".source = mkLink "/data1";
+          "data2".source = mkLink "/data2";
         };
     };
   };
+
+  systemd.tmpfiles.rules = [
+    "d /games 0755 waktu users -"
+    "d /media 0755 waktu users -"
+    "d /data1 0755 waktu users -"
+    "d /data2 0755 waktu users -"
+  ];
 }
