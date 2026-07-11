@@ -45,6 +45,7 @@
       # tailscale.enable = true;
       # teamspeak-client.enable = true;
     };
+    users.waktu.authorizedKeys = [ "onepassword" "t495" ];
   };
   home-manager.users = {
     waktu = { config, ... }: {
