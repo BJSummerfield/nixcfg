@@ -22,7 +22,7 @@ let
   qwen27bMtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${qwen27bMtpName}/resolve/main/${qwen27bMtpFile}";
     # TODO: replace with the real hash (see notes)
-    hash = "sha256-0000000000000000000000000000000000000000000=";
+    hash = "sha256-QIVmXuNtgqZyojikPw5WQ/Lw458te9XTc/DvEOz1MJU=";
   };
   qwen27bMtpPath = "/var/lib/models/${qwen27bMtpFile}";
 
