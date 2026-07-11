@@ -34,6 +34,10 @@
       #   hostConfig = ./niri.kdl;
       # };
       openssh.outbound.enable = true;
+      openssh.inbound = {
+        enable = true;
+        openOnExternalInterface = true;
+      };
       # pipewire.sample-switch.enable = true;
       # printing.enable = true;
       # stylix.enable = true;
