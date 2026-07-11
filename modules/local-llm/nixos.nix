@@ -8,21 +8,22 @@
 let
   cfg = config.mine.system.local-llm;
 
-  qwenMtpName = "Qwen3.6-35B-A3B-MTP-GGUF";
-  qwenMtpFile = "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf";
-  qwenMtpModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${qwenMtpName}/resolve/main/${qwenMtpFile}";
+  qwenMtpQ8Name = "Qwen3.6-35B-A3B-MTP-GGUF";
+  qwenMtpQ8File = "Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf";
+  qwenMtpQ8Model = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/${qwenMtpQ8Name}/resolve/main/${qwenMtpQ8File}";
     hash = "sha256-bGuBZTerrZCyUKCXKzRUZgKNhh3f4xbV8N4xymRA94E=";
   };
-  qwenMtpPath = "/var/lib/models/${qwenMtpFile}";
+  qwenMtpQ8Path = "/var/lib/models/${qwenMtpQ8File}";
 
-  coderNextName = "Qwen3-Coder-Next-GGUF";
-  coderNextFile = "Qwen3-Coder-Next-UD-Q3_K_XL.gguf";
-  coderNextModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${coderNextName}/resolve/main/${coderNextFile}";
-    hash = "sha256-kbko8oovS3ag2RR/FIMRv+hxasjklazDPreqzgrXYTU=";
+  qwenMtpQ4Name = "Qwen3.6-35B-A3B-MTP-GGUF";
+  qwenMtpQ4File = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
+  qwenMtpQ4Model = pkgs.fetchurl {
+    url = "https://huggingface.co/unsloth/${qwenMtpQ4Name}/resolve/main/${qwenMtpQ4File}";
+    hash = "sha256-bGuBZTerrZCyUKCXKzRUZgKNhh3f4xbV8N4xymRA94E=";
   };
-  coderNextPath = "/var/lib/models/${coderNextFile}";
+  qwenMtpQ4Path = "/var/lib/models/${qwenMtpQ4File}";
+
 
 in
 {
@@ -70,8 +71,8 @@ in
         "/dev/kfd" = { hostPath = "/dev/kfd"; isReadOnly = false; };
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
-        "/var/lib/models/${qwenMtpFile}" = { hostPath = "${qwenMtpModel}"; isReadOnly = true; };
-        "/var/lib/models/${coderNextFile}" = { hostPath = "${coderNextModel}"; isReadOnly = true; };
+        "/var/lib/models/${qwenMtpQ8File}" = { hostPath = "${qwenMtpQ8Model}"; isReadOnly = true; };
+        "/var/lib/models/${qwenMtpQ4File}" = { hostPath = "${qwenMtpQ4Model}"; isReadOnly = true; };
       };
 
       config = { config, pkgs, lib, ... }:
@@ -81,13 +82,13 @@ in
             healthCheckTimeout: 300
             logLevel: info
             models:
-              "Qwen3.6-35B-A3B-MTP":
+              "Qwen3.6-35B-A3B-MTP-Q8":
                 ttl: 3600
                 cmd: |
                   ${llamaServer}
                   --host 127.0.0.1 --port ''${PORT}
-                  -m ${qwenMtpPath}
-                  --alias Qwen3.6-35B-A3B-MTP
+                  -m ${qwenMtpQ8Path}
+                  --alias Qwen3.6-35B-A3B-MTP-Q8
                   --temp 0.6
                   --top-p 0.95
                   --top-k 20
@@ -96,23 +97,22 @@ in
                   --ctx-size 131072
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
-                  --n-cpu-moe 24
 
-              "Qwen3-Coder-Next":
+              "Qwen3.6-35B-A3B-MTP-Q4":
                 ttl: 3600
                 cmd: |
                   ${llamaServer}
                   --host 127.0.0.1 --port ''${PORT}
-                  -m ${coderNextPath}
-                  --alias Qwen3-Coder-Next
-                  --temp 1.0
+                  -m ${qwenMtpQ4Path}
+                  --alias Qwen3.6-35B-A3B-MTP-Q4
+                  --temp 0.6
                   --top-p 0.95
-                  --top-k 40
-                  --min-p 0.01
-                  --repeat-penalty 1.0
+                  --top-k 20
+                  --min-p 0.0
+                  --chat-template-kwargs '{"preserve_thinking":true}'
                   --ctx-size 131072
+                  --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
-                  --n-cpu-moe 25
           '';
         in
         {

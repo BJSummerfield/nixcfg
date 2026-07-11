@@ -8,7 +8,6 @@
       ../../users/waktu.nix
     ];
 
-
   environment.systemPackages = with pkgs; [
     bottom
     git
