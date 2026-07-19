@@ -40,7 +40,7 @@ in
     };
 
     networking.firewall.allowedTCPPorts = [
-      # 8080
+      8080
       8081
     ];
     networking.nat = {
@@ -48,7 +48,7 @@ in
       internalInterfaces = [ "ve-local-llm" ];
       externalInterface = config.mine.system.externalInterface;
       forwardPorts = [
-        # { sourcePort = 8080; destination = "192.168.100.25:8080"; proto = "tcp"; }
+        { sourcePort = 8080; destination = "192.168.100.25:8080"; proto = "tcp"; }
         { sourcePort = 8081; destination = "192.168.100.25:8081"; proto = "tcp"; }
       ];
     };
@@ -148,18 +148,18 @@ in
             };
           };
 
-          # services.open-webui = {
-          #   enable = true;
-          #   host = "0.0.0.0";
-          #   port = 8080;
-          #   environment = {
-          #     OPENAI_API_BASE_URL = "http://127.0.0.1:8081/v1";
-          #     OPENAI_API_KEY = "sk-no-key-required";
-          #     ENABLE_OLLAMA_API = "False";
-          #     WEBUI_AUTH = "True";
-          #     ENABLE_SIGNUP = "True";
-          #   };
-          # };
+          services.open-webui = {
+            enable = true;
+            host = "0.0.0.0";
+            port = 8080;
+            environment = {
+              OPENAI_API_BASE_URL = "http://127.0.0.1:8081/v1";
+              OPENAI_API_KEY = "sk-no-key-required";
+              ENABLE_OLLAMA_API = "False";
+              WEBUI_AUTH = "True";
+              ENABLE_SIGNUP = "True";
+            };
+          };
 
           networking = {
             nameservers = [ "9.9.9.9" "1.1.1.1" ];
@@ -167,7 +167,7 @@ in
             firewall = {
               enable = true;
               allowedTCPPorts = [
-                # 8080
+                8080
                 8081
               ];
               trustedInterfaces = [ "tailscale0" ];
@@ -175,8 +175,8 @@ in
             };
           };
 
-          # nixpkgs.config.allowUnfreePredicate = pkg:
-          #   builtins.elem (lib.getName pkg) [ "open-webui" ];
+          nixpkgs.config.allowUnfreePredicate = pkg:
+            builtins.elem (lib.getName pkg) [ "open-webui" ];
 
           system.stateVersion = "24.11";
         };
