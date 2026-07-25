@@ -67,13 +67,13 @@ in
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
-        { modifier = "rwm"; node = "/dev/kfd"; }
+        # { modifier = "rwm"; node = "/dev/kfd"; }
       ];
 
       bindMounts = {
         "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
         "/dev/dri" = { hostPath = "/dev/dri"; isReadOnly = false; };
-        "/dev/kfd" = { hostPath = "/dev/kfd"; isReadOnly = false; };
+        # "/dev/kfd" = { hostPath = "/dev/kfd"; isReadOnly = false; };
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
         "/var/lib/models/${qwenMtpQ4File}" = { hostPath = "${qwenMtpQ4Model}"; isReadOnly = true; };
@@ -82,7 +82,7 @@ in
 
       config = { config, pkgs, lib, ... }:
         let
-          llamaServer = lib.getExe' pkgs.llama-cpp-rocm "llama-server";
+          llamaServer = lib.getExe' pkgs.llama-cpp-vulkan "llama-server";
           llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
             healthCheckTimeout: 300
             logLevel: info
@@ -131,10 +131,10 @@ in
             description = "llama-swap (model-swapping proxy for llama.cpp)";
             after = [ "network.target" ];
             wantedBy = [ "multi-user.target" ];
-            environment = {
-              HSA_OVERRIDE_GFX_VERSION = "11.0.0";
-              ROCR_VISIBLE_DEVICES = "0";
-            };
+            # environment = {
+            #   HSA_OVERRIDE_GFX_VERSION = "11.0.0";
+            #   ROCR_VISIBLE_DEVICES = "0";
+            # };
             serviceConfig = {
               ExecStart = ''
                 ${pkgs.llama-swap}/bin/llama-swap \
