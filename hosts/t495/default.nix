@@ -46,6 +46,7 @@
         _1password.enable = true;
         alacritty.enable = true;
         battery-notifications.enable = true;
+        claude-code.enable = true;
         direnv.enable = true;
         firefox.enable = true;
         fish.enable = true;
@@ -74,7 +75,7 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
-        opencode.enable = true;
+        pi-coding-agent.enable = true;
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;

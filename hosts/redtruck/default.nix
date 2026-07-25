@@ -50,6 +50,7 @@
       mine.user = {
         _1password.enable = true;
         alacritty.enable = true;
+        claude-code.enable = true;
         direnv.enable = true;
         encode_queue.enable = true;
         firefox.enable = true;
@@ -85,7 +86,7 @@
         lazygit.enable = true;
         mako.enable = true;
         obs-studio.enable = true;
-        opencode.enable = true;
+        pi-coding-agent.enable = true;
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
@@ -101,6 +102,7 @@
         amdgpu_top
         ffmpeg
         jellyfin-tui
+        lumen
         picard
         subtitleedit
       ];
