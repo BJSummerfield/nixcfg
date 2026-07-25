@@ -86,6 +86,7 @@
         mako.enable = true;
         obs-studio.enable = true;
         opencode.enable = true;
+        pi-coding-agent.enable = true;
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
@@ -101,6 +102,7 @@
         amdgpu_top
         ffmpeg
         jellyfin-tui
+        lumen
         picard
         subtitleedit
       ];
