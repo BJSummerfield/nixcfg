@@ -50,6 +50,7 @@
       mine.user = {
         _1password.enable = true;
         alacritty.enable = true;
+        claude-code.enable = true;
         direnv.enable = true;
         encode_queue.enable = true;
         firefox.enable = true;

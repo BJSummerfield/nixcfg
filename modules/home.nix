@@ -4,6 +4,7 @@
     ./alacritty/home.nix
     ./battery-notifications/home.nix
     ./bicep-langserver/home.nix
+    ./claude-code/home.nix
     ./direnv/home.nix
     ./encode_queue/home.nix
     ./firefox/home.nix
