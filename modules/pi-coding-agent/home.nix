@@ -21,7 +21,11 @@ in
         defaultProvider = "redtruck";
         defaultModel = "Qwen3.6-27B-MTP-Q4";
         defaultThinkingLevel = "high";
-        packages = [ "npm:pi-web-access" ];
+        packages = [
+          "npm:pi-web-access"
+          "npm:pi-token-speed"
+          "npm:@monotykamary/pi-tps"
+        ];
       };
       models = {
         providers = {
