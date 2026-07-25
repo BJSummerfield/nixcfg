@@ -1,16 +1,28 @@
-{ lib, config, options, ... }:
+{ lib, config, ... }:
 let
-  inherit (lib) mkIf mkEnableOption optionalAttrs;
+  inherit (lib) mkIf mkEnableOption;
+  inherit (import ../theme/constants.nix) colors;
 in
 {
   options.mine.user.lazygit.enable = mkEnableOption "User Lazygit";
-  config = mkIf config.mine.user.lazygit.enable ({
+  config = mkIf config.mine.user.lazygit.enable {
     programs.lazygit = {
       enable = true;
-      settings.gui.language = "en";
+      settings.gui = {
+        language = "en";
+        theme = {
+          activeBorderColor = [ "#${colors.base0D}" "bold" ];
+          cherryPickedCommitBgColor = [ "#${colors.base02}" ];
+          cherryPickedCommitFgColor = [ "#${colors.base03}" ];
+          defaultFgColor = [ "#${colors.base05}" ];
+          inactiveBorderColor = [ "#${colors.base03}" ];
+          optionsTextColor = [ "#${colors.base06}" ];
+          searchingActiveBorderColor = [ "#${colors.base04}" "bold" ];
+          selectedLineBgColor = [ "#${colors.base03}" ];
+          unstagedChangesColor = [ "#${colors.base08}" ];
+        };
+      };
     };
     home.shellAliases.lg = "lazygit";
-  } // optionalAttrs (options ? stylix) {
-    stylix.targets.lazygit.enable = true;
-  });
+  };
 }
