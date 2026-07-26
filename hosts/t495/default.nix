@@ -28,7 +28,6 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.outbound.enable = true;
-      printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
       theme.enable = true;
