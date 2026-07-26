@@ -35,7 +35,7 @@
       openssh.outbound.enable = true;
       pipewire.sample-switch.enable = true;
       printing.enable = true;
-      stylix.enable = true;
+      theme.enable = true;
       steam.enable = true;
       tailscale = {
         enable = true;

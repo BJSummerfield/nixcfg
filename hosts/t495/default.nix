@@ -31,7 +31,7 @@
       printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
-      stylix.enable = true;
+      theme.enable = true;
       tailscale = {
         enable = true;
         ssh = true;

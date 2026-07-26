@@ -20,7 +20,7 @@
       fish.enable = true;
       _1password.enable = true;
       niri.enable = true;
-      stylix.enable = true;
+      theme.enable = true;
     };
   };
   home-manager.users = {

@@ -22,12 +22,12 @@
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix
-    ./stylix/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix
     ./teamspeak-server/nixos.nix
     ./terraria-server/nixos.nix
+    ./theme/nixos.nix
     ./unfree/nixos.nix
     ./users/nixos.nix
     ./vikunja-server/nixos.nix
