@@ -8,6 +8,7 @@
     ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
+    ./cups-server/nixos.nix
     ./immich-server/nixos.nix
     ./immich-ml/nixos.nix
     ./jellyfin-server/nixos.nix
@@ -17,7 +18,6 @@
     ./niri/nixos.nix
     ./openssh/nixos.nix
     ./pipewire/nixos.nix
-    ./printing/nixos.nix
     ./redlib/nixos.nix
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
