@@ -11,7 +11,13 @@ in
     programs.pi-coding-agent = {
       enable = true;
       # npm is needed so pi can install npm packages like pi-web-access
-      extraPackages = [ pkgs.nodejs ];
+      # pi-sandbox needs ripgrep (macOS/Linux), bubblewrap + socat (Linux)
+      extraPackages = [
+        pkgs.nodejs
+        pkgs.ripgrep
+        pkgs.bubblewrap
+        pkgs.socat
+      ];
       settings = {
         theme = "dark";
         model = {
@@ -25,6 +31,7 @@ in
           "npm:pi-web-access"
           "npm:pi-token-speed"
           "npm:@monotykamary/pi-tps"
+          "npm:pi-sandbox"
         ];
       };
       models = {
