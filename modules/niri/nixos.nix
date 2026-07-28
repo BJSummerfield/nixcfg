@@ -21,6 +21,23 @@ in
     {
       environment.sessionVariables.NIXOS_OZONE_WL = "1";
       programs.niri.enable = true;
+      # niri requires libdisplay-info < 0.4.0, but nixpkgs bumped it to 0.4.0.
+      # Remove once nixpkgs c0882363 (niri: pin libdisplay-info_0_3) reaches
+      # nixos-unstable.
+      nixpkgs.overlays = [
+        (self: super: {
+          libdisplay-info = super.libdisplay-info.overrideAttrs {
+            version = "0.3.0";
+            src = super.fetchFromGitLab {
+              domain = "gitlab.freedesktop.org";
+              owner = "emersion";
+              repo = "libdisplay-info";
+              rev = "0.3.0";
+              sha256 = "sha256-nXf2KGovNKvcchlHlzKBkAOeySMJXgxMpbi5z9gLrdc=";
+            };
+          };
+        })
+      ];
       home-manager.sharedModules = [{ mine.user.niri.enable = true; }];
     }
 
