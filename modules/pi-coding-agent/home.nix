@@ -26,7 +26,14 @@ let
       deniedDomains = [ ];
     };
     filesystem = {
-      denyRead = [ "/home" ];
+      # Don't deny /home here: on Linux bwrap must create placeholder files
+      # to mask non-existent denyWrite paths inside the cwd (.env, .gitconfig,
+      # ...), and a read-only /home layer makes that fail — every bash command
+      # dies with "Read-only file system". Mask sensitive dirs directly instead.
+      denyRead = [
+        "~/.ssh"
+        "~/.gnupg"
+      ];
       allowRead = [
         "."
         "/nix"
