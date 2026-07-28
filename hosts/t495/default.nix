@@ -74,7 +74,10 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
-        pi-coding-agent.enable = true;
+        pi-coding-agent = {
+          enable = true;
+          sandbox.enable = true;
+        };
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
