@@ -16,6 +16,7 @@
     ./local-llm/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
+    ./nvidia/nixos.nix
     ./openssh/nixos.nix
     ./coding-agents/nixos.nix
     ./pipewire/nixos.nix

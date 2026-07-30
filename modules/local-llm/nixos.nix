@@ -8,6 +8,16 @@
 let
   cfg = config.mine.system.local-llm;
 
+  nvidiaEnabled = config.mine.system.nvidia.enable;
+  # CUDA talks to these directly instead of /dev/dri
+  nvidiaDevices = [
+    "/dev/nvidia0"
+    "/dev/nvidiactl"
+    "/dev/nvidia-uvm"
+    "/dev/nvidia-uvm-tools"
+    "/dev/nvidia-modeset"
+  ];
+
   qwenMtpQ4Name = "Qwen3.6-35B-A3B-MTP-GGUF";
   qwenMtpQ4File = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
   qwenMtpQ4Model = pkgs.fetchurl {
@@ -87,7 +97,7 @@ in
   config = lib.mkIf cfg.enable {
     hardware.graphics = {
       enable = true;
-      extraPackages = [ pkgs.rocmPackages.clr.icd ];
+      extraPackages = lib.optionals (!nvidiaEnabled) [ pkgs.rocmPackages.clr.icd ];
     };
 
     networking.firewall.allowedTCPPorts = [
@@ -118,7 +128,7 @@ in
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
-      ];
+      ] ++ lib.optionals nvidiaEnabled (map (node: { modifier = "rwm"; inherit node; }) nvidiaDevices);
 
       bindMounts = {
         "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
@@ -129,11 +139,16 @@ in
         "/var/lib/models/${qwen27bMtpFile}" = { hostPath = "${qwen27bMtpModel}"; isReadOnly = true; };
         "/var/lib/models/${qwen27bNvfp4Name}" = { hostPath = "${qwen27bNvfp4Model}"; isReadOnly = true; };
         "/var/lib/models/${qwen35bNvfp4Name}" = { hostPath = "${qwen35bNvfp4Model}"; isReadOnly = true; };
-      };
+      } // lib.optionalAttrs nvidiaEnabled
+        (lib.genAttrs nvidiaDevices (node: { hostPath = node; isReadOnly = false; }));
 
       config = { config, pkgs, lib, ... }:
         let
-          llamaServer = lib.getExe' pkgs.llama-cpp-vulkan "llama-server";
+          llamaServer = lib.getExe'
+            (if nvidiaEnabled
+             then pkgs.llama-cpp.override { cudaSupport = true; }
+             else pkgs.llama-cpp-vulkan)
+            "llama-server";
           llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
             healthCheckTimeout: 300
             logLevel: info
@@ -224,7 +239,12 @@ in
           };
 
           nixpkgs.config.allowUnfreePredicate = pkg:
-            builtins.elem (lib.getName pkg) [ "open-webui" ];
+            let name = lib.getName pkg; in
+            builtins.elem name [ "open-webui" ]
+            # the CUDA toolchain is dozens of separately-named unfree packages
+            || (nvidiaEnabled && (lib.hasPrefix "cuda" name
+              || lib.hasPrefix "libcu" name
+              || lib.hasPrefix "libnv" name));
 
           system.stateVersion = "24.11";
         };
