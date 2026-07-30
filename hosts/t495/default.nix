@@ -87,6 +87,9 @@
         starship.enable = true;
         zoxide.enable = true;
       };
+      home.packages = with pkgs; [
+        lumen
+      ];
     };
     sumriri.mine.user.steambox.autoStart.enable = true;
     sword.mine.user.steambox.autoStart.enable = true;
