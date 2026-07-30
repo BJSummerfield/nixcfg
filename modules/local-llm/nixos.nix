@@ -21,7 +21,6 @@ let
   qwen27bMtpFile = "Qwen3.6-27B-UD-Q4_K_XL.gguf";
   qwen27bMtpModel = pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${qwen27bMtpName}/resolve/main/${qwen27bMtpFile}";
-    # TODO: replace with the real hash (see notes)
     hash = "sha256-QIVmXuNtgqZyojikPw5WQ/Lw458te9XTc/DvEOz1MJU=";
   };
   qwen27bMtpPath = "/var/lib/models/${qwen27bMtpFile}";
@@ -67,13 +66,11 @@ in
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
-        # { modifier = "rwm"; node = "/dev/kfd"; }
       ];
 
       bindMounts = {
         "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
         "/dev/dri" = { hostPath = "/dev/dri"; isReadOnly = false; };
-        # "/dev/kfd" = { hostPath = "/dev/kfd"; isReadOnly = false; };
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
         "/var/lib/models/${qwenMtpQ4File}" = { hostPath = "${qwenMtpQ4Model}"; isReadOnly = true; };
@@ -131,10 +128,6 @@ in
             description = "llama-swap (model-swapping proxy for llama.cpp)";
             after = [ "network.target" ];
             wantedBy = [ "multi-user.target" ];
-            # environment = {
-            #   HSA_OVERRIDE_GFX_VERSION = "11.0.0";
-            #   ROCR_VISIBLE_DEVICES = "0";
-            # };
             serviceConfig = {
               ExecStart = ''
                 ${pkgs.llama-swap}/bin/llama-swap \
