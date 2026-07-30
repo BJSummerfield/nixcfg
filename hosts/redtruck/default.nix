@@ -32,6 +32,7 @@
         enable = true;
         hostConfig = ./niri.kdl;
       };
+      nvidia.enable = true;
       openssh.outbound.enable = true;
       coding-agents.enable = true;
       pipewire.sample-switch.enable = true;
@@ -99,10 +100,10 @@
       };
       home.packages = with pkgs; [
         abcde
-        amdgpu_top
         ffmpeg
         jellyfin-tui
         lumen
+        nvtopPackages.nvidia
         picard
       ];
       home.file =

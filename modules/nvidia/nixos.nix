@@ -31,6 +31,7 @@ in
     mine.allowedUnfree = [
       "nvidia-x11"
       "nvidia-settings"
+      "cuda_nvml_dev" # nvtop builds against NVML headers
     ];
 
     # CUDA-enabled packages are unfree and not cached on cache.nixos.org
