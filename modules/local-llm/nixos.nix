@@ -149,8 +149,41 @@ in
              then pkgs.llama-cpp.override { cudaSupport = true; }
              else pkgs.llama-cpp-vulkan)
             "llama-server";
-          llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
-            healthCheckTimeout: 300
+          # Separate nixpkgs instantiation so cudaSupport doesn't rebuild the
+          # rest of the container (open-webui would pull CUDA torch otherwise).
+          # nixpkgs has vllm 0.16.0; Unsloth's docs want >= 0.25 for the NVFP4
+          # quants (cute-DSL W4A4 kernels + MTP) - bump the flake if the
+          # models refuse to load or fall back to slow kernels.
+          cudaPkgs = import pkgs.path {
+            inherit (pkgs.stdenv.hostPlatform) system;
+            overlays = [
+              (final: prev: {
+                pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+                  (pyFinal: pyPrev: {
+                    # vllm dep whose own pytest suite fails (middleware
+                    # double-registration); skip its checks.
+                    model-hosting-container-standards =
+                      pyPrev.model-hosting-container-standards.overridePythonAttrs
+                        (_: { doCheck = false; });
+                  })
+                ];
+              })
+            ];
+            config = {
+              allowUnfree = true;
+              cudaSupport = true;
+              # RTX 5090 (Blackwell) only; building every default capability
+              # multiplies the already-long torch build.
+              cudaCapabilities = [ "12.0" ];
+              # 0.16.0 is flagged for CVEs; acceptable here because vllm only
+              # listens on 127.0.0.1 inside the container behind llama-swap.
+              # Drop this once a flake update brings a newer vllm.
+              permittedInsecurePackages = [ "python3.14-vllm-0.16.0" ];
+            };
+          };
+          vllmBin = lib.getExe' cudaPkgs.vllm "vllm";
+          llamaSwapConfig = pkgs.writeText "llama-swap.yaml" (''
+            healthCheckTimeout: 900
             logLevel: info
             models:
               "Qwen3.6-35B-A3B-MTP-Q4":
@@ -190,7 +223,40 @@ in
                   --ctx-size 131072
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
-          '';
+          '' + lib.optionalString nvidiaEnabled ''
+            # NVFP4 safetensors models, served by vLLM (needs the Blackwell card).
+            # Sampling defaults come from each repo's generation_config.json.
+            # max-model-len is conservative; raise once real VRAM use is measured.
+              "Qwen3.6-27B-NVFP4":
+                ttl: 3600
+                env:
+                  - "HOME=/var/lib/llama-swap"
+                  - "VLLM_CACHE_ROOT=/var/lib/llama-swap/vllm-cache"
+                  - "HF_HUB_OFFLINE=1"
+                cmd: |
+                  ${vllmBin} serve /var/lib/models/${qwen27bNvfp4Name}
+                  --host 127.0.0.1 --port ''${PORT}
+                  --served-model-name Qwen3.6-27B-NVFP4
+                  --kv-cache-dtype fp8
+                  --max-model-len 65536
+                  --gpu-memory-utilization 0.92
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+
+              "Qwen3.6-35B-A3B-NVFP4":
+                ttl: 3600
+                env:
+                  - "HOME=/var/lib/llama-swap"
+                  - "VLLM_CACHE_ROOT=/var/lib/llama-swap/vllm-cache"
+                  - "HF_HUB_OFFLINE=1"
+                cmd: |
+                  ${vllmBin} serve /var/lib/models/${qwen35bNvfp4Name}
+                  --host 127.0.0.1 --port ''${PORT}
+                  --served-model-name Qwen3.6-35B-A3B-NVFP4
+                  --kv-cache-dtype fp8
+                  --max-model-len 32768
+                  --gpu-memory-utilization 0.95
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+          '');
         in
         {
           services.tailscale.enable = true;
