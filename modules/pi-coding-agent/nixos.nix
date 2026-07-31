@@ -5,12 +5,6 @@ let
 
   instanceNames = map (i: "pi-${toString i}") (range 1 cfg.instances);
 
-  # Shared, persistent agent home. Everything else about an instance is
-  # ephemeral: pi sessions, settings and npm-installed extensions live here
-  # and survive; anything an agent leaves outside its home and the project
-  # mount is discarded when the instance stops.
-  homeDir = "/var/lib/pi-agent-home";
-
   # Host-side `pi`: each invocation grabs an idle instance from the pool,
   # bind-mounts only the caller's cwd into it, runs the agent, and stops
   # the instance (discarding its root) when the session ends. Agents are
@@ -25,15 +19,6 @@ let
         for c in $instances; do
           sudo systemctl stop "container@$c" 2>/dev/null || true
         done
-        exit 0
-        ;;
-      reset)
-        for c in $instances; do
-          sudo systemctl stop "container@$c" 2>/dev/null || true
-        done
-        sudo rm -rf ${homeDir}
-        sudo install -d -m 0700 -o 1000 -g 100 ${homeDir}
-        echo "pi agent state wiped; sessions and extensions are gone" >&2
         exit 0
         ;;
     esac
@@ -63,8 +48,8 @@ let
       sleep 0.2
     done
 
-    # Mirror the host path relative to $HOME so session resume finds the
-    # same cwd on every launch.
+    # Mirror the host path relative to $HOME so two projects with the same
+    # basename can never collide on a mount point.
     rel="''${PWD#"''${HOME}"/}"
     if [ "''${rel}" = "''${PWD}" ]; then
       rel="external/$(basename "''${PWD}")"
@@ -93,24 +78,18 @@ in
   config = mkIf cfg.enable {
     environment.systemPackages = [ launcher ];
 
-    systemd.tmpfiles.rules = [ "d ${homeDir} 0700 1000 100 -" ];
-
     containers = genAttrs instanceNames (name: {
       autoStart = false;
-      # Empty root bootstrapped on every start, discarded on stop. The
-      # only state that survives is the shared home bind below and the
-      # project mount (which is the user's real directory anyway).
+      # Empty root bootstrapped on every start, discarded on stop. Nothing
+      # persists between sessions except the project mount, which is the
+      # user's real directory anyway. Config and extensions come from the
+      # store via home-manager; pi installs its npm packages at startup.
       ephemeral = true;
       # Shares the host network namespace: DNS, the tailnet (model
       # endpoint) and localhost all work with zero plumbing. The isolation
       # this container provides is filesystem/process, not network - the
       # agent is allowed full egress by design.
       privateNetwork = false;
-
-      bindMounts."/home/agent" = {
-        hostPath = homeDir;
-        isReadOnly = false;
-      };
 
       config = { pkgs, ... }: {
         imports = [ inputs.home-manager.nixosModules.home-manager ];
@@ -171,11 +150,9 @@ in
                 home-relative path as on the host (e.g. ~/projects/<name>).
                 These are the user's real files; edits are immediately
                 visible on the host and survive the session.
-              - Your home directory persists across sessions and is shared
-                with the user's other agent sessions; pi sessions and
-                installed extensions live there. Everything outside your
-                home and the project mount is discarded when this session
-                ends.
+              - Nothing else survives: this entire filesystem, including
+                your home directory, is discarded when the session ends.
+                Anything worth keeping must be written into the project.
               - Host secrets (SSH keys, GPG, password stores, browser
                 profiles) do not exist here. If git push or any
                 authenticated operation fails, report it and let the user

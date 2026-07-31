@@ -8,6 +8,14 @@ in
     enable = mkEnableOption "pi AI coding agent";
   };
   config = mkIf cfg.enable {
+    # pi-web-access provider config (keyless); seeded declaratively so
+    # ephemeral containers start with search already configured.
+    home.file.".pi/agent/web-search.json".text = builtins.toJSON {
+      workflow = "auto-summary";
+      provider = "exa";
+      curatorTimeoutSeconds = 20;
+    };
+
     programs.pi-coding-agent = {
       enable = true;
       # npm is needed so pi can install npm packages like pi-web-access
