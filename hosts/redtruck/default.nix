@@ -33,7 +33,7 @@
         hostConfig = ./niri.kdl;
       };
       openssh.outbound.enable = true;
-      pi-dev.enable = true;
+      pi-coding-agent.enable = true;
       pipewire.sample-switch.enable = true;
       theme.enable = true;
       steam.enable = true;
@@ -86,10 +86,6 @@
         lazygit.enable = true;
         mako.enable = true;
         obs-studio.enable = true;
-        pi-coding-agent = {
-          enable = true;
-          sandbox.enable = true;
-        };
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;

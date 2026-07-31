@@ -1,45 +1,58 @@
 { config, lib, pkgs, inputs, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
-  cfg = config.mine.system.pi-dev;
+  cfg = config.mine.system.pi-coding-agent;
 
-  # Host-side launcher. No project directories are mounted statically:
-  # each invocation bind-mounts the caller's cwd into the running container
-  # (machinectl bind), so the agent only ever sees projects explicitly
-  # opened with `pi-dev`. Stopping the container (`pi-dev stop`) drops all
-  # of those mounts again.
-  launcher = pkgs.writeShellScriptBin "pi-dev" ''
+  # Host-side `pi`: runs the agent inside the container. No project
+  # directories are mounted statically - each invocation bind-mounts the
+  # caller's cwd into the running container (machinectl bind), so the agent
+  # only ever sees projects explicitly opened with `pi`. `pi stop` drops
+  # the mounts; `pi reset` additionally wipes all container state.
+  launcher = pkgs.writeShellScriptBin "pi" ''
     set -euo pipefail
 
-    if [ "''${1:-}" = "stop" ]; then
-      exec sudo systemctl stop container@pi-dev
-    fi
+    case "''${1:-}" in
+      stop)
+        exec sudo systemctl stop container@pi
+        ;;
+      reset)
+        sudo systemctl stop container@pi 2>/dev/null || true
+        sudo rm -rf /var/lib/nixos-containers/pi
+        echo "pi container state wiped; next run starts fresh" >&2
+        exit 0
+        ;;
+    esac
 
-    if ! systemctl is-active --quiet container@pi-dev; then
-      echo "Starting pi-dev container..." >&2
-      sudo systemctl start container@pi-dev
+    if ! systemctl is-active --quiet container@pi; then
+      echo "Starting pi container..." >&2
+      sudo systemctl start container@pi
       # wait for the machine to register with machined
       for _ in $(seq 1 25); do
-        machinectl status pi-dev >/dev/null 2>&1 && break
+        machinectl status pi >/dev/null 2>&1 && break
         sleep 0.2
       done
     fi
 
     dest="/home/agent/projects/$(basename "''${PWD}")"
     # Fails harmlessly if this project is already bound from a previous run.
-    sudo machinectl bind --mkdir pi-dev "''${PWD}" "''${dest}" 2>/dev/null || true
-    exec sudo machinectl shell agent@pi-dev /bin/sh -lc "cd \"''${dest}\" && exec pi"
+    sudo machinectl bind --mkdir pi "''${PWD}" "''${dest}" 2>/dev/null || true
+
+    args=""
+    if [ "$#" -gt 0 ]; then
+      args=$(printf '%q ' "$@")
+    fi
+    exec sudo machinectl shell agent@pi /bin/sh -lc "cd \"''${dest}\" && exec pi ''${args}"
   '';
 in
 {
-  options.mine.system.pi-dev = {
-    enable = mkEnableOption "pi-dev, an isolated nspawn container for running the pi coding agent without pi-sandbox";
+  options.mine.system.pi-coding-agent = {
+    enable = mkEnableOption "pi coding agent, running inside an isolated nspawn container";
   };
 
   config = mkIf cfg.enable {
     environment.systemPackages = [ launcher ];
 
-    containers.pi-dev = {
+    containers.pi = {
       autoStart = false;
       # Shares the host network namespace: DNS, the tailnet (model endpoint)
       # and localhost all work with zero plumbing. The isolation this
@@ -53,8 +66,8 @@ in
         # Same uid as the host user so bind-mounted project files stay
         # writable. nixos containers bind the host nix-daemon socket by
         # default, so the daemon sees this uid - i.e. the agent talks to
-        # the daemon as a trusted-user. Same exposure the host pi-sandbox
-        # config already accepted via allowAllUnixSockets.
+        # the daemon as a trusted-user. Same exposure the old pi-sandbox
+        # config accepted via allowAllUnixSockets.
         users.users.agent = {
           isNormalUser = true;
           uid = 1000;
@@ -79,7 +92,7 @@ in
           useGlobalPkgs = true;
           useUserPackages = true;
           users.agent = {
-            imports = [ ../pi-coding-agent/home.nix ];
+            imports = [ ./home.nix ];
             home.stateVersion = "26.05";
 
             # No pi-sandbox in here: the container is the boundary.
@@ -95,9 +108,9 @@ in
             };
 
             home.file.".pi/agent/APPEND_SYSTEM.md".text = ''
-              # Environment: pi-dev container
+              # Environment: pi container
 
-              You are running inside `pi-dev`, an isolated NixOS container
+              You are running inside an isolated NixOS container
               (systemd-nspawn). The container is the security boundary - there
               is no sandbox wrapping your commands, so tools behave normally.
 

@@ -28,7 +28,7 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.outbound.enable = true;
-      pi-dev.enable = true;
+      pi-coding-agent.enable = true;
       steam.enable = true;
       steambox.enable = true;
       theme.enable = true;
@@ -75,10 +75,6 @@
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
-        pi-coding-agent = {
-          enable = true;
-          sandbox.enable = true;
-        };
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;

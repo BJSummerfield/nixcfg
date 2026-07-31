@@ -1,86 +1,18 @@
 { lib, config, pkgs, ... }:
 let
-  inherit (lib) mkEnableOption mkIf optionals;
+  inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.pi-coding-agent;
-  jsonFormat = pkgs.formats.json { };
-  # pi-sandbox config. Critical: ~/.pi must be in allowRead, otherwise the
-  # sandbox masks its own apply-seccomp helper (lives in ~/.pi/agent/npm)
-  # and every bash command fails with exit 127.
-  sandboxSettings = {
-    enabled = true;
-    network = {
-      allowLocalBinding = true;
-      # nix commands inside the sandbox need the nix-daemon unix socket
-      allowAllUnixSockets = true;
-      allowedDomains = [
-        "localhost"
-        "127.0.0.1"
-        "cache.nixos.org"
-        "channels.nixos.org"
-        "github.com"
-        "*.github.com"
-        "*.githubusercontent.com"
-        "registry.npmjs.org"
-        "*.npmjs.org"
-      ];
-      deniedDomains = [ ];
-    };
-    filesystem = {
-      # Don't deny /home here: on Linux bwrap must create placeholder files
-      # to mask non-existent denyWrite paths inside the cwd (.env, .gitconfig,
-      # ...), and a read-only /home layer makes that fail — every bash command
-      # dies with "Read-only file system". Mask sensitive dirs directly instead.
-      denyRead = [
-        "~/.ssh"
-        "~/.gnupg"
-      ];
-      allowRead = [
-        "."
-        "/nix"
-        "~/.pi"
-        "~/projects"
-        "~/.config"
-        "~/.cache"
-        "~/.local"
-      ];
-      allowWrite = [
-        "."
-        "/tmp"
-        "~/.cache"
-      ];
-      denyWrite = [
-        ".env"
-        ".env.*"
-        "*.pem"
-        "*.key"
-        "~/.ssh"
-        "~/.gnupg"
-      ];
-    };
-  };
 in
 {
   options.mine.user.pi-coding-agent = {
     enable = mkEnableOption "pi AI coding agent";
-    sandbox.enable = mkEnableOption "pi-sandbox (bubblewrap-based bash/filesystem/network sandboxing)";
   };
   config = mkIf cfg.enable {
-    home.file = mkIf cfg.sandbox.enable {
-      ".pi/agent/sandbox.json".source =
-        jsonFormat.generate "pi-sandbox.json" sandboxSettings;
-    };
-
     programs.pi-coding-agent = {
       enable = true;
       # npm is needed so pi can install npm packages like pi-web-access
       extraPackages = [
         pkgs.nodejs
-      ]
-      # pi-sandbox needs ripgrep (macOS/Linux), bubblewrap + socat (Linux)
-      ++ optionals cfg.sandbox.enable [
-        pkgs.ripgrep
-        pkgs.bubblewrap
-        pkgs.socat
       ];
       settings = {
         theme = "dark";
@@ -95,9 +27,6 @@ in
           "npm:pi-web-access"
           "npm:pi-token-speed"
           "npm:@monotykamary/pi-tps"
-        ]
-        ++ optionals cfg.sandbox.enable [
-          "npm:pi-sandbox"
         ];
       };
       models = {
