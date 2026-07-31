@@ -1,70 +1,116 @@
 { config, lib, pkgs, inputs, ... }:
 let
-  inherit (lib) mkEnableOption mkIf;
+  inherit (lib) genAttrs mkEnableOption mkIf mkOption range types;
   cfg = config.mine.system.pi-coding-agent;
 
-  # Host-side `pi`: runs the agent inside the container. No project
-  # directories are mounted statically - each invocation bind-mounts the
-  # caller's cwd into the running container (machinectl bind), so the agent
-  # only ever sees projects explicitly opened with `pi`. `pi stop` drops
-  # the mounts; `pi reset` additionally wipes all container state.
+  instanceNames = map (i: "pi-${toString i}") (range 1 cfg.instances);
+
+  # Shared, persistent agent home. Everything else about an instance is
+  # ephemeral: pi sessions, settings and npm-installed extensions live here
+  # and survive; anything an agent leaves outside its home and the project
+  # mount is discarded when the instance stops.
+  homeDir = "/var/lib/pi-agent-home";
+
+  # Host-side `pi`: each invocation grabs an idle instance from the pool,
+  # bind-mounts only the caller's cwd into it, runs the agent, and stops
+  # the instance (discarding its root) when the session ends. Agents are
+  # thereby isolated from each other's projects.
   launcher = pkgs.writeShellScriptBin "pi" ''
     set -euo pipefail
 
+    instances="${toString instanceNames}"
+
     case "''${1:-}" in
       stop)
-        exec sudo systemctl stop container@pi
+        for c in $instances; do
+          sudo systemctl stop "container@$c" 2>/dev/null || true
+        done
+        exit 0
         ;;
       reset)
-        sudo systemctl stop container@pi 2>/dev/null || true
-        sudo rm -rf /var/lib/nixos-containers/pi
-        echo "pi container state wiped; next run starts fresh" >&2
+        for c in $instances; do
+          sudo systemctl stop "container@$c" 2>/dev/null || true
+        done
+        sudo rm -rf ${homeDir}
+        sudo install -d -m 0700 -o 1000 -g 100 ${homeDir}
+        echo "pi agent state wiped; sessions and extensions are gone" >&2
         exit 0
         ;;
     esac
 
-    if ! systemctl is-active --quiet container@pi; then
-      echo "Starting pi container..." >&2
-      sudo systemctl start container@pi
-      # wait for the machine to register with machined
-      for _ in $(seq 1 25); do
-        machinectl status pi >/dev/null 2>&1 && break
-        sleep 0.2
-      done
+    # Serialize slot selection so concurrent launches can't grab the same
+    # idle instance.
+    exec 9>/tmp/.pi-launcher.lock
+    flock 9
+    slot=""
+    for c in $instances; do
+      if ! systemctl is-active --quiet "container@$c"; then
+        slot="$c"
+        break
+      fi
+    done
+    if [ -z "$slot" ]; then
+      echo "all ${toString cfg.instances} pi instances are busy; close one or raise mine.system.pi-coding-agent.instances" >&2
+      exit 1
     fi
+    sudo systemctl start "container@$slot"
+    flock -u 9
 
-    # Mirror the host path relative to $HOME so concurrent sessions in
-    # different projects can never collide on a mount point.
+    # Wait for the instance to register with machined and finish booting.
+    for _ in $(seq 1 100); do
+      state=$(sudo systemctl -M "$slot" is-system-running 2>/dev/null || true)
+      case "$state" in running | degraded) break ;; esac
+      sleep 0.2
+    done
+
+    # Mirror the host path relative to $HOME so session resume finds the
+    # same cwd on every launch.
     rel="''${PWD#"''${HOME}"/}"
     if [ "''${rel}" = "''${PWD}" ]; then
       rel="external/$(basename "''${PWD}")"
     fi
     dest="/home/agent/''${rel}"
-    # Fails harmlessly if this project is already bound from a previous run.
-    sudo machinectl bind --mkdir pi "''${PWD}" "''${dest}" 2>/dev/null || true
+    sudo machinectl bind --mkdir "$slot" "''${PWD}" "''${dest}"
 
     args=""
     if [ "$#" -gt 0 ]; then
       args=$(printf '%q ' "$@")
     fi
-    exec sudo machinectl shell agent@pi /bin/sh -lc "cd \"''${dest}\" && exec pi ''${args}"
+    trap 'sudo systemctl stop "container@$slot" 2>/dev/null || true' EXIT
+    sudo machinectl shell "agent@$slot" /bin/sh -lc "cd \"''${dest}\" && exec pi ''${args}"
   '';
 in
 {
   options.mine.system.pi-coding-agent = {
-    enable = mkEnableOption "pi coding agent, running inside an isolated nspawn container";
+    enable = mkEnableOption "pi coding agent, each session in its own ephemeral nspawn container";
+    instances = mkOption {
+      type = types.ints.positive;
+      default = 4;
+      description = "Maximum number of concurrently running agent sessions (size of the container pool).";
+    };
   };
 
   config = mkIf cfg.enable {
     environment.systemPackages = [ launcher ];
 
-    containers.pi = {
+    systemd.tmpfiles.rules = [ "d ${homeDir} 0700 1000 100 -" ];
+
+    containers = genAttrs instanceNames (name: {
       autoStart = false;
-      # Shares the host network namespace: DNS, the tailnet (model endpoint)
-      # and localhost all work with zero plumbing. The isolation this
-      # container provides is filesystem/process, not network - the agent
-      # is allowed full egress by design.
+      # Empty root bootstrapped on every start, discarded on stop. The
+      # only state that survives is the shared home bind below and the
+      # project mount (which is the user's real directory anyway).
+      ephemeral = true;
+      # Shares the host network namespace: DNS, the tailnet (model
+      # endpoint) and localhost all work with zero plumbing. The isolation
+      # this container provides is filesystem/process, not network - the
+      # agent is allowed full egress by design.
       privateNetwork = false;
+
+      bindMounts."/home/agent" = {
+        hostPath = homeDir;
+        isReadOnly = false;
+      };
 
       config = { pkgs, ... }: {
         imports = [ inputs.home-manager.nixosModules.home-manager ];
@@ -114,33 +160,38 @@ in
             };
 
             home.file.".pi/agent/APPEND_SYSTEM.md".text = ''
-              # Environment: pi container
+              # Environment: ephemeral pi container
 
-              You are running inside an isolated NixOS container
-              (systemd-nspawn). The container is the security boundary - there
-              is no sandbox wrapping your commands, so tools behave normally.
+              You are running inside an ephemeral NixOS container
+              (systemd-nspawn) created for this session. The container is
+              the security boundary - there is no sandbox wrapping your
+              commands, so tools behave normally.
 
               - The project you were opened in is bind-mounted at the same
                 home-relative path as on the host (e.g. ~/projects/<name>).
                 These are the user's real files; edits are immediately
-                visible on the host. Everything else in this filesystem is
-                disposable container state.
+                visible on the host and survive the session.
+              - Your home directory persists across sessions and is shared
+                with the user's other agent sessions; pi sessions and
+                installed extensions live there. Everything outside your
+                home and the project mount is discarded when this session
+                ends.
               - Host secrets (SSH keys, GPG, password stores, browser
-                profiles) do not exist here. If git push or any authenticated
-                operation fails, report it and let the user run it from the
-                host - do not hunt for credentials.
+                profiles) do not exist here. If git push or any
+                authenticated operation fails, report it and let the user
+                run it from the host - do not hunt for credentials.
               - You have unrestricted network access.
               - Missing tools: install them yourself. Prefer
                 `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (pinned,
-                shared store, no download for anything the host already has);
-                npm/pip/cargo also work. There is no sudo and you will never
-                need it.
+                shared store, no download for anything the host already
+                has); npm/pip/cargo also work. There is no sudo and you
+                will never need it.
             '';
           };
         };
 
         system.stateVersion = "26.05";
       };
-    };
+    });
   };
 }
