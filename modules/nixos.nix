@@ -17,6 +17,7 @@
     ./makemkv/nixos.nix
     ./niri/nixos.nix
     ./openssh/nixos.nix
+    ./pi-dev/nixos.nix
     ./pipewire/nixos.nix
     ./redlib/nixos.nix
     ./stalwart-server/nixos.nix
