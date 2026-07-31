@@ -33,7 +33,13 @@ let
       done
     fi
 
-    dest="/home/agent/projects/$(basename "''${PWD}")"
+    # Mirror the host path relative to $HOME so concurrent sessions in
+    # different projects can never collide on a mount point.
+    rel="''${PWD#"''${HOME}"/}"
+    if [ "''${rel}" = "''${PWD}" ]; then
+      rel="external/$(basename "''${PWD}")"
+    fi
+    dest="/home/agent/''${rel}"
     # Fails harmlessly if this project is already bound from a previous run.
     sudo machinectl bind --mkdir pi "''${PWD}" "''${dest}" 2>/dev/null || true
 
@@ -114,10 +120,11 @@ in
               (systemd-nspawn). The container is the security boundary - there
               is no sandbox wrapping your commands, so tools behave normally.
 
-              - The project you were opened in is bind-mounted under
-                ~/projects/<name>. These are the user's real files; edits are
-                immediately visible on the host. Everything else in this
-                filesystem is disposable container state.
+              - The project you were opened in is bind-mounted at the same
+                home-relative path as on the host (e.g. ~/projects/<name>).
+                These are the user's real files; edits are immediately
+                visible on the host. Everything else in this filesystem is
+                disposable container state.
               - Host secrets (SSH keys, GPG, password stores, browser
                 profiles) do not exist here. If git push or any authenticated
                 operation fails, report it and let the user run it from the
