@@ -33,7 +33,7 @@
         hostConfig = ./niri.kdl;
       };
       openssh.outbound.enable = true;
-      pi-coding-agent.enable = true;
+      coding-agents.enable = true;
       pipewire.sample-switch.enable = true;
       theme.enable = true;
       steam.enable = true;

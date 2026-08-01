@@ -1,7 +1,8 @@
-# NixOS configuration shared by every instance in the pi container pool.
-# Imported per-instance by nixos.nix; `inputs` is the host flake's inputs.
-{ inputs }:
-{ pkgs, ... }:
+# NixOS configuration shared by every instance in the agent container
+# pool. Imported per-instance by nixos.nix; `inputs` is the host flake's
+# inputs, `agents` the per-agent toggles from the host's options.
+{ inputs, agents }:
+{ pkgs, lib, ... }:
 {
   imports = [ inputs.home-manager.nixosModules.home-manager ];
 
@@ -13,7 +14,7 @@
   users.users.agent = {
     isNormalUser = true;
     uid = 1000;
-    description = "pi coding agent";
+    description = "coding agent";
   };
 
   # nix builds go through the host daemon; the store is shared
@@ -23,22 +24,36 @@
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
 
+  nixpkgs.config.allowUnfreePredicate = pkg:
+    builtins.elem (lib.getName pkg) [ "claude-code" ];
+
   environment.systemPackages = with pkgs; [
     curl
     fd
     jq
     ripgrep
-  ];
+  ] ++ lib.optionals agents.claude [ claude-code ];
+
+  # Claude keeps its login/config in the state dir the launcher
+  # bind-mounts from the host; the nix-store binary can't self-update.
+  environment.sessionVariables = {
+    CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
+    DISABLE_AUTOUPDATER = "1";
+  };
 
   home-manager = {
     useGlobalPkgs = true;
     useUserPackages = true;
     users.agent = {
-      imports = [ ./home.nix ];
+      imports = [
+        ../opencode/home.nix
+        ../pi-coding-agent/home.nix
+      ];
       home.stateVersion = "26.05";
 
       # No pi-sandbox in here: the container is the boundary.
-      mine.user.pi-coding-agent.enable = true;
+      mine.user.opencode.enable = agents.opencode;
+      mine.user.pi-coding-agent.enable = agents.pi;
 
       # Unsigned commits: the signing key stays on the host.
       programs.git = {
@@ -49,7 +64,7 @@
         };
       };
 
-      home.file.".pi/agent/APPEND_SYSTEM.md".source = ./APPEND_SYSTEM.md;
+      home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
     };
   };
 

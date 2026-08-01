@@ -52,10 +52,18 @@
         });
 
       packages = forAllSystems (system:
-        let pkgs = nixpkgs.legacyPackages.${system};
-        in nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          # OCI image for running pi on docker-based hosts (macOS).
-          pi-agent-image = import ./modules/pi-coding-agent/image.nix { inherit pkgs; };
+        let
+          # Own instantiation instead of legacyPackages: the image bakes in
+          # claude-code, which is unfree.
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfreePredicate = pkg:
+              builtins.elem (nixpkgs.lib.getName pkg) [ "claude-code" ];
+          };
+        in
+        nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # OCI image for running the coding agents on docker-based hosts (macOS).
+          coding-agents-image = import ./modules/coding-agents/image.nix { inherit pkgs; };
         });
 
       darwinConfigurations = {

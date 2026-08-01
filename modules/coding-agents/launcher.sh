@@ -1,10 +1,12 @@
-# Host-side `pi`: each invocation grabs an idle instance from the pool,
-# bind-mounts only the caller's cwd into it, runs the agent, and stops
-# the instance (discarding its root) when the session ends. Agents are
-# thereby isolated from each other's projects.
+# Host-side agent launcher: each invocation grabs an idle instance from
+# the pool, bind-mounts only the caller's cwd into it, runs the agent, and
+# stops the instance (discarding its root) when the session ends. Agents
+# are thereby isolated from each other's projects.
 #
 # Sourced into a writeShellScriptBin by nixos.nix, which defines
-# $instances (space-separated slot names) and $max_instances.
+# $instances (space-separated slot names), $max_instances, $agent_cmd and
+# optionally $state_src/$state_dest (a host dir bind-mounted in for agents
+# that need persistent state, e.g. claude's login).
 
 case "${1:-}" in
   stop)
@@ -17,7 +19,7 @@ esac
 
 # Serialize slot selection so concurrent launches can't grab the same
 # idle instance.
-exec 9>/tmp/.pi-launcher.lock
+exec 9>/tmp/.coding-agents-launcher.lock
 flock 9
 slot=""
 for c in $instances; do
@@ -27,7 +29,7 @@ for c in $instances; do
   fi
 done
 if [ -z "$slot" ]; then
-  echo "all $max_instances pi instances are busy; close one or raise mine.system.pi-coding-agent.instances" >&2
+  echo "all $max_instances agent sandboxes are busy; close one or raise mine.system.coding-agents.instances" >&2
   exit 1
 fi
 sudo systemctl start "container@$slot"
@@ -49,9 +51,14 @@ fi
 dest="/home/agent/$rel"
 sudo machinectl bind --mkdir "$slot" "$PWD" "$dest"
 
+if [ -n "$state_src" ]; then
+  mkdir -p "$state_src"
+  sudo machinectl bind --mkdir "$slot" "$state_src" "$state_dest"
+fi
+
 args=""
 if [ "$#" -gt 0 ]; then
   args=$(printf '%q ' "$@")
 fi
 trap 'sudo systemctl stop "container@$slot" 2>/dev/null || true' EXIT
-sudo machinectl shell "agent@$slot" /bin/sh -lc "cd \"$dest\" && exec pi $args"
+sudo machinectl shell "agent@$slot" /bin/sh -lc "cd \"$dest\" && exec $agent_cmd $args"
