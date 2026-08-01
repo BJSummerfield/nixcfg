@@ -43,7 +43,7 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [ "onepassword" "t495" ];
+    users.waktu.authorizedKeys = [ "onepassword" "t495" "mac" ];
   };
   home-manager.users = {
     waktu = { config, ... }: {
