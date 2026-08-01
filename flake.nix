@@ -12,6 +12,11 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
@@ -39,6 +44,15 @@
           # OCI image for running pi on docker-based hosts (macOS).
           pi-agent-image = import ./modules/pi-coding-agent/image.nix { inherit pkgs; };
         });
+
+      darwinConfigurations = {
+        mac = inputs.nix-darwin.lib.darwinSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/mac ];
+        };
+      };
 
       nixosConfigurations = {
         elitebook = nixpkgs.lib.nixosSystem {
