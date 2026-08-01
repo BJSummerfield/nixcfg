@@ -16,7 +16,7 @@ stdenv.mkDerivation rec {
 
     cat <<EOF > $out/bin/bicep-langserver
     #!/usr/bin/env bash
-    exec ${dotnetCorePackages.dotnet_8.sdk} $out/bin/Bicep.LangServer/Bicep.LangServer.dll "\$@"
+    exec ${dotnetCorePackages.dotnet_8.sdk}/bin/dotnet $out/bin/Bicep.LangServer/Bicep.LangServer.dll "\$@"
     EOF
     chmod +x $out/bin/bicep-langserver
   '';
