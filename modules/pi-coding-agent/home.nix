@@ -2,6 +2,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.pi-coding-agent;
+  data = import ./settings.nix;
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -10,11 +11,7 @@ in
   config = mkIf cfg.enable {
     # pi-web-access provider config (keyless); seeded declaratively so
     # ephemeral containers start with search already configured.
-    home.file.".pi/agent/web-search.json".text = builtins.toJSON {
-      workflow = "auto-summary";
-      provider = "exa";
-      curatorTimeoutSeconds = 20;
-    };
+    home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
     programs.pi-coding-agent = {
       enable = true;
@@ -22,68 +19,8 @@ in
       extraPackages = [
         pkgs.nodejs
       ];
-      settings = {
-        theme = "dark";
-        model = {
-          provider = "redtruck";
-          model = "Qwen3.6-35B-A3B-MTP-Q4";
-        };
-        defaultProvider = "redtruck";
-        defaultModel = "Qwen3.6-27B-MTP-Q4";
-        defaultThinkingLevel = "high";
-        packages = [
-          "npm:pi-web-access"
-          "npm:pi-token-speed"
-          "npm:@monotykamary/pi-tps"
-        ];
-      };
-      models = {
-        providers = {
-          redtruck = {
-            baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
-            api = "openai-completions";
-            apiKey = "dummy";
-            compat = {
-              supportsDeveloperRole = false;
-              supportsReasoningEffort = false;
-            };
-            models = [
-              {
-                id = "Qwen3.6-35B-A3B-MTP-Q4";
-                name = "Qwen3.6 35B A3B (redtruck)";
-                reasoning = true;
-                contextWindow = 131072;
-                maxTokens = 32768;
-              }
-              {
-                id = "Qwen3.6-27B-MTP-Q4";
-                name = "Qwen3.6 27B (redtruck)";
-                reasoning = true;
-                contextWindow = 96000;
-                maxTokens = 32768;
-              }
-            ];
-          };
-          robin = {
-            baseUrl = "http://84.216.57.22:8080/v1";
-            api = "openai-completions";
-            apiKey = "dummy";
-            compat = {
-              supportsDeveloperRole = false;
-              supportsReasoningEffort = false;
-            };
-            models = [
-              {
-                id = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF";
-                name = "Qwen3 Coder 30B A3B (robin)";
-                reasoning = false;
-                contextWindow = 131072;
-                maxTokens = 32768;
-              }
-            ];
-          };
-        };
-      };
+      settings = data.settings;
+      models = data.models;
     };
   };
 }

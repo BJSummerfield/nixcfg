@@ -33,6 +33,13 @@
           };
         });
 
+      packages = forAllSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # OCI image for running pi on docker-based hosts (macOS).
+          pi-agent-image = import ./modules/pi-coding-agent/image.nix { inherit pkgs; };
+        });
+
       nixosConfigurations = {
         elitebook = nixpkgs.lib.nixosSystem {
           specialArgs = {
