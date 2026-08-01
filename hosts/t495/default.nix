@@ -28,7 +28,7 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.outbound.enable = true;
-      pi-coding-agent.enable = true;
+      coding-agents.enable = true;
       steam.enable = true;
       steambox.enable = true;
       theme.enable = true;

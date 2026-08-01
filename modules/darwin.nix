@@ -5,7 +5,7 @@
     ./firefox/darwin.nix
     ./homebrew/darwin.nix
     ./keybase/darwin.nix
-    ./pi-coding-agent/darwin.nix
+    ./coding-agents/darwin.nix
     ./system/darwin.nix
     ./unfree/darwin.nix
     ./users/darwin.nix

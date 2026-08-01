@@ -27,7 +27,7 @@
     _1password.enable = true;
     firefox.enable = true;
     keybase.enable = true;
-    pi-coding-agent.enable = true;
+    coding-agents.enable = true;
   };
 
   environment.systemPackages = with pkgs; [
