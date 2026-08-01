@@ -2,6 +2,9 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
+  theme = import ../theme/constants.nix;
+  inherit (theme) colors;
+  mono = theme.fonts.monospace.name;
 in
 {
   options.mine.user.alacritty = {
@@ -15,93 +18,93 @@ in
         font = {
           size = 14;
           normal = {
-            family = "MonaspiceNe Nerd Font";
+            family = mono;
             style = "Regular";
           };
           bold = {
-            family = "MonaspiceNe Nerd Font";
+            family = mono;
             style = "Bold";
           };
           italic = {
-            family = "MonaspiceNe Nerd Font";
+            family = mono;
             style = "Italic";
           };
           bold_italic = {
-            family = "MonaspiceNe Nerd Font";
+            family = mono;
             style = "Bold Italic";
           };
         };
         colors = {
           primary = {
-            background = "#1e1e2e";
-            foreground = "#cdd6f4";
-            dim_foreground = "#7f849c";
-            bright_foreground = "#cdd6f4";
+            background = "#${colors.base00}";
+            foreground = "#${colors.base05}";
+            dim_foreground = "#${colors.overlay1}";
+            bright_foreground = "#${colors.base05}";
           };
           cursor = {
-            text = "#1e1e2e";
-            cursor = "#f5e0dc";
+            text = "#${colors.base00}";
+            cursor = "#${colors.base06}";
           };
           vi_mode_cursor = {
-            text = "#1e1e2e";
-            cursor = "#b4befe";
+            text = "#${colors.base00}";
+            cursor = "#${colors.base07}";
           };
           search = {
             matches = {
-              foreground = "#1e1e2e";
-              background = "#a6adc8";
+              foreground = "#${colors.base00}";
+              background = "#${colors.base04}";
             };
             focused_match = {
-              foreground = "#1e1e2e";
-              background = "#a6e3a1";
+              foreground = "#${colors.base00}";
+              background = "#${colors.base0B}";
             };
           };
           footer_bar = {
-            foreground = "#1e1e2e";
-            background = "#a6adc8";
+            foreground = "#${colors.base00}";
+            background = "#${colors.base04}";
           };
           hints = {
             start = {
-              foreground = "#1e1e2e";
-              background = "#f9e2af";
+              foreground = "#${colors.base00}";
+              background = "#${colors.base0A}";
             };
             end = {
-              foreground = "#1e1e2e";
-              background = "#a6adc8";
+              foreground = "#${colors.base00}";
+              background = "#${colors.base04}";
             };
           };
           selection = {
-            text = "#1e1e2e";
-            background = "#f5e0dc";
+            text = "#${colors.base00}";
+            background = "#${colors.base06}";
           };
           normal = {
-            black = "#45475a";
-            red = "#f38ba8";
-            green = "#a6e3a1";
-            yellow = "#f9e2af";
-            blue = "#89b4fa";
-            magenta = "#f5c2e7";
-            cyan = "#94e2d5";
-            white = "#bac2de";
+            black = "#${colors.base02}";
+            red = "#${colors.base08}";
+            green = "#${colors.base0B}";
+            yellow = "#${colors.base0A}";
+            blue = "#${colors.base0D}";
+            magenta = "#${colors.pink}";
+            cyan = "#${colors.base0C}";
+            white = "#${colors.subtext1}";
           };
           bright = {
-            black = "#585b70";
-            red = "#f38ba8";
-            green = "#a6e3a1";
-            yellow = "#f9e2af";
-            blue = "#89b4fa";
-            magenta = "#f5c2e7";
-            cyan = "#94e2d5";
-            white = "#a6adc8";
+            black = "#${colors.surface2}";
+            red = "#${colors.base08}";
+            green = "#${colors.base0B}";
+            yellow = "#${colors.base0A}";
+            blue = "#${colors.base0D}";
+            magenta = "#${colors.pink}";
+            cyan = "#${colors.base0C}";
+            white = "#${colors.base04}";
           };
           indexed_colors = [
-            { index = 16; color = "#fab387"; }
-            { index = 17; color = "#f5e0dc"; }
+            { index = 16; color = "#${colors.base09}"; }
+            { index = 17; color = "#${colors.base06}"; }
           ];
         };
         window = {
           decorations = "buttonless";
-          opacity = 0.8;
+          opacity = theme.opacity.terminal;
           padding = {
             x = 5;
             y = 5;

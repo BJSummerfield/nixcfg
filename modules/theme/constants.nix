@@ -20,6 +20,12 @@
     base0D = "89b4fa"; # blue
     base0E = "cba6f7"; # magenta
     base0F = "f2cdcd"; # brown
+
+    # Catppuccin slots outside base16, used by the terminal palette
+    surface2 = "585b70"; # bright black
+    overlay1 = "7f849c"; # dim foreground
+    subtext1 = "bac2de"; # terminal white
+    pink = "f5c2e7"; # terminal magenta
   };
 
   fonts = {

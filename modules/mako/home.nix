@@ -2,6 +2,8 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.mako;
+  theme = import ../theme/constants.nix;
+  inherit (theme) colors;
 in
 {
   options.mine.user.mako.enable = mkEnableOption "Enable Mako config";
@@ -9,11 +11,11 @@ in
     services.mako = {
       enable = true;
       settings = {
-        background-color = "#1e1e2ecc";
-        text-color = "#cdd6f4";
-        border-color = "#89b4fa";
-        progress-color = "over #313244";
-        font = "MonaspiceNe Nerd Font 13";
+        background-color = "#${colors.base00}cc";
+        text-color = "#${colors.base05}";
+        border-color = "#${colors.base0D}";
+        progress-color = "over #${colors.base01}";
+        font = "${theme.fonts.monospace.name} 13";
         anchor = "top-right";
         layer = "overlay";
         margin = "0";
@@ -29,15 +31,15 @@ in
         history = true;
 
         "urgency=critical" = {
-          background-color = "#1e1e2ecc";
-          text-color = "#cdd6f4";
-          border-color = "#f38ba8";
+          background-color = "#${colors.base00}cc";
+          text-color = "#${colors.base05}";
+          border-color = "#${colors.base08}";
           default-timeout = 0;
         };
         "urgency=low" = {
-          background-color = "#1e1e2ecc";
-          text-color = "#cdd6f4";
-          border-color = "#6c7086";
+          background-color = "#${colors.base00}cc";
+          text-color = "#${colors.base05}";
+          border-color = "#${colors.base03}";
         };
       };
     };
