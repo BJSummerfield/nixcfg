@@ -35,6 +35,9 @@ in
     # Managed NixOS build VM so this mac can build the aarch64-linux image.
     nix.linux-builder.enable = true;
 
+    # The launcher shells out to docker at runtime.
+    homebrew.casks = [ "docker-desktop" ];
+
     environment.systemPackages = [ launcher ];
   };
 }
