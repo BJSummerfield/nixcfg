@@ -87,6 +87,7 @@
         mako.enable = true;
         obs-studio.enable = true;
         polkit-kde.enable = true;
+        subtitleedit.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
       };
@@ -103,7 +104,6 @@
         jellyfin-tui
         lumen
         picard
-        subtitleedit
       ];
       home.file =
         let
