@@ -1,0 +1,18 @@
+{ inputs, ... }: {
+  imports = [
+    inputs.mac-app-util.darwinModules.default
+    ./_1password/darwin.nix
+    ./firefox/darwin.nix
+    ./homebrew/darwin.nix
+    ./keybase/darwin.nix
+    ./pi-coding-agent/darwin.nix
+    ./system/darwin.nix
+    ./unfree/darwin.nix
+    ./users/darwin.nix
+  ];
+
+  home-manager.sharedModules = [
+    ./home-darwin.nix
+    inputs.mac-app-util.homeManagerModules.default
+  ];
+}

@@ -12,6 +12,24 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
+    # Trampoline app bundles for nix-installed apps so Spotlight can index
+    # them (it refuses to follow the symlinks home-manager makes).
+    mac-app-util = {
+      url = "github:hraban/mac-app-util";
+      # collapse its transitive pins (incl. two extra full nixpkgs
+      # snapshots) onto ours so every host isn't fetching dead weight
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
+        cl-nix-lite.inputs.nixpkgs.follows = "nixpkgs";
+        cl-nix-lite.inputs.treefmt-nix.follows = "mac-app-util/treefmt-nix";
+      };
+    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
@@ -32,6 +50,22 @@
             ];
           };
         });
+
+      packages = forAllSystems (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          # OCI image for running pi on docker-based hosts (macOS).
+          pi-agent-image = import ./modules/pi-coding-agent/image.nix { inherit pkgs; };
+        });
+
+      darwinConfigurations = {
+        mac = inputs.nix-darwin.lib.darwinSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/mac ];
+        };
+      };
 
       nixosConfigurations = {
         elitebook = nixpkgs.lib.nixosSystem {

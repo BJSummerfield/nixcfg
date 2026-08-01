@@ -49,7 +49,7 @@
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" ];
+    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" "mac" ];
   };
   home-manager.users = {
     waktu = {

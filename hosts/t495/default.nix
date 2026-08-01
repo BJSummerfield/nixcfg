@@ -38,7 +38,7 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" ];
+    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "mac" ];
   };
   home-manager.users = {
     waktu = {
