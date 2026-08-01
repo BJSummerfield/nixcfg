@@ -23,22 +23,23 @@
     shell = pkgs.fish;
   };
 
-  mine.system.pi-coding-agent.enable = true;
-  mine.allowedUnfree = [ "1password-cli" ];
+  mine.system = {
+    _1password.enable = true;
+    firefox.enable = true;
+    keybase.enable = true;
+    pi-coding-agent.enable = true;
+  };
 
   environment.systemPackages = with pkgs; [
-    _1password-cli
     ffmpeg
   ];
 
+  # Mac-only apps; anything shared with the nixos hosts is cask-managed
+  # by its module instead.
   homebrew = {
-    brews = [ "libaacs" ];
     casks = [
-      "1password"
       "docker-desktop"
-      "firefox"
       "hammerspoon"
-      "keybase"
       "microsoft-teams"
       "tailscale-app"
       "utm"
