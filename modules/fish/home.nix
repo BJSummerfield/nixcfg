@@ -36,7 +36,7 @@ in
   options.mine.user.fish.enable = mkEnableOption "User Fish Config";
 
   config = mkIf config.mine.user.fish.enable {
-    xdg.configFile."fish/themes/fish-theme".text = themeFile;
+    xdg.configFile."fish/themes/fish-theme.theme".text = themeFile;
     programs.fish = {
       enable = true;
       interactiveShellInit = ''
