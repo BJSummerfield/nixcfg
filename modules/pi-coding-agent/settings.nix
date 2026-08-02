@@ -33,14 +33,14 @@
             id = "Qwen3.6-35B-A3B-MTP-Q4";
             name = "Qwen3.6 35B A3B (redtruck)";
             reasoning = true;
-            contextWindow = 131072;
+            contextWindow = 92160;
             maxTokens = 32768;
           }
           {
             id = "Qwen3.6-27B-MTP-Q4";
             name = "Qwen3.6 27B (redtruck)";
             reasoning = true;
-            contextWindow = 96000;
+            contextWindow = 122880;
             maxTokens = 32768;
           }
         ];
@@ -58,7 +58,7 @@
             id = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF";
             name = "Qwen3 Coder 30B A3B (robin)";
             reasoning = false;
-            contextWindow = 131072;
+            contextWindow = 122880;
             maxTokens = 32768;
           }
         ];

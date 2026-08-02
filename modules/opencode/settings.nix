@@ -7,6 +7,10 @@
     provider."redtruck" = {
       options.baseURL = "https://llm.mist-gamma.ts.net:8443/v1";
       models."Qwen3.6-35B-A3B-MTP-Q4" = {
+        limit = {
+          context = 92160;
+          output = 32768;
+        };
         options = {
           temperature = 0.6;
           top_p = 0.95;
@@ -15,6 +19,10 @@
         };
       };
       models."Qwen3.6-27B-MTP-Q4" = {
+        limit = {
+          context = 122880;
+          output = 32768;
+        };
         options = {
           temperature = 0.6;
           top_p = 0.95;
