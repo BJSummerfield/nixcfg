@@ -17,13 +17,26 @@ case "${1:-}" in
     ;;
 esac
 
+# The in-container agent user must match the caller's uid for bind-mounted
+# files to be writable; uids are auto-allocated per host, so flag the
+# mismatch before wasting a session on it.
+if [ "$(id -u)" != "$agent_uid" ]; then
+  echo "WARNING: you are uid $(id -u) but the sandbox agent runs as uid $agent_uid;" >&2
+  echo "WARNING: your files will not be writable inside. Set mine.system.coding-agents.agentUid = $(id -u); for this host." >&2
+fi
+
 # Serialize slot selection so concurrent launches can't grab the same
 # idle instance.
 exec 9>/tmp/.coding-agents-launcher.lock
 flock 9
 slot=""
 for c in $instances; do
-  if ! systemctl is-active --quiet "container@$c"; then
+  # A slot is free only when fully stopped. "deactivating" (a session
+  # that just ended) still has the old machine registered with machined,
+  # and starting/binding against it races the shutdown - binds can land
+  # in the dying instance while the shell reaches the fresh one.
+  state=$(systemctl show -P ActiveState "container@$c" 2>/dev/null || echo unknown)
+  if [ "$state" = "inactive" ] || [ "$state" = "failed" ]; then
     slot="$c"
     break
   fi
@@ -33,14 +46,23 @@ if [ -z "$slot" ]; then
   exit 1
 fi
 sudo systemctl start "container@$slot"
+# From here the slot is ours to clean up: register the trap before the
+# binds, and on signals too, so a failed bind or a closed terminal can't
+# leak a running container.
+trap 'sudo systemctl stop "container@$slot" 2>/dev/null || true' EXIT HUP INT TERM
 flock -u 9
 
 # Wait for the instance to register with machined and finish booting.
+booted=""
 for _ in $(seq 1 100); do
   state=$(sudo systemctl -M "$slot" is-system-running 2>/dev/null || true)
-  case "$state" in running | degraded) break ;; esac
+  case "$state" in running | degraded) booted=1; break ;; esac
   sleep 0.2
 done
+if [ -z "$booted" ]; then
+  echo "agent container $slot did not finish booting" >&2
+  exit 1
+fi
 
 # Mirror the host path relative to $HOME so two projects with the same
 # basename can never collide on a mount point.
@@ -60,5 +82,17 @@ args=""
 if [ "$#" -gt 0 ]; then
   args=$(printf '%q ' "$@")
 fi
-trap 'sudo systemctl stop "container@$slot" 2>/dev/null || true' EXIT
-sudo machinectl shell "agent@$slot" /bin/sh -lc "cd \"$dest\" && exec $agent_cmd $args"
+# The in-container preamble warns loudly when the agent can't write where
+# it must: an unwritable project dir means the agent silently builds in
+# its ephemeral home (discarded on stop), an unwritable state dir means
+# logins don't survive the session.
+sudo machinectl shell "agent@$slot" /bin/sh -lc "
+  cd \"$dest\" || exit 1
+  if [ ! -w . ]; then
+    echo \"WARNING: $dest is not writable by the agent user (uid \$(id -u), groups: \$(id -Gn)).\" >&2
+    echo \"WARNING: anything the agent writes outside it is DISCARDED when the session ends.\" >&2
+  fi
+  if [ -n \"$state_dest\" ] && [ ! -w \"$state_dest\" ]; then
+    echo \"WARNING: $state_dest is not writable; login/config state will not survive this session.\" >&2
+  fi
+  exec $agent_cmd $args"

@@ -14,9 +14,10 @@ let
   # image don't cause a rebuild or re-load.
   imageOut = builtins.unsafeDiscardStringContext image.outPath;
 
-  mkLauncher = { name, cmd, extraDockerArgs ? [ ] }:
+  mkLauncher = { name, cmd, extraDockerArgs ? [ ], setup ? "" }:
     pkgs.writeShellScriptBin name ''
       set -euo pipefail
+      ${setup}
       tag=$(basename ${imageOut} | cut -c1-8)
       if ! docker image inspect "coding-agents:$tag" >/dev/null 2>&1; then
         echo "building coding-agents image (first run after an update takes a while)..." >&2
@@ -40,6 +41,9 @@ let
       (mkLauncher {
         name = "claude";
         cmd = "claude";
+        # Pre-create the state dir: docker creates missing -v host dirs
+        # itself, owned by root, which would break state persistence.
+        setup = ''mkdir -p "$HOME/.local/state/claude-sandbox"'';
         extraDockerArgs = [ ''-v "$HOME/.local/state/claude-sandbox:/root/.claude-state"'' ];
       })
     ];

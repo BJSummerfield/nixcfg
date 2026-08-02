@@ -10,6 +10,7 @@
     mine.users.waktu = {
       description = "Brian Summerfield";
       isSuperUser = true;
+      uid = 1000;
 
       hashedPasswordFile = config.sops.secrets."waktu/password_hash".path;
       sshKeys = {

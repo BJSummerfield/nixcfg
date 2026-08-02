@@ -1,21 +1,31 @@
 # NixOS configuration shared by every instance in the agent container
 # pool. Imported per-instance by nixos.nix; `inputs` is the host flake's
-# inputs, `agents` the per-agent toggles from the host's options.
-{ inputs, agents }:
+# inputs, `agents` the per-agent toggles from the host's options,
+# `sharedGroups` the admin's static-gid groups (name -> gid) mirrored in
+# so group-permissioned bind mounts stay writable, `agentUid` the uid of
+# the host user who runs the sandboxes.
+{ inputs, agents, sharedGroups, agentUid }:
 { pkgs, lib, ... }:
 {
   imports = [ inputs.home-manager.nixosModules.home-manager ];
 
   # Same uid as the host user so bind-mounted project files stay
-  # writable. nixos containers bind the host nix-daemon socket by
-  # default, so the daemon sees this uid - i.e. the agent talks to
-  # the daemon as a trusted-user. Same exposure the old pi-sandbox
-  # config accepted via allowAllUnixSockets.
+  # writable (uids are auto-allocated per host, hence the option), and
+  # the same supplementary groups for trees where write access comes
+  # from a group rather than ownership (e.g. the NAS media-rw share).
+  # nixos containers bind the host nix-daemon socket by default, so the
+  # daemon sees this uid - i.e. the agent talks to the daemon as a
+  # trusted-user. Same exposure the old pi-sandbox config accepted via
+  # allowAllUnixSockets.
   users.users.agent = {
     isNormalUser = true;
-    uid = 1000;
+    uid = agentUid;
     description = "coding agent";
+    extraGroups = lib.attrNames sharedGroups;
   };
+  # No user namespacing on these containers, so matching gids here means
+  # matching permissions on the host filesystem.
+  users.groups = lib.mapAttrs (_: gid: { inherit gid; }) sharedGroups;
 
   # nix builds go through the host daemon; the store is shared
   # read-only. Pin the registry so `nix shell nixpkgs#foo` resolves

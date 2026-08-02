@@ -16,6 +16,18 @@ in
         description = mkOption { type = types.str; default = ""; };
         hashedPasswordFile = mkOption { type = types.str; };
 
+        uid = mkOption {
+          type = types.nullOr types.int;
+          default = null;
+          description = ''
+            Static uid, identical on every host. Without it NixOS
+            allocates uids first-come per machine, so the same user can
+            end up with different uids on different hosts - which breaks
+            anything keyed on numeric ownership, like the coding-agents
+            bind mounts.
+          '';
+        };
+
         sshKeys = mkOption {
           type = types.attrsOf types.str;
           default = { };
@@ -72,7 +84,7 @@ in
     users.users = lib.mapAttrs
       (name: user: {
         isNormalUser = true;
-        inherit (user) description hashedPasswordFile shell;
+        inherit (user) description hashedPasswordFile shell uid;
         extraGroups = [ "networkmanager" ] ++ lib.optional user.isSuperUser "wheel";
         openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
       })

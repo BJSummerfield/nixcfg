@@ -9,6 +9,7 @@
 
     mine.users.jellyuser = {
       description = "jellyfin user";
+      uid = 1003;
       hashedPasswordFile = config.sops.secrets."jellyuser/password_hash".path;
     };
   };

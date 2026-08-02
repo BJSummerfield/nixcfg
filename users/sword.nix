@@ -9,6 +9,7 @@
 
     mine.users.sword = {
       description = "Martin";
+      uid = 1002;
       hashedPasswordFile = config.sops.secrets."sword/password_hash".path;
     };
   };
