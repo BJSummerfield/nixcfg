@@ -31,18 +31,18 @@ in
     };
 
     # closing the lid shouldn't kill playback when docked / on AC.
-    services.logind.lidSwitch = lib.mkDefault "suspend";
-    services.logind.lidSwitchDocked = lib.mkDefault "ignore";
-    services.logind.lidSwitchExternalPower = lib.mkDefault "ignore";
+    services.logind.settings.Login.HandleLidSwitch = lib.mkDefault "suspend";
+    services.logind.settings.Login.HandleLidSwitchDocked = lib.mkDefault "ignore";
+    services.logind.settings.Login.HandleLidSwitchExternalPower = lib.mkDefault "ignore";
 
     mine.system.gamescope.enable = true;
 
     environment.systemPackages = [ pkgs.jellyfin-media-player ];
     specialisation.maintenance.configuration = {
       services.greetd.enable = lib.mkForce false;
-      services.logind.lidSwitch = lib.mkForce "suspend";
-      services.logind.lidSwitchDocked = lib.mkForce "suspend";
-      services.logind.lidSwitchExternalPower = lib.mkForce "suspend";
+      services.logind.settings.Login.HandleLidSwitch = lib.mkForce "suspend";
+      services.logind.settings.Login.HandleLidSwitchDocked = lib.mkForce "suspend";
+      services.logind.settings.Login.HandleLidSwitchExternalPower = lib.mkForce "suspend";
     };
   };
 }
