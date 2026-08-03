@@ -1,10 +1,9 @@
-{ lib, config, ... }:
+{ lib, config, themeConstants, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
-  theme = import ../theme/constants.nix;
-  inherit (theme) colors;
-  mono = theme.fonts.monospace.name;
+  inherit (themeConstants) colors;
+  mono = themeConstants.fonts.monospace.name;
 in
 {
   options.mine.user.alacritty = {
@@ -16,7 +15,7 @@ in
       enable = true;
       settings = {
         font = {
-          size = 14;
+          size = themeConstants.fonts.sizes.terminal;
           normal = {
             family = mono;
             style = "Regular";
@@ -104,7 +103,7 @@ in
         };
         window = {
           decorations = "buttonless";
-          opacity = theme.opacity.terminal;
+          opacity = themeConstants.opacity.terminal;
           padding = {
             x = 5;
             y = 5;

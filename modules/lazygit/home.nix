@@ -1,7 +1,7 @@
-{ lib, config, ... }:
+{ lib, config, themeConstants, ... }:
 let
   inherit (lib) mkIf mkEnableOption;
-  inherit (import ../theme/constants.nix) colors;
+  inherit (themeConstants) colors;
 in
 {
   options.mine.user.lazygit.enable = mkEnableOption "User Lazygit";

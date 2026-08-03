@@ -1,8 +1,8 @@
-{ pkgs, config, lib, ... }:
+{ lib, config, pkgs, themeConstants, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.swaylock;
-  inherit (import ../theme/constants.nix) colors;
+  inherit (themeConstants) colors;
 in
 {
   options.mine.user.swaylock.enable = mkEnableOption "Enable swaylock config";
