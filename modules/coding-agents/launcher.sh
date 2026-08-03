@@ -86,7 +86,13 @@ fi
 # it must: an unwritable project dir means the agent silently builds in
 # its ephemeral home (discarded on stop), an unwritable state dir means
 # logins don't survive the session.
-sudo machinectl shell "agent@$slot" /bin/sh -lc "
+#
+# machinectl propagates COLORTERM by itself; ssh is what loses it. TERM rides
+# the pty request in the protocol, COLORTERM is an ordinary variable needing
+# SendEnv/AcceptEnv, so a session launched from an ssh login arrives without
+# it and the agents quantize their themes into the 256-colour cube. The
+# fallback assumes a truecolor client, which every terminal here is.
+sudo machinectl shell --setenv=COLORTERM="${COLORTERM:-truecolor}" "agent@$slot" /bin/sh -lc "
   cd \"$dest\" || exit 1
   if [ ! -w . ]; then
     echo \"WARNING: $dest is not writable by the agent user (uid \$(id -u), groups: \$(id -Gn)).\" >&2

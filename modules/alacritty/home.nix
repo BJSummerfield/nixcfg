@@ -96,10 +96,12 @@ in
             cyan = "#${colors.base0C}";
             white = "#${colors.base04}";
           };
-          indexed_colors = [
-            { index = 16; color = "#${colors.base09}"; }
-            { index = 17; color = "#${colors.base06}"; }
-          ];
+          # Deliberately no indexed_colors. The base16 convention reassigns
+          # cube slots 16-21 to expose the palette's extra colours, but 16
+          # and 17 are the two darkest slots in the 6x6x6 cube (#000000 and
+          # #00005f). Any 256-colour program that quantizes a dark theme
+          # lands there and gets painted a bright pastel instead - which is
+          # what turned pi's background rosewater.
         };
         window = {
           decorations = "buttonless";

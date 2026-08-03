@@ -27,7 +27,6 @@
     _1password.enable = true;
     firefox.enable = true;
     keybase.enable = true;
-    coding-agents.enable = true;
     theme.fontSizes.terminal = 15;
   };
 
@@ -51,7 +50,6 @@
     home.stateVersion = "24.11";
     mine.user = {
       alacritty.enable = true;
-      claude-code.enable = true;
       direnv.enable = true;
       fish.enable = true;
       gh.enable = true;

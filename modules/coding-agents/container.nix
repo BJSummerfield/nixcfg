@@ -7,7 +7,10 @@
 { inputs, agents, sharedGroups, agentUid }:
 { pkgs, lib, ... }:
 {
-  imports = [ inputs.home-manager.nixosModules.home-manager ];
+  imports = [
+    inputs.home-manager.nixosModules.home-manager
+    ../unfree/nixos.nix
+  ];
 
   # Same uid as the host user so bind-mounted project files stay
   # writable (uids are auto-allocated per host, hence the option), and
@@ -34,8 +37,10 @@
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
 
-  nixpkgs.config.allowUnfreePredicate = pkg:
-    builtins.elem (lib.getName pkg) [ "claude-code" ];
+  # Declared the way every other module declares its unfree needs; the
+  # imported unfree module turns mine.allowedUnfree into the predicate.
+  # Conditional on the toggle, unlike the hardcoded list this replaces.
+  mine.allowedUnfree = lib.optionals agents.claude [ "claude-code" ];
 
   environment.systemPackages = with pkgs; [
     curl
