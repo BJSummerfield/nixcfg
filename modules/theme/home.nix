@@ -1,13 +1,13 @@
-{ pkgs, ... }:
+{ pkgs, themeConstants, ... }:
 let
-  theme = import ./constants.nix;
-  fontName = theme.fonts.sansSerif.name;
-  appSize = theme.fonts.sizes.applications;
+  fontName = themeConstants.fonts.sansSerif.name;
+  monoName = themeConstants.fonts.monospace.name;
+  appSize = themeConstants.fonts.sizes.applications;
 in
 {
   home.pointerCursor = {
     enable = true;
-    inherit (theme.cursor) name size;
+    inherit (themeConstants.cursor) name size;
     package = pkgs.vanilla-dmz;
     gtk.enable = true;
     x11.enable = true;
@@ -48,7 +48,7 @@ in
         style = "kvantum";
       };
       Fonts = {
-        fixed = "\"${theme.fonts.monospace.name},${toString appSize}\"";
+        fixed = "\"${monoName},${toString appSize}\"";
         general = "\"${fontName},${toString appSize}\"";
       };
     };
@@ -60,7 +60,7 @@ in
         style = "kvantum";
       };
       Fonts = {
-        fixed = "\"${theme.fonts.monospace.name},${toString appSize}\"";
+        fixed = "\"${monoName},${toString appSize}\"";
         general = "\"${fontName},${toString appSize}\"";
       };
     };
@@ -84,6 +84,6 @@ in
     font-name = "${fontName} ${toString appSize}";
     # double space preserved from the stylix template we migrated off of
     document-font-name = "${fontName}  ${toString (appSize - 1)}";
-    monospace-font-name = "${theme.fonts.monospace.name} ${toString appSize}";
+    monospace-font-name = "${monoName} ${toString appSize}";
   };
 }

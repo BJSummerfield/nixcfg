@@ -1,8 +1,7 @@
-{ lib, config, ... }:
+{ lib, config, themeConstants, ... }:
 let
   inherit (lib) mkIf mkEnableOption;
-  theme = import ../theme/constants.nix;
-  inherit (theme) colors;
+  inherit (themeConstants) colors;
   # Firefox font prefs are px; theme sizes are pt (px = pt * 4/3)
   ptToPx = pt: builtins.floor (pt * 4.0 / 3.0);
 in
@@ -15,11 +14,11 @@ in
         id = 0;
         isDefault = true;
         settings = {
-          "font.name.serif.x-western" = theme.fonts.serif.name;
-          "font.name.sans-serif.x-western" = theme.fonts.sansSerif.name;
-          "font.name.monospace.x-western" = theme.fonts.monospace.name;
-          "font.size.variable.x-western" = ptToPx theme.fonts.sizes.applications;
-          "font.size.monospace.x-western" = ptToPx theme.fonts.sizes.terminal;
+          "font.name.serif.x-western" = themeConstants.fonts.serif.name;
+          "font.name.sans-serif.x-western" = themeConstants.fonts.sansSerif.name;
+          "font.name.monospace.x-western" = themeConstants.fonts.monospace.name;
+          "font.size.variable.x-western" = ptToPx themeConstants.fonts.sizes.applications;
+          "font.size.monospace.x-western" = ptToPx themeConstants.fonts.sizes.terminal;
           "reader.color_scheme" = "custom";
           "reader.custom_colors.background" = "#${colors.base00}";
           "reader.custom_colors.foreground" = "#${colors.base05}";

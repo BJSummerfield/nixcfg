@@ -1,9 +1,8 @@
-{ config, lib, ... }:
+{ lib, config, themeConstants, ... }:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.mako;
-  theme = import ../theme/constants.nix;
-  inherit (theme) colors;
+  inherit (themeConstants) colors;
 in
 {
   options.mine.user.mako.enable = mkEnableOption "Enable Mako config";
@@ -15,7 +14,7 @@ in
         text-color = "#${colors.base05}";
         border-color = "#${colors.base0D}";
         progress-color = "over #${colors.base01}";
-        font = "${theme.fonts.monospace.name} 13";
+        font = "${themeConstants.fonts.monospace.name} ${toString themeConstants.fonts.sizes.popups}";
         anchor = "top-right";
         layer = "overlay";
         margin = "0";

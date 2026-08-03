@@ -31,7 +31,16 @@
       coding-agents.enable = true;
       steam.enable = true;
       steambox.enable = true;
-      theme.enable = true;
+      theme = {
+        enable = true;
+        # Smaller fonts for the t495's higher-DPI screen.
+        fontSizes = {
+          applications = 10;
+          terminal = 11;
+          desktop = 10;
+          popups = 9;
+        };
+      };
       tailscale = {
         enable = true;
         ssh = true;

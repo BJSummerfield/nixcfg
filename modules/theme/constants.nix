@@ -26,6 +26,7 @@
     overlay1 = "7f849c"; # dim foreground
     subtext1 = "bac2de"; # terminal white
     pink = "f5c2e7"; # terminal magenta
+    maroon = "eba0ac"; # escape / muted red
   };
 
   fonts = {
