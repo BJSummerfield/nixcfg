@@ -4,7 +4,7 @@ let
   cfg = config.mine.user.fuzzel;
   niriCfg = config.mine.user.niri;
   inherit (themeConstants) colors;
-  font = "${themeConstants.fonts.sansSerif.name} ${toString themeConstants.fonts.sizes.popups}";
+  font = "${themeConstants.fonts.sansSerif.name}:size=${toString themeConstants.fonts.sizes.popups}";
   fuzzelCfg = ''
     [colors]
     background=${colors.base00}dd
@@ -13,7 +13,7 @@ let
     placeholder=${colors.overlay1}ff
     input=${colors.base05}ff
     match=${colors.base0D}ff
-    selection=${colors.surface2}ff
+    selection=${colors.base02}ff
     selection-text=${colors.base05}ff
     selection-match=${colors.base0D}ff
     counter=${colors.overlay1}ff
@@ -21,7 +21,28 @@ let
 
     [main]
     font=${font}
-    border-radius=0
+    dpi-aware=yes
+    icon-theme=Papirus-Dark
+    icons-enabled=yes
+    match-mode=fzf
+    anchor=center
+    lines=15
+    width=30
+    horizontal-pad=40
+    vertical-pad=8
+    inner-pad=0
+    layer=overlay
+    keyboard-focus=exclusive
+    show-actions=no
+    list-executables-in-path=no
+    hide-before-typing=no
+    auto-select=no
+    sort-result=yes
+    match-counter=no
+
+    [border]
+    width=1
+    radius=0
   '';
 in
 {
