@@ -7,6 +7,7 @@
     ./keybase/darwin.nix
     ./coding-agents/darwin.nix
     ./system/darwin.nix
+    ./theme/darwin.nix
     ./unfree/darwin.nix
     ./users/darwin.nix
   ];
