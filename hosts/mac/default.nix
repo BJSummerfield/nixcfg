@@ -28,6 +28,7 @@
     firefox.enable = true;
     keybase.enable = true;
     coding-agents.enable = true;
+    theme.fontSizes.terminal = 15;
   };
 
   environment.systemPackages = with pkgs; [
