@@ -9,6 +9,9 @@ let
   cfg = config.mine.system.local-llm;
 
   nvidiaEnabled = config.mine.system.nvidia.enable;
+  # Gated separately from the driver: the CUDA llama.cpp and vLLM builds are
+  # hours of uncached compiles, so flip cuda.enable only once the card works.
+  cudaEnabled = cfg.cuda.enable;
   # CUDA talks to these directly instead of /dev/dri
   nvidiaDevices = [
     "/dev/nvidia0"
@@ -92,9 +95,15 @@ in
 {
   options.mine.system.local-llm = {
     enable = lib.mkEnableOption "Enable Local LLM container";
+    cuda.enable = lib.mkEnableOption "Serve models with CUDA (llama.cpp CUDA build + vLLM NVFP4 models)";
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [{
+      assertion = cudaEnabled -> nvidiaEnabled;
+      message = "mine.system.local-llm.cuda.enable requires mine.system.nvidia.enable";
+    }];
+
     hardware.graphics = {
       enable = true;
       extraPackages = lib.optionals (!nvidiaEnabled) [ pkgs.rocmPackages.clr.icd ];
@@ -145,7 +154,7 @@ in
       config = { config, pkgs, lib, ... }:
         let
           llamaServer = lib.getExe'
-            (if nvidiaEnabled
+            (if cudaEnabled
              then pkgs.llama-cpp.override { cudaSupport = true; }
              else pkgs.llama-cpp-vulkan)
             "llama-server";
@@ -223,7 +232,7 @@ in
                   --ctx-size 131072
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
-          '' + lib.optionalString nvidiaEnabled ''
+          '' + lib.optionalString cudaEnabled ''
             # NVFP4 safetensors models, served by vLLM (needs the Blackwell card).
             # Sampling defaults come from each repo's generation_config.json.
             # max-model-len is conservative; raise once real VRAM use is measured.
@@ -308,7 +317,7 @@ in
             let name = lib.getName pkg; in
             builtins.elem name [ "open-webui" ]
             # the CUDA toolchain is dozens of separately-named unfree packages
-            || (nvidiaEnabled && (lib.hasPrefix "cuda" name
+            || (cudaEnabled && (lib.hasPrefix "cuda" name
               || lib.hasPrefix "libcu" name
               || lib.hasPrefix "libnv" name));
 
