@@ -15,7 +15,7 @@
     packages = [
       "npm:pi-web-access"
       "npm:pi-token-speed"
-      "pm:@weiping/pi-superpowers"
+      "npm:@weiping/pi-superpowers"
       "npm:@monotykamary/pi-tps"
     ];
   };
