@@ -1,4 +1,5 @@
 # Shared pi configuration data. Consumed by home.nix (home-manager, used on
+
 # the nixos hosts and inside their nspawn containers) and image.nix (the OCI
 # image that runs pi on macOS via docker).
 {
@@ -14,6 +15,7 @@
     packages = [
       "npm:pi-web-access"
       "npm:pi-token-speed"
+      "pm:@weiping/pi-superpowers"
       "npm:@monotykamary/pi-tps"
     ];
   };
