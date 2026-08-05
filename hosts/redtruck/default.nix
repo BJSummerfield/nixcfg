@@ -22,7 +22,10 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      local-llm.enable = true;
+      local-llm = {
+        enable = true;
+        cuda.enable = true;
+      };
       makemkv.enable = true;
       nas = {
         shares.media.enable = true;
