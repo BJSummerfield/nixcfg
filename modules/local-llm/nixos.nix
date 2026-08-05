@@ -4,7 +4,7 @@
 # tailscale serve --bg --https=443 8080      # Open WebUI
 # tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for OpenCode
 
-{ lib, config, pkgs, ... }:
+{ lib, config, pkgs, inputs, ... }:
 let
   cfg = config.mine.system.local-llm;
 
@@ -38,9 +38,9 @@ let
   };
   qwen27bMtpPath = "/var/lib/models/${qwen27bMtpFile}";
 
-  # NVFP4 safetensors repos (vLLM-only, needs the Blackwell card + CUDA from
-  # the add-nvidia-support branch). Staged here so the store downloads them
-  # ahead of the hardware swap. Shard hashes are the HF LFS sha256 oids.
+  # NVFP4 safetensors repos (vLLM-only, needs the Blackwell card and
+  # cuda.enable). Staged here so the store downloads them ahead of the
+  # hardware swap. Shard hashes are the HF LFS sha256 oids.
   fetchHfFile = repo: file: hash: pkgs.fetchurl {
     url = "https://huggingface.co/unsloth/${repo}/resolve/main/${file}";
     inherit hash;
@@ -160,10 +160,13 @@ in
             "llama-server";
           # Separate nixpkgs instantiation so cudaSupport doesn't rebuild the
           # rest of the container (open-webui would pull CUDA torch otherwise).
-          # nixpkgs has vllm 0.16.0; Unsloth's docs want >= 0.25 for the NVFP4
-          # quants (cute-DSL W4A4 kernels + MTP) - bump the flake if the
-          # models refuse to load or fall back to slow kernels.
-          cudaPkgs = import pkgs.path {
+          # Sourced from the nixpkgs-vllm input (master, vllm 0.24) because
+          # nixos-unstable still ships 0.16.0. Unsloth wants >= 0.25 with
+          # nvidia-cutlass-dsl for the cute-DSL W4A4 kernels, which nixpkgs
+          # strips even on master, so these quants run on vllm's Marlin
+          # fallback - the expected backend for the non-Fast NVFP4 repos
+          # anyway. Bump nixpkgs-vllm once 0.25 lands.
+          cudaPkgs = import inputs.nixpkgs-vllm {
             inherit (pkgs.stdenv.hostPlatform) system;
             overlays = [
               (final: prev: {
@@ -184,10 +187,6 @@ in
               # RTX 5090 (Blackwell) only; building every default capability
               # multiplies the already-long torch build.
               cudaCapabilities = [ "12.0" ];
-              # 0.16.0 is flagged for CVEs; acceptable here because vllm only
-              # listens on 127.0.0.1 inside the container behind llama-swap.
-              # Drop this once a flake update brings a newer vllm.
-              permittedInsecurePackages = [ "python3.14-vllm-0.16.0" ];
             };
           };
           vllmBin = lib.getExe' cudaPkgs.vllm "vllm";
@@ -234,8 +233,11 @@ in
                   --n-gpu-layers 99
           '' + lib.optionalString cudaEnabled ''
             # NVFP4 safetensors models, served by vLLM (needs the Blackwell card).
-            # Sampling defaults come from each repo's generation_config.json.
-            # max-model-len is conservative; raise once real VRAM use is measured.
+            # Per Unsloth's guide: let vLLM auto-pick the quant backend (never
+            # force marlin by hand) and switch kv-cache to bf16 if fp8 shows
+            # instability. Sampling defaults come from each repo's
+            # generation_config.json. max-model-len is conservative; raise once
+            # real VRAM use is measured.
               "Qwen3.6-27B-NVFP4":
                 ttl: 3600
                 env:

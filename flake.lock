@@ -233,6 +233,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-vllm": {
+      "locked": {
+        "lastModified": 1785960358,
+        "narHash": "sha256-Kw+jJFumdKxvMGv8foWpDTc62Ghipgdc7aCZe4XqA5k=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "a493fe67ff9ffc634de424fa94a372f6a57c6659",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "master",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "disko": "disko",
@@ -241,6 +257,7 @@
         "nix-darwin": "nix-darwin",
         "nix-homebrew": "nix-homebrew",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-vllm": "nixpkgs-vllm",
         "sops-nix": "sops-nix"
       }
     },
