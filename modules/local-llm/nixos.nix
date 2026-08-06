@@ -282,11 +282,12 @@ in
                   --model /model
                   --served-model-name Qwen3.6-27B-NVFP4
                   --kv-cache-dtype fp8
-                  # measured pool: 123,207 tokens (first successful boot);
-                  # if a future config change shrinks it below this, step
-                  # back to 114688
-                  --max-model-len 122880
-                  --gpu-memory-utilization 0.92
+                  # measured pool: 134,310 tokens at util 0.92; 0.94 buys
+                  # ~17k more and still leaves the desktop ~1.9GiB. If a
+                  # future change shrinks the pool below max-model-len the
+                  # server refuses to start - step back to 114688 then.
+                  --max-model-len 131072
+                  --gpu-memory-utilization 0.94
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 1024
                   --max-num-seqs 2

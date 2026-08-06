@@ -57,7 +57,7 @@
             id = "Qwen3.6-27B-NVFP4";
             name = "Qwen3.6 27B NVFP4 (redtruck)";
             reasoning = true;
-            contextWindow = 114688;
+            contextWindow = 122880;
             maxTokens = 32768;
           }
           {
