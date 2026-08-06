@@ -274,6 +274,7 @@ in
                   --ipc=host
                   -e HF_HUB_OFFLINE=1
                   -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+                  -e VLLM_ATTENTION_BACKEND=TRITON_ATTN
                   -p 192.168.100.24:''${PORT}:8000
                   -v ${qwen27bNvfp4Model}:/model:ro
                   -v /nix/store:/nix/store:ro
@@ -301,12 +302,15 @@ in
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
-                  # MTP speculative decoding is OFF here deliberately: with
-                  # it, flashinfer can't do full cuda graphs (see the
-                  # PIECEWISE warning at startup) and decode ran 38-65 tok/s
-                  # against llama.cpp's ~120 on the same card. Restore the
-                  # line below if measurement says the drafter wins:
-                  # --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+                  # Experiment: MTP with the triton attention backend (env
+                  # above). Measured so far on this card: no-MTP flashinfer
+                  # full-graphs = 64 tok/s; MTP n=2 flashinfer piecewise =
+                  # 38-65 (multiplier eaten by launch overhead). llama.cpp
+                  # gets ~51 passes/s x ~2.8 accepted = ~145, so the win
+                  # condition is spec decode without losing full graphs. If
+                  # startup still says PIECEWISE and tps < 64, drop this
+                  # spec line and the TRITON_ATTN env together.
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
               "Qwen3.6-35B-A3B-NVFP4":
