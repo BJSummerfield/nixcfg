@@ -291,6 +291,13 @@ in
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 2048
                   --max-num-seqs 2
+                  # vllm turns prefix caching off by itself for this hybrid
+                  # arch (the GDN layers carry recurrent state), which makes
+                  # every agent turn re-prefill the whole conversation -
+                  # llama.cpp reuses the prefix and prefills only the delta.
+                  # Force it on; if this build refuses, it fails fast at
+                  # startup and the answer is to wait for a newer image.
+                  --enable-prefix-caching
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_coder
                   --reasoning-parser qwen3
