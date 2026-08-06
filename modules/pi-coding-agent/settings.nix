@@ -45,6 +45,24 @@
             contextWindow = 122880;
             maxTokens = 32768;
           }
+          # NVFP4 models (vLLM; need redtruck's local-llm.cuda.enable).
+          # contextWindow tracks each entry's --max-model-len in
+          # modules/local-llm/nixos.nix minus generation headroom; raise both
+          # together.
+          {
+            id = "Qwen3.6-27B-NVFP4";
+            name = "Qwen3.6 27B NVFP4 (redtruck)";
+            reasoning = true;
+            contextWindow = 61440;
+            maxTokens = 32768;
+          }
+          {
+            id = "Qwen3.6-35B-A3B-NVFP4";
+            name = "Qwen3.6 35B A3B NVFP4 (redtruck)";
+            reasoning = true;
+            contextWindow = 28672;
+            maxTokens = 8192;
+          }
         ];
       };
       robin = {
