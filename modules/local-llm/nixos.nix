@@ -282,19 +282,24 @@ in
                   --model /model
                   --served-model-name Qwen3.6-27B-NVFP4
                   --kv-cache-dtype fp8
-                  # measured pool: 134,310 tokens at util 0.92; 0.94 buys
-                  # ~17k more and still leaves the desktop ~1.9GiB. If a
-                  # future change shrinks the pool below max-model-len the
-                  # server refuses to start - step back to 114688 then.
+                  # measured pool: 195,750 tokens at util 0.92 (it varies a
+                  # few GiB with what the desktop is holding). If a lean day
+                  # shrinks it below max-model-len the server refuses to
+                  # start - step back to 114688 then.
                   --max-model-len 131072
                   --gpu-memory-utilization 0.94
                   --limit-mm-per-prompt '{"image":0,"video":0}'
-                  --max-num-batched-tokens 1024
+                  --max-num-batched-tokens 2048
                   --max-num-seqs 2
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_coder
                   --reasoning-parser qwen3
-                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+                  # MTP speculative decoding is OFF here deliberately: with
+                  # it, flashinfer can't do full cuda graphs (see the
+                  # PIECEWISE warning at startup) and decode ran 38-65 tok/s
+                  # against llama.cpp's ~120 on the same card. Restore the
+                  # line below if measurement says the drafter wins:
+                  # --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
               "Qwen3.6-35B-A3B-NVFP4":
