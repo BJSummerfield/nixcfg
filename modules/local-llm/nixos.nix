@@ -282,11 +282,16 @@ in
                   --model /model
                   --served-model-name Qwen3.6-27B-NVFP4
                   --kv-cache-dtype fp8
-                  --max-model-len 65536
+                  # measured pool: 123,207 tokens (first successful boot);
+                  # if a future config change shrinks it below this, step
+                  # back to 114688
+                  --max-model-len 122880
                   --gpu-memory-utilization 0.92
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 1024
                   --max-num-seqs 2
+                  --enable-auto-tool-choice
+                  --tool-call-parser hermes
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
@@ -313,6 +318,8 @@ in
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 1024
                   --max-num-seqs 2
+                  --enable-auto-tool-choice
+                  --tool-call-parser hermes
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
