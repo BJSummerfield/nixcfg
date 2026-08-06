@@ -299,7 +299,7 @@ in
                   # startup and the answer is to wait for a newer image.
                   --enable-prefix-caching
                   --enable-auto-tool-choice
-                  --tool-call-parser qwen3_coder
+                  --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
                   # MTP speculative decoding is OFF here deliberately: with
                   # it, flashinfer can't do full cuda graphs (see the
@@ -333,7 +333,7 @@ in
                   --max-num-batched-tokens 1024
                   --max-num-seqs 2
                   --enable-auto-tool-choice
-                  --tool-call-parser qwen3_coder
+                  --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
