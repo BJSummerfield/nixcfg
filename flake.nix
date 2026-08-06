@@ -31,9 +31,6 @@
       };
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    # newer vllm than nixos-unstable ships, for the local-llm container's
-    # NVFP4 models; nothing outside that container should use this
-    nixpkgs-vllm.url = "github:nixos/nixpkgs/master";
   };
 
   outputs = { nixpkgs, ... }@inputs:

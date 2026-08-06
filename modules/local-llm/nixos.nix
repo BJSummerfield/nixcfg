@@ -4,14 +4,22 @@
 # tailscale serve --bg --https=443 8080      # Open WebUI
 # tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for OpenCode
 
-{ lib, config, pkgs, inputs, ... }:
+{ lib, config, pkgs, ... }:
 let
   cfg = config.mine.system.local-llm;
 
   nvidiaEnabled = config.mine.system.nvidia.enable;
-  # Gated separately from the driver: the CUDA llama.cpp and vLLM builds are
-  # hours of uncached compiles, so flip cuda.enable only once the card works.
+  # Gated separately from the driver: the CUDA llama.cpp build is an uncached
+  # compile, so flip cuda.enable only once the card works.
   cudaEnabled = cfg.cuda.enable;
+
+  # vLLM runs from upstream's prebuilt OCI image instead of nixpkgs: the nix
+  # build compiles torch/magma/flash-attn from source (hours of nvcc that OOM
+  # 32GB), and nixpkgs lags upstream releases anyway - the NVFP4 quants want
+  # >= 0.25 while nixos-unstable still ships 0.16. The tag is the version
+  # pin; bump it deliberately and pre-pull (see gpu-swap-steps.md).
+  vllmImage = "docker.io/vllm/vllm-openai:v0.25.0";
+  podmanSock = "unix:///run/podman/podman.sock";
   # CUDA talks to these directly instead of /dev/dri
   nvidiaDevices = [
     "/dev/nvidia0"
@@ -95,7 +103,7 @@ in
 {
   options.mine.system.local-llm = {
     enable = lib.mkEnableOption "Enable Local LLM container";
-    cuda.enable = lib.mkEnableOption "Serve models with CUDA (llama.cpp CUDA build + vLLM NVFP4 models)";
+    cuda.enable = lib.mkEnableOption "Serve models with CUDA (llama.cpp CUDA build + vLLM NVFP4 models via the upstream OCI image)";
   };
 
   config = lib.mkIf cfg.enable {
@@ -124,9 +132,23 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/models
+      mkdir -p /var/lib/local-llm/models /var/lib/local-llm/vllm-cache
       chmod 755 /var/lib/local-llm
     '';
+
+    # The vLLM model containers run on the HOST via podman - nesting a
+    # container runtime inside the nspawn container would mean cgroup and
+    # overlayfs misery. Inside the container llama-swap only runs the podman
+    # *client* against this API socket (root-equivalent on the host; fine for
+    # a single-user box, don't reuse this pattern on a shared machine).
+    virtualisation.podman.enable = lib.mkIf cudaEnabled true;
+    hardware.nvidia-container-toolkit.enable = lib.mkIf cudaEnabled true;
+    systemd.sockets.podman = lib.mkIf cudaEnabled { wantedBy = [ "sockets.target" ]; };
+    # llama-swap's PORT macro assigns upwards from 5800; the vllm containers
+    # publish those ports on the host end of the veth
+    networking.firewall.interfaces."ve-local-llm" = lib.mkIf cudaEnabled {
+      allowedTCPPortRanges = [ { from = 5800; to = 5999; } ];
+    };
 
     containers.local-llm = {
       autoStart = false;
@@ -149,7 +171,10 @@ in
         "/var/lib/models/${qwen27bNvfp4Name}" = { hostPath = "${qwen27bNvfp4Model}"; isReadOnly = true; };
         "/var/lib/models/${qwen35bNvfp4Name}" = { hostPath = "${qwen35bNvfp4Model}"; isReadOnly = true; };
       } // lib.optionalAttrs nvidiaEnabled
-        (lib.genAttrs nvidiaDevices (node: { hostPath = node; isReadOnly = false; }));
+        (lib.genAttrs nvidiaDevices (node: { hostPath = node; isReadOnly = false; }))
+      // lib.optionalAttrs cudaEnabled {
+        "/run/podman/podman.sock" = { hostPath = "/run/podman/podman.sock"; isReadOnly = false; };
+      };
 
       config = { config, pkgs, lib, ... }:
         let
@@ -158,38 +183,9 @@ in
              then pkgs.llama-cpp.override { cudaSupport = true; }
              else pkgs.llama-cpp-vulkan)
             "llama-server";
-          # Separate nixpkgs instantiation so cudaSupport doesn't rebuild the
-          # rest of the container (open-webui would pull CUDA torch otherwise).
-          # Sourced from the nixpkgs-vllm input (master, vllm 0.24) because
-          # nixos-unstable still ships 0.16.0. Unsloth wants >= 0.25 with
-          # nvidia-cutlass-dsl for the cute-DSL W4A4 kernels, which nixpkgs
-          # strips even on master, so these quants run on vllm's Marlin
-          # fallback - the expected backend for the non-Fast NVFP4 repos
-          # anyway. Bump nixpkgs-vllm once 0.25 lands.
-          cudaPkgs = import inputs.nixpkgs-vllm {
-            inherit (pkgs.stdenv.hostPlatform) system;
-            overlays = [
-              (final: prev: {
-                pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
-                  (pyFinal: pyPrev: {
-                    # vllm dep whose own pytest suite fails (middleware
-                    # double-registration); skip its checks.
-                    model-hosting-container-standards =
-                      pyPrev.model-hosting-container-standards.overridePythonAttrs
-                        (_: { doCheck = false; });
-                  })
-                ];
-              })
-            ];
-            config = {
-              allowUnfree = true;
-              cudaSupport = true;
-              # RTX 5090 (Blackwell) only; building every default capability
-              # multiplies the already-long torch build.
-              cudaCapabilities = [ "12.0" ];
-            };
-          };
-          vllmBin = lib.getExe' cudaPkgs.vllm "vllm";
+          # Drives HOST podman over the bind-mounted API socket; vLLM itself
+          # is the upstream OCI image (vllmImage above), not a nix build.
+          podmanCli = "${lib.getExe' pkgs.podman "podman"} --url ${podmanSock}";
           llamaSwapConfig = pkgs.writeText "llama-swap.yaml" (''
             healthCheckTimeout: 900
             logLevel: info
@@ -232,7 +228,13 @@ in
                   --spec-type draft-mtp --spec-draft-n-max 2
                   --n-gpu-layers 99
           '' + lib.optionalString cudaEnabled ''
-            # NVFP4 safetensors models, served by vLLM (needs the Blackwell card).
+            # NVFP4 safetensors models, served by the upstream vLLM image via
+            # HOST podman (needs the Blackwell card). The container runs only
+            # while its model is loaded: llama-swap podman-runs it on demand,
+            # podman-stops it on swap/ttl, --rm cleans up. The model dir is a
+            # store symlink farm, hence the extra read-only /nix/store mount.
+            # --pull=never so a forgotten pre-pull fails fast instead of
+            # silently downloading 10+ GB inside the health-check window.
             # Per Unsloth's guide: let vLLM auto-pick the quant backend (never
             # force marlin by hand) and switch kv-cache to bf16 if fp8 shows
             # instability. Sampling defaults come from each repo's
@@ -240,33 +242,47 @@ in
             # real VRAM use is measured.
               "Qwen3.6-27B-NVFP4":
                 ttl: 3600
-                env:
-                  - "HOME=/var/lib/llama-swap"
-                  - "VLLM_CACHE_ROOT=/var/lib/llama-swap/vllm-cache"
-                  - "HF_HUB_OFFLINE=1"
+                proxy: http://192.168.100.24:''${PORT}
                 cmd: |
-                  ${vllmBin} serve /var/lib/models/${qwen27bNvfp4Name}
-                  --host 127.0.0.1 --port ''${PORT}
+                  ${podmanCli} run --rm --replace --pull=never
+                  --name vllm-qwen27b-nvfp4
+                  --device nvidia.com/gpu=all
+                  --ipc=host
+                  -e HF_HUB_OFFLINE=1
+                  -p 192.168.100.24:''${PORT}:8000
+                  -v ${qwen27bNvfp4Model}:/model:ro
+                  -v /nix/store:/nix/store:ro
+                  -v /var/lib/local-llm/vllm-cache:/root/.cache
+                  ${vllmImage}
+                  --model /model
                   --served-model-name Qwen3.6-27B-NVFP4
                   --kv-cache-dtype fp8
                   --max-model-len 65536
                   --gpu-memory-utilization 0.92
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+                cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
               "Qwen3.6-35B-A3B-NVFP4":
                 ttl: 3600
-                env:
-                  - "HOME=/var/lib/llama-swap"
-                  - "VLLM_CACHE_ROOT=/var/lib/llama-swap/vllm-cache"
-                  - "HF_HUB_OFFLINE=1"
+                proxy: http://192.168.100.24:''${PORT}
                 cmd: |
-                  ${vllmBin} serve /var/lib/models/${qwen35bNvfp4Name}
-                  --host 127.0.0.1 --port ''${PORT}
+                  ${podmanCli} run --rm --replace --pull=never
+                  --name vllm-qwen35b-nvfp4
+                  --device nvidia.com/gpu=all
+                  --ipc=host
+                  -e HF_HUB_OFFLINE=1
+                  -p 192.168.100.24:''${PORT}:8000
+                  -v ${qwen35bNvfp4Model}:/model:ro
+                  -v /nix/store:/nix/store:ro
+                  -v /var/lib/local-llm/vllm-cache:/root/.cache
+                  ${vllmImage}
+                  --model /model
                   --served-model-name Qwen3.6-35B-A3B-NVFP4
                   --kv-cache-dtype fp8
                   --max-model-len 32768
                   --gpu-memory-utilization 0.95
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+                cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
         in
         {
