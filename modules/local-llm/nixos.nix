@@ -329,7 +329,12 @@ in
                   ${vllmImage}
                   --model /model
                   --served-model-name Qwen3.6-35B-A3B-NVFP4
-                  --kv-cache-dtype fp8
+                  # Quality fixes after incoherent output (smeared variable
+                  # names across rewrites): kv cache back to bf16 per
+                  # Unsloth's "switch to bf16 if fp8 shows instability", and
+                  # prefix caching off - vllm calls mamba-align caching
+                  # experimental, and corrupted resumed GDN state matches
+                  # the symptom. Re-add prefix caching first when bisecting.
                   # conservative until the first boot reports its KV pool;
                   # raise toward the measured number like the 27B
                   --max-model-len 32768
@@ -337,7 +342,6 @@ in
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 2048
                   --max-num-seqs 2
-                  --enable-prefix-caching
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
