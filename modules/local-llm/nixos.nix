@@ -259,6 +259,11 @@ in
             # instability. Sampling defaults come from each repo's
             # generation_config.json. max-model-len is conservative; raise once
             # real VRAM use is measured.
+            # These are VL models but served text-only (limit-mm 0): weights
+            # alone are ~22GiB of the 31GiB card, and the vision-encoder
+            # profiling buffers plus a 2048-token activation peak OOMed
+            # startup. If VRAM is still tight, the next knob is dropping the
+            # speculative-config line (frees the MTP drafter).
               "Qwen3.6-27B-NVFP4":
                 ttl: 3600
                 proxy: http://192.168.100.24:''${PORT}
@@ -268,6 +273,7 @@ in
                   --device nvidia.com/gpu=all
                   --ipc=host
                   -e HF_HUB_OFFLINE=1
+                  -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
                   -p 192.168.100.24:''${PORT}:8000
                   -v ${qwen27bNvfp4Model}:/model:ro
                   -v /nix/store:/nix/store:ro
@@ -278,6 +284,8 @@ in
                   --kv-cache-dtype fp8
                   --max-model-len 65536
                   --gpu-memory-utilization 0.92
+                  --limit-mm-per-prompt '{"image":0,"video":0}'
+                  --max-num-batched-tokens 1024
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
@@ -290,6 +298,7 @@ in
                   --device nvidia.com/gpu=all
                   --ipc=host
                   -e HF_HUB_OFFLINE=1
+                  -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
                   -p 192.168.100.24:''${PORT}:8000
                   -v ${qwen35bNvfp4Model}:/model:ro
                   -v /nix/store:/nix/store:ro
@@ -300,6 +309,8 @@ in
                   --kv-cache-dtype fp8
                   --max-model-len 32768
                   --gpu-memory-utilization 0.95
+                  --limit-mm-per-prompt '{"image":0,"video":0}'
+                  --max-num-batched-tokens 1024
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
