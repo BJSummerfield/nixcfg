@@ -5,12 +5,16 @@
 {
   settings = {
     theme = "dark";
+    # Keep every model reference identical: llama-swap serves one model at a
+    # time, so a background task (web-search curator, titles) pointed at a
+    # different model than the session evicts the loaded one and stalls
+    # everything for minutes while vllm swaps.
     model = {
       provider = "redtruck";
-      model = "Qwen3.6-35B-A3B-MTP-Q4";
+      model = "Qwen3.6-27B-NVFP4";
     };
     defaultProvider = "redtruck";
-    defaultModel = "Qwen3.6-27B-MTP-Q4";
+    defaultModel = "Qwen3.6-27B-NVFP4";
     defaultThinkingLevel = "high";
     packages = [
       "npm:pi-web-access"
