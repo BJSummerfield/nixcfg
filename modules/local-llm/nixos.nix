@@ -265,7 +265,23 @@ in
             # startup. If VRAM is still tight, the next knob is dropping the
             # speculative-config line (frees the MTP drafter).
               "Qwen3.6-27B-NVFP4":
-                ttl: 3600
+                # No ttl: this is the daily driver and a vllm cold start is
+                # minutes (weights + profiling + cuda graphs), not the ~15s
+                # a GGUF mmap was - an idle-unload while out means remote
+                # openwebui queries stall behind a full reload. It stays
+                # resident until something swaps it; free the VRAM by hand
+                # when the desktop needs it:
+                #   curl -X POST llama-swap:8081/api/models/unload
+                # Same instance under a second name: pi declares a smaller
+                # contextWindow for the alias so subagent tiers compact
+                # early instead of ballooning the shared KV pool (2 seqs x
+                # 131k > the ~195k pool -> preempt + full re-prefill with
+                # prefix caching off). aliases route here without a swap;
+                # useModelName rewrites the model field back to the one
+                # --served-model-name vllm knows.
+                aliases:
+                  - "Qwen3.6-27B-NVFP4-32k"
+                useModelName: "Qwen3.6-27B-NVFP4"
                 proxy: http://192.168.100.24:''${PORT}
                 cmd: |
                   ${podmanCli} run --rm --replace --pull=never
@@ -282,15 +298,22 @@ in
                   --model /model
                   --served-model-name Qwen3.6-27B-NVFP4
                   --kv-cache-dtype fp8
-                  # measured pool: 195,750 tokens at util 0.92 (it varies a
-                  # few GiB with what the desktop is holding). If a lean day
-                  # shrinks it below max-model-len the server refuses to
-                  # start - step back to 114688 then.
+                  # measured pool: 195,750 tokens at util 0.92; 149,796 at
+                  # util 0.94 with seqs=3 + MTP drafter on a heavier desktop
+                  # day (it varies a few GiB with what the desktop is
+                  # holding). If a lean day shrinks it below max-model-len
+                  # the server refuses to start - step back to 114688 then.
                   --max-model-len 131072
                   --gpu-memory-utilization 0.94
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 2048
-                  --max-num-seqs 2
+                  # 3 so superagents parallel waves get real concurrency:
+                  # 3 workers on the -32k budget = ~123k KV in flight,
+                  # inside the ~195k pool. The parent session holds no
+                  # pool while blocked on a dispatch (no prefix caching,
+                  # KV is per-in-flight-request), so main + 2 workers
+                  # overlapping is not a real path.
+                  --max-num-seqs 3
                   # Prefix caching stays OFF: forcing it on (mamba 'align'
                   # mode, which vllm labels experimental) preceded a long
                   # session degrading into incoherent rewrite loops that
