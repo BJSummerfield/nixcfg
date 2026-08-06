@@ -317,7 +317,7 @@ in
                   # flashinfer attention backend; the VLLM_ATTENTION_BACKEND
                   # env var is ignored by this vllm version - revisit on the
                   # next image bump.)
-                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}'
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
               "Qwen3.6-35B-A3B-NVFP4":
@@ -361,7 +361,7 @@ in
                   # A3B MoE: ~3B active params per token vs the dense 27B's
                   # full ~20GiB read, so this is the fast one on a
                   # bandwidth-bound card - expect well north of 100 tok/s
-                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}'
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
         in
