@@ -159,9 +159,12 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # Type=exec so neither boot nor nixos-rebuild switch blocks on the
+      # download; it continues in the background (watch with
+      # journalctl -u vllm-image-pull -f). A model started mid-download
+      # fails fast until the image lands.
       serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
+        Type = "exec";
         ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
       };
     };

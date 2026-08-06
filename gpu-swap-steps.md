@@ -1,70 +1,54 @@
-# 5090 swap + vLLM steps
+# 5090 local-llm steps (OCI vLLM)
 
-## Now: build for boot
+## Now: roll out the podman-based vLLM
 
-1. Push the branch (from the machine with the rebased branch):
+1. On redtruck, pull the branch, then rebuild (the only CUDA compile left is
+   llama.cpp — far smaller than the old vllm/torch stack):
    ```bash
-   git push --force-with-lease origin add-nvidia-support
+   tmux new -s build
+   sudo nixos-rebuild switch --flake .#redtruck --max-jobs 1 --cores 8
    ```
-2. On redtruck, in the repo:
+   This also activates zram + the 1-job default for future builds.
+2. The `vllm-image-pull` service pulls the pinned image (~10+ GB) on switch;
+   watch/verify with:
    ```bash
-   git fetch origin
-   git checkout add-nvidia-support
-   git pull --ff-only origin add-nvidia-support
+   systemctl status vllm-image-pull
+   sudo podman images
    ```
-3. Build without activating (AMD card still installed — don't `switch`):
-   ```bash
-   sudo nixos-rebuild boot --flake .#redtruck
-   ```
-4. Shut down and swap the card (direct 16-pin PSU cable, no daisy-chain):
-   ```bash
-   sudo poweroff
-   ```
-5. Boot, then verify:
-   ```bash
-   nvidia-smi
-   lsmod | grep nvidia
-   nvtop
-   ```
-   Rollback if broken: pick the previous generation in the boot menu.
-6. Merge `add-nvidia-support` to main and push.
-
-## Later: enable the CUDA/vLLM stack
-
-1. In `hosts/redtruck/default.nix` add:
-   ```nix
-   local-llm.cuda.enable = true;
-   ```
-2. Rebuild (multi-hour source build, bounded so it won't OOM):
-   ```bash
-   sudo nixos-rebuild switch --flake .#redtruck
-   ```
-3. Restart container and check models:
+   If the pull 404s, check the latest tag with
+   `podman search --list-tags docker.io/vllm/vllm-openai`, fix `vllmImage`
+   in `modules/local-llm/nixos.nix`, and re-switch.
+3. Restart the container and confirm all four models are listed:
    ```bash
    sudo systemctl restart container@local-llm
    curl http://localhost:8081/v1/models
    ```
-
-## Later: update vLLM (when 0.25 lands)
-
-1. Check master's version:
+4. Load an NVFP4 model (first request podman-runs its container; expect a
+   slow first health-check while weights load):
    ```bash
-   nix eval --raw github:nixos/nixpkgs/master#vllm.version
+   curl http://localhost:8081/v1/chat/completions \
+     -H 'Content-Type: application/json' \
+     -d '{"model":"Qwen3.6-27B-NVFP4","messages":[{"role":"user","content":"hi"}]}'
    ```
-2. If ≥ 0.25, bump only the vllm input:
+5. Watch it work: `sudo podman ps` and `nvtop` on the host. Ask for a
+   different model and llama-swap stops one container and starts the other.
+   Idle models stop themselves after 1h (ttl).
+6. Check the quant backend vLLM picked (marlin expected for non-Fast NVFP4):
    ```bash
-   nix flake update nixpkgs-vllm
+   sudo podman logs vllm-qwen27b-nvfp4 2>&1 | grep -i -E 'marlin|cutlass|cute'
    ```
-3. Commit the lock change on its own, then rebuild + restart:
+7. Merge `add-nvidia-support` to main and push.
+
+## Later: update vLLM
+
+1. Edit the `vllmImage` tag in `modules/local-llm/nixos.nix`.
+2. Rebuild and restart (the switch re-runs `vllm-image-pull` automatically):
    ```bash
    sudo nixos-rebuild switch --flake .#redtruck
    sudo systemctl restart container@local-llm
    ```
-4. Check the chosen backend (marlin expected for the non-Fast quants):
+3. Once the new version works, delete the superseded tag explicitly —
+   versioned tags never go dangling, so `image prune` won't catch them:
    ```bash
-   sudo nixos-container root-login local-llm
-   journalctl -u llama-swap | grep -i -E "marlin|cutlass|cute"
+   sudo podman rmi docker.io/vllm/vllm-openai:vOLD
    ```
-5. Cleanup once nixos-unstable itself ships ≥ 0.25: `nix flake update nixpkgs`,
-   drop the `nixpkgs-vllm` input from `flake.nix`, revert `cudaPkgs` to
-   `import pkgs.path`.
