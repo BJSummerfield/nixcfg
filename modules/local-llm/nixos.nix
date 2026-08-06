@@ -310,6 +310,8 @@ in
             description = "llama-swap (model-swapping proxy for llama.cpp)";
             after = [ "network.target" ];
             wantedBy = [ "multi-user.target" ];
+            # the podman client it spawns wants a homedir for its config lookup
+            environment.HOME = "/var/lib/llama-swap";
             serviceConfig = {
               ExecStart = ''
                 ${pkgs.llama-swap}/bin/llama-swap \
@@ -318,7 +320,10 @@ in
               '';
               Restart = "on-failure";
               RestartSec = 10;
-              DynamicUser = true;
+              # Container-root, not DynamicUser: the host podman socket it
+              # drives is root-owned 0660, and holding that socket is
+              # root-equivalent anyway, so the unprivileged user bought
+              # nothing but "permission denied".
               StateDirectory = "llama-swap";
             };
           };
