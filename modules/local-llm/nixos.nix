@@ -305,6 +305,10 @@ in
           '');
         in
         {
+          # the podman CLI for poking the host socket when debugging;
+          # llama-swap itself invokes it by absolute store path
+          environment.systemPackages = lib.optionals cudaEnabled [ pkgs.podman ];
+
           services.tailscale.enable = true;
           systemd.services.llama-swap = {
             description = "llama-swap (model-swapping proxy for llama.cpp)";
