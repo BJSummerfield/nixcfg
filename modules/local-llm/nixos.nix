@@ -304,6 +304,11 @@ in
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
+                  # Unsloth: temp 1.0 for general thinking, 0.6 for precise
+                  # coding; the repo generation_config ships 1.0 and pi is a
+                  # coding agent, so pin 0.6 - same value the GGUF entries
+                  # have always forced via --temp
+                  --override-generation-config '{"temperature": 0.6}'
                   # Measured on this card: no-MTP with full cuda graphs =
                   # 64 tok/s; MTP n=3 (flashinfer spec-decode forces
                   # piecewise graphs) = 85-105 tok/s busy-window, dipping
@@ -348,6 +353,11 @@ in
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
+                  # Unsloth: temp 1.0 for general thinking, 0.6 for precise
+                  # coding; the repo generation_config ships 1.0 and pi is a
+                  # coding agent, so pin 0.6 - same value the GGUF entries
+                  # have always forced via --temp
+                  --override-generation-config '{"temperature": 0.6}'
                   # A3B MoE: ~3B active params per token vs the dense 27B's
                   # full ~20GiB read, so this is the fast one on a
                   # bandwidth-bound card - expect well north of 100 tok/s
