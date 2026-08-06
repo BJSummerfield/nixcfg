@@ -150,6 +150,22 @@ in
       allowedTCPPortRanges = [ { from = 5800; to = 5999; } ];
     };
 
+    # The declarative half of the image pin: bumping vllmImage re-runs this
+    # on the next switch. Model startup itself never pulls (--pull=never in
+    # the llama-swap cmds) so a missing image fails fast instead of
+    # downloading 10+ GB inside the health-check window.
+    systemd.services.vllm-image-pull = lib.mkIf cudaEnabled {
+      description = "pull the pinned vLLM OCI image";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
+      };
+    };
+
     containers.local-llm = {
       autoStart = false;
       privateNetwork = true;
