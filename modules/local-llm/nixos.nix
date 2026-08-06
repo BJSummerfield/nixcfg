@@ -292,6 +292,7 @@ in
                   --max-num-seqs 2
                   --enable-auto-tool-choice
                   --tool-call-parser hermes
+                  --reasoning-parser qwen3
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
@@ -320,6 +321,7 @@ in
                   --max-num-seqs 2
                   --enable-auto-tool-choice
                   --tool-call-parser hermes
+                  --reasoning-parser qwen3
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
