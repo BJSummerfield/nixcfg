@@ -286,7 +286,7 @@ in
                   --gpu-memory-utilization 0.92
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 1024
-                  --max-num-seqs 8
+                  --max-num-seqs 2
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen27b-nvfp4
 
@@ -312,7 +312,7 @@ in
                   --gpu-memory-utilization 0.95
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 1024
-                  --max-num-seqs 8
+                  --max-num-seqs 2
                   --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
