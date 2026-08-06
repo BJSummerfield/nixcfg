@@ -330,15 +330,21 @@ in
                   --model /model
                   --served-model-name Qwen3.6-35B-A3B-NVFP4
                   --kv-cache-dtype fp8
+                  # conservative until the first boot reports its KV pool;
+                  # raise toward the measured number like the 27B
                   --max-model-len 32768
-                  --gpu-memory-utilization 0.95
+                  --gpu-memory-utilization 0.94
                   --limit-mm-per-prompt '{"image":0,"video":0}'
-                  --max-num-batched-tokens 1024
+                  --max-num-batched-tokens 2048
                   --max-num-seqs 2
+                  --enable-prefix-caching
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
-                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 2}'
+                  # A3B MoE: ~3B active params per token vs the dense 27B's
+                  # full ~20GiB read, so this is the fast one on a
+                  # bandwidth-bound card - expect well north of 100 tok/s
+                  --speculative-config '{"method": "mtp", "num_speculative_tokens": 3}'
                 cmdStop: ${podmanCli} stop -t 30 vllm-qwen35b-nvfp4
           '');
         in
