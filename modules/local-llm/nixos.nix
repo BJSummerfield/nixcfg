@@ -291,13 +291,16 @@ in
                   --limit-mm-per-prompt '{"image":0,"video":0}'
                   --max-num-batched-tokens 2048
                   --max-num-seqs 2
-                  # vllm turns prefix caching off by itself for this hybrid
-                  # arch (the GDN layers carry recurrent state), which makes
-                  # every agent turn re-prefill the whole conversation -
-                  # llama.cpp reuses the prefix and prefills only the delta.
-                  # Force it on; if this build refuses, it fails fast at
-                  # startup and the answer is to wait for a newer image.
-                  --enable-prefix-caching
+                  # Prefix caching stays OFF: forcing it on (mamba 'align'
+                  # mode, which vllm labels experimental) preceded a long
+                  # session degrading into incoherent rewrite loops that
+                  # smeared variable names across drafts - resumed GDN state
+                  # corruption fits the symptom, and the inflated 145 tok/s
+                  # (degenerate text drafts near-perfectly) corroborates.
+                  # Cost: every turn re-prefills the full conversation. If
+                  # incoherence persists WITHOUT it, next suspect is fp8 kv
+                  # (Unsloth: switch to bf16 - halves the pool, so
+                  # max-model-len must drop to ~98304 with it).
                   --enable-auto-tool-choice
                   --tool-call-parser qwen3_xml
                   --reasoning-parser qwen3
