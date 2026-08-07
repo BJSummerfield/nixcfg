@@ -8,34 +8,80 @@
 let
   cfg = config.mine.system.local-llm;
 
-  qwenMtpQ4Name = "Qwen3.6-35B-A3B-MTP-GGUF";
-  qwenMtpQ4File = "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
-  qwenMtpQ4Model = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${qwenMtpQ4Name}/resolve/main/${qwenMtpQ4File}";
-    hash = "sha256-VZg8WnWhq5aYJAd7O7PeQUboKpI0BytIrU6Pkq0/6fE=";
+  nvidiaEnabled = config.mine.system.nvidia.enable;
+  # Gated separately from the driver: enabling this bind-mounts the host
+  # podman socket into the container, which is root-equivalent access to the
+  # host, so flip cuda.enable only once that's acceptable.
+  cudaEnabled = cfg.cuda.enable;
+
+  # vLLM runs from upstream's prebuilt OCI image, not nixpkgs: the nix build
+  # compiles torch/magma/flash-attn from source (hours of nvcc that OOM 32GB),
+  # and nixpkgs lags upstream - NVFP4 quants want >= 0.25 while unstable ships
+  # 0.16. This tag is the version pin. To bump it: edit the tag, rebuild
+  # (vllm-image-pull fetches it in the background), restart
+  # container@local-llm, then `podman rmi` the old tag by hand - versioned
+  # tags never go dangling, so image prune won't collect them.
+  vllmImage = "docker.io/vllm/vllm-openai:v0.25.0";
+  podmanSock = "unix:///run/podman/podman.sock";
+  # Drives HOST podman over the bind-mounted API socket; vLLM itself
+  # is the upstream OCI image (vllmImage above), not a nix build.
+  podmanCli = "${lib.getExe' pkgs.podman "podman"} --url ${podmanSock}";
+  # CUDA talks to these directly instead of /dev/dri
+  nvidiaDevices = [
+    "/dev/nvidia0"
+    "/dev/nvidiactl"
+    "/dev/nvidia-uvm"
+    "/dev/nvidia-uvm-tools"
+    "/dev/nvidia-modeset"
+  ];
+
+  catalog = import ./models.nix;
+  allAliasNames = builtins.concatMap
+    (n: builtins.attrNames (catalog.models.${n}.aliases or { }))
+    (builtins.attrNames catalog.models);
+  weightsOf = import ./weights.nix { inherit lib pkgs; };
+  llamaSwapConfig = import ./llama-swap.nix {
+    inherit lib pkgs catalog weightsOf vllmImage podmanCli;
+    hostAddress = "192.168.100.24";
   };
-  qwenMtpQ4Path = "/var/lib/models/${qwenMtpQ4File}";
-
-
-  qwen27bMtpName = "Qwen3.6-27B-MTP-GGUF";
-  qwen27bMtpFile = "Qwen3.6-27B-UD-Q4_K_XL.gguf";
-  qwen27bMtpModel = pkgs.fetchurl {
-    url = "https://huggingface.co/unsloth/${qwen27bMtpName}/resolve/main/${qwen27bMtpFile}";
-    hash = "sha256-QIVmXuNtgqZyojikPw5WQ/Lw458te9XTc/DvEOz1MJU=";
-  };
-  qwen27bMtpPath = "/var/lib/models/${qwen27bMtpFile}";
-
-
 in
 {
   options.mine.system.local-llm = {
     enable = lib.mkEnableOption "Enable Local LLM container";
+    cuda.enable = lib.mkEnableOption "Serve vLLM NVFP4 models over the host's podman socket (needs the CUDA/Blackwell card; grants the container root-equivalent access to the host)";
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cudaEnabled -> nvidiaEnabled;
+        message = "mine.system.local-llm.cuda.enable requires mine.system.nvidia.enable";
+      }
+      {
+        assertion = builtins.all (n: catalog.models ? ${n}) catalog.enabled;
+        message = "local-llm: models.nix `enabled` names a model that does not exist";
+      }
+      {
+        assertion = builtins.elem catalog.default catalog.enabled;
+        message = "local-llm: models.nix `default` must be listed in `enabled`";
+      }
+      {
+        assertion = builtins.all (a: !(catalog.models ? ${a})) allAliasNames;
+        message = "local-llm: models.nix alias names must not collide with model names (a colliding alias shadows the model in llama-swap and duplicates its id in the clients)";
+      }
+      {
+        # A key with a `/` (the natural mistake: HF repo ids have one) or a
+        # space passes nix's attr syntax but breaks podman --name and splits
+        # --served-model-name on whitespace, both only at runtime.
+        assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null)
+          (builtins.attrNames catalog.models ++ allAliasNames);
+        message = "local-llm: model and alias names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
+      }
+    ];
+
     hardware.graphics = {
       enable = true;
-      extraPackages = [ pkgs.rocmPackages.clr.icd ];
+      extraPackages = lib.optionals (!nvidiaEnabled) [ pkgs.rocmPackages.clr.icd ];
     };
 
     networking.firewall.allowedTCPPorts = [
@@ -53,9 +99,42 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/models
+      mkdir -p /var/lib/local-llm/vllm-cache
       chmod 755 /var/lib/local-llm
     '';
+
+    # The vLLM model containers run on the HOST via podman - nesting a
+    # container runtime inside the nspawn container would mean cgroup and
+    # overlayfs misery. Inside the container llama-swap only runs the podman
+    # *client* against this API socket (root-equivalent on the host; fine for
+    # a single-user box, don't reuse this pattern on a shared machine).
+    virtualisation.podman.enable = lib.mkIf cudaEnabled true;
+    hardware.nvidia-container-toolkit.enable = lib.mkIf cudaEnabled true;
+    systemd.sockets.podman = lib.mkIf cudaEnabled { wantedBy = [ "sockets.target" ]; };
+    # llama-swap's PORT macro assigns upwards from 5800; the vllm containers
+    # publish those ports on the host end of the veth
+    networking.firewall.interfaces."ve-local-llm" = lib.mkIf cudaEnabled {
+      allowedTCPPortRanges = [ { from = 5800; to = 5999; } ];
+    };
+
+    # The declarative half of the image pin: bumping vllmImage re-runs this
+    # on the next switch. Model startup itself never pulls (--pull=never in
+    # the llama-swap cmds) so a missing image fails fast instead of
+    # downloading 10+ GB inside the health-check window.
+    systemd.services.vllm-image-pull = lib.mkIf cudaEnabled {
+      description = "pull the pinned vLLM OCI image";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      # Type=exec so neither boot nor nixos-rebuild switch blocks on the
+      # download; it continues in the background (watch with
+      # journalctl -u vllm-image-pull -f). A model started mid-download
+      # fails fast until the image lands.
+      serviceConfig = {
+        Type = "exec";
+        ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
+      };
+    };
 
     containers.local-llm = {
       autoStart = false;
@@ -66,114 +145,20 @@ in
       allowedDevices = [
         { modifier = "rwm"; node = "/dev/net/tun"; }
         { modifier = "rwm"; node = "/dev/dri/renderD128"; }
-      ];
+      ] ++ lib.optionals nvidiaEnabled (map (node: { modifier = "rwm"; inherit node; }) nvidiaDevices);
 
       bindMounts = {
         "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
         "/dev/dri" = { hostPath = "/dev/dri"; isReadOnly = false; };
         "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
         "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
-        "/var/lib/models/${qwenMtpQ4File}" = { hostPath = "${qwenMtpQ4Model}"; isReadOnly = true; };
-        "/var/lib/models/${qwen27bMtpFile}" = { hostPath = "${qwen27bMtpModel}"; isReadOnly = true; };
+      } // lib.optionalAttrs nvidiaEnabled
+        (lib.genAttrs nvidiaDevices (node: { hostPath = node; isReadOnly = false; }))
+      // lib.optionalAttrs cudaEnabled {
+        "/run/podman/podman.sock" = { hostPath = "/run/podman/podman.sock"; isReadOnly = false; };
       };
 
-      config = { config, pkgs, lib, ... }:
-        let
-          llamaServer = lib.getExe' pkgs.llama-cpp-vulkan "llama-server";
-          llamaSwapConfig = pkgs.writeText "llama-swap.yaml" ''
-            healthCheckTimeout: 300
-            logLevel: info
-            models:
-              "Qwen3.6-35B-A3B-MTP-Q4":
-                ttl: 3600
-                cmd: |
-                  ${llamaServer}
-                  --host 127.0.0.1 --port ''${PORT}
-                  -m ${qwenMtpQ4Path}
-                  --alias Qwen3.6-35B-A3B-MTP-Q4
-                  --temp 0.6
-                  --top-p 0.95
-                  --top-k 20
-                  --min-p 0.0
-                  --chat-template-kwargs '{"preserve_thinking":true}'
-                  --ctx-size 98304
-                  --flash-attn on
-                  --cache-type-k q8_0
-                  --cache-type-v q8_0
-                  --spec-type draft-mtp --spec-draft-n-max 2
-                  --n-gpu-layers 99
-
-              "Qwen3.6-27B-MTP-Q4":
-                ttl: 3600
-                cmd: |
-                  ${llamaServer}
-                  --host 127.0.0.1 --port ''${PORT}
-                  -m ${qwen27bMtpPath}
-                  --alias Qwen3.6-27B-MTP-Q4
-                  --temp 0.6
-                  --top-p 0.95
-                  --top-k 20
-                  --min-p 0.0
-                  --chat-template-kwargs '{"preserve_thinking":true}'
-                  --flash-attn on
-                  --cache-type-k q8_0
-                  --cache-type-v q8_0
-                  --ctx-size 131072
-                  --spec-type draft-mtp --spec-draft-n-max 2
-                  --n-gpu-layers 99
-          '';
-        in
-        {
-          services.tailscale.enable = true;
-          systemd.services.llama-swap = {
-            description = "llama-swap (model-swapping proxy for llama.cpp)";
-            after = [ "network.target" ];
-            wantedBy = [ "multi-user.target" ];
-            serviceConfig = {
-              ExecStart = ''
-                ${pkgs.llama-swap}/bin/llama-swap \
-                  --listen 0.0.0.0:8081 \
-                  --config ${llamaSwapConfig}
-              '';
-              Restart = "on-failure";
-              RestartSec = 10;
-              DynamicUser = true;
-              StateDirectory = "llama-swap";
-            };
-          };
-
-          services.open-webui = {
-            enable = true;
-            host = "0.0.0.0";
-            port = 8080;
-            environment = {
-              OPENAI_API_BASE_URL = "http://127.0.0.1:8081/v1";
-              OPENAI_API_KEY = "sk-no-key-required";
-              ENABLE_OLLAMA_API = "False";
-              WEBUI_AUTH = "True";
-              ENABLE_SIGNUP = "True";
-            };
-          };
-
-          networking = {
-            nameservers = [ "9.9.9.9" "1.1.1.1" ];
-            enableIPv6 = false;
-            firewall = {
-              enable = true;
-              allowedTCPPorts = [
-                8080
-                8081
-              ];
-              trustedInterfaces = [ "tailscale0" ];
-              allowedUDPPorts = [ config.services.tailscale.port ];
-            };
-          };
-
-          nixpkgs.config.allowUnfreePredicate = pkg:
-            builtins.elem (lib.getName pkg) [ "open-webui" ];
-
-          system.stateVersion = "24.11";
-        };
+      config = import ./container.nix { inherit llamaSwapConfig cudaEnabled; };
     };
   };
 }
