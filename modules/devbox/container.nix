@@ -1,7 +1,8 @@
 # NixOS configuration for the devbox container. `inputs` is the host
-# flake's inputs; tailnetHostname and tailscaleTags come from the host
-# module's options.
-{ inputs, tailnetHostname, tailscaleTags }:
+# flake's inputs; tailnetHostname comes from the host module's options and
+# is used only for paseo's Host-header allowlist - the tailnet join itself
+# is manual, see the header comment in nixos.nix.
+{ inputs, tailnetHostname }:
 { config, pkgs, lib, ... }:
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
@@ -218,49 +219,18 @@ in
   ];
 
   ##########################################################################
-  # tailscale (join + serve + firewall)
+  # tailscale (firewall only - join and serve are manual, see nixos.nix)
   ##########################################################################
 
-  services.tailscale = {
-    enable = true;
-    # Joins on first boot with no interactive `tailscale up`. The tag must
-    # exist in the ACL policy and the key must be issued for it, or the
-    # join fails silently from the container's point of view.
-    authKeyFile = "/run/secrets/devbox-tailscale-authkey";
-    # Node name is derived from tailnetHostname rather than repeated, so
-    # the name tailscale joins under, the name `serve` publishes, and the
-    # name paseo accepts in the Host header cannot drift apart. Two
-    # sources of truth here present as "connects, then 400s".
-    extraUpFlags = [
-      "--hostname=${lib.head (lib.splitString "." tailnetHostname)}"
-      "--advertise-tags=${lib.concatStringsSep "," tailscaleTags}"
-    ];
-  };
-
-  # `tailscale serve` config lives in tailscaled's own state, so this is
-  # idempotent across boots. It runs after the node has joined, otherwise
-  # serve has no identity to attach the proxy to.
-  systemd.services.devbox-tailscale-serve = {
-    description = "Publish the paseo daemon on the tailnet";
-    after = [ "tailscaled-autoconnect.service" ];
-    wants = [ "tailscaled-autoconnect.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      # `serve` config is idempotent (it lives in tailscaled's own state),
-      # so retrying costs nothing. Without this, one transient failure -
-      # tailscaled not fully ready, tag join rejected, HTTPS certs not
-      # enabled in the tailnet console - leaves devbox unreachable for the
-      # whole boot, and the only client is a phone with no way to retry it
-      # locally.
-      Restart = "on-failure";
-      RestartSec = 30;
-    };
-    script = ''
-      ${lib.getExe pkgs.tailscale} serve --bg 6767
-    '';
-  };
+  # Deliberately no authKeyFile and no `tailscale serve` unit. Declarative
+  # join has been tried on these containers before and is persistently
+  # flaky; the same manual one-time ritual used by vikunja-server and
+  # local-llm is what actually works here. It is genuinely one-time:
+  # /var/lib/tailscale is bind-mounted to /var/lib/tailscale-devbox on the
+  # host, so the node identity survives container rebuilds and only needs
+  # redoing if that host directory is wiped. The commands are in the header
+  # comment of nixos.nix.
+  services.tailscale.enable = true;
 
   networking = {
     # container has no host resolv.conf; needed for the tailscale

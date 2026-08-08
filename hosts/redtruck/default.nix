@@ -39,7 +39,6 @@
       # hostPath is missing fails at container start, not at build.
       devbox = {
         enable = true;
-        tailscaleAuthKeyFile = "/run/secrets/devbox-tailscale-authkey";
         githubTokenFile = "/run/secrets/devbox-github-token";
         paseoPasswordFile = "/run/secrets/devbox-paseo-password";
         tailnetHostname = "devbox.mist-gamma.ts.net";

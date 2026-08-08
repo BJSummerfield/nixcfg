@@ -1,3 +1,20 @@
+# Once the container is running, join the tailnet and publish paseo once:
+# sudo nixos-container root-login devbox
+# tailscale up --hostname=devbox --advertise-tags=tag:devbox
+# tailscale serve --bg 6767
+#
+# Both are one-time. /var/lib/tailscale is bind-mounted to
+# /var/lib/tailscale-devbox on the host, so the node identity and the serve
+# config survive container restarts and rebuilds; you only redo this if
+# that host directory is wiped. Declarative join (authKeyFile /
+# extraUpFlags / a serve oneshot) was tried and removed - it is persistently
+# flaky on nixos-containers, and the same manual ritual used by
+# vikunja-server and local-llm is what actually works.
+#
+# --hostname must match the first label of mine.system.devbox.tailnetHostname,
+# which is what paseo checks in the Host header. They disagree -> connects,
+# then 400s.
+#
 # Persistent coding-agent container. Replaces the ephemeral coding-agents
 # pool, whose container lifetime was tied to the launching SSH session -
 # fine at a desk, fatal for a phone client whose connection drops.
@@ -18,17 +35,6 @@ in
 {
   options.mine.system.devbox = {
     enable = mkEnableOption "persistent coding-agent devbox container";
-
-    tailscaleAuthKeyFile = mkOption {
-      type = types.path;
-      description = ''
-        Path on the host to a Tailscale auth key, pre-authorized for the
-        tag in tailscaleTags, so the container joins the tailnet on first
-        boot without a manual `tailscale up`. Typically the decrypted path
-        from sops-nix.
-      '';
-      example = "/run/secrets/devbox-tailscale-authkey";
-    };
 
     githubTokenFile = mkOption {
       type = types.path;
@@ -78,39 +84,28 @@ in
     tailnetHostname = mkOption {
       type = types.str;
       description = ''
-        Fully-qualified tailnet name the container serves on. Used both by
-        `tailscale serve` and by paseo's Host-header allowlist; a mismatch
-        presents as a connection that establishes and then 400s.
+        Fully-qualified tailnet name the container is served on. Used for
+        paseo's Host-header allowlist, and it must match what the manual
+        `tailscale serve` publishes - a mismatch presents as a connection
+        that establishes and then 400s.
       '';
       example = "devbox.mist-gamma.ts.net";
-    };
-
-    tailscaleTags = mkOption {
-      type = types.listOf types.str;
-      default = [ "tag:devbox" ];
-      description = ''
-        ACL tags advertised at join. The tag must already exist in the
-        tailnet ACL policy and the auth key must be issued for it, or the
-        join fails.
-      '';
     };
   };
 
   config = mkIf cfg.enable {
     assertions = [
       {
-        # lib.head (lib.splitString "." tailnetHostname) silently yields a
-        # garbage tailscale node name for a bare hostname (no error, just
-        # the whole string, or a confusing join). tailnetHostname is
-        # supposed to be the FQDN `tailscale serve` and paseo's Host-header
-        # check both key off, so catch a bare hostname here instead of at
-        # "connects, then 400s" debugging time.
+        # paseo's Host-header check keys off this exact string, and the
+        # manual `tailscale up --hostname=` in the header comment must
+        # agree with its first label. A bare node name here is silently
+        # wrong rather than an error, and surfaces only as "connects, then
+        # 400s" - which is a miserable thing to debug from a phone.
         assertion = lib.hasInfix "." cfg.tailnetHostname;
         message = ''
           mine.system.devbox.tailnetHostname ("${cfg.tailnetHostname}") must
           be a fully-qualified tailnet hostname (e.g.
-          "devbox.mist-gamma.ts.net"), not a bare node name - the node name
-          is derived from it by splitting on ".".
+          "devbox.mist-gamma.ts.net"), not a bare node name.
         '';
       }
     ];
@@ -146,14 +141,14 @@ in
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # persists the tailscale node identity across container restarts
+        # Persists the tailscale node identity across container restarts
+        # and rebuilds. This is what makes the manual `tailscale up` in the
+        # header comment a genuinely one-time cost rather than a
+        # per-rebuild ritual: wipe this host directory and you re-auth,
+        # otherwise you never touch it again.
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-devbox";
           isReadOnly = false;
-        };
-        "/run/secrets/devbox-tailscale-authkey" = {
-          hostPath = cfg.tailscaleAuthKeyFile;
-          isReadOnly = true;
         };
         "/run/secrets/devbox-github-token" = {
           hostPath = cfg.githubTokenFile;
@@ -167,7 +162,7 @@ in
 
       config = import ./container.nix {
         inherit inputs;
-        inherit (cfg) tailnetHostname tailscaleTags;
+        inherit (cfg) tailnetHostname;
       };
     };
   };
