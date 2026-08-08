@@ -233,6 +233,26 @@
         "type": "github"
       }
     },
+    "paseo": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786141591,
+        "narHash": "sha256-cticeWyV0tAadKGKlBH27VyhWc1Uo1lL5pKi55q95Co=",
+        "owner": "getpaseo",
+        "repo": "paseo",
+        "rev": "cc5ce1038d9785e06d9dd1c01095b37ddd4d6f5d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "getpaseo",
+        "repo": "paseo",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "disko": "disko",
@@ -241,6 +261,7 @@
         "nix-darwin": "nix-darwin",
         "nix-homebrew": "nix-homebrew",
         "nixpkgs": "nixpkgs",
+        "paseo": "paseo",
         "sops-nix": "sops-nix"
       }
     },

@@ -31,6 +31,13 @@
       };
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    # Coding-agent orchestration daemon; upstream ships its own flake with
+    # a NixOS module. nixpkgs.follows keeps the container building against
+    # the same nixpkgs as the shared host store.
+    paseo = {
+      url = "github:getpaseo/paseo";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { nixpkgs, ... }@inputs:
