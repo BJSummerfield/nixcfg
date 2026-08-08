@@ -85,6 +85,24 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        # lib.head (lib.splitString "." tailnetHostname) silently yields a
+        # garbage tailscale node name for a bare hostname (no error, just
+        # the whole string, or a confusing join). tailnetHostname is
+        # supposed to be the FQDN `tailscale serve` and paseo's Host-header
+        # check both key off, so catch a bare hostname here instead of at
+        # "connects, then 400s" debugging time.
+        assertion = lib.hasInfix "." cfg.tailnetHostname;
+        message = ''
+          mine.system.devbox.tailnetHostname ("${cfg.tailnetHostname}") must
+          be a fully-qualified tailnet hostname (e.g.
+          "devbox.mist-gamma.ts.net"), not a bare node name - the node name
+          is derived from it by splitting on ".".
+        '';
+      }
+    ];
+
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-devbox" ];
