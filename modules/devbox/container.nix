@@ -191,6 +191,32 @@ in
   # the daemon a secret that never touches the store.
   systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/devbox-paseo-password";
 
+  # paseo's resolveAuthConfig (server/dist/server/server/config.js) only
+  # installs a password when PASEO_PASSWORD is non-empty; otherwise it
+  # silently falls back to persisted config or no auth at all. Meanwhile
+  # systemd only *logs a warning* for an EnvironmentFile= line missing an
+  # `=` - the unit still comes up "active". So a malformed
+  # devbox-paseo-password (wrong key, stray whitespace, empty value - the
+  # natural mistake, since the other two devbox secrets are bare-value
+  # files, not KEY=value ones) would leave paseo running unauthenticated on
+  # the tailnet with no failure anywhere. This turns that into a hard
+  # startup failure instead.
+  #
+  # Runs with the "+" prefix - i.e. as root, not the unit's own
+  # User=agent - because paseoPasswordFile is deliberately root-only
+  # (mode = "0400", see mine.system.devbox.paseoPasswordFile); ExecStartPre
+  # without "+" runs as the unit's configured User=, which could not read
+  # it. Uses grep's own exit status only; never echoes the file's contents,
+  # matched or not, so the secret can't reach the unit's stderr/journal.
+  systemd.services.paseo.serviceConfig.ExecStartPre = [
+    ("+" + toString (pkgs.writeShellScript "devbox-paseo-password-check" ''
+      if ! ${lib.getExe pkgs.gnugrep} -Eq '^PASEO_PASSWORD=.+' /run/secrets/devbox-paseo-password; then
+        echo "devbox-paseo-password: no non-empty PASEO_PASSWORD=<value> line found - refusing to start paseo unauthenticated (value withheld)" >&2
+        exit 1
+      fi
+    ''))
+  ];
+
   ##########################################################################
   # tailscale (join + serve + firewall)
   ##########################################################################
@@ -281,7 +307,11 @@ in
     path = with pkgs; [ direnv nix git ];
     script = ''
       shopt -s nullglob
-      for repo in /home/agent/projects/*/ /var/lib/paseo/worktrees/*/; do
+      # Paseo (0.3.0-beta.4, server/dist/server/utils/worktree.js) lays worktrees
+      # out as $PASEO_HOME/worktrees/<projectHash>/<slug> - an extra directory
+      # level keyed by a hash of the source repo root, not
+      # worktrees/<slug> directly. Hence the double */*/ below.
+      for repo in /home/agent/projects/*/ /var/lib/paseo/worktrees/*/*/; do
         [ -f "$repo/.envrc" ] || continue
         cd "$repo" || continue
         echo "warming $repo"
@@ -308,6 +338,20 @@ in
   };
 
   # Fires when a repo or worktree appears, or its flake changes.
+  #
+  # This watch is necessarily incomplete: systemd.path's PathChanged= takes a
+  # literal directory, not a glob, and is not recursive (see systemd.path(5)
+  # - only PathExistsGlob= globs, and it is an existence check, not a change
+  # notification). Watching /var/lib/paseo/worktrees therefore only ever
+  # sees a project's *first* worktree, which is what creates the
+  # <projectHash> directory directly inside it; a 2nd+ worktree of the same
+  # project only mutates worktrees/<projectHash>/, one level down, which
+  # nothing here is watching (project hashes aren't known ahead of time, so
+  # there is no fixed set of literal paths to list). Closing that requires
+  # either dynamically generated per-hash path units or dropping inotify for
+  # a polling watcher - both disproportionate to what this gap costs. The
+  # devbox-warm timer below is shortened from a daily to an hourly backstop
+  # specifically to bound that staleness instead.
   systemd.paths.devbox-warm = {
     description = "Watch devbox projects and worktrees for new or changed flakes";
     wantedBy = [ "multi-user.target" ];
@@ -317,12 +361,20 @@ in
     ];
   };
 
-  # Backstop: catches flake.lock edits made inside an existing repo, which
-  # the path unit's directory watch does not see.
+  # Backstop. Originally just for flake.lock edits made inside an existing
+  # repo (which the path unit's directory watch never sees at all), but also
+  # now the only thing that ever warms a 2nd+ worktree of an existing
+  # project - see the comment on systemd.paths.devbox-warm above. Daily was
+  # too coarse for that case: the whole point of warming is that a task
+  # launched from a phone must not block on a cold `nix develop`, and up to
+  # a day of staleness on every second task in a project defeats that.
+  # Hourly is cheap here - direnv exec on an already-warmed shell is a fast
+  # no-op - and bounds the gap to something that no longer matters in
+  # practice.
   systemd.timers.devbox-warm = {
     wantedBy = [ "timers.target" ];
     timerConfig = {
-      OnCalendar = "daily";
+      OnCalendar = "hourly";
       Persistent = true;
     };
   };
