@@ -38,11 +38,22 @@ in
   # user + agents + home-manager
   ##########################################################################
 
-  # No pinned uid, deliberately: unlike modules/coding-agents/container.nix,
-  # nothing here is bind-mounted from the host user's tree, so there is no
-  # uid to match. Repos live in the container's own filesystem.
+  # Pinned deliberately, and NOT to a host uid. These containers run with
+  # PRIVATE_USERS=no and the host's nix-daemon socket bind-mounted, so the
+  # container's uid IS a host uid to the daemon - and every uid in
+  # mine.users with isSuperUser lands in nix's trusted-users, which is
+  # root-equivalent (a trusted client can set extra-sandbox-paths and bind
+  # the host's ssh/sops/signing keys into a build). 1500 is outside the
+  # host's 1000-1003 range, so the daemon treats the agent as untrusted:
+  # it can still build, substitute and realise derivations - everything
+  # nix-direnv needs - but cannot override trusted settings.
+  #
+  # Unlike modules/coding-agents/container.nix there is no uid to *match*,
+  # because nothing is bind-mounted from a host user's tree; but that is a
+  # reason not to match one, not a reason to leave it unpinned.
   users.users.agent = {
     isNormalUser = true;
+    uid = 1500;
     home = "/home/agent";
     description = "coding agent";
   };
