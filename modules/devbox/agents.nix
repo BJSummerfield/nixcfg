@@ -11,17 +11,31 @@
 # the .envrc is untrusted, so we probe first and fall through with a loud
 # warning rather than killing the session - a dead agent session is a worse
 # failure than a slow one, especially when the client is a phone.
+#
+# Why two branches and not an exit-code check. nix-direnv fails *open*: a
+# flake that will not evaluate still produces a successful `direnv exec`,
+# because refusing to load would lock you out of the directory. An
+# exit-status probe therefore detects "not allowed" and nothing else - with
+# an allowed .envrc over a broken flake it returns 0, the agent runs in a
+# bare environment, and no warning fires. That is precisely the invisible
+# toolchain-missing failure this wrapper exists to prevent, so the probe
+# must read stderr too, and must print the build error rather than discard
+# it.
 { pkgs, lib }:
 {
   mkAgent = { name, real }:
     pkgs.writeShellScriptBin name ''
       if [ -f .envrc ]; then
-        if ${lib.getExe pkgs.direnv} exec . true >/dev/null 2>&1; then
+        err=$(${lib.getExe pkgs.direnv} exec . true 2>&1 >/dev/null); rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "WARNING: .envrc is present but not allowed - fix with: direnv allow ${"\${PWD}"}" >&2
+        elif printf '%s' "$err" | grep -q '^error:'; then
+          echo "WARNING: the project devShell failed to build:" >&2
+          printf '%s\n' "$err" >&2
+        else
           exec ${lib.getExe pkgs.direnv} exec . ${real} "$@"
         fi
-        echo "WARNING: .envrc is present but direnv could not load it (not allowed, or the devShell failed to build)." >&2
         echo "WARNING: running without the project devShell - toolchain binaries such as cargo will be missing." >&2
-        echo "WARNING: fix with: direnv allow ${"\${PWD}"}" >&2
       fi
       exec ${real} "$@"
     '';
