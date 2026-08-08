@@ -14,6 +14,35 @@
     helix
   ];
 
+  # devbox container secrets. Both are bind-mounted read-only into the
+  # container by modules/devbox/nixos.nix; neither ever enters the
+  # container's filesystem or the nix store.
+  #
+  # The two modes differ deliberately and point opposite ways:
+  #
+  #   github-token   read by the *agent* (uid 1500, group users) at use
+  #                  time, via the git credential helper and the gh
+  #                  wrapper. sops-nix's default 0400 root is unreadable
+  #                  to it, and `owner` can't help - it takes a host
+  #                  username and no host user has uid 1500.
+  #
+  #   paseo-password read by PID 1 as root, via the paseo unit's
+  #                  EnvironmentFile=, before the process drops to
+  #                  User=agent. Root-only is sufficient and safer: it
+  #                  keeps the daemon password out of reach of anything
+  #                  running as agent, including a compromised agent.
+  #
+  # Rotating either one needs `systemctl restart container@devbox` - the
+  # bind mount resolved to the old file when the container started.
+  sops.secrets = {
+    devbox-github-token = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0440";
+      group = "users";
+    };
+    devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+  };
+
   mine = {
     system = {
       hostName = "redtruck";
@@ -34,13 +63,15 @@
       };
       openssh.outbound.enable = true;
       coding-agents.enable = true;
-      # All three paths are sops-decrypted secrets. The container stays
-      # autoStart = false until they exist on disk: a bindMount whose
-      # hostPath is missing fails at container start, not at build.
+      # Paths come from the sops.secrets declarations above rather than
+      # being hardcoded, so a change to sops-nix's layout can't silently
+      # desync them. The container stays autoStart = false until those
+      # files exist on disk: a bindMount whose hostPath is missing fails
+      # at container start, not at build.
       devbox = {
         enable = true;
-        githubTokenFile = "/run/secrets/devbox-github-token";
-        paseoPasswordFile = "/run/secrets/devbox-paseo-password";
+        githubTokenFile = config.sops.secrets.devbox-github-token.path;
+        paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
         tailnetHostname = "devbox.mist-gamma.ts.net";
       };
       pipewire.sample-switch.enable = true;
