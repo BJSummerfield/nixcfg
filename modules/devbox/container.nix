@@ -10,8 +10,12 @@
     # exist in the ACL policy and the key must be issued for it, or the
     # join fails silently from the container's point of view.
     authKeyFile = "/run/secrets/devbox-tailscale-authkey";
+    # Node name is derived from tailnetHostname rather than repeated, so
+    # the name tailscale joins under, the name `serve` publishes, and the
+    # name paseo accepts in the Host header cannot drift apart. Two
+    # sources of truth here present as "connects, then 400s".
     extraUpFlags = [
-      "--hostname=devbox"
+      "--hostname=${lib.head (lib.splitString "." tailnetHostname)}"
       "--advertise-tags=${lib.concatStringsSep "," tailscaleTags}"
     ];
   };
