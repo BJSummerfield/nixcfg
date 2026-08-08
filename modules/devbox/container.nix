@@ -180,6 +180,18 @@ in
     environment = {
       CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
       DISABLE_AUTOUPDATER = "1";
+      # The browser UI is OFF by default - resolveWebUiConfig in the
+      # daemon's config.js falls through to `?? false` unless one of
+      # --web-ui, PASEO_WEB_UI_ENABLED, or features.webUi.enabled in
+      # config.json is set. Without it the daemon is perfectly healthy but
+      # serves nothing at /, so `tailscale serve` proxies to a 404 and the
+      # symptom looks like a routing or Host-header problem rather than a
+      # disabled feature.
+      #
+      # The env var is used rather than services.paseo.settings because
+      # settings writes config.json from the nix store, and the daemon also
+      # persists its own state (pairing, password) into that same file.
+      PASEO_WEB_UI_ENABLED = "true";
     };
   };
 
