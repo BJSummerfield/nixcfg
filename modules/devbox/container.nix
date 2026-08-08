@@ -30,6 +30,7 @@ in
 {
   imports = [
     inputs.home-manager.nixosModules.home-manager
+    inputs.paseo.nixosModules.paseo
     ../unfree/nixos.nix
   ];
 
@@ -100,6 +101,25 @@ in
         };
       };
     };
+  };
+
+  services.paseo = {
+    enable = true;
+    user = "agent";
+    group = "users";
+    port = 6767;
+    # Never leaves loopback. `tailscale serve` is the only door, so
+    # nothing on the LAN and nothing on ve-devbox can reach the daemon.
+    listenAddress = "127.0.0.1";
+    openFirewall = false;
+    # No third party in the path; the tailnet is the transport. Cost is
+    # that a broken tailnet locks the environment out entirely, which is
+    # how every other service on this tailnet already behaves.
+    relay.enable = false;
+    # Must match what `tailscale serve` publishes or requests are
+    # rejected on the Host header - presents as "connects, then 400s".
+    hostnames = [ tailnetHostname ];
+    dataDir = "/var/lib/paseo";
   };
 
   services.tailscale = {
