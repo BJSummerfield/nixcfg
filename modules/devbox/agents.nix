@@ -17,9 +17,20 @@
 # direnv's allow-list is whitelisted by prefix for both trees agents run
 # in (see modules/devbox/container.nix's programs.direnv.config.whitelist),
 # so "not allowed" is no longer an expected outcome here - but
-# `direnv exec` is still what decides whether a `.envrc` applies at all,
-# and it fails (non-zero) when none exists anywhere up the tree. That is
-# the only case worth failing open loudly for.
+# `direnv exec` is still what decides whether a `.envrc` applies at all.
+# Measured behaviour of `direnv exec . true`:
+#   - no .envrc anywhere up the tree: exits 0, empty stderr, environment
+#     passed through unmodified (there is nothing to load, so nothing to
+#     warn about - this runs silently and that's correct)
+#   - a .envrc exists but is *blocked* (untrusted): exits non-zero, with
+#     "direnv: error ... is blocked" on stderr
+#   - an allowed .envrc whose flake fails to evaluate: exits 0, with
+#     `error:` on stderr (see the nix-direnv fail-open note below)
+# So `rc != 0` below fires only for the second case: an .envrc exists
+# outside the whitelisted prefixes above and was never allowed. Given the
+# whitelist that should be rare in practice, but it's the one case worth
+# failing open loudly for, since it means something is running outside the
+# trees this container expects agents to work in.
 #
 # Why the `^error:` check is diagnostic-only, not another fail-open branch.
 # nix-direnv fails *open*: a flake that will not evaluate still produces a
@@ -34,7 +45,7 @@
     pkgs.writeShellScriptBin name ''
       err=$(${lib.getExe pkgs.direnv} exec . true 2>&1 >/dev/null); rc=$?
       if [ "$rc" -ne 0 ]; then
-        echo "WARNING: no usable .envrc for this directory or its parents:" >&2
+        echo "WARNING: .envrc found but not allowed (blocked/untrusted) for this directory or its parents:" >&2
         printf '%s\n' "$err" >&2
         echo "WARNING: running without a project devShell - toolchain binaries such as cargo will be missing." >&2
         exec ${real} "$@"
