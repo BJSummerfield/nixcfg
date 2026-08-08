@@ -34,8 +34,9 @@
       };
       openssh.outbound.enable = true;
       coding-agents.enable = true;
-      # Paths are sops-decrypted secrets; see devbox-design/DESIGN.md §8.
-      # Container stays autoStart = false until these exist on disk.
+      # Both paths are sops-decrypted secrets. The container stays
+      # autoStart = false until they exist on disk: a bindMount whose
+      # hostPath is missing fails at container start, not at build.
       devbox = {
         enable = true;
         tailscaleAuthKeyFile = "/run/secrets/devbox-tailscale-authkey";
