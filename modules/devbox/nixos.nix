@@ -38,8 +38,29 @@ in
         Pull requests read/write. Pushes to protected branches are stopped
         by a GitHub ruleset, not by the token - fine-grained PATs have no
         branch dimension. Typically the decrypted path from sops-nix.
+
+        Must be readable by the container's agent uid: the credential
+        helper and `gh` both `cat` this file as agent, and this container
+        runs with PRIVATE_USERS=no so that uid is a plain host uid, not a
+        namespaced one. sops-nix's default (`mode = "0400"`, `owner =
+        "root"`) is unreadable to it - set `mode = "0440"` with a matching
+        group, or `owner` to the agent uid, instead.
       '';
       example = "/run/secrets/devbox-github-token";
+    };
+
+    paseoPasswordFile = mkOption {
+      type = types.path;
+      description = ''
+        Path on the host to a file containing the paseo daemon password as
+        an environment variable assignment, e.g.
+        `PASEO_PASSWORD=<secret>`. Tailnet membership is not treated as
+        sufficient authentication on its own: an ACL mistake or a single
+        compromised tailnet device would otherwise mean a shell over every
+        repo. Must be readable by the container's agent uid. Typically the
+        decrypted path from sops-nix.
+      '';
+      example = "/run/secrets/devbox-paseo-password";
     };
 
     tailnetHostname = mkOption {
@@ -106,6 +127,10 @@ in
         };
         "/run/secrets/devbox-github-token" = {
           hostPath = cfg.githubTokenFile;
+          isReadOnly = true;
+        };
+        "/run/secrets/devbox-paseo-password" = {
+          hostPath = cfg.paseoPasswordFile;
           isReadOnly = true;
         };
       };

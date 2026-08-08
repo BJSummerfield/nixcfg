@@ -182,6 +182,15 @@ in
     };
   };
 
+  # Tailnet membership is not treated as sufficient authentication on its
+  # own (see mine.system.devbox.paseoPasswordFile). Upstream's paseo module
+  # has no environmentFile-style option to consume this without the value
+  # passing through cfg.environment/cfg.settings - both of which the
+  # module renders into the nix store, which is world-readable. Overriding
+  # the generated unit's EnvironmentFile directly is the only way to hand
+  # the daemon a secret that never touches the store.
+  systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/devbox-paseo-password";
+
   ##########################################################################
   # tailscale (join + serve + firewall)
   ##########################################################################

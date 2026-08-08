@@ -34,13 +34,14 @@
       };
       openssh.outbound.enable = true;
       coding-agents.enable = true;
-      # Both paths are sops-decrypted secrets. The container stays
+      # All three paths are sops-decrypted secrets. The container stays
       # autoStart = false until they exist on disk: a bindMount whose
       # hostPath is missing fails at container start, not at build.
       devbox = {
         enable = true;
         tailscaleAuthKeyFile = "/run/secrets/devbox-tailscale-authkey";
         githubTokenFile = "/run/secrets/devbox-github-token";
+        paseoPasswordFile = "/run/secrets/devbox-paseo-password";
         tailnetHostname = "devbox.mist-gamma.ts.net";
       };
       pipewire.sample-switch.enable = true;
