@@ -34,6 +34,10 @@ in
     ../unfree/nixos.nix
   ];
 
+  ##########################################################################
+  # user + agents + home-manager
+  ##########################################################################
+
   # No pinned uid, deliberately: unlike modules/coding-agents/container.nix,
   # nothing here is bind-mounted from the host user's tree, so there is no
   # uid to match. Repos live in the container's own filesystem.
@@ -75,9 +79,6 @@ in
         pi-coding-agent.enable = true;
       };
 
-      home.packages = agentPkgs;
-      home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
-
       # Suppresses the upstream modules' own bin/pi and bin/opencode -
       # otherwise they collide with the mkAgent wrappers of the same name
       # in this same home-manager profile (pkgs.buildEnv fails hard on
@@ -85,6 +86,9 @@ in
       # from these modules is untouched; only the package is disabled.
       programs.pi-coding-agent.package = null;
       programs.opencode.package = null;
+
+      home.packages = agentPkgs;
+      home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
 
       programs.git = {
         enable = true;
@@ -102,6 +106,10 @@ in
       };
     };
   };
+
+  ##########################################################################
+  # paseo
+  ##########################################################################
 
   services.paseo = {
     enable = true;
@@ -122,6 +130,10 @@ in
     dataDir = "/var/lib/paseo";
   };
 
+  ##########################################################################
+  # tailscale (join + serve + firewall)
+  ##########################################################################
+
   services.tailscale = {
     enable = true;
     # Joins on first boot with no interactive `tailscale up`. The tag must
@@ -137,6 +149,42 @@ in
       "--advertise-tags=${lib.concatStringsSep "," tailscaleTags}"
     ];
   };
+
+  # `tailscale serve` config lives in tailscaled's own state, so this is
+  # idempotent across boots. It runs after the node has joined, otherwise
+  # serve has no identity to attach the proxy to.
+  systemd.services.devbox-tailscale-serve = {
+    description = "Publish the paseo daemon on the tailnet";
+    after = [ "tailscaled-autoconnect.service" ];
+    wants = [ "tailscaled-autoconnect.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      ${lib.getExe pkgs.tailscale} serve --bg 6767
+    '';
+  };
+
+  networking = {
+    # container has no host resolv.conf; needed for the tailscale
+    # control plane and for agents fetching from the network
+    nameservers = [ "9.9.9.9" "1.1.1.1" ];
+    firewall = {
+      enable = true;
+      trustedInterfaces = [ "tailscale0" ];
+      allowedUDPPorts = [ config.services.tailscale.port ];
+    };
+  };
+
+  ##########################################################################
+  # warming (tmpfiles + service + path + timer)
+  ##########################################################################
+
+  systemd.tmpfiles.rules = [
+    "d /home/agent/projects 0755 agent users -"
+  ];
 
   # Builds every repo's devShell ahead of first use, so an agent launched
   # from a phone never blocks on a cold `nix develop`. nix-direnv creates
@@ -195,38 +243,6 @@ in
     timerConfig = {
       OnCalendar = "daily";
       Persistent = true;
-    };
-  };
-
-  systemd.tmpfiles.rules = [
-    "d /home/agent/projects 0755 agent users -"
-  ];
-
-  # `tailscale serve` config lives in tailscaled's own state, so this is
-  # idempotent across boots. It runs after the node has joined, otherwise
-  # serve has no identity to attach the proxy to.
-  systemd.services.devbox-tailscale-serve = {
-    description = "Publish the paseo daemon on the tailnet";
-    after = [ "tailscaled-autoconnect.service" ];
-    wants = [ "tailscaled-autoconnect.service" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      ${lib.getExe pkgs.tailscale} serve --bg 6767
-    '';
-  };
-
-  networking = {
-    # container has no host resolv.conf; needed for the tailscale
-    # control plane and for agents fetching from the network
-    nameservers = [ "9.9.9.9" "1.1.1.1" ];
-    firewall = {
-      enable = true;
-      trustedInterfaces = [ "tailscale0" ];
-      allowedUDPPorts = [ config.services.tailscale.port ];
     };
   };
 
