@@ -138,6 +138,52 @@ in
     ];
   };
 
+  # Builds every repo's devShell ahead of first use, so an agent launched
+  # from a phone never blocks on a cold `nix develop`. nix-direnv creates
+  # GC roots, so a warmed shell survives nix-collect-garbage.
+  systemd.services.devbox-warm = {
+    description = "Warm direnv devShells for all devbox projects";
+    serviceConfig = {
+      Type = "oneshot";
+      User = "agent";
+      # A cold build of several repos is slow and must not be killed
+      # halfway, leaving a partially-realised shell.
+      TimeoutStartSec = "2h";
+    };
+    path = with pkgs; [ direnv nix git ];
+    script = ''
+      shopt -s nullglob
+      for repo in /home/agent/projects/*/; do
+        [ -f "$repo/.envrc" ] || continue
+        cd "$repo" || continue
+        echo "warming $repo"
+        direnv allow . || { echo "could not allow $repo/.envrc" >&2; continue; }
+        direnv exec . true || echo "devShell build failed for $repo" >&2
+      done
+    '';
+  };
+
+  # Fires when a repo appears or its flake changes.
+  systemd.paths.devbox-warm = {
+    description = "Watch devbox projects for new or changed flakes";
+    wantedBy = [ "multi-user.target" ];
+    pathConfig.PathChanged = "/home/agent/projects";
+  };
+
+  # Backstop: catches flake.lock edits made inside an existing repo, which
+  # the path unit's directory watch does not see.
+  systemd.timers.devbox-warm = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "daily";
+      Persistent = true;
+    };
+  };
+
+  systemd.tmpfiles.rules = [
+    "d /home/agent/projects 0755 agent users -"
+  ];
+
   # `tailscale serve` config lives in tailscaled's own state, so this is
   # idempotent across boots. It runs after the node has joined, otherwise
   # serve has no identity to attach the proxy to.
