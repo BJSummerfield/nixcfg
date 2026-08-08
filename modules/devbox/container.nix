@@ -26,6 +26,17 @@ let
     (mkAgent { name = "pi"; real = "${piWithNode}/bin/pi"; })
     (mkAgent { name = "opencode"; real = lib.getExe pkgs.opencode; })
   ];
+
+  # `gh` reads GH_TOKEN/GITHUB_TOKEN or its own keyring; the git credential
+  # helper below only covers `git`. Wrapped the same way, reading the token
+  # at use time so it never lands in the nix store. Installed instead of
+  # bare pkgs.gh below so there is only ever one `gh` in this profile - two
+  # same-named derivations of equal priority is a hard pkgs.buildEnv
+  # collision, the same class that bit pi and opencode above.
+  ghWrapped = pkgs.writeShellScriptBin "gh" ''
+    export GH_TOKEN=$(cat /run/secrets/devbox-github-token)
+    exec ${lib.getExe pkgs.gh} "$@"
+  '';
 in
 {
   imports = [
@@ -58,14 +69,22 @@ in
     description = "coding agent";
   };
 
+  # nix builds go through the host daemon; the store is shared read-only.
+  # Pin the registry so `nix shell nixpkgs#foo` (promised by the design as
+  # available inside agent sessions) resolves against the shared host store
+  # instantly instead of fetching nixos-unstable over the network.
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.registry.nixpkgs.flake = inputs.nixpkgs;
+  nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
+
   mine.allowedUnfree = [ "claude-code" ];
 
   # Also on the system PATH, not only in the user profile: the paseo
   # daemon's inheritUserEnvironment may or may not pick up
   # /etc/profiles/per-user/agent/bin, and a daemon that cannot find
   # `claude` fails in a way that gives no hint why.
-  environment.systemPackages = agentPkgs ++ (with pkgs; [
-    curl fd jq ripgrep gh git direnv
+  environment.systemPackages = agentPkgs ++ [ ghWrapped ] ++ (with pkgs; [
+    curl fd jq ripgrep git direnv
   ]);
 
   environment.sessionVariables = {
@@ -97,6 +116,17 @@ in
       # from these modules is untouched; only the package is disabled.
       programs.pi-coding-agent.package = null;
       programs.opencode.package = null;
+
+      # direnv's allow-list is keyed by absolute .envrc path, and paseo
+      # creates a fresh worktree path per task under its dataDir - so a
+      # per-repo `direnv allow` can never cover them. Whitelisting both
+      # trees is the same tradeoff DESIGN 6.3 already accepted for cloned
+      # repos: the agent in this container runs arbitrary repo code by
+      # design, and the container is what contains it.
+      programs.direnv.config.whitelist.prefix = [
+        "/home/agent/projects"
+        "/var/lib/paseo/worktrees"
+      ];
 
       home.packages = agentPkgs;
       home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
@@ -139,6 +169,17 @@ in
     # rejected on the Host header - presents as "connects, then 400s".
     hostnames = [ tailnetHostname ];
     dataDir = "/var/lib/paseo";
+    # environment.sessionVariables below covers login shells
+    # (/etc/set-environment) and systemd *user* services, but this is a
+    # system service, so agents paseo spawns would otherwise see neither
+    # var: an unauthenticated `claude` reading ~/.claude instead of the
+    # bind-mounted state dir, with no obvious cause from the phone side.
+    # Duplicated rather than derived from sessionVariables so both stay in
+    # one file and can't silently drift - they must always agree.
+    environment = {
+      CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
+      DISABLE_AUTOUPDATER = "1";
+    };
   };
 
   ##########################################################################
@@ -172,6 +213,14 @@ in
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      # `serve` config is idempotent (it lives in tailscaled's own state),
+      # so retrying costs nothing. Without this, one transient failure -
+      # tailscaled not fully ready, tag join rejected, HTTPS certs not
+      # enabled in the tailnet console - leaves devbox unreachable for the
+      # whole boot, and the only client is a phone with no way to retry it
+      # locally.
+      Restart = "on-failure";
+      RestartSec = 30;
     };
     script = ''
       ${lib.getExe pkgs.tailscale} serve --bg 6767
@@ -195,13 +244,24 @@ in
 
   systemd.tmpfiles.rules = [
     "d /home/agent/projects 0755 agent users -"
+    # paseo creates worktrees here at runtime; created ahead of time so the
+    # glob below and the path unit's watch both have something to see from
+    # boot, rather than only after the first worktree is ever created.
+    "d /var/lib/paseo/worktrees 0755 agent users -"
   ];
 
-  # Builds every repo's devShell ahead of first use, so an agent launched
-  # from a phone never blocks on a cold `nix develop`. nix-direnv creates
-  # GC roots, so a warmed shell survives nix-collect-garbage.
+  # Builds every repo's (and every worktree's) devShell ahead of first use,
+  # so an agent launched from a phone never blocks on a cold `nix develop`.
+  # nix-direnv creates GC roots, so a warmed shell survives
+  # nix-collect-garbage.
   systemd.services.devbox-warm = {
-    description = "Warm direnv devShells for all devbox projects";
+    description = "Warm direnv devShells for all devbox projects and worktrees";
+    # `use flake` comes from nix-direnv's direnvrc, which home-manager
+    # writes out during activation. Without this ordering the path unit
+    # can fire before that activation on first boot, and every repo fails
+    # warming with an unhelpful "unknown command: use flake".
+    after = [ "home-manager-agent.service" ];
+    wants = [ "home-manager-agent.service" ];
     serviceConfig = {
       Type = "oneshot";
       User = "agent";
@@ -212,25 +272,23 @@ in
     path = with pkgs; [ direnv nix git ];
     script = ''
       shopt -s nullglob
-      for repo in /home/agent/projects/*/; do
+      for repo in /home/agent/projects/*/ /var/lib/paseo/worktrees/*/; do
         [ -f "$repo/.envrc" ] || continue
         cd "$repo" || continue
         echo "warming $repo"
-        direnv allow . || { echo "could not allow $repo/.envrc" >&2; continue; }
         # nix-direnv fails open: a flake that will not build still exits 0
         # here. Trusting $? would log nothing and warm nothing, silently.
         # Same detection as modules/devbox/agents.nix.
         #
-        # `&& rc=0 || rc=$?` rather than the brief's `; rc=$?`: NixOS's
-        # systemd `script` wrapper prepends `set -e`, under which a bare
+        # `&& rc=0 || rc=$?` rather than `; rc=$?`: NixOS's systemd
+        # `script` wrapper prepends `set -e`, under which a bare
         # `err=$(failing-cmd); rc=$?` aborts the whole unit on the first
         # broken repo before `rc=$?` is even reached - the AND-OR form is
         # exempt from errexit and is required to preserve per-repo
-        # isolation. See task-7-report.md fix round 2 for the empirical
-        # proof.
+        # isolation.
         err=$(direnv exec . true 2>&1 >/dev/null) && rc=0 || rc=$?
         if [ "$rc" -ne 0 ]; then
-          echo "warming failed for $repo (direnv refused):" >&2
+          echo "warming failed for $repo:" >&2
           printf '%s\n' "$err" >&2
         elif printf '%s' "$err" | grep -q '^error:'; then
           echo "devShell build failed for $repo:" >&2
@@ -240,11 +298,14 @@ in
     '';
   };
 
-  # Fires when a repo appears or its flake changes.
+  # Fires when a repo or worktree appears, or its flake changes.
   systemd.paths.devbox-warm = {
-    description = "Watch devbox projects for new or changed flakes";
+    description = "Watch devbox projects and worktrees for new or changed flakes";
     wantedBy = [ "multi-user.target" ];
-    pathConfig.PathChanged = "/home/agent/projects";
+    pathConfig.PathChanged = [
+      "/home/agent/projects"
+      "/var/lib/paseo/worktrees"
+    ];
   };
 
   # Backstop: catches flake.lock edits made inside an existing repo, which
