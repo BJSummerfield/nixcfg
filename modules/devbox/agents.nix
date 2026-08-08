@@ -7,36 +7,42 @@
 # are simply absent. That is the bug the ephemeral coding-agents pool had;
 # it is not fixed by enabling direnv, only by loading the .envrc explicitly.
 #
-# `direnv exec DIR CMD` is the non-interactive form. It refuses to run when
-# the .envrc is untrusted, so we probe first and fall through with a loud
-# warning rather than killing the session - a dead agent session is a worse
-# failure than a slow one, especially when the client is a phone.
+# `direnv exec DIR CMD` is the non-interactive form. It searches DIR *and
+# its parents* for a `.envrc`, so it is used as the source of truth for
+# whether one applies here - not a `[ -f .envrc ]` guard in this script,
+# which only ever checked the cwd and so missed every subdirectory launch
+# (e.g. a task scoped to `repo/crates/foo`), silently skipping the
+# devShell with no warning at all.
 #
-# Why two branches and not an exit-code check. nix-direnv fails *open*: a
-# flake that will not evaluate still produces a successful `direnv exec`,
-# because refusing to load would lock you out of the directory. An
-# exit-status probe therefore detects "not allowed" and nothing else - with
-# an allowed .envrc over a broken flake it returns 0, the agent runs in a
-# bare environment, and no warning fires. That is precisely the invisible
-# toolchain-missing failure this wrapper exists to prevent, so the probe
-# must read stderr too, and must print the build error rather than discard
-# it.
+# direnv's allow-list is whitelisted by prefix for both trees agents run
+# in (see modules/devbox/container.nix's programs.direnv.config.whitelist),
+# so "not allowed" is no longer an expected outcome here - but
+# `direnv exec` is still what decides whether a `.envrc` applies at all,
+# and it fails (non-zero) when none exists anywhere up the tree. That is
+# the only case worth failing open loudly for.
+#
+# Why the `^error:` check is diagnostic-only, not another fail-open branch.
+# nix-direnv fails *open*: a flake that will not evaluate still produces a
+# successful `direnv exec`, because refusing to load would lock you out of
+# the directory. So a false-positive `^error:` match must never cost the
+# agent its devShell - `direnv exec` running through a broken-but-allowed
+# .envrc is never worse than running bare, so the direnv path stays the
+# default and the error match only adds a warning on top of it.
 { pkgs, lib }:
 {
   mkAgent = { name, real }:
     pkgs.writeShellScriptBin name ''
-      if [ -f .envrc ]; then
-        err=$(${lib.getExe pkgs.direnv} exec . true 2>&1 >/dev/null); rc=$?
-        if [ "$rc" -ne 0 ]; then
-          echo "WARNING: .envrc is present but not allowed - fix with: direnv allow ${"\${PWD}"}" >&2
-        elif printf '%s' "$err" | grep -q '^error:'; then
-          echo "WARNING: the project devShell failed to build:" >&2
-          printf '%s\n' "$err" >&2
-        else
-          exec ${lib.getExe pkgs.direnv} exec . ${real} "$@"
-        fi
-        echo "WARNING: running without the project devShell - toolchain binaries such as cargo will be missing." >&2
+      err=$(${lib.getExe pkgs.direnv} exec . true 2>&1 >/dev/null); rc=$?
+      if [ "$rc" -ne 0 ]; then
+        echo "WARNING: no usable .envrc for this directory or its parents:" >&2
+        printf '%s\n' "$err" >&2
+        echo "WARNING: running without a project devShell - toolchain binaries such as cargo will be missing." >&2
+        exec ${real} "$@"
       fi
-      exec ${real} "$@"
+      if printf '%s' "$err" | grep -q '^error:'; then
+        echo "WARNING: the project devShell may have failed to build:" >&2
+        printf '%s\n' "$err" >&2
+      fi
+      exec ${lib.getExe pkgs.direnv} exec . ${real} "$@"
     '';
 }
