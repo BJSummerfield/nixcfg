@@ -3,7 +3,105 @@
 # module's options.
 { inputs, tailnetHostname, tailscaleTags }:
 { config, pkgs, lib, ... }:
+let
+  inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
+
+  # pi loads npm packages at startup, so it needs node on PATH no matter
+  # which project devShell it ends up inside - `direnv exec` largely
+  # replaces PATH, so a project whose flake lacks node would silently
+  # break pi's plugins. Upstream's home-manager module does this wrapping
+  # via extraPackages; we redo it here because we set that module's
+  # package to null below.
+  piWithNode = pkgs.symlinkJoin {
+    name = "pi-with-node";
+    paths = [ pkgs.pi-coding-agent ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath [ pkgs.nodejs ]}
+    '';
+  };
+
+  agentPkgs = [
+    (mkAgent { name = "claude"; real = lib.getExe pkgs.claude-code; })
+    (mkAgent { name = "pi"; real = "${piWithNode}/bin/pi"; })
+    (mkAgent { name = "opencode"; real = lib.getExe pkgs.opencode; })
+  ];
+in
 {
+  imports = [
+    inputs.home-manager.nixosModules.home-manager
+    ../unfree/nixos.nix
+  ];
+
+  # No pinned uid, deliberately: unlike modules/coding-agents/container.nix,
+  # nothing here is bind-mounted from the host user's tree, so there is no
+  # uid to match. Repos live in the container's own filesystem.
+  users.users.agent = {
+    isNormalUser = true;
+    home = "/home/agent";
+    description = "coding agent";
+  };
+
+  mine.allowedUnfree = [ "claude-code" ];
+
+  # Also on the system PATH, not only in the user profile: the paseo
+  # daemon's inheritUserEnvironment may or may not pick up
+  # /etc/profiles/per-user/agent/bin, and a daemon that cannot find
+  # `claude` fails in a way that gives no hint why.
+  environment.systemPackages = agentPkgs ++ (with pkgs; [
+    curl fd jq ripgrep gh git direnv
+  ]);
+
+  environment.sessionVariables = {
+    CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
+    DISABLE_AUTOUPDATER = "1";
+  };
+
+  home-manager = {
+    useGlobalPkgs = true;
+    useUserPackages = true;
+    users.agent = {
+      imports = [
+        ../direnv/home.nix
+        ../opencode/home.nix
+        ../pi-coding-agent/home.nix
+      ];
+      home.stateVersion = "26.05";
+
+      mine.user = {
+        direnv.enable = true;
+        opencode.enable = true;
+        pi-coding-agent.enable = true;
+      };
+
+      home.packages = agentPkgs;
+      home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
+
+      # Suppresses the upstream modules' own bin/pi and bin/opencode -
+      # otherwise they collide with the mkAgent wrappers of the same name
+      # in this same home-manager profile (pkgs.buildEnv fails hard on
+      # same-name paths of equal priority). Settings/config generation
+      # from these modules is untouched; only the package is disabled.
+      programs.pi-coding-agent.package = null;
+      programs.opencode.package = null;
+
+      programs.git = {
+        enable = true;
+        settings = {
+          user = {
+            name = "BJSummerfield";
+            email = "brianjsummerfield@gmail.com";
+          };
+          # Reads the token at use time so it never lands in a config file
+          # or the nix store. The token bounds which repos are reachable;
+          # a GitHub ruleset is what stops a push to a protected branch.
+          credential."https://github.com".helper =
+            "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/devbox-github-token); }; f";
+        };
+      };
+    };
+  };
+
   services.tailscale = {
     enable = true;
     # Joins on first boot with no interactive `tailscale up`. The tag must
