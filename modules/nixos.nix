@@ -4,6 +4,7 @@
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./dns-server/nixos.nix
+    ./devbox/nixos.nix
     ./docker/nixos.nix
     ./filesystems
     ./fish/nixos.nix

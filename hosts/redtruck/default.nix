@@ -34,6 +34,14 @@
       };
       openssh.outbound.enable = true;
       coding-agents.enable = true;
+      # Paths are sops-decrypted secrets; see devbox-design/DESIGN.md §8.
+      # Container stays autoStart = false until these exist on disk.
+      devbox = {
+        enable = true;
+        tailscaleAuthKeyFile = "/run/secrets/devbox-tailscale-authkey";
+        githubTokenFile = "/run/secrets/devbox-github-token";
+        tailnetHostname = "devbox.mist-gamma.ts.net";
+      };
       pipewire.sample-switch.enable = true;
       theme.enable = true;
       steam.enable = true;
