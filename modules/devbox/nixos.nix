@@ -43,8 +43,12 @@ in
         helper and `gh` both `cat` this file as agent, and this container
         runs with PRIVATE_USERS=no so that uid is a plain host uid, not a
         namespaced one. sops-nix's default (`mode = "0400"`, `owner =
-        "root"`) is unreadable to it - set `mode = "0440"` with a matching
-        group, or `owner` to the agent uid, instead.
+        "root"`) is unreadable to it. sops-nix's `owner` takes a host
+        *username*, and no host user has uid 1500 (the container agent's
+        pinned uid, chosen deliberately outside the host's uid range - see
+        container.nix), so `owner` cannot name this uid at all. Set
+        `mode = "0440"` with `group = "users"` instead (gid 100, which
+        exists on the host and is the container agent's primary group).
       '';
       example = "/run/secrets/devbox-github-token";
     };
@@ -57,8 +61,16 @@ in
         `PASEO_PASSWORD=<secret>`. Tailnet membership is not treated as
         sufficient authentication on its own: an ACL mistake or a single
         compromised tailnet device would otherwise mean a shell over every
-        repo. Must be readable by the container's agent uid. Typically the
-        decrypted path from sops-nix.
+        repo.
+
+        Unlike githubTokenFile, this does NOT need to be readable by the
+        container's agent uid: it is consumed via the paseo systemd unit's
+        `EnvironmentFile=`, which PID 1 reads as root while building the
+        unit's execution environment, before the process ever drops to
+        `User=agent`. sops-nix's default (`mode = "0400"`, `owner = "root"`)
+        is therefore sufficient - and preferable, since it keeps the secret
+        out of reach of anything running as agent, including a compromised
+        coding agent process. Typically the decrypted path from sops-nix.
       '';
       example = "/run/secrets/devbox-paseo-password";
     };
