@@ -158,7 +158,25 @@ in
         cd "$repo" || continue
         echo "warming $repo"
         direnv allow . || { echo "could not allow $repo/.envrc" >&2; continue; }
-        direnv exec . true || echo "devShell build failed for $repo" >&2
+        # nix-direnv fails open: a flake that will not build still exits 0
+        # here. Trusting $? would log nothing and warm nothing, silently.
+        # Same detection as modules/devbox/agents.nix.
+        #
+        # `&& rc=0 || rc=$?` rather than the brief's `; rc=$?`: NixOS's
+        # systemd `script` wrapper prepends `set -e`, under which a bare
+        # `err=$(failing-cmd); rc=$?` aborts the whole unit on the first
+        # broken repo before `rc=$?` is even reached - the AND-OR form is
+        # exempt from errexit and is required to preserve per-repo
+        # isolation. See task-7-report.md fix round 2 for the empirical
+        # proof.
+        err=$(direnv exec . true 2>&1 >/dev/null) && rc=0 || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "warming failed for $repo (direnv refused):" >&2
+          printf '%s\n' "$err" >&2
+        elif printf '%s' "$err" | grep -q '^error:'; then
+          echo "devShell build failed for $repo:" >&2
+          printf '%s\n' "$err" >&2
+        fi
       done
     '';
   };
