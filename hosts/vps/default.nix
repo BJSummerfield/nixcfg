@@ -2,11 +2,16 @@
 {
   imports =
     [
-      ./hardware-configuration.nix
       ./disko.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      # QEMU guest tools (virtio drivers, guest agent)
+      <nixpkgs/nixos/modules/profiles/qemu-guest.nix>
     ];
+
+  # BIOS boot VM — GRUB instead of the default systemd-boot.
+  mine.system.boot.mode = "grub-bios";
+
   environment.pathsToLink = [
     "/share/applications"
     "/share/xdg-desktop-portal"
@@ -32,16 +37,10 @@
 
   mine = {
     system = {
-      # TODO Fix this jank
-      boot = {
-        grub.enable = true;
-        systemd-boot.enable = false;
-      };
       hostName = "vps";
       autoUpgrade.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
-      # renderGroupGid = 303;
       fish.enable = true;
       openssh.inbound = {
         enable = true;

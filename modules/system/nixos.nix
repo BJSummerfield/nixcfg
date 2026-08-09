@@ -32,23 +32,13 @@ in
     autoUpgrade.enable = mkEnableOption "automatic system upgrades from the flake";
 
     boot = {
-      systemd-boot.enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Use systemd-boot as the bootloader.";
-      };
-
-      grub = {
-        enable = mkOption {
-          type = types.bool;
-          default = false;
-          description = "Use GRUB as the bootloader.";
-        };
-        efiSupport = mkOption {
-          type = types.bool;
-          default = false;
-          description = "Whether GRUB should use EFI.";
-        };
+      mode = mkOption {
+        type = types.enum [ "systemd-boot" "grub-bios" ];
+        default = "systemd-boot";
+        description = ''
+          Bootloader mode. "systemd-boot" (default) requires an ESP partition;
+          "grub-bios" is for BIOS/legacy VMs with a BIOS boot partition (EF02).
+        '';
       };
 
       partitionUuid = mkOption {
@@ -61,16 +51,11 @@ in
 
   config = mkMerge [
     {
-      assertions = [
-        {
-          assertion = !(bootCfg.systemd-boot.enable && bootCfg.grub.enable);
-          message = "mine.system.boot: systemd-boot and grub cannot both be enabled.";
-        }
-      ];
+      # No assertion needed — the enum guarantees only one bootloader.
 
       boot.consoleLogLevel = 3;
 
-      system.stateVersion = "24.11";
+      system.stateVersion = "26.05";
 
       networking.networkmanager.enable = true;
       networking.hostName = cfg.hostName;
@@ -108,16 +93,13 @@ in
         "/dev/disk/by-uuid/${bootCfg.partitionUuid}";
     })
 
-    (mkIf bootCfg.systemd-boot.enable {
+    (mkIf (bootCfg.mode == "systemd-boot") {
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
     })
 
-    (mkIf bootCfg.grub.enable {
-      boot.loader.grub = {
-        enable = true;
-        inherit (bootCfg.grub) efiSupport;
-      };
+    (mkIf (bootCfg.mode == "grub-bios") {
+      boot.loader.grub.enable = true;
     })
   ];
 }
