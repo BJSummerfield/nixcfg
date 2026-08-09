@@ -1,8 +1,5 @@
-# Catalog entry -> a directory of the model's HuggingFace files.
-#
-# A linkFarm of fetchurl'd blobs rather than a git/lfs clone: each shard is a
-# fixed-output derivation, so the store dedupes them and a partial download
-# retries just that shard. vLLM is handed this directory as its --model.
+# Catalog entry → a directory of the model's HuggingFace files.
+# linkFarm of fetchurl'd blobs: store dedupes, partial download retries one shard.
 { lib, pkgs }:
 modelName: entry:
 pkgs.linkFarm modelName (
