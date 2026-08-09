@@ -1,17 +1,12 @@
-# Catalog -> llama-swap YAML.
-#
-# Per-model "entry -> lines" rather than one template, so adding a second
-# backend later (a GGUF model needs llama.cpp; vLLM's GGUF loader is
-# experimental and slow) is a second `mk*Args` plus a branch in `modelLines`,
-# which also hardcodes the podman `cmdStop`.
+# Catalog → llama-swap YAML config.
+# Per-model args so multiple backends can coexist.
 { lib, pkgs, catalog, weightsOf, vllmImage, podmanCli, hostAddress }:
 let
   inherit (catalog) models enabled;
 
   num = builtins.toJSON;
 
-  # ephemeral (--rm --replace), so the name is cosmetic; derived so it cannot
-  # collide with another model's
+  # container name is cosmetic (--rm --replace)
   containerName = name: "vllm-${lib.toLower name}";
 
   # one flag per line, in vLLM's documented order; these become the body of

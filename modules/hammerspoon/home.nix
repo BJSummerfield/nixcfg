@@ -1,6 +1,4 @@
-# PaperWM scrolling window management via Hammerspoon: the mac analog of
-# niri. The Hammerspoon app itself comes from the homebrew cask; this only
-# manages its config.
+# Hammerspoon PaperWM config; the app itself is installed via homebrew.
 { pkgs, lib, config, ... }:
 let
   inherit (lib) mkEnableOption mkIf;

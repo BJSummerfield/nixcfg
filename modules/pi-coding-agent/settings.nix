@@ -1,11 +1,4 @@
-# Shared pi configuration data. Consumed by home.nix (home-manager, used on
-# the nixos hosts and inside their nspawn containers).
-#
-# The redtruck provider's model list, default, and subagent tiers are all
-# derived from modules/local-llm/models.nix, the single source of truth for
-# what's served there. Adding/removing/renaming a redtruck model is a one-file
-# edit in the catalog - nothing here needs to change to match. robin is a
-# different machine with its own hand-run server, so it stays hand-written.
+# Pi config data. Model list derived from local-llm/models.nix.
 let
   llm = import ../local-llm/models.nix;
 
@@ -45,13 +38,8 @@ in
 {
   settings = {
     theme = "dark";
-    # Keep every model reference identical: llama-swap serves one model at a
-    # time, so a background task (web-search curator, titles) pointed at a
-    # different model than the session evicts the loaded one and stalls
-    # everything for minutes while vllm swaps. Exception: the -32k entry is
-    # a llama-swap alias of the same model (declared in local-llm/models.nix,
-    # rendered by llama-swap.nix) - requests to it hit the already-loaded
-    # instance, no swap.
+    # All models point to the same instance — llama-swap serves one model at a
+    # time, so a different model evicts and stalls for minutes.
     model = {
       provider = llm.provider;
       model = llm.default;
@@ -59,12 +47,7 @@ in
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "high";
-    # bun instead of npm for pi's package installs: pi-superagents ships a
-    # postinstall that runs node --experimental-strip-types on a .ts inside
-    # node_modules, which node categorically refuses (crashes every npm
-    # install). bun skips untrusted lifecycle scripts, and the script's only
-    # fresh-install job (seeding the subagent config) is done declaratively
-    # in home.nix anyway.
+    # Use bun — node refuses --experimental-strip-types in pi-superagents postinstall.
     npmCommand = [ "bun" ];
     packages = [
       "npm:pi-web-access"

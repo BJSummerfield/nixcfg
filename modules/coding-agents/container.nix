@@ -12,14 +12,8 @@
     ../unfree/nixos.nix
   ];
 
-  # Same uid as the host user so bind-mounted project files stay
-  # writable (uids are auto-allocated per host, hence the option), and
-  # the same supplementary groups for trees where write access comes
-  # from a group rather than ownership (e.g. the NAS media-rw share).
-  # nixos containers bind the host nix-daemon socket by default, so the
-  # daemon sees this uid - i.e. the agent talks to the daemon as a
-  # trusted-user. Same exposure the old pi-sandbox config accepted via
-  # allowAllUnixSockets.
+  # Match host uid for writable bind-mounts and group-permissioned shares.
+  # Host nix-daemon socket makes the agent a trusted user — same exposure as the old pi-sandbox.
   users.users.agent = {
     isNormalUser = true;
     uid = agentUid;

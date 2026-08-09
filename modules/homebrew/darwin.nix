@@ -1,6 +1,4 @@
-# Homebrew handles the GUI apps that nixpkgs doesn't package well for
-# darwin (1Password, Firefox, Docker Desktop, ...). Casks are declared
-# per-host; anything not declared is uninstalled on activation.
+# Homebrew casks for GUI apps not well packaged by nixpkgs on darwin; undeclared casks are uninstalled.
 { config, inputs, ... }:
 {
   imports = [

@@ -1,11 +1,6 @@
-# Stalwart all-in-one mail server in a NixOS (nspawn) container.
-#
-# DESIGN: minimal LOCAL config. Only the boot-critical keys live in this
-# read-only Nix store file -- store location, listeners, and the bootstrap
-# admin. EVERYTHING ELSE (ACME/TLS, domains, accounts, aliases, spam, sender
-# policy, DKIM/DMARC) is DATABASE-managed via the web UI and persists in
-# /var/lib/stalwart-mail (backed up by restic). This minimizes the chance of
-# fighting the server when upstream changes config-key layouts on upgrade.
+# Stalwart mail server container.
+# Minimal local config — only boot-critical keys. Everything else is
+# database-managed via web UI (certs, domains, accounts, DKIM, spam).
 #
 # Bring-up:
 #   sudo nixos-container root-login stalwart

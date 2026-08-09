@@ -9,18 +9,10 @@ let
   cfg = config.mine.system.local-llm;
 
   nvidiaEnabled = config.mine.system.nvidia.enable;
-  # Gated separately from the driver: enabling this bind-mounts the host
-  # podman socket into the container, which is root-equivalent access to the
-  # host, so flip cuda.enable only once that's acceptable.
+  # cuda.enable is separate from nvidia.enable — podman socket grants root-equivalent host access.
   cudaEnabled = cfg.cuda.enable;
 
-  # vLLM runs from upstream's prebuilt OCI image, not nixpkgs: the nix build
-  # compiles torch/magma/flash-attn from source (hours of nvcc that OOM 32GB),
-  # and nixpkgs lags upstream - NVFP4 quants want >= 0.25 while unstable ships
-  # 0.16. This tag is the version pin. To bump it: edit the tag, rebuild
-  # (vllm-image-pull fetches it in the background), restart
-  # container@local-llm, then `podman rmi` the old tag by hand - versioned
-  # tags never go dangling, so image prune won't collect them.
+  # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
   vllmImage = "docker.io/vllm/vllm-openai:v0.25.0";
   podmanSock = "unix:///run/podman/podman.sock";
   # Drives HOST podman over the bind-mounted API socket; vLLM itself

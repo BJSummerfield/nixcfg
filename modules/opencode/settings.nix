@@ -1,12 +1,5 @@
-# Pure data: opencode config consumed by home.nix (host/container HM) and
-# by the coding-agents docker image.
-#
-# The redtruck provider's model list and default are derived from
-# modules/local-llm/models.nix, the single source of truth for what's served
-# there. Aliases are not registered here - they exist for pi's subagent
-# tiers, and opencode has no tier system, so a second entry for the same
-# weights would just be noise in its picker. robin is a different machine
-# with its own hand-run server, so it stays hand-written.
+# Opencode config data. Model list derived from local-llm/models.nix.
+# No aliases — opencode has no tier system.
 let
   llm = import ../local-llm/models.nix;
 

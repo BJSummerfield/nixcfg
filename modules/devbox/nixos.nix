@@ -1,3 +1,6 @@
+# Persistent coding-agent container. Security boundary: ssh/sops/signing keys
+# stay on the host. Repos live in the container filesystem — GitHub holds the code.
+#
 # Once the container is running, join the tailnet and publish paseo once:
 # sudo nixos-container root-login devbox
 # tailscale up --hostname=devbox --advertise-tags=tag:devbox
@@ -6,27 +9,8 @@
 # Both are one-time. /var/lib/tailscale is bind-mounted to
 # /var/lib/tailscale-devbox on the host, so the node identity and the serve
 # config survive container restarts and rebuilds; you only redo this if
-# that host directory is wiped. Declarative join (authKeyFile /
-# extraUpFlags / a serve oneshot) was tried and removed - it is persistently
-# flaky on nixos-containers, and the same manual ritual used by
-# vikunja-server and local-llm is what actually works.
-#
-# --hostname must match the first label of mine.system.devbox.tailnetHostname,
-# which is what paseo checks in the Host header. They disagree -> connects,
-# then 400s.
-#
-# Persistent coding-agent container. Replaces the ephemeral coding-agents
-# pool, whose container lifetime was tied to the launching SSH session -
-# fine at a desk, fatal for a phone client whose connection drops.
-#
-# The security boundary is unchanged: ssh keys, sops keys and the commit
-# signing key stay on the host and are never bind-mounted in. What changed
-# is that the container is now long-lived and owns the repos, so a dropped
-# client is just a closed window.
-#
-# Repos live in the container's own filesystem at
-# /var/lib/nixos-containers/devbox/home/agent/projects - not backed up,
-# by design: GitHub holds the code.
+# that host directory is wiped. Manual tailscale join — more reliable than
+# declarative on nspawn containers.
 { config, lib, pkgs, inputs, ... }:
 let
   inherit (lib) mkEnableOption mkIf mkOption types;
@@ -86,8 +70,7 @@ in
       description = ''
         Fully-qualified tailnet name the container is served on. Used for
         paseo's Host-header allowlist, and it must match what the manual
-        `tailscale serve` publishes - a mismatch presents as a connection
-        that establishes and then 400s.
+        `tailscale serve` publishes - a mismatch causes 400 errors.
       '';
       example = "devbox.mist-gamma.ts.net";
     };
@@ -96,11 +79,7 @@ in
   config = mkIf cfg.enable {
     assertions = [
       {
-        # paseo's Host-header check keys off this exact string, and the
-        # manual `tailscale up --hostname=` in the header comment must
-        # agree with its first label. A bare node name here is silently
-        # wrong rather than an error, and surfaces only as "connects, then
-        # 400s" - which is a miserable thing to debug from a phone.
+        # Must be FQDN to match paseo Host-header allowlist.
         assertion = lib.hasInfix "." cfg.tailnetHostname;
         message = ''
           mine.system.devbox.tailnetHostname ("${cfg.tailnetHostname}") must
@@ -116,9 +95,7 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Tailscale node identity is the only container state kept on the host,
-    # so a container rebuild rejoins as the same node instead of orphaning
-    # one. Everything else lives in the container's own filesystem.
+    # Persist tailscale node identity across rebuilds.
     systemd.tmpfiles.rules = [
       "d /var/lib/tailscale-devbox 0700 root root -"
     ];

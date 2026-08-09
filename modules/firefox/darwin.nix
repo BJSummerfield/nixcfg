@@ -1,5 +1,4 @@
-# Unmanaged on darwin by choice: just the app from homebrew, configured
-# by hand. The managed profile/policies module is Linux-only.
+# Firefox is unmanaged on darwin — homebrew cask only, configured manually.
 { lib, config, ... }:
 {
   options.mine.system.firefox.enable = lib.mkEnableOption "Firefox from homebrew";

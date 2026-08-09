@@ -1,7 +1,4 @@
-# Home-manager modules safe to import on darwin. This is a subset of
-# home.nix: modules that set Linux-only HM options (systemd.user, wayland
-# services, services.keybase, ...) cannot even be imported here, because
-# home-manager only declares those options on Linux.
+# Darwin-safe home-manager modules; Linux-only options prevent importing the full set.
 { ... }: {
   imports = [
     ./alacritty/home.nix

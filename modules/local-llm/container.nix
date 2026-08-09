@@ -1,13 +1,10 @@
-# The nspawn guest. Split from nixos.nix so the container boundary is a file
-# boundary: everything here runs inside the container, nothing outside it.
+# The nspawn guest — everything here runs inside the container.
 { llamaSwapConfig, cudaEnabled }:
 { config, pkgs, lib, ... }:
 {
-  # the podman CLI for poking the host socket when debugging;
-  # llama-swap itself invokes it by absolute store path
+  # podman CLI for debugging the host socket; llama-swap uses the store path.
   environment.systemPackages = lib.optionals cudaEnabled [ pkgs.podman ];
-  # also at /etc/llama-swap.yaml so the effective config can be read
-  # inside the container; same derivation the unit points at
+  # also at /etc/llama-swap.yaml for reading the effective config.
   environment.etc."llama-swap.yaml".source = llamaSwapConfig;
 
   services.tailscale.enable = true;
@@ -15,7 +12,7 @@
     description = "llama-swap (model-swapping proxy for vLLM)";
     after = [ "network.target" ];
     wantedBy = [ "multi-user.target" ];
-    # the podman client it spawns wants a homedir for its config lookup
+    # podman client needs a homedir for config lookup
     environment.HOME = "/var/lib/llama-swap";
     serviceConfig = {
       ExecStart = ''
@@ -25,10 +22,7 @@
       '';
       Restart = "on-failure";
       RestartSec = 10;
-      # Container-root, not DynamicUser: the host podman socket it
-      # drives is root-owned 0660, and holding that socket is
-      # root-equivalent anyway, so the unprivileged user bought
-      # nothing but "permission denied".
+      # Container-root: podman socket is root-owned, unprivileged user gains nothing.
       StateDirectory = "llama-swap";
     };
   };

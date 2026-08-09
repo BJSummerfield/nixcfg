@@ -1,9 +1,10 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login teamspeak
-# tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node 
-
-# First login get the ServerAdmin privilege key.
-# sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
+# TeamSpeak server container.
+# Bring-up:
+#   sudo nixos-container root-login teamspeak
+#   tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node
+#
+# Get ServerAdmin token from journalctl:
+#   sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
 
 { lib, config, ... }:
 let

@@ -1,16 +1,5 @@
-# The one place a model is described. Pure data, no pkgs/config/arguments, so
-# any module can import it - including hosts with no GPU.
-#
-# Consumed by:
-#   local-llm/{weights,llama-swap}.nix  - what to fetch, how to serve it
-#   pi-coding-agent/settings.nix        - provider list, default, subagent tiers
-#   opencode/settings.nix               - provider entry, default
-#
-# Adding a model: write its attrset here, add the name to `enabled`, rebuild.
-# Entries not in `enabled` are inert text - nothing is fetched or served.
-# The generator emits --limit-mm-per-prompt, --enable-auto-tool-choice and an
-# MTP --speculative-config unconditionally, so an entry must be an MTP-capable
-# Qwen3.6-family VL model or llama-swap.nix needs a change too.
+# Model catalog. Pure data — no pkgs/config/arguments.
+# Add a model: write its attrset, add name to `enabled`, rebuild.
 {
   provider = "redtruck";
   baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
@@ -41,50 +30,29 @@
       };
 
       reasoning = true;
-      # measured pool: 195,750 tokens at gpu-memory-utilization 0.92, 149,796
-      # at 0.94 (varies a few GiB with what the desktop is holding). If a
-      # lean day shrinks the pool below this the server refuses to start -
-      # step back to 114688 then.
+      # measured on 31GiB card; drop maxModelLen if pool shrinks
       maxModelLen = 131072;
-      # clients declare maxModelLen - headroom, so a long request is refused
-      # up front instead of dying mid-generation
       headroom = 8192;
       maxTokens = 32768;
       sampling = { temperature = 0.6; top_p = 0.95; top_k = 20; min_p = 0.0; };
 
-      # Seconds idle before llama-swap unloads, or null to stay resident. The
-      # daily driver stays: a vLLM cold start is minutes, so an idle-unload
-      # while you are out stalls the next remote query behind a full reload.
-      # Free the card by hand instead:
-      #   curl -X POST llama-swap:8081/api/models/unload
+      # null ttl: vLLM cold start is minutes
       ttl = null;
 
       vllm = {
         gpuMemoryUtilization = 0.94;
-        # 3, so a parallel subagent wave gets real concurrency on the -32k
-        # budget without outgrowing the KV pool
+        # 3 for parallel subagent concurrency without outgrowing the KV pool
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
-        # measured on this card: no-MTP with full cuda graphs ran 64 tok/s vs
-        # 85-105 tok/s busy-window with MTP, dipping with draft acceptance on
-        # hard content - net win, keep it
         speculativeTokens = 2;
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
       };
 
-      # Prefix caching stays OFF - there is deliberately no flag for it.
-      # Forcing it on (mamba 'align' mode, which vLLM labels experimental)
-      # preceded long sessions degrading into incoherent rewrite loops that
-      # smeared variable names across drafts; corrupted resumed GDN state fits
-      # the symptom. Cost: every turn re-prefills. If incoherence ever recurs
-      # without it, the next suspect is fp8 kv above - switching to bf16 halves
-      # the pool, so maxModelLen must drop to ~98304 with it.
+      # Prefix caching off: caused incoherent rewrite loops on long sessions.
 
-      # Same running instance under a second name, so pi's subagent tiers can
-      # declare a smaller window and compact early instead of outgrowing the
-      # shared KV pool. Routing here never causes a model swap.
+      # Aliases share the running instance — no model swap.
       aliases."Qwen3.6-27B-NVFP4-32k" = {
         displayName = "Qwen3.6 27B NVFP4 32k budget (redtruck)";
         contextWindow = 32768;
@@ -92,9 +60,7 @@
       };
     };
 
-    # Catalog only - not in `enabled`, so nothing is fetched. Re-enable by
-    # adding the name to the list below; if upstream has re-uploaded the repo
-    # since, the hashes will need refreshing (the build fails loudly).
+    # Not in `enabled` — nothing is fetched.
     "Qwen3.6-35B-A3B-NVFP4" = {
       displayName = "Qwen3.6 35B A3B NVFP4 (redtruck)";
       repo = "unsloth/Qwen3.6-35B-A3B-NVFP4";
@@ -129,9 +95,7 @@
         gpuMemoryUtilization = 0.94;
         maxNumSeqs = 2;
         maxNumBatchedTokens = 2048;
-        # fp8 kv cache preceded incoherent output on this MoE, so this runs
-        # on vLLM's default kv cache dtype instead of an explicit one
-        # (Unsloth: switch off fp8 if it shows instability)
+        # fp8 kv caused incoherent output on this MoE — using default dtype.
         kvCacheDtype = "auto";
         speculativeTokens = 2;
         toolCallParser = "qwen3_xml";

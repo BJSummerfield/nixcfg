@@ -1,7 +1,8 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login jellyfin
-# tailscale up --hostname=jellyfin --advertise-tags=tag:solo-node 
-# tailscale serve --bg 8096
+# Jellyfin media server container.
+# Bring-up:
+#   sudo nixos-container root-login jellyfin
+#   tailscale up --hostname=jellyfin --advertise-tags=tag:solo-node
+#   tailscale serve --bg 8096
 
 { lib, config, pkgs, ... }:
 let

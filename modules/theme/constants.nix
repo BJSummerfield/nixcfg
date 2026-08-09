@@ -1,7 +1,4 @@
-# Single source of truth for theming values, consumed by modules directly.
-# Palette is catppuccin-mocha as shipped by base16-schemes (captured from the
-# stylix build before its removal — note base01/base03/base04 differ from the
-# upstream catppuccin base16 port).
+# Catppuccin-mocha palette from base16-schemes; base01/base03/base04 differ from upstream.
 {
   colors = {
     base00 = "1e1e2e"; # default background
