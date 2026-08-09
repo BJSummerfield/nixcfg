@@ -121,8 +121,10 @@ in
   # declared window, so parallel subagents compact early instead of
   # thrashing the KV pool. max (review/debug) runs one-at-a-time and
   # keeps the full window.
-  # Note: seeding this file makes it a store symlink, so the /sp-settings
-  # TUI can't write it - edit here instead.
+  # Note: home.nix copies this over the file on every activation, so a
+  # /sp-settings TUI edit survives only until the next rebuild - edit here
+  # instead. It is a copy and not a store symlink because the extension
+  # itself rewrites the file at startup; see the comment there.
   superagents = {
     superagents = {
       modelTiers = {
