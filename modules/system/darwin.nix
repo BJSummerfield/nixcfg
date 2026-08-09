@@ -1,4 +1,4 @@
-# Darwin analog of system/nixos.nix: shared base config for mac hosts.
+# Shared base configuration for darwin hosts.
 { pkgs, inputs, ... }:
 {
   system.stateVersion = 6;

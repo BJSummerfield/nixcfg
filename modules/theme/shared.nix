@@ -1,5 +1,3 @@
-# Theme options and constant resolution shared by the nixos and darwin
-# modules. Platform files import this and add only their own config.
 { lib, config, ... }:
 let
   defaults = import ./constants.nix;

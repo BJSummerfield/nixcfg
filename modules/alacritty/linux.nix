@@ -1,5 +1,4 @@
-# Niri integration, kept out of home.nix so the shared alacritty module can
-# be imported on darwin, where the niri options don't exist.
+# Niri integration separated so the shared alacritty module can be imported on darwin.
 { lib, config, ... }:
 let
   inherit (lib) mkIf;
