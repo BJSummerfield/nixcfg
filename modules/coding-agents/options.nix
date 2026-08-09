@@ -1,5 +1,4 @@
-# Option set shared by the nixos and darwin sandbox modules: the module
-# enable plus a per-agent toggle deciding which launchers a host gets.
+# Shared options for coding-agent sandboxes: module enable and per-agent toggles.
 lib:
 let
   inherit (lib) mkEnableOption mkOption types;
