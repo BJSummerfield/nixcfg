@@ -1,7 +1,8 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login vikunja
-# tailscale up --hostname=vikunja --advertise-tags=tag:solo-node
-# tailscale serve --bg 3456
+# Vikunja task manager container.
+# Bring-up:
+#   sudo nixos-container root-login vikunja
+#   tailscale up --hostname=vikunja --advertise-tags=tag:solo-node
+#   tailscale serve --bg 3456
 
 { lib, config, pkgs, ... }:
 let

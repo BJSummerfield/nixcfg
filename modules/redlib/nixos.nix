@@ -1,7 +1,8 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login redlib
-# tailscale up --hostname=redlib --advertise-tags=tag:solo-node
-# tailscale serve --bg 8080
+# Redlib (Reddit frontend) container.
+# Bring-up:
+#   sudo nixos-container root-login redlib
+#   tailscale up --hostname=redlib --advertise-tags=tag:solo-node
+#   tailscale serve --bg 8080
 
 { lib, config, ... }:
 let

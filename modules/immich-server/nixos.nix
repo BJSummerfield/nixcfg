@@ -1,7 +1,8 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login immich
-# tailscale up --hostname=immich --advertise-tags=tag:solo-node 
-# tailscale serve --bg 2283
+# Immich photo server container.
+# Bring-up:
+#   sudo nixos-container root-login immich
+#   tailscale up --hostname=immich --advertise-tags=tag:solo-node
+#   tailscale serve --bg 2283
 
 { lib, config, pkgs, ... }:
 let

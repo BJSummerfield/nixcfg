@@ -1,20 +1,13 @@
-# Once the container is running log into it with
-# sudo nixos-container root-login dns
-# tailscale up --hostname=dns --advertise-tags=tag:solo-node --accept-dns=false
-# tailscale serve --bg 3000
+# AdGuard Home + Unbound DNS container.
+# Bring-up:
+#   sudo nixos-container root-login dns
+#   tailscale up --hostname=dns --advertise-tags=tag:solo-node --accept-dns=false
+#   tailscale serve --bg 3000
 #
-# create an admin password with
-# mkpasswd -m bcrypt
-#
-# add the password to the config
-# sudo nixos-container root-login dns
-#  cd /var/lib/AdGuardHome
-#  hx AdGuardHome.yaml
-#
-# replace the users block
-#  users:
-#  - name: admin
-#    password: $2a$10...
+# Set admin password:
+#   mkpasswd -m bcrypt  # generate hash
+#   sudo nixos-container root-login dns && cd /var/lib/AdGuardHome
+#   Edit AdGuardHome.yaml users block with the hash
 
 { lib, config, pkgs, ... }:
 let

@@ -1,5 +1,7 @@
-# sudo nixos-container root-login terraria
-# tailscale up --hostname=terraria --advertise-tags=tag:solo-node
+# Terraria server container.
+# Bring-up:
+#   sudo nixos-container root-login terraria
+#   tailscale up --hostname=terraria --advertise-tags=tag:solo-node
 
 { lib, config, pkgs, ... }:
 let
