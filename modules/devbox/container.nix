@@ -1,20 +1,12 @@
-# NixOS configuration for the devbox container. `inputs` is the host
-# flake's inputs; tailnetHostname comes from the host module's options and
-# is used only for paseo's Host-header allowlist - the tailnet join itself
-# is manual, see the header comment in nixos.nix.
+# NixOS configuration for the devbox container.
+# Tailnet join and serve are manual — see nixos.nix.
 { inputs, tailnetHostname }:
 { config, pkgs, lib, ... }:
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  # pi installs and loads its declared packages at startup, so it needs node
-  # *and* bun on PATH no matter which project devShell it ends up inside - a
-  # project whose flake lacks them would otherwise break pi's plugins.
-  # Upstream's home-manager module does this wrapping via extraPackages; we
-  # redo it here because we set that module's package to null below, and a
-  # null package makes the module drop extraPackages silently. Importing the
-  # same list it uses is what keeps the two from drifting: they did, and pi
-  # died at startup with `Error: spawn bun ENOENT` for it.
+  # Pi needs bun and node on PATH or plugins crash at startup.
+  # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
     paths = [ pkgs.pi-coding-agent ];
@@ -32,12 +24,8 @@ let
     (mkAgent { name = "opencode"; real = lib.getExe pkgs.opencode; })
   ];
 
-  # `gh` reads GH_TOKEN/GITHUB_TOKEN or its own keyring; the git credential
-  # helper below only covers `git`. Wrapped the same way, reading the token
-  # at use time so it never lands in the nix store. Installed instead of
-  # bare pkgs.gh below so there is only ever one `gh` in this profile - two
-  # same-named derivations of equal priority is a hard pkgs.buildEnv
-  # collision, the same class that bit pi and opencode above.
+  # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
+  # Replaces bare pkgs.gh — pkgs.buildEnv fails on duplicate names.
   ghWrapped = pkgs.writeShellScriptBin "gh" ''
     export GH_TOKEN=$(cat /run/secrets/devbox-github-token)
     exec ${lib.getExe pkgs.gh} "$@"
@@ -54,19 +42,8 @@ in
   # user + agents + home-manager
   ##########################################################################
 
-  # Pinned deliberately, and NOT to a host uid. These containers run with
-  # PRIVATE_USERS=no and the host's nix-daemon socket bind-mounted, so the
-  # container's uid IS a host uid to the daemon - and every uid in
-  # mine.users with isSuperUser lands in nix's trusted-users, which is
-  # root-equivalent (a trusted client can set extra-sandbox-paths and bind
-  # the host's ssh/sops/signing keys into a build). 1500 is outside the
-  # host's 1000-1003 range, so the daemon treats the agent as untrusted:
-  # it can still build, substitute and realise derivations - everything
-  # nix-direnv needs - but cannot override trusted settings.
-  #
-  # Unlike modules/coding-agents/container.nix there is no uid to *match*,
-  # because nothing is bind-mounted from a host user's tree; but that is a
-  # reason not to match one, not a reason to leave it unpinned.
+  # Pinned outside the host uid range so nix-daemon treats the agent as
+  # untrusted (no extra-sandbox-paths), while still allowing builds.
   users.users.agent = {
     isNormalUser = true;
     uid = 1500;
@@ -122,12 +99,9 @@ in
       programs.pi-coding-agent.package = null;
       programs.opencode.package = null;
 
-      # direnv's allow-list is keyed by absolute .envrc path, and paseo
-      # creates a fresh worktree path per task under its dataDir - so a
-      # per-repo `direnv allow` can never cover them. Whitelisting both
-      # trees is the same tradeoff DESIGN 6.3 already accepted for cloned
-      # repos: the agent in this container runs arbitrary repo code by
-      # design, and the container is what contains it.
+      # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
+      # can never cover them. Whitelisting both trees — agent runs arbitrary
+      # code by design, and the container is the boundary.
       programs.direnv.config.whitelist.prefix = [
         "/home/agent/projects"
         "/var/lib/paseo/worktrees"
@@ -171,30 +145,17 @@ in
     # how every other service on this tailnet already behaves.
     relay.enable = false;
     # Must match what `tailscale serve` publishes or requests are
-    # rejected on the Host header - presents as "connects, then 400s".
+    # rejected on the Host header — mismatch causes 400 errors.
     hostnames = [ tailnetHostname ];
     dataDir = "/var/lib/paseo";
-    # environment.sessionVariables below covers login shells
-    # (/etc/set-environment) and systemd *user* services, but this is a
-    # system service, so agents paseo spawns would otherwise see neither
-    # var: an unauthenticated `claude` reading ~/.claude instead of the
-    # bind-mounted state dir, with no obvious cause from the phone side.
-    # Duplicated rather than derived from sessionVariables so both stay in
-    # one file and can't silently drift - they must always agree.
+    # System service doesn't inherit sessionVariables; duplicated from
+    # sessionVariables to prevent drift. Unset var makes agents read wrong config.
     environment = {
       CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
       DISABLE_AUTOUPDATER = "1";
-      # The browser UI is OFF by default - resolveWebUiConfig in the
-      # daemon's config.js falls through to `?? false` unless one of
-      # --web-ui, PASEO_WEB_UI_ENABLED, or features.webUi.enabled in
-      # config.json is set. Without it the daemon is perfectly healthy but
-      # serves nothing at /, so `tailscale serve` proxies to a 404 and the
-      # symptom looks like a routing or Host-header problem rather than a
-      # disabled feature.
-      #
-      # The env var is used rather than services.paseo.settings because
-      # settings writes config.json from the nix store, and the daemon also
-      # persists its own state (pairing, password) into that same file.
+      # Web UI is off by default; without this, `tailscale serve` proxies
+      # to a 404 and looks like a routing problem. Uses env var instead of
+      # settings because the daemon also persists state into config.json.
       PASEO_WEB_UI_ENABLED = "true";
     };
   };
@@ -238,14 +199,8 @@ in
   # tailscale (firewall only - join and serve are manual, see nixos.nix)
   ##########################################################################
 
-  # Deliberately no authKeyFile and no `tailscale serve` unit. Declarative
-  # join has been tried on these containers before and is persistently
-  # flaky; the same manual one-time ritual used by vikunja-server and
-  # local-llm is what actually works here. It is genuinely one-time:
-  # /var/lib/tailscale is bind-mounted to /var/lib/tailscale-devbox on the
-  # host, so the node identity survives container rebuilds and only needs
-  # redoing if that host directory is wiped. The commands are in the header
-  # comment of nixos.nix.
+  # Declarative join and serve are flaky on nspawn containers.
+  # Manual one-time ritual is used instead — see nixos.nix header.
   services.tailscale.enable = true;
 
   networking = {
