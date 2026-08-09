@@ -40,7 +40,20 @@ let
     '';
 
   launchers =
-    optionals cfg.agents.pi [ (mkLauncher { name = "pi"; cmd = "pi"; }) ]
+    # Only the sessions dir persists, not all of ~/.pi/agent: home-manager
+    # owns the config files in there (settings, models, web-search, the
+    # subagent tiers), and mounting over the whole dir would shadow them.
+    # pi keys sessions by working directory and each project mounts at its
+    # own path, so `/resume` (or `pi -r`) picks up where a crashed session
+    # left off, per project.
+    optionals cfg.agents.pi [
+      (mkLauncher {
+        name = "pi";
+        cmd = "pi";
+        stateSrc = "$HOME/.local/state/pi-sandbox";
+        stateDest = "/home/agent/.pi/agent/sessions";
+      })
+    ]
     ++ optionals cfg.agents.opencode [ (mkLauncher { name = "opencode"; cmd = "opencode"; }) ]
     # Ephemeral containers, but claude's login/config state survives in a
     # dedicated host dir so auth happens once per machine, not per session.

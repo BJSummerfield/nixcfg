@@ -51,7 +51,10 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      local-llm.enable = true;
+      local-llm = {
+        enable = true;
+        cuda.enable = true;
+      };
       makemkv.enable = true;
       nas = {
         shares.media.enable = true;
@@ -61,8 +64,9 @@
         enable = true;
         hostConfig = ./niri.kdl;
       };
+      nvidia.enable = true;
       openssh.outbound.enable = true;
-      coding-agents.enable = true;
+      # coding-agents.enable = true;
       # Paths come from the sops.secrets declarations above rather than
       # being hardcoded, so a change to sops-nix's layout can't silently
       # desync them. The container stays autoStart = false until those
@@ -90,7 +94,7 @@
       mine.user = {
         _1password.enable = true;
         alacritty.enable = true;
-        claude-code.enable = true;
+        # claude-code.enable = true;
         direnv.enable = true;
         encode_queue.enable = true;
         firefox.enable = true;
@@ -139,10 +143,10 @@
       };
       home.packages = with pkgs; [
         abcde
-        amdgpu_top
         ffmpeg
         jellyfin-tui
         lumen
+        nvtopPackages.nvidia
         picard
       ];
       home.file =
@@ -156,6 +160,14 @@
           "data2".source = mkLink "/data2";
         };
     };
+  };
+
+  # memoryPercent is a ceiling on the zram device, not a reservation - it only
+  # consumes RAM as pages actually swap in. Machine-sized policy, so it lives
+  # here rather than in the nvidia module.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50;
   };
 
   systemd.tmpfiles.rules = [

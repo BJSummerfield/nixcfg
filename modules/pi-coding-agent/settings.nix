@@ -1,51 +1,92 @@
 # Shared pi configuration data. Consumed by home.nix (home-manager, used on
+# the nixos hosts and inside their nspawn containers).
+#
+# The redtruck provider's model list, default, and subagent tiers are all
+# derived from modules/local-llm/models.nix, the single source of truth for
+# what's served there. Adding/removing/renaming a redtruck model is a one-file
+# edit in the catalog - nothing here needs to change to match. robin is a
+# different machine with its own hand-run server, so it stays hand-written.
+let
+  llm = import ../local-llm/models.nix;
 
-# the nixos hosts and inside their nspawn containers) and image.nix (the OCI
-# image that runs pi on macOS via docker).
+  mkModel = id: m: {
+    inherit id;
+    name = m.displayName;
+    reasoning = m.reasoning;
+    contextWindow = m.maxModelLen - m.headroom;
+    maxTokens = m.maxTokens;
+  };
+
+  mkAlias = m: id: a: {
+    inherit id;
+    name = a.displayName;
+    reasoning = m.reasoning;
+    contextWindow = a.contextWindow;
+    maxTokens = a.maxTokens;
+  };
+
+  # each enabled model, followed by its aliases
+  entriesFor = name:
+    let m = llm.models.${name}; aliases = m.aliases or { }; in
+    [ (mkModel name m) ]
+    ++ map (aliasId: mkAlias m aliasId aliases.${aliasId}) (builtins.attrNames aliases);
+
+  redtruckModels = builtins.concatMap entriesFor llm.enabled;
+
+  qualified = id: "${llm.provider}/${id}";
+  defaultEntry = llm.models.${llm.default};
+  defaultAliases = builtins.attrNames (defaultEntry.aliases or { });
+  # the smaller-window alias if the default has one, else the model itself.
+  # Assumes at most one alias: with two, `head` picks the lexicographically
+  # first, which is arbitrary - pick deliberately if a second is ever added.
+  budgetModel =
+    if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
+in
 {
   settings = {
     theme = "dark";
+    # Keep every model reference identical: llama-swap serves one model at a
+    # time, so a background task (web-search curator, titles) pointed at a
+    # different model than the session evicts the loaded one and stalls
+    # everything for minutes while vllm swaps. Exception: the -32k entry is
+    # a llama-swap alias of the same model (declared in local-llm/models.nix,
+    # rendered by llama-swap.nix) - requests to it hit the already-loaded
+    # instance, no swap.
     model = {
-      provider = "redtruck";
-      model = "Qwen3.6-35B-A3B-MTP-Q4";
+      provider = llm.provider;
+      model = llm.default;
     };
-    defaultProvider = "redtruck";
-    defaultModel = "Qwen3.6-27B-MTP-Q4";
+    defaultProvider = llm.provider;
+    defaultModel = llm.default;
     defaultThinkingLevel = "high";
+    # bun instead of npm for pi's package installs: pi-superagents ships a
+    # postinstall that runs node --experimental-strip-types on a .ts inside
+    # node_modules, which node categorically refuses (crashes every npm
+    # install). bun skips untrusted lifecycle scripts, and the script's only
+    # fresh-install job (seeding the subagent config) is done declaratively
+    # in home.nix anyway.
+    npmCommand = [ "bun" ];
     packages = [
       "npm:pi-web-access"
       "npm:pi-token-speed"
-      "npm:@weiping/pi-superpowers"
+      # Upstream superpowers straight from git, not the @weiping npm fork.
+      "git:github.com/obra/superpowers"
+      "npm:@teelicht/pi-superagents"
       "npm:@monotykamary/pi-tps"
     ];
   };
 
   models = {
     providers = {
-      redtruck = {
-        baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
+      ${llm.provider} = {
+        baseUrl = llm.baseUrl;
         api = "openai-completions";
         apiKey = "dummy";
         compat = {
           supportsDeveloperRole = false;
           supportsReasoningEffort = false;
         };
-        models = [
-          {
-            id = "Qwen3.6-35B-A3B-MTP-Q4";
-            name = "Qwen3.6 35B A3B (redtruck)";
-            reasoning = true;
-            contextWindow = 92160;
-            maxTokens = 32768;
-          }
-          {
-            id = "Qwen3.6-27B-MTP-Q4";
-            name = "Qwen3.6 27B (redtruck)";
-            reasoning = true;
-            contextWindow = 122880;
-            maxTokens = 32768;
-          }
-        ];
+        models = redtruckModels;
       };
       robin = {
         baseUrl = "http://84.216.57.22:8080/v1";
@@ -68,9 +109,37 @@
     };
   };
 
+  # pi-superagents tier config, seeded at
+  # ~/.pi/agent/extensions/subagent/config.json. The bundled defaults point
+  # cheap/balanced/max at providers we don't have (opencode-go, openai), and
+  # an unpinned tier that resolved to the *other* redtruck model would make
+  # llama-swap tear down the loaded vllm instance mid-session - so every
+  # tier gets the session model. Thinking levels are omitted: the provider
+  # sets supportsReasoningEffort = false, so they'd be a no-op anyway.
+  # cheap (recon/research/implementer - the tiers sp-implement-parallel
+  # fans out) takes the -32k llama-swap alias: same instance, smaller
+  # declared window, so parallel subagents compact early instead of
+  # thrashing the KV pool. max (review/debug) runs one-at-a-time and
+  # keeps the full window.
+  # Note: seeding this file makes it a store symlink, so the /sp-settings
+  # TUI can't write it - edit here instead.
+  superagents = {
+    superagents = {
+      modelTiers = {
+        cheap.model = qualified budgetModel;
+        balanced.model = qualified llm.default;
+        max.model = qualified llm.default;
+      };
+    };
+  };
+
   webSearch = {
     workflow = "auto-summary";
     provider = "exa";
     curatorTimeoutSeconds = 20;
+    # pi-web-access otherwise picks its own default (claude-haiku / gpt-5.3
+    # codex-spark) for the summary pass. Must stay the same provider/model as
+    # settings.model above - see the swap note there.
+    summaryModel = qualified llm.default;
   };
 }
