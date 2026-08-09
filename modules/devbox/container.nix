@@ -7,24 +7,28 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  # pi loads npm packages at startup, so it needs node on PATH no matter
-  # which project devShell it ends up inside - `direnv exec` largely
-  # replaces PATH, so a project whose flake lacks node would silently
-  # break pi's plugins. Upstream's home-manager module does this wrapping
-  # via extraPackages; we redo it here because we set that module's
-  # package to null below.
-  piWithNode = pkgs.symlinkJoin {
-    name = "pi-with-node";
+  # pi installs and loads its declared packages at startup, so it needs node
+  # *and* bun on PATH no matter which project devShell it ends up inside - a
+  # project whose flake lacks them would otherwise break pi's plugins.
+  # Upstream's home-manager module does this wrapping via extraPackages; we
+  # redo it here because we set that module's package to null below, and a
+  # null package makes the module drop extraPackages silently. Importing the
+  # same list it uses is what keeps the two from drifting: they did, and pi
+  # died at startup with `Error: spawn bun ENOENT` for it.
+  piWrapped = pkgs.symlinkJoin {
+    name = "pi-wrapped";
     paths = [ pkgs.pi-coding-agent ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath [ pkgs.nodejs ]}
+      wrapProgram $out/bin/pi --suffix PATH : ${
+        lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)
+      }
     '';
   };
 
   agentPkgs = [
     (mkAgent { name = "claude"; real = lib.getExe pkgs.claude-code; })
-    (mkAgent { name = "pi"; real = "${piWithNode}/bin/pi"; })
+    (mkAgent { name = "pi"; real = "${piWrapped}/bin/pi"; })
     (mkAgent { name = "opencode"; real = lib.getExe pkgs.opencode; })
   ];
 
