@@ -66,7 +66,7 @@
       };
       nvidia.enable = true;
       openssh.outbound.enable = true;
-      coding-agents.enable = true;
+      # coding-agents.enable = true;
       # Paths come from the sops.secrets declarations above rather than
       # being hardcoded, so a change to sops-nix's layout can't silently
       # desync them. The container stays autoStart = false until those
@@ -94,7 +94,7 @@
       mine.user = {
         _1password.enable = true;
         alacritty.enable = true;
-        claude-code.enable = true;
+        # claude-code.enable = true;
         direnv.enable = true;
         encode_queue.enable = true;
         firefox.enable = true;
