@@ -1,4 +1,4 @@
-{ pkgs, lib, config, ... }:
+{ pkgs, lib, config, modulesPath, ... }:
 {
   imports =
     [
@@ -6,11 +6,21 @@
       ../../modules/nixos.nix
       ../../users/waktu.nix
       # QEMU guest tools (virtio drivers, guest agent)
-      <nixpkgs/nixos/modules/profiles/qemu-guest.nix>
+      "${modulesPath}/profiles/qemu-guest.nix"
     ];
+
+  nixpkgs.hostPlatform = "x86_64-linux";
 
   # BIOS boot VM — GRUB instead of the default systemd-boot.
   mine.system.boot.mode = "grub-bios";
+
+  # The disko layout has no swap partition, so a memory spike in Stalwart would
+  # go straight to the OOM killer. Compressed RAM instead of a disk partition -
+  # a VPS root disk is small and the write amplification isn't worth it.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50;
+  };
 
   environment.pathsToLink = [
     "/share/applications"
