@@ -12,10 +12,12 @@ commands, so tools behave normally.
 - Nothing else survives: this entire filesystem, including
   your home directory, is discarded when the session ends.
   Anything worth keeping must be written into the project.
-- Host secrets (SSH keys, GPG, password stores, browser
-  profiles) do not exist here. If git push or any
-  authenticated operation fails, report it and let the user
-  run it from the host - do not hunt for credentials.
+- Git operations (push, pull, clone) work via a credential
+  helper that reads a GitHub PAT from /run/secrets/devbox-github-token.
+  The token is scoped to only certain repositories. If a GitHub
+  operation fails with authentication or permission errors, the
+  repo is likely outside the token's scope - report it to the user.
+  SSH keys, GPG, and other host secrets are not available.
 - You have unrestricted network access.
 - Missing tools: install them yourself. Prefer
   `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (pinned,
