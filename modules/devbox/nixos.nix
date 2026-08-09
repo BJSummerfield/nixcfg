@@ -126,7 +126,7 @@ in
     containers.devbox = {
       # Flipped to true only after the sops secrets exist on disk; a
       # bindMount whose hostPath is missing fails at container start.
-      autoStart = false;
+      autoStart = true;
       privateNetwork = true;
       hostAddress = "192.168.100.26";
       localAddress = "192.168.100.27";
