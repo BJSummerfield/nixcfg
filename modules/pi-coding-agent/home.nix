@@ -20,12 +20,9 @@ in
 
     programs.pi-coding-agent = {
       enable = true;
-      # bun runs pi's package installs (settings.npmCommand); nodejs stays
-      # for anything that shells out to node at runtime
-      extraPackages = [
-        pkgs.nodejs
-        pkgs.bun
-      ];
+      # shared with modules/devbox/container.nix, which wraps pi by hand -
+      # see the header of extra-packages.nix
+      extraPackages = import ./extra-packages.nix pkgs;
       settings = data.settings;
       models = data.models;
     };
