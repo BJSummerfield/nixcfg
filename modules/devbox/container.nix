@@ -110,11 +110,8 @@ in
       home.packages = agentPkgs;
       home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
 
-      # Signed commits. git shells out to `ssh-keygen -Y sign -f <keyfile>`,
-      # which takes a key file and not an agent socket - so this is the whole
-      # mechanism, there is nothing else to run. The key is the sops secret
-      # bind-mounted read-only; see hosts/redtruck/default.nix for why it has
-      # to be mode 0400 owned by this uid specifically.
+      # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
+      # agent — so these settings are the whole mechanism.
       programs.git = {
         enable = true;
         settings = {

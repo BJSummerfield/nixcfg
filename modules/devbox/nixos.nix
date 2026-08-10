@@ -82,14 +82,10 @@ in
         sign git commits inside the container. Typically the decrypted path
         from sops-nix.
 
-        Ownership is load-bearing and differs from both other secrets here.
-        git signs by running `ssh-keygen -Y sign` as the agent uid, and
-        OpenSSH refuses a private key unless the file is owned by the
-        calling uid and has no group or other permission bits set. So
-        neither githubTokenFile's `mode = "0440"; group = "users";` nor
-        paseoPasswordFile's root-only default works: the file must be mode
-        0400 owned by uid 1500 itself, which sops-nix can only express via
-        its numeric `uid` option. See hosts/redtruck/default.nix.
+        Must be mode 0400 owned by uid 1500. git signs by running
+        `ssh-keygen -Y sign` as the agent, and OpenSSH ignores a private key
+        it does not own or that a group or other bit can reach; sops-nix
+        expresses that uid through its numeric `uid` option.
 
         No passphrase - nothing in the container can prompt for one.
       '';
