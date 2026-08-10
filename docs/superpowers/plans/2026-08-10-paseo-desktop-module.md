@@ -260,11 +260,13 @@ In `hosts/mac/default.nix`, add after `keybase.enable = true;`:
 - [ ] **Step 5: Verify the cask is declared**
 
 ```bash
-nix eval --no-write-lock-file '.#darwinConfigurations.mac.config.homebrew.casks' \
-  --apply 'cs: builtins.elem "paseo" cs'
+nix eval --no-write-lock-file --json '.#darwinConfigurations.mac.config.homebrew.casks' \
+  --apply 'cs: map (c: c.name) cs'
 ```
 
-Expected: `true`.
+Expected: a JSON list containing `"paseo"`.
+
+Map over `.name`; do not use `builtins.elem "paseo" cs`. nix-darwin coerces each cask string into a submodule, so an `elem` test against a string returns `false` for every cask — including ones that have worked for years.
 
 - [ ] **Step 6: Verify the system flag implied the user flag**
 
