@@ -14,9 +14,15 @@
     helix
   ];
 
-  # devbox container secrets. All three are bind-mounted read-only into the
-  # container by modules/devbox/nixos.nix; none ever enters the container's
+  # Coding-agent container secrets, one set of three per container. Each set
+  # is bind-mounted read-only into its own container by
+  # modules/devbox/nixos.nix, onto the same three paths inside every
+  # container (/run/secrets/github-token, /run/secrets/paseo-password and
+  # /run/secrets/signing-key); no secret ever enters a container's
   # filesystem or the nix store.
+  #
+  # The two containers exist to hold two different GitHub tokens, so the
+  # token files are what actually distinguishes them.
   #
   # The three modes differ deliberately:
   #
@@ -37,7 +43,10 @@
   #                  rules out the 0440/group trick: 0400 owned by uid 1500,
   #                  set numerically since `owner` takes a host username.
   #
-  # Rotating any of them needs `systemctl restart container@devbox` - the
+  # Each container gets its own signing key, so a commit's signature says
+  # which box made it.
+  #
+  # Rotating any of them needs `systemctl restart container@<name>` - the
   # bind mount resolved to the old file when the container started.
   sops.secrets = {
     devbox-github-token = {
@@ -47,6 +56,17 @@
     };
     devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
     devbox-signing-key = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0400";
+      uid = 1500;
+    };
+    workbox-github-token = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0440";
+      group = "users";
+    };
+    workbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+    workbox-signing-key = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
       uid = 1500;
@@ -79,15 +99,26 @@
       # coding-agents.enable = true;
       # Paths come from the sops.secrets declarations above rather than
       # being hardcoded, so a change to sops-nix's layout can't silently
-      # desync them. The container stays autoStart = false until those
-      # files exist on disk: a bindMount whose hostPath is missing fails
-      # at container start, not at build.
-      devbox = {
-        enable = true;
-        githubTokenFile = config.sops.secrets.devbox-github-token.path;
-        paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
-        signingKeyFile = config.sops.secrets.devbox-signing-key.path;
-        tailnetHostname = "devbox.mist-gamma.ts.net";
+      # desync them. Addresses are stated per instance so a collision
+      # between the two is visible right here rather than showing up as a
+      # container that starts and then cannot route.
+      devboxes = {
+        devbox = {
+          githubTokenFile = config.sops.secrets.devbox-github-token.path;
+          paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
+          signingKeyFile = config.sops.secrets.devbox-signing-key.path;
+          tailnetHostname = "devbox.mist-gamma.ts.net";
+          hostAddress = "192.168.100.26";
+          localAddress = "192.168.100.27";
+        };
+        workbox = {
+          githubTokenFile = config.sops.secrets.workbox-github-token.path;
+          paseoPasswordFile = config.sops.secrets.workbox-paseo-password.path;
+          signingKeyFile = config.sops.secrets.workbox-signing-key.path;
+          tailnetHostname = "workbox.mist-gamma.ts.net";
+          hostAddress = "192.168.100.28";
+          localAddress = "192.168.100.29";
+        };
       };
       pipewire.sample-switch.enable = true;
       theme.enable = true;
