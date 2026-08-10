@@ -5,6 +5,7 @@
     ./firefox/darwin.nix
     ./homebrew/darwin.nix
     ./keybase/darwin.nix
+    ./paseo-desktop/darwin.nix
     ./system/darwin.nix
     ./theme/darwin.nix
     ./unfree/darwin.nix
