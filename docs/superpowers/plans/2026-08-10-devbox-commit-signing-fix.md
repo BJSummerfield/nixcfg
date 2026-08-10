@@ -60,12 +60,30 @@ Record the printed public key — Task 3 Step 1 pastes it into GitHub. No passph
 
 - [ ] **Step 4: Encrypt the private key into the sops file**
 
+`sops set --value-file` requires the file to hold valid **JSON**, not raw text —
+a bare private key fails with `Value for --set is not valid JSON`. So JSON-encode
+it first. Note also that the flag must come **before** the positional arguments;
+`sops set <file> <index> --value-file <path>` fails with `Invalid set index
+format`.
+
 ```bash
-nix run nixpkgs#sops -- set secrets/hosts/redtruck.yaml \
-  '["devbox-signing-key"]' --value-file /tmp/devbox-signing
+nix run nixpkgs#jq -- -Rs . < /tmp/devbox-signing > /tmp/devbox-signing.json
+nix run nixpkgs#sops -- set --value-file \
+  secrets/hosts/redtruck.yaml '["devbox-signing-key"]' /tmp/devbox-signing.json
 ```
 
-`--value-file` reads the key from disk instead of the command line, so the private key never lands in the shell history or `ps` output.
+Reading from a file rather than the command line keeps the key out of shell
+history and `ps` output.
+
+Verified end to end against a scratch sops file: round-trips byte-identical, the
+sibling secret still decrypts, the value is stored `ENC[AES256_GCM,...]`, and the
+decrypted key signs.
+
+The interactive alternative is `sops secrets/hosts/redtruck.yaml`, which opens the
+*decrypted* plaintext in `$EDITOR` and re-encrypts plus re-MACs on save. Safe, but
+the key must be pasted as a YAML block scalar (`devbox-signing-key: |`) with every
+line indented — a silent indentation mistake is why the non-interactive form is
+preferred here.
 
 - [ ] **Step 5: Verify the round-trip byte-for-byte**
 
@@ -89,7 +107,7 @@ Expected: `ENCRYPTED OK`, and `0` occurrences of `PRIVATE KEY`. If either check 
 - [ ] **Step 7: Delete the plaintext key and commit**
 
 ```bash
-shred -u /tmp/devbox-signing
+shred -u /tmp/devbox-signing /tmp/devbox-signing.json
 git add secrets/hosts/redtruck.yaml
 git commit -m "fix(devbox): encrypt real signing key, drop broken placeholder
 
