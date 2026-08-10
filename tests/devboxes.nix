@@ -15,6 +15,9 @@ let
   host = (lib.nixosSystem {
     specialArgs = { inherit inputs; };
     modules = [
+      # modules/system/nixos.nix sets sops.age.sshKeyPaths, so its option
+      # tree has to be present even though nothing here decrypts anything.
+      inputs.sops-nix.nixosModules.sops
       ../modules/system/nixos.nix
       ../modules/devbox/nixos.nix
       {
@@ -115,7 +118,7 @@ pkgs.runCommand "devboxes-eval-tests" { } (
   then "touch $out"
   else ''
     ${lib.concatMapStringsSep "\n"
-      (f: "echo 'FAIL: ${f.name}' >&2") failures}
+      (f: "echo ${lib.escapeShellArg "FAIL: ${f.name}"} >&2") failures}
     exit 1
   ''
 )

@@ -13,7 +13,7 @@ commands, so tools behave normally.
   your home directory, is discarded when the session ends.
   Anything worth keeping must be written into the project.
 - Git operations (push, pull, clone) work via a credential
-  helper that reads a GitHub PAT from /run/secrets/devbox-github-token.
+  helper that reads a GitHub PAT from /run/secrets/github-token.
   The token is scoped to only certain repositories. If a GitHub
   operation fails with authentication or permission errors, the
   repo is likely outside the token's scope - report it to the user.
