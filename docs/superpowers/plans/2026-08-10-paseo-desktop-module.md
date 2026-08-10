@@ -347,9 +347,11 @@ Expected: `regular file - correct`. A symlink means `home.file` was used instead
 
 - [ ] **Step 4: Confirm the launcher entry and icon are installed**
 
+`home-manager.useUserPackages = true` (`modules/users/nixos.nix:106`) routes `home.packages` into `users.users.waktu.packages`, which lands under `/etc/profiles/per-user/waktu`, not `~/.nix-profile`.
+
 ```bash
-ls ~/.nix-profile/share/applications/paseo-desktop.desktop \
-   ~/.nix-profile/share/icons/hicolor/512x512/apps/paseo-desktop.png
+ls /etc/profiles/per-user/waktu/share/applications/paseo-desktop.desktop \
+   /etc/profiles/per-user/waktu/share/icons/hicolor/512x512/apps/paseo-desktop.png
 command -v paseo-desktop
 ```
 
@@ -364,6 +366,14 @@ pgrep -af "paseo.*daemon" || echo "no local daemon - correct"
 ```
 
 Expected: `no local daemon - correct`. A match means the seed did not take effect and the app is running its own daemon.
+
+Also launch from a terminal whose cwd is inside a linked git worktree, which is the case the `PASEO_ELECTRON_USER_DATA_DIR` wrapper env var guards against:
+
+```bash
+cd /var/lib/paseo/worktrees/*/* 2>/dev/null && paseo-desktop &
+```
+
+Expected: userData is still `~/.config/Paseo` (not `~/.config/Paseo-<worktree>`) and `pgrep -af "paseo.*daemon"` still reports no local daemon.
 
 - [ ] **Step 6: Confirm activation never overwrites an existing file**
 

@@ -27,8 +27,17 @@ in
 
   config = mkIf cfg.enable {
     # Darwin installs the app from a homebrew cask instead - see darwin.nix.
-    home.packages =
-      lib.optional isLinux inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
+    # Electron redirects userData to Paseo-<worktree> when launched from a git
+    # worktree, which would bypass the seeded settings; pin it instead.
+    home.packages = lib.optional isLinux (pkgs.symlinkJoin {
+      name = "paseo-desktop";
+      paths = [ inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop ];
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      postBuild = ''
+        wrapProgram $out/bin/paseo-desktop \
+          --set PASEO_ELECTRON_USER_DATA_DIR ${settingsDir}
+      '';
+    });
 
     # Seeded only when absent: the app rewrites this file itself, so a home.file
     # symlink would be replaced on its first write and re-clobbered every
@@ -40,6 +49,13 @@ in
           run mkdir -p $VERBOSE_ARG "$settings_dir"
           run install $VERBOSE_ARG -m 0644 ${settingsSeed} \
             "$settings_dir/desktop-settings.json"
+        else
+          if ! grep -q '"manageBuiltInDaemon"[[:space:]]*:[[:space:]]*false' \
+              "$settings_dir/desktop-settings.json"; then
+            warnEcho "$settings_dir/desktop-settings.json exists and does not set" \
+              "manageBuiltInDaemon to false; disable the built-in daemon in the" \
+              "app's settings"
+          fi
         fi
       '';
   };
