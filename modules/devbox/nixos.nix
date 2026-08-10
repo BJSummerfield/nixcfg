@@ -74,6 +74,23 @@ in
       '';
       example = "devbox.mist-gamma.ts.net";
     };
+
+    signingKeyFile = mkOption {
+      type = types.path;
+      description = ''
+        Path on the host to an unencrypted ed25519 SSH private key used to
+        sign git commits inside the container. Typically the decrypted path
+        from sops-nix.
+
+        Must be mode 0400 owned by uid 1500. git signs by running
+        `ssh-keygen -Y sign` as the agent, and OpenSSH ignores a private key
+        it does not own or that a group or other bit can reach; sops-nix
+        expresses that uid through its numeric `uid` option.
+
+        No passphrase - nothing in the container can prompt for one.
+      '';
+      example = "/run/secrets/devbox-signing-key";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -133,6 +150,10 @@ in
         };
         "/run/secrets/devbox-paseo-password" = {
           hostPath = cfg.paseoPasswordFile;
+          isReadOnly = true;
+        };
+        "/run/secrets/devbox-signing-key" = {
+          hostPath = cfg.signingKeyFile;
           isReadOnly = true;
         };
       };

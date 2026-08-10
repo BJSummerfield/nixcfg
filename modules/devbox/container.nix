@@ -110,13 +110,18 @@ in
       home.packages = agentPkgs;
       home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
 
+      # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
+      # agent — so these settings are the whole mechanism.
       programs.git = {
         enable = true;
         settings = {
           user = {
             name = "BJSummerfield";
             email = "brianjsummerfield@gmail.com";
+            signingkey = "/run/secrets/devbox-signing-key";
           };
+          gpg.format = "ssh";
+          commit.gpgSign = true;
           # Reads the token at use time so it never lands in a config file
           # or the nix store. The token bounds which repos are reachable;
           # a GitHub ruleset is what stops a push to a protected branch.
