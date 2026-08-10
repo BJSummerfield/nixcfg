@@ -1,6 +1,6 @@
 # NixOS configuration for the devbox container.
 # Tailnet join and serve are manual — see nixos.nix.
-{ inputs, tailnetHostname }:
+{ inputs, tailnetHostname, gitIdentity, signCommits }:
 { config, pkgs, lib, ... }:
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
@@ -27,7 +27,7 @@ let
   # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
   # Replaces bare pkgs.gh — pkgs.buildEnv fails on duplicate names.
   ghWrapped = pkgs.writeShellScriptBin "gh" ''
-    export GH_TOKEN=$(cat /run/secrets/devbox-github-token)
+    export GH_TOKEN=$(cat /run/secrets/github-token)
     exec ${lib.getExe pkgs.gh} "$@"
   '';
 in
@@ -111,22 +111,25 @@ in
       home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
 
       # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
-      # agent — so these settings are the whole mechanism.
+      # agent — so these settings are the whole mechanism. All three are
+      # gated on signCommits as one unit: gpgSign left on without a key
+      # present makes git refuse to commit at all, which is worse than an
+      # instance that simply does not sign.
       programs.git = {
         enable = true;
         settings = {
-          user = {
-            name = "BJSummerfield";
-            email = "brianjsummerfield@gmail.com";
-            signingkey = "/run/secrets/devbox-signing-key";
+          user = { inherit (gitIdentity) name email; }
+            // lib.optionalAttrs signCommits {
+            signingkey = "/run/secrets/signing-key";
           };
-          gpg.format = "ssh";
-          commit.gpgSign = true;
           # Reads the token at use time so it never lands in a config file
           # or the nix store. The token bounds which repos are reachable;
           # a GitHub ruleset is what stops a push to a protected branch.
           credential."https://github.com".helper =
-            "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/devbox-github-token); }; f";
+            "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
+        } // lib.optionalAttrs signCommits {
+          gpg.format = "ssh";
+          commit.gpgSign = true;
         };
       };
     };
@@ -166,35 +169,36 @@ in
   };
 
   # Tailnet membership is not treated as sufficient authentication on its
-  # own (see mine.system.devbox.paseoPasswordFile). Upstream's paseo module
+  # own (see mine.system.devboxes.<name>.paseoPasswordFile). Upstream's paseo module
   # has no environmentFile-style option to consume this without the value
   # passing through cfg.environment/cfg.settings - both of which the
   # module renders into the nix store, which is world-readable. Overriding
   # the generated unit's EnvironmentFile directly is the only way to hand
   # the daemon a secret that never touches the store.
-  systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/devbox-paseo-password";
+  systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/paseo-password";
 
   # paseo's resolveAuthConfig (server/dist/server/server/config.js) only
   # installs a password when PASEO_PASSWORD is non-empty; otherwise it
   # silently falls back to persisted config or no auth at all. Meanwhile
   # systemd only *logs a warning* for an EnvironmentFile= line missing an
   # `=` - the unit still comes up "active". So a malformed
-  # devbox-paseo-password (wrong key, stray whitespace, empty value - the
-  # natural mistake, since the other two devbox secrets are bare-value
-  # files, not KEY=value ones) would leave paseo running unauthenticated on
-  # the tailnet with no failure anywhere. This turns that into a hard
-  # startup failure instead.
+  # paseo-password (wrong key, stray whitespace, empty value - the natural
+  # mistake, since the container's other secret is a bare-value file, not a
+  # KEY=value one) would leave paseo running unauthenticated on the tailnet
+  # with no failure anywhere. This turns that into a hard startup failure
+  # instead.
   #
   # Runs with the "+" prefix - i.e. as root, not the unit's own
   # User=agent - because paseoPasswordFile is deliberately root-only
-  # (mode = "0400", see mine.system.devbox.paseoPasswordFile); ExecStartPre
-  # without "+" runs as the unit's configured User=, which could not read
-  # it. Uses grep's own exit status only; never echoes the file's contents,
-  # matched or not, so the secret can't reach the unit's stderr/journal.
+  # (mode = "0400", see mine.system.devboxes.<name>.paseoPasswordFile);
+  # ExecStartPre without "+" runs as the unit's configured User=, which could
+  # not read it. Uses grep's own exit status only; never echoes the file's
+  # contents, matched or not, so the secret can't reach the unit's
+  # stderr/journal.
   systemd.services.paseo.serviceConfig.ExecStartPre = [
-    ("+" + toString (pkgs.writeShellScript "devbox-paseo-password-check" ''
-      if ! ${lib.getExe pkgs.gnugrep} -Eq '^PASEO_PASSWORD=.+' /run/secrets/devbox-paseo-password; then
-        echo "devbox-paseo-password: no non-empty PASEO_PASSWORD=<value> line found - refusing to start paseo unauthenticated (value withheld)" >&2
+    ("+" + toString (pkgs.writeShellScript "paseo-password-check" ''
+      if ! ${lib.getExe pkgs.gnugrep} -Eq '^PASEO_PASSWORD=.+' /run/secrets/paseo-password; then
+        echo "paseo-password: no non-empty PASEO_PASSWORD=<value> line found - refusing to start paseo unauthenticated (value withheld)" >&2
         exit 1
       fi
     ''))
