@@ -25,6 +25,21 @@
 let
   cfg = config.mine.system.stalwart-server;
   hostStateDir = "/var/lib/stalwart-data";
+
+  # nixpkgs f13ff45: wasm-bindgen-cli_0_2_93 emits duplicate exports
+  # that binaryen-130 refuses to parse. Patch with wasm-bindgen PR #4380
+  # (nixpkgs bb15a89, 2026-08-08). Delete this overlay once nixos-unstable
+  # passes that commit — verify with: nix eval nixpkgs#stalwart_0_15.webadmin.drvPath
+  wasmBindgenCliDedupExportsPatch = pkgs.fetchpatch {
+    url = "https://github.com/wasm-bindgen/wasm-bindgen/commit/b375e974cf30a203f1ea7f6320ad32759c5cb9e6.patch";
+    relative = "crates/cli-support";
+    hash = "sha256-pejDKqNbtlpLLqNcdpwgxDSxsGxyv5V8/QeK+OCY3qw=";
+  };
+  wasmBindgenCliPatched = pkgs.wasm-bindgen-cli_0_2_93.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      patch -p1 -d "$cargoDepsCopy"/*/wasm-bindgen-cli-support-* < ${wasmBindgenCliDedupExportsPatch}
+    '';
+  });
 in
 {
   options.mine.system.stalwart-server = {
@@ -49,7 +64,7 @@ in
         '';
       };
       repoPasswordFile = lib.mkOption {
-        type = lib.types.path;
+        type = lib.types.str;
         description = "Host path to the restic repository password.";
       };
       repository = lib.mkOption {
@@ -134,6 +149,11 @@ in
       };
 
       config = { config, pkgs, lib, ... }: {
+        nixpkgs.overlays = [
+          (final: prev: {
+            wasm-bindgen-cli_0_2_93 = wasmBindgenCliPatched;
+          })
+        ];
 
         systemd.services.stalwart.serviceConfig.LoadCredential = [
           "admin-pw:/run/stalwart/admin-pw"
@@ -143,6 +163,7 @@ in
 
         services.stalwart = {
           enable = true;
+          package = pkgs.stalwart_0_15;
           openFirewall = false;
           stateVersion = "24.11";
           settings = {
