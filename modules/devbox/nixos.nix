@@ -78,14 +78,20 @@ in
     signingKeyFile = mkOption {
       type = types.path;
       description = ''
-        Path on the host to an SSH private key (ed25519) used for signing
-        git commits inside the container. The key is loaded by the
-        ssh-agent-devbox systemd service at boot; the agent holds it in
-        memory and the file is never read by user processes.
+        Path on the host to an unencrypted ed25519 SSH private key used to
+        sign git commits inside the container. Typically the decrypted path
+        from sops-nix.
 
-        Like paseoPasswordFile, this is read only by PID 1 (via the
-        systemd service), so sops-nix's default (`mode = "0400"`,
-        `owner = "root"`) is sufficient.
+        Ownership is load-bearing and differs from both other secrets here.
+        git signs by running `ssh-keygen -Y sign` as the agent uid, and
+        OpenSSH refuses a private key unless the file is owned by the
+        calling uid and has no group or other permission bits set. So
+        neither githubTokenFile's `mode = "0440"; group = "users";` nor
+        paseoPasswordFile's root-only default works: the file must be mode
+        0400 owned by uid 1500 itself, which sops-nix can only express via
+        its numeric `uid` option. See hosts/redtruck/default.nix.
+
+        No passphrase - nothing in the container can prompt for one.
       '';
       example = "/run/secrets/devbox-signing-key";
     };

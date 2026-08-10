@@ -14,11 +14,11 @@
     helix
   ];
 
-  # devbox container secrets. Both are bind-mounted read-only into the
-  # container by modules/devbox/nixos.nix; neither ever enters the
-  # container's filesystem or the nix store.
+  # devbox container secrets. All three are bind-mounted read-only into the
+  # container by modules/devbox/nixos.nix; none ever enters the container's
+  # filesystem or the nix store.
   #
-  # The two modes differ deliberately and point opposite ways:
+  # The three modes differ deliberately:
   #
   #   github-token   read by the *agent* (uid 1500, group users) at use
   #                  time, via the git credential helper and the gh
@@ -32,7 +32,11 @@
   #                  keeps the daemon password out of reach of anything
   #                  running as agent, including a compromised agent.
   #
-  # Rotating either one needs `systemctl restart container@devbox` - the
+  #   signing-key    read by the agent too, but OpenSSH refuses a private
+  #                  key that any group or other bit can reach, so the
+  #                  0440/group trick is out. 0400 owned by uid 1500.
+  #
+  # Rotating any of them needs `systemctl restart container@devbox` - the
   # bind mount resolved to the old file when the container started.
   sops.secrets = {
     devbox-github-token = {
@@ -41,11 +45,17 @@
       group = "users";
     };
     devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
-    # SSH private key for commit signing. Loaded by the ssh-agent-devbox
-    # systemd service at boot (runs as root), never read by agent uid.
+    # Read directly by `ssh-keygen -Y sign` running as agent, so unlike
+    # paseo-password it cannot be root-only - and unlike github-token it
+    # cannot use 0440/group=users either, because OpenSSH ignores any
+    # private key with a group or other bit set. That leaves exactly one
+    # shape: 0400 owned by uid 1500. `owner` takes a host username and no
+    # host user has that uid, so this uses the numeric `uid`, which
+    # sops-nix applies even when no such user exists.
     devbox-signing-key = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
+      uid = 1500;
     };
   };
 

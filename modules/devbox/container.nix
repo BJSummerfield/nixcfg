@@ -110,16 +110,18 @@ in
       home.packages = agentPkgs;
       home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
 
-      # Signed commits via SSH agent. The private key is a sops-encrypted
-      # secret bind-mounted read-only; an ssh-agent systemd service loads
-      # it at boot and exports SSH_AUTH_SOCK for all processes.
+      # Signed commits. git shells out to `ssh-keygen -Y sign -f <keyfile>`,
+      # which takes a key file and not an agent socket - so this is the whole
+      # mechanism, there is nothing else to run. The key is the sops secret
+      # bind-mounted read-only; see hosts/redtruck/default.nix for why it has
+      # to be mode 0400 owned by this uid specifically.
       programs.git = {
         enable = true;
         settings = {
           user = {
             name = "BJSummerfield";
             email = "brianjsummerfield@gmail.com";
-            signingkey = pkgs.writeTextFile { name = "devbox-signing-key.pub"; text = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOiEuEmaJONbC6vFwlVYO9OgiIylhMmqi+xC5muRIn1Y devbox@peachy-husky"; };
+            signingkey = "/run/secrets/devbox-signing-key";
           };
           gpg.format = "ssh";
           commit.gpgSign = true;
@@ -130,42 +132,8 @@ in
             "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/devbox-github-token); }; f";
         };
       };
-
-      # Point SSH (used by git for commit signing) at the agent socket.
-      xdg.configFile."ssh/ssh_config".text = ''
-        Host *
-          IdentityAgent /run/ssh-agent-devbox.sock
-      '';
     };
   };
-
-  ##########################################################################
-  # SSH agent for commit signing
-  ##########################################################################
-
-  # Starts an ssh-agent, loads the signing key from the sops secret, and
-  # exports SSH_AUTH_SOCK so git (and any other tool) can sign without
-  # the private key ever touching disk in the container.
-  systemd.services.ssh-agent-devbox = {
-    description = "SSH agent for devbox commit signing";
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      Type = "fork";
-      # The private key is a sops secret, read-only bind mount.
-      # ssh-add reads it once at startup; after that only the agent holds it.
-      ExecStart = ''
-        ${pkgs.coreutils}/bin/mkdir -p /run/ssh-agent-devbox &&
-        ${pkgs.openssh}/bin/ssh-agent -a /run/ssh-agent-devbox.sock -D &&
-        ${pkgs.openssh}/bin/ssh-add /run/secrets/devbox-signing-key
-      '';
-      ExecStop = "${pkgs.openssh}/bin/ssh-agent -k -c /run/ssh-agent-devbox.sock";
-      # Without Restart=, a crash would leave signing broken until reboot.
-      Restart = "on-failure";
-    };
-  };
-
-  # Make the agent socket visible to all user processes.
-  environment.sessionVariables.SSH_AUTH_SOCK = "/run/ssh-agent-devbox.sock";
 
   ##########################################################################
   # paseo
@@ -197,9 +165,6 @@ in
       # to a 404 and looks like a routing problem. Uses env var instead of
       # settings because the daemon also persists state into config.json.
       PASEO_WEB_UI_ENABLED = "true";
-      # Duplicated from sessionVariables so pase's child processes (agents)
-      # can find the SSH agent for commit signing.
-      SSH_AUTH_SOCK = "/run/ssh-agent-devbox.sock";
     };
   };
 
