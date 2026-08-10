@@ -1,12 +1,30 @@
-{ pkgs, lib, config, ... }:
+{ pkgs, lib, config, modulesPath, ... }:
 {
   imports =
     [
-      ./hardware-configuration.nix
       ./disko.nix
       ../../modules/nixos.nix
       ../../users/waktu.nix
+      # QEMU guest tools (virtio drivers, guest agent)
+      "${modulesPath}/profiles/qemu-guest.nix"
     ];
+
+  nixpkgs.hostPlatform = "x86_64-linux";
+
+  # BIOS boot VM — GRUB instead of the default systemd-boot.
+  mine.system.boot.mode = "grub-bios";
+
+  # The disko layout has no swap partition, so a memory spike in Stalwart would
+  # go straight to the OOM killer. Compressed RAM instead of a disk partition -
+  # a VPS root disk is small and the write amplification isn't worth it.
+  #
+  # 25% not redtruck's 50%: this box has ~1G, and the zram device costs real
+  # RAM as it fills. 256M of swap for roughly 100M resident at zstd ratios.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25;
+  };
+
   environment.pathsToLink = [
     "/share/applications"
     "/share/xdg-desktop-portal"
@@ -32,16 +50,10 @@
 
   mine = {
     system = {
-      # TODO Fix this jank
-      boot = {
-        grub.enable = true;
-        systemd-boot.enable = false;
-      };
       hostName = "vps";
       autoUpgrade.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
-      # renderGroupGid = 303;
       fish.enable = true;
       openssh.inbound = {
         enable = true;
