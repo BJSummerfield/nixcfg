@@ -41,6 +41,12 @@
       group = "users";
     };
     devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+    # SSH private key for commit signing. Loaded by the ssh-agent-devbox
+    # systemd service at boot (runs as root), never read by agent uid.
+    devbox-signing-key = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0400";
+    };
   };
 
   mine = {
@@ -76,6 +82,7 @@
         enable = true;
         githubTokenFile = config.sops.secrets.devbox-github-token.path;
         paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
+        signingKeyFile = config.sops.secrets.devbox-signing-key.path;
         tailnetHostname = "devbox.mist-gamma.ts.net";
       };
       pipewire.sample-switch.enable = true;

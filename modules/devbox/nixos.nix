@@ -74,6 +74,21 @@ in
       '';
       example = "devbox.mist-gamma.ts.net";
     };
+
+    signingKeyFile = mkOption {
+      type = types.path;
+      description = ''
+        Path on the host to an SSH private key (ed25519) used for signing
+        git commits inside the container. The key is loaded by the
+        ssh-agent-devbox systemd service at boot; the agent holds it in
+        memory and the file is never read by user processes.
+
+        Like paseoPasswordFile, this is read only by PID 1 (via the
+        systemd service), so sops-nix's default (`mode = "0400"`,
+        `owner = "root"`) is sufficient.
+      '';
+      example = "/run/secrets/devbox-signing-key";
+    };
   };
 
   config = mkIf cfg.enable {
@@ -133,6 +148,10 @@ in
         };
         "/run/secrets/devbox-paseo-password" = {
           hostPath = cfg.paseoPasswordFile;
+          isReadOnly = true;
+        };
+        "/run/secrets/devbox-signing-key" = {
+          hostPath = cfg.signingKeyFile;
           isReadOnly = true;
         };
       };
