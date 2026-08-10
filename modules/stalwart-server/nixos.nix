@@ -134,11 +134,8 @@ in
       };
 
       config = { config, pkgs, lib, ... }: {
-        # nixpkgs f13ff45: wasm-bindgen-cli_0_2_93 emits duplicate exports
-        # that binaryen-130 refuses to parse. Patch with wasm-bindgen PR #4380
-        # (nixpkgs bb15a89, 2026-08-08). Delete this overlay once nixos-unstable
-        # passes that commit — it will fail to build (double-patch), not silently
-        # become a no-op. Verify with: nix eval nixpkgs#stalwart_0_15.webadmin.drvPath
+        # wasm-bindgen-cli_0_2_93 emits duplicate exports binaryen-130 rejects.
+        # Patch with upstream fix (nixpkgs bb15a89). Delete when channel catches up.
         nixpkgs.overlays = [
           (final: prev: {
             wasm-bindgen-cli_0_2_93 = prev.wasm-bindgen-cli_0_2_93.overrideAttrs (old: {
