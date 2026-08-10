@@ -162,6 +162,30 @@ mine.system.devboxes = {
 `gitIdentity`, so both use the default. The existing comment above the sops
 block — explaining why the two secret modes point opposite ways — stays.
 
+### 6. Commit signing (added after rebase onto main)
+
+Main gained a `signingKeyFile` option while this work was in flight: an
+unencrypted ed25519 SSH key, bind-mounted per container, with `container.nix`
+setting `user.signingkey`, `gpg.format = "ssh"` and `commit.gpgSign = true`.
+
+It becomes per-instance and optional — `types.nullOr types.path`, defaulting to
+`null`. A box without a key still starts; it just does not sign. The bind mount
+moves behind `lib.optionalAttrs (box.signingKeyFile != null)`, and its
+destination shortens to `/run/secrets/signing-key`, matching the other two.
+
+`container.nix` takes a `signCommits` boolean rather than the path, keeping it
+free of instance identity. All three git settings are gated on that one boolean
+as a unit: `commit.gpgSign` left on without a key present makes git refuse to
+commit at all, which is a worse failure than an instance that does not sign.
+Splitting the gate is the one way to get this wrong, so the tests pin both
+branches.
+
+Both redtruck instances get their own key — `devbox-signing-key` and
+`workbox-signing-key`, each `mode = "0400"` with numeric `uid = 1500` — so a
+commit's signature identifies which box produced it. The mode is not the
+`0440`/group arrangement used for the token: `ssh-keygen -Y sign` ignores a
+private key that any group or other bit can reach.
+
 ## Testing
 
 The repo has no test infrastructure today; this adds the first `checks` output.
@@ -186,6 +210,9 @@ fast and pulls in nothing unrelated. With two instances declared, it asserts:
   `/run/secrets/github-token`
 - the container's `programs.git.settings.user` picks up the default identity
   when `gitIdentity` is unset, and the overridden one when it is set
+- a keyed instance mounts its own key at `/run/secrets/signing-key` and sets all
+  three signing settings; a third fixture instance with no key mounts nothing and
+  leaves all three unset
 
 A second check, `redtruck-eval`, forces
 `nixosConfigurations.redtruck.config.system.build.toplevel.drvPath`. This is

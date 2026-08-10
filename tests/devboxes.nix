@@ -34,6 +34,7 @@ let
             devbox = {
               githubTokenFile = "/run/secrets/devbox-github-token";
               paseoPasswordFile = "/run/secrets/devbox-paseo-password";
+              signingKeyFile = "/run/secrets/devbox-signing-key";
               tailnetHostname = "devbox.example.ts.net";
               hostAddress = "192.168.100.26";
               localAddress = "192.168.100.27";
@@ -43,6 +44,7 @@ let
             workbox = {
               githubTokenFile = "/run/secrets/workbox-github-token";
               paseoPasswordFile = "/run/secrets/workbox-paseo-password";
+              signingKeyFile = "/run/secrets/workbox-signing-key";
               tailnetHostname = "workbox.example.ts.net";
               hostAddress = "192.168.100.28";
               localAddress = "192.168.100.29";
@@ -51,6 +53,17 @@ let
                 email = "other@example.com";
               };
             };
+            # No signing key. Exists only to pin the other branch of the
+            # signing gate: getting that branch wrong produces a container
+            # whose git refuses to commit at all, which is worse than one
+            # that simply does not sign.
+            nokey = {
+              githubTokenFile = "/run/secrets/nokey-github-token";
+              paseoPasswordFile = "/run/secrets/nokey-paseo-password";
+              tailnetHostname = "nokey.example.ts.net";
+              hostAddress = "192.168.100.30";
+              localAddress = "192.168.100.31";
+            };
           };
         };
       }
@@ -58,12 +71,19 @@ let
   }).config;
 
   container = name: host.containers.${name};
-  gitUser = name: (container name).config.home-manager.users.agent.programs.git.settings.user;
+  gitSettings = name: (container name).config.home-manager.users.agent.programs.git.settings;
+  gitUser = name: (gitSettings name).user;
+  signsCommits = name:
+    let settings = gitSettings name; in
+    (settings.user.signingkey or null) == "/run/secrets/signing-key"
+    && (settings.gpg.format or null) == "ssh"
+    && (settings.commit.gpgSign or false) == true
+    && (container name).bindMounts ? "/run/secrets/signing-key";
 
   checks = [
     {
-      name = "both containers are defined";
-      ok = lib.attrNames host.containers == [ "devbox" "workbox" ];
+      name = "every instance is defined";
+      ok = lib.attrNames host.containers == [ "devbox" "nokey" "workbox" ];
     }
     {
       name = "each container keeps its own veth addresses";
@@ -75,12 +95,13 @@ let
     {
       name = "NAT lists every instance's veth";
       ok = lib.sort lib.lessThan host.networking.nat.internalInterfaces
-        == [ "ve-devbox" "ve-workbox" ];
+        == [ "ve-devbox" "ve-nokey" "ve-workbox" ];
     }
     {
       name = "each instance gets its own tailscale state directory";
       ok = lib.elem "d /var/lib/tailscale-devbox 0700 root root -" host.systemd.tmpfiles.rules
-        && lib.elem "d /var/lib/tailscale-workbox 0700 root root -" host.systemd.tmpfiles.rules;
+        && lib.elem "d /var/lib/tailscale-workbox 0700 root root -" host.systemd.tmpfiles.rules
+        && lib.elem "d /var/lib/tailscale-nokey 0700 root root -" host.systemd.tmpfiles.rules;
     }
     {
       name = "secrets bind-mount per-instance host paths onto shared container paths";
@@ -95,14 +116,28 @@ let
     }
     {
       name = "gitIdentity defaults, and an override applies to one instance only";
-      ok = gitUser "devbox" == {
-        name = "BJSummerfield";
-        email = "brianjsummerfield@gmail.com";
-      }
-      && gitUser "workbox" == {
-        name = "Other Person";
-        email = "other@example.com";
-      };
+      ok = (gitUser "devbox").name == "BJSummerfield"
+        && (gitUser "devbox").email == "brianjsummerfield@gmail.com"
+        && (gitUser "workbox").name == "Other Person"
+        && (gitUser "workbox").email == "other@example.com";
+    }
+    {
+      name = "a keyed instance mounts its own key and signs with it";
+      ok = signsCommits "devbox"
+        && signsCommits "workbox"
+        && (container "devbox").bindMounts."/run/secrets/signing-key".hostPath
+        == "/run/secrets/devbox-signing-key"
+        && (container "workbox").bindMounts."/run/secrets/signing-key".hostPath
+        == "/run/secrets/workbox-signing-key";
+    }
+    {
+      # gpgSign left on without a key makes git refuse to commit outright,
+      # so all three settings have to disappear together with the mount.
+      name = "an unkeyed instance mounts no key and leaves signing off";
+      ok = !((container "nokey").bindMounts ? "/run/secrets/signing-key")
+        && !((gitUser "nokey") ? signingkey)
+        && !((gitSettings "nokey").gpg or { } ? format)
+        && !((gitSettings "nokey").commit or { } ? gpgSign);
     }
     {
       name = "each container is served on its own tailnet hostname";
