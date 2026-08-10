@@ -273,7 +273,23 @@ Expected: `false`
 nix build .#nixosConfigurations.redtruck.config.system.build.toplevel --no-link
 ```
 
-Expected: PASS. Run this on redtruck itself — it is the machine with the cache and the horsepower.
+Run this on redtruck itself — it is the machine with the cache and the horsepower.
+
+Expected outcome depends on whether Task 1 has landed, because sops-nix
+validates the sops file at **build** time, not just at activation:
+
+- **Task 1 not yet done:** FAIL with `sops-install-secrets: manifest is not
+  valid: cannot parse yaml of '...redtruck.yaml': yaml: line 2: did not find
+  expected key`. This is Task 1's placeholder, not a defect in this task —
+  and note what it means: the placeholder makes redtruck *unbuildable*, not
+  merely undeployable.
+- **Task 1 done:** PASS.
+
+To isolate this task without Task 1, temporarily `git checkout 1cf8af0 --
+secrets/hosts/redtruck.yaml`, rebuild, and confirm the error changes to
+`secret devbox-signing-key ... cannot be found` — the value is absent rather
+than the file being broken, which is the expected pre-Task-1 state. Restore
+the file and `git restore --staged secrets/hosts/redtruck.yaml` afterwards.
 
 - [ ] **Step 11: Commit**
 
