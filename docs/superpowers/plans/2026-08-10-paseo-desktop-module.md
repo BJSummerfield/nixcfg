@@ -370,10 +370,20 @@ Expected: `no local daemon - correct`. A match means the seed did not take effec
 Also launch from a terminal whose cwd is inside a linked git worktree, which is the case the `PASEO_ELECTRON_USER_DATA_DIR` wrapper env var guards against:
 
 ```bash
-cd /var/lib/paseo/worktrees/*/* 2>/dev/null && paseo-desktop &
+cd "$(ls -d /var/lib/paseo/worktrees/*/* | head -1)" && paseo-desktop &
 ```
 
-Expected: userData is still `~/.config/Paseo` (not `~/.config/Paseo-<worktree>`) and `pgrep -af "paseo.*daemon"` still reports no local daemon.
+Quote a single `ls -d ... | head -1` result rather than globbing directly: `cd /path/*/*` gets every match as separate arguments and bash exits 2 with "too many arguments" as soon as more than one worktree exists, which is the normal case.
+
+Then confirm the wrapper actually pinned the directory:
+
+```bash
+ls -d ~/.config/Paseo-* 2>/dev/null && echo "WRONG - userData was redirected" \
+  || echo "userData pinned to ~/.config/Paseo - correct"
+pgrep -af "paseo.*daemon" || echo "no local daemon - correct"
+```
+
+Expected: `userData pinned to ~/.config/Paseo - correct` and `no local daemon - correct`. A `~/.config/Paseo-<worktree>` directory means the wrapper's env var did not reach the app and the seed was bypassed.
 
 - [ ] **Step 6: Confirm activation never overwrites an existing file**
 
