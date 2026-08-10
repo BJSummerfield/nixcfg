@@ -143,7 +143,7 @@ nix eval --no-write-lock-file --raw \
   --apply 'ps: builtins.concatStringsSep "\n" (map (p: p.name) ps)' | grep paseo-desktop
 ```
 
-Expected: prints `paseo-desktop-0.3.1`. This forces evaluation of the package attribute without building it.
+Expected: prints `paseo-desktop-0.3.0`. This forces evaluation of the package attribute without building it. The version tracks the pinned input rev `01a1d3b`, not upstream HEAD — do not expect it to match the homebrew cask.
 
 - [ ] **Step 7: Verify the seeded JSON is what the spec requires**
 
@@ -182,11 +182,14 @@ Expected: `false`.
 This is the real gate for the Linux side and it builds the Electron app from source — no substituter is configured for the paseo flake, so budget significant time. Run it in the background and check back.
 
 ```bash
-nix build --no-write-lock-file --no-link --print-out-paths -L \
-  '.#nixosConfigurations.t495.config.home-manager.users.waktu.home.activationPackage'
+nix build --no-write-lock-file --out-link /tmp/paseo-t495-result --print-out-paths -L \
+  '.#nixosConfigurations.t495.config.home-manager.users.waktu.home.activationPackage' \
+  > /tmp/task1-build.log 2>&1
 ```
 
 Expected: prints a store path, exit 0.
+
+Use `--out-link`, not `--no-link`: this build takes hours and without a GC root the result is collected within hours, so a later re-check finds the path gone and looks like a failure that never happened.
 
 - [ ] **Step 10: Commit**
 

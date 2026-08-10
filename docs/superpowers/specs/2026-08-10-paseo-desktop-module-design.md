@@ -135,9 +135,11 @@ password from `devbox-paseo-password`.
 
 ## Risks
 
-**Version skew.** Homebrew tracks the latest cask while the Linux hosts and the
-devbox daemon are pinned to flake rev `01a1d3b`. Both are 0.3.1 today. Bump the
-flake input when the cask moves.
+**Version skew — already live, not hypothetical.** Homebrew tracks the latest
+cask while the Linux hosts and the devbox daemon are pinned to flake rev
+`01a1d3b`. Measured: pinned input `0.3.0`, upstream HEAD `0.3.1`, homebrew cask
+`0.3.1`. So mac runs a client one patch release ahead of the daemon it talks
+to. Bump the flake input to close the gap.
 
 **Auto-updater.** `auto-updater.ts:103` sets `autoDownload = true` and there is
 no "off" channel. On Linux the app launches `electron` directly, so
