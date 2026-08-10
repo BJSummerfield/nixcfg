@@ -130,6 +130,7 @@
         lazygit.enable = true;
         mako.enable = true;
         obs-studio.enable = true;
+        paseo-desktop.enable = true;
         polkit-kde.enable = true;
         subtitleedit.enable = true;
         swayidle.enable = true;
