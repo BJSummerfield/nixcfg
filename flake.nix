@@ -73,24 +73,33 @@
       # symlinks. The wrapper is treefmt driving nixfmt, and respects gitignore.
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
-      # Evaluation-only. `nix flake check` builds nothing here beyond two empty
-      # marker derivations; the work is in forcing the eval. Scoped to
-      # x86_64-linux rather than forAllSystems because both the test host and
-      # redtruck are x86_64-linux, and evaluating a NixOS host under a darwin
-      # hostPlatform would fail for reasons unrelated to what is tested.
-      checks.x86_64-linux = {
-        devboxes = import ./tests/devboxes.nix {
-          inherit nixpkgs inputs;
-          system = "x86_64-linux";
+      # Evaluation-only. `nix flake check` builds nothing beyond one empty
+      # marker derivation per configuration; the work is forcing the eval.
+      # Everything lives under x86_64-linux because all five NixOS hosts are
+      # x86_64-linux and the darwin config evaluates here too. Generated
+      # rather than listed so a host added later is checked automatically.
+      checks.x86_64-linux =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          # drvPath forces a full evaluation without building anything.
+          evalOnly = name: drv: builtins.seq drv (pkgs.runCommand "eval-${name}" { } "touch $out");
+          evalAll =
+            prefix:
+            nixpkgs.lib.mapAttrs' (
+              name: cfg:
+              nixpkgs.lib.nameValuePair "${prefix}-${name}" (
+                evalOnly "${prefix}-${name}" cfg.config.system.build.toplevel.drvPath
+              )
+            );
+        in
+        evalAll "nixos" inputs.self.nixosConfigurations
+        // evalAll "darwin" inputs.self.darwinConfigurations
+        // {
+          devboxes = import ./tests/devboxes.nix {
+            inherit nixpkgs inputs;
+            system = "x86_64-linux";
+          };
         };
-
-        # Guards the real host against a refactor that only breaks in
-        # combination with the rest of its module set. drvPath forces a full
-        # evaluation without building anything.
-        redtruck-eval =
-          builtins.seq inputs.self.nixosConfigurations.redtruck.config.system.build.toplevel.drvPath
-            (nixpkgs.legacyPackages.x86_64-linux.runCommand "redtruck-eval" { } "touch $out");
-      };
 
       darwinConfigurations = {
         mac = inputs.nix-darwin.lib.darwinSystem {
