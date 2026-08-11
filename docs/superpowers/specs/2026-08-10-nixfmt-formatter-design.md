@@ -49,9 +49,10 @@ coherent.
 
 Ordered so the reformat commit contains no logic:
 
-1. **Logic commit.** `flake.nix` and the helix module, then `nix fmt` on just
-   those two paths so step 2 does not touch them again and the logic diff
-   stays readable.
+1. **Logic commit.** `flake.nix` and the helix module, written in the tree's
+   current style and left unformatted. Formatting them here would pull a full
+   nixfmt reformat of `flake.nix` into the logic diff; step 2 picks them up
+   with everything else a moment later.
 2. **Reformat commit.** `nix fmt` over the repo, nothing else in the commit.
 3. **Blame commit.** `.git-blame-ignore-revs` containing step 2's SHA. It has
    to be a third commit because the SHA does not exist until step 2 lands.
