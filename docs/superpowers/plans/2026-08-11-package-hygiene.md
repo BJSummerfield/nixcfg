@@ -447,12 +447,18 @@ rg -c 'mkIf cfg.enable' modules/helix/languages/bicep.nix
 ```
 Expected: all three files exist, and the module still gates its config on `mkIf cfg.enable` (count `1`). Task 4 disabled bicep at the hosts without touching the module.
 
-- [ ] **Step 3: No host closure carries the .NET SDK**
+- [ ] **Step 3: No host closure carries the bicep language server or the .NET 8 SDK**
+
+Match on `dotnet-sdk-8|bicep-langserver`, **not** a bare `dotnet|bicep`. Two
+unrelated things legitimately still match the broad pattern and always will:
+`marksman` (the markdown LSP, still enabled) is itself a .NET application and
+brings a dotnet 9 runtime, and `tree-sitter-bicep` is a syntax grammar helix
+bundles unconditionally. Neither is the bicep language server.
 
 ```bash
 for h in redtruck t495 elitebook paynefield vps; do
   printf "%-11s " "$h"
-  nix-store -q --requisites "$(nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath")" | grep -c -E 'dotnet|bicep'
+  nix-store -q --requisites "$(nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath")" | grep -c -E 'dotnet-sdk-8|bicep-langserver'
 done
 ```
 Expected: `0` for every host.

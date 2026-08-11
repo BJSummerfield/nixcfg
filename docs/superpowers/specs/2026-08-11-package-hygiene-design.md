@@ -171,8 +171,12 @@ locally regardless; only publication is blocked.
   returns the previous seven plus `pkg-encode_queue` — eight in total, with
   no `pkg-bicep-langserver`.
 - `nix flake check` passes, and now genuinely builds `encode_queue`.
-- redtruck's and mac's closures no longer contain any `dotnet-sdk` or
-  `dotnet-runtime` path, and no `bicep-langserver` path.
+- redtruck's and mac's closures no longer contain a `bicep-langserver` or
+  `dotnet-sdk-8` path. They do still contain dotnet 9 paths, which is
+  correct: `marksman` — the markdown language server, still enabled — is
+  itself a .NET application. A bare `dotnet|bicep` grep therefore still
+  matches, and `tree-sitter-bicep` (a syntax grammar helix bundles
+  unconditionally) does too. Neither is the bicep language server.
 - `rg 'rev = "(main|master|HEAD)"' --glob '*.nix'` returns nothing.
 - `rg 'options.mine.allowedUnfree'` returns exactly one declaration.
 - t495 still resolves an mpls binary: its helix `language-server.mpls.command`
@@ -184,4 +188,6 @@ locally regardless; only publication is blocked.
 - `mine.allowedUnfree` is declared once.
 - `nix flake check` builds every local package that a host actually uses.
 - mpls still works on the hosts that use it, sourced from nixpkgs.
-- No host closure carries the .NET SDK.
+- No host closure carries the bicep language server or the .NET 8 SDK.
+  Measured saving: **611.8 MiB** unique to `bicep-langserver` — that is its
+  712.5 MiB closure minus the paths it shared with `marksman`, which stays.
