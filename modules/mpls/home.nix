@@ -18,7 +18,7 @@ in
     enable = mkEnableOption "Mpls markdown language server";
     package = mkOption {
       type = types.package;
-      default = pkgs.callPackage ./package.nix { };
+      default = pkgs.mpls;
     };
   };
 
