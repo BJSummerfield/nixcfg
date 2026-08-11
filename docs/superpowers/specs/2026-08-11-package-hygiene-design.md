@@ -37,10 +37,19 @@ declaration.
 - **encode_queue is pinned to a commit.**
   `a15d41a8ef1c1a0c21a9a6555b4183ec372289fe`. Upstream has not moved since
   2024, so the recorded hash still matches and nothing rebuilds.
-- **`bicep-langserver` is left alone.** It already fetches a tagged release
-  zip; there is no moving ref to pin.
-- **Local packages become flake outputs, and CI builds them.** This is the
-  only change that prevents recurrence.
+- **bicep is disabled on every host, and its module is kept.** The language
+  server's wrapper references `dotnetCorePackages.dotnet_8.sdk`, giving it a
+  712.5 MiB closure, and nothing else in the repo references dotnet. Turning
+  it off removes `dotnet-sdk-8.0.128`, `dotnet-sdk-wrapped-8.0.129` and
+  `dotnet-runtime-9.0.18` from redtruck's and mac's closures. The module and
+  its derivation stay in the tree so re-enabling is one line per host.
+- **`bicep-langserver` is not exposed as a package and not built in CI.** No
+  host enables it, so building it would spend the 712.5 MiB this change
+  exists to save. It also has no moving ref to guard — it fetches a tagged
+  release zip — so the check would buy little. If it is ever re-enabled, add
+  it to `packages` then.
+- **`encode_queue` becomes a flake output, and CI builds it.** This is the
+  change that prevents recurrence of the mpls failure.
 - **Home modules keep their own `callPackage`.** Threading `inputs.self` into
   them would couple them to the flake, and they are also evaluated inside the
   devbox containers. Two call sites of one definition file is the cheaper
@@ -54,6 +63,8 @@ declaration.
 - `modules/mpls/package.nix` — delete
 - `modules/mpls/home.nix` — default to `pkgs.mpls`
 - `modules/encode_queue/package.nix` — pin `rev`
+- `hosts/redtruck/default.nix:151`, `hosts/mac/default.nix:62`,
+  `hosts/vm-mac/default.nix:39` — drop `bicep.enable = true`
 - `flake.nix` — add `packages`, extend `checks` to build them
 
 **Out:** overlays, `nixosModules`/`homeModules` outputs, the deadnix/statix
@@ -105,10 +116,17 @@ option's default becomes `pkgs.mpls`. Nothing else changes —
         in
         {
           encode_queue = pkgs.callPackage ./modules/encode_queue/package.nix { };
-          bicep-langserver = pkgs.callPackage ./modules/bicep-langserver/package.nix { };
         }
       );
 ```
+
+`bicep-langserver` is deliberately absent — see Decisions.
+
+### Disabling bicep
+
+Remove the `bicep.enable = true;` line from each of the three host files.
+Nothing else changes: `modules/helix/languages/bicep.nix` gates all its
+config behind `mkIf cfg.enable`, so a disabled instance contributes nothing.
 
 ### Package checks
 
@@ -128,19 +146,10 @@ GitHub runner. Two small packages are not. This is the narrow exception that
 closes the hole mpls fell through, and it is intentional rather than an
 oversight.
 
-**Cost, measured:** both packages build on `x86_64-linux`. Closure sizes are
-47.2 MiB for `encode_queue` and **712.5 MiB for `bicep-langserver`**, the
-latter because its wrapper script references `dotnetCorePackages.dotnet_8.sdk`
-and so depends on the whole SDK. With no store caching configured on the
-runner, that is downloaded from cache.nixos.org on every run.
-
-That is accepted here: it is a substitution, not a compile, and it stays well
-inside a runner's ~14 GB. But the guard it buys is weaker than the one for
-`encode_queue` — `bicep-langserver` pins a versioned release URL with no
-moving ref, so the only thing the check catches is Azure altering or removing
-a published asset. If CI run time becomes a problem, dropping
-`bicep-langserver` from `packages` (and therefore from checks) is the first
-thing to cut, and costs little.
+**Cost, measured:** `encode_queue` builds on `x86_64-linux` with a 47.2 MiB
+closure — a substitution rather than a compile, and negligible on a runner
+with ~14 GB free. `bicep-langserver` was measured at 712.5 MiB and is
+excluded for that reason.
 
 ## Dependency on the CI-gate branch
 
@@ -157,11 +166,13 @@ locally regardless; only publication is blocked.
 - `nix eval --json '.#nixosConfigurations.redtruck.config.mine.allowedUnfree'`
   is unchanged by the unfree edit.
 - redtruck's `toplevel` drvPath is unchanged by the unfree edit.
-- `nix build .#encode_queue` and `nix build .#bicep-langserver` both succeed.
+- `nix build .#encode_queue` succeeds.
 - `nix eval --json --apply 'builtins.attrNames' '.#checks.x86_64-linux'`
-  returns the previous seven plus `pkg-bicep-langserver` and
-  `pkg-encode_queue`.
-- `nix flake check` passes, and now genuinely builds the two packages.
+  returns the previous seven plus `pkg-encode_queue` — eight in total, with
+  no `pkg-bicep-langserver`.
+- `nix flake check` passes, and now genuinely builds `encode_queue`.
+- redtruck's and mac's closures no longer contain any `dotnet-sdk` or
+  `dotnet-runtime` path, and no `bicep-langserver` path.
 - `rg 'rev = "(main|master|HEAD)"' --glob '*.nix'` returns nothing.
 - `rg 'options.mine.allowedUnfree'` returns exactly one declaration.
 - t495 still resolves an mpls binary: its helix `language-server.mpls.command`
@@ -171,5 +182,6 @@ locally regardless; only publication is blocked.
 
 - No `.nix` file fetches a moving git ref.
 - `mine.allowedUnfree` is declared once.
-- `nix flake check` builds every local package.
+- `nix flake check` builds every local package that a host actually uses.
 - mpls still works on the hosts that use it, sourced from nixpkgs.
+- No host closure carries the .NET SDK.
