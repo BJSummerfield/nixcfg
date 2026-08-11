@@ -6,15 +6,20 @@ on:
   pull_request:
 
 permissions:
-  contents: write          # needed only by the ref-advance step
+  # Write scope is only exercised by the ref-advance step, but it applies to
+  # the whole job, including pull_request runs that never reach that step.
+  contents: write
 
-concurrency:               # serialize, so two quick pushes cannot race the ref
-  group: verified
+# Pushes to main share a group and stay serialized, so two cannot race the
+# ref; each PR gets its own group and runs independently.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:

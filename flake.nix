@@ -74,22 +74,23 @@
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       # Evaluation-only. `nix flake check` builds nothing beyond one empty
-      # marker derivation per configuration; the work is forcing the eval.
-      # Everything lives under x86_64-linux because all five NixOS hosts are
-      # x86_64-linux and the darwin config evaluates here too. Generated
-      # rather than listed so a host added later is checked automatically.
+      # marker derivation per configuration (devboxes likewise only touches
+      # $out on success); the work is forcing the eval. Everything lives
+      # under x86_64-linux because all five NixOS hosts are x86_64-linux and
+      # the darwin config evaluates here too. Generated rather than listed so
+      # a host added later is checked automatically.
       checks.x86_64-linux =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
-          # drvPath forces a full evaluation without building anything.
-          evalOnly = name: drv: builtins.seq drv (pkgs.runCommand "eval-${name}" { } "touch $out");
+          evalOnly = name: drvPath: builtins.seq drvPath (pkgs.runCommand "eval-${name}" { } "touch $out");
           evalAll =
             prefix:
             nixpkgs.lib.mapAttrs' (
               name: cfg:
-              nixpkgs.lib.nameValuePair "${prefix}-${name}" (
-                evalOnly "${prefix}-${name}" cfg.config.system.build.toplevel.drvPath
-              )
+              let
+                checkName = "${prefix}-${name}";
+              in
+              nixpkgs.lib.nameValuePair checkName (evalOnly checkName cfg.config.system.build.toplevel.drvPath)
             );
         in
         evalAll "nixos" inputs.self.nixosConfigurations
