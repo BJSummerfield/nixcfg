@@ -4,7 +4,12 @@
 #   tailscale up --hostname=immich --advertise-tags=tag:solo-node
 #   tailscale serve --bg 2283
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.immich-server;
   nasCfg = config.mine.system.nas;
@@ -80,8 +85,14 @@ in
       # tun is needed for tailscale network
       # renderD128 for hardware acceleration
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
-        { modifier = "rwm"; node = "/dev/dri/renderD128"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
+        {
+          modifier = "rwm";
+          node = "/dev/dri/renderD128";
+        }
       ];
 
       bindMounts = {
@@ -131,59 +142,80 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
-        # container level gids for nfs mounts
-        users.groups.homes-rw.gid = homesRwGid;
-        users.groups.immich-rw.gid = immichRwGid;
+      config =
+        {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        {
+          # container level gids for nfs mounts
+          users.groups.homes-rw.gid = homesRwGid;
+          users.groups.immich-rw.gid = immichRwGid;
 
-        # for hardware acceleration
-        users.groups.render.gid = renderGid;
+          # for hardware acceleration
+          users.groups.render.gid = renderGid;
 
-        services.immich = {
-          enable = true;
-          host = "0.0.0.0";
-          openFirewall = false;
-          mediaLocation = "/var/lib/immich";
-          accelerationDevices = [ "/dev/dri/renderD128" ];
-        };
-
-        users.users.immich.extraGroups = [
-          "homes-rw"
-          "immich-rw"
-          "render"
-          "video"
-        ];
-
-        # sets the tailscale params
-        services.tailscale.enable = true;
-
-        networking = {
-          # needed to get the dns for https nameserver
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
-          firewall = {
+          services.immich = {
             enable = true;
-            # allows connection from other tailscale devices
-            trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
+            host = "0.0.0.0";
+            openFirewall = false;
+            mediaLocation = "/var/lib/immich";
+            accelerationDevices = [ "/dev/dri/renderD128" ];
           };
-        };
 
-        # Hardening the container
-        systemd.services.immich-server = {
-          environment = { LIBVA_DRIVER_NAME = "iHD"; };
-          serviceConfig = {
-            SupplementaryGroups = [ "homes-rw" "immich-rw" "render" ];
-            ProtectHome = lib.mkForce true;
-            PrivateTmp = lib.mkForce true;
-            ProtectControlGroups = lib.mkForce true;
-            ProtectKernelTunables = lib.mkForce true;
-            NoNewPrivileges = lib.mkForce true;
-            RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
+          users.users.immich.extraGroups = [
+            "homes-rw"
+            "immich-rw"
+            "render"
+            "video"
+          ];
+
+          # sets the tailscale params
+          services.tailscale.enable = true;
+
+          networking = {
+            # needed to get the dns for https nameserver
+            nameservers = [
+              "9.9.9.9"
+              "1.1.1.1"
+            ];
+            firewall = {
+              enable = true;
+              # allows connection from other tailscale devices
+              trustedInterfaces = [ "tailscale0" ];
+              allowedUDPPorts = [ config.services.tailscale.port ];
+            };
           };
-        };
 
-        system.stateVersion = "24.11";
-      };
+          # Hardening the container
+          systemd.services.immich-server = {
+            environment = {
+              LIBVA_DRIVER_NAME = "iHD";
+            };
+            serviceConfig = {
+              SupplementaryGroups = [
+                "homes-rw"
+                "immich-rw"
+                "render"
+              ];
+              ProtectHome = lib.mkForce true;
+              PrivateTmp = lib.mkForce true;
+              ProtectControlGroups = lib.mkForce true;
+              ProtectKernelTunables = lib.mkForce true;
+              NoNewPrivileges = lib.mkForce true;
+              RestrictAddressFamilies = lib.mkForce [
+                "AF_UNIX"
+                "AF_INET"
+                "AF_INET6"
+                "AF_NETLINK"
+              ];
+            };
+          };
+
+          system.stateVersion = "24.11";
+        };
     };
   };
 }

@@ -38,7 +38,10 @@ in
       localAddress = "192.168.100.19";
 
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
       ];
 
       bindMounts = {
@@ -52,44 +55,59 @@ in
         };
       };
 
-      config = { pkgs, config, lib, ... }: {
-        services.tailscale.enable = true;
+      config =
+        {
+          pkgs,
+          config,
+          lib,
+          ...
+        }:
+        {
+          services.tailscale.enable = true;
 
-        services.redlib = {
-          enable = true;
-          openFirewall = false;
-          address = "0.0.0.0";
-          port = cfg.port;
-          settings = {
-            REDLIB_DEFAULT_THEME = "dark";
-            REDLIB_DEFAULT_SHOW_NSFW = "off";
-            REDLIB_DEFAULT_BLUR_NSFW = "on";
-            REDLIB_DEFAULT_USE_HLS = "on";
-            REDLIB_ROBOTS_DISABLE_INDEXING = "on";
-            REDLIB_SKIP_OAUTH_REGISTRATION = "on";
-          };
-        };
-        networking = {
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
-          firewall = {
+          services.redlib = {
             enable = true;
-            trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
+            openFirewall = false;
+            address = "0.0.0.0";
+            port = cfg.port;
+            settings = {
+              REDLIB_DEFAULT_THEME = "dark";
+              REDLIB_DEFAULT_SHOW_NSFW = "off";
+              REDLIB_DEFAULT_BLUR_NSFW = "on";
+              REDLIB_DEFAULT_USE_HLS = "on";
+              REDLIB_ROBOTS_DISABLE_INDEXING = "on";
+              REDLIB_SKIP_OAUTH_REGISTRATION = "on";
+            };
           };
-        };
+          networking = {
+            nameservers = [
+              "9.9.9.9"
+              "1.1.1.1"
+            ];
+            firewall = {
+              enable = true;
+              trustedInterfaces = [ "tailscale0" ];
+              allowedUDPPorts = [ config.services.tailscale.port ];
+            };
+          };
 
-        systemd.services.redlib.serviceConfig = {
-          DynamicUser = lib.mkForce true;
-          ProtectHome = lib.mkForce true;
-          PrivateTmp = lib.mkForce true;
-          ProtectControlGroups = lib.mkForce true;
-          ProtectKernelTunables = lib.mkForce true;
-          NoNewPrivileges = lib.mkForce true;
-          RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-        };
+          systemd.services.redlib.serviceConfig = {
+            DynamicUser = lib.mkForce true;
+            ProtectHome = lib.mkForce true;
+            PrivateTmp = lib.mkForce true;
+            ProtectControlGroups = lib.mkForce true;
+            ProtectKernelTunables = lib.mkForce true;
+            NoNewPrivileges = lib.mkForce true;
+            RestrictAddressFamilies = lib.mkForce [
+              "AF_UNIX"
+              "AF_INET"
+              "AF_INET6"
+              "AF_NETLINK"
+            ];
+          };
 
-        system.stateVersion = "24.11";
-      };
+          system.stateVersion = "24.11";
+        };
     };
   };
 }

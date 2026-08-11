@@ -1,15 +1,14 @@
 { pkgs, ... }:
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ./disko.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-      ../../users/sumriri.nix
-      ../../users/sword.nix
-      ../../users/jellyuser.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ./disko.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+    ../../users/sumriri.nix
+    ../../users/sword.nix
+    ../../users/jellyuser.nix
+  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -44,7 +43,12 @@
         ssh = true;
       };
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" "mac" ];
+    users.waktu.authorizedKeys = [
+      "onepassword"
+      "redtruck"
+      "t495"
+      "mac"
+    ];
   };
   home-manager.users = {
     waktu = {

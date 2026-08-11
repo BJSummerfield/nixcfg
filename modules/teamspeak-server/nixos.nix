@@ -41,12 +41,23 @@ in
       localAddress = "192.168.100.13";
 
       forwardPorts = lib.mkIf cfg.publicAccess [
-        { protocol = "udp"; hostPort = 9987; containerPort = 9987; } # Voice
-        { protocol = "tcp"; hostPort = 30033; containerPort = 30033; } # File Transfer
+        {
+          protocol = "udp";
+          hostPort = 9987;
+          containerPort = 9987;
+        } # Voice
+        {
+          protocol = "tcp";
+          hostPort = 30033;
+          containerPort = 30033;
+        } # File Transfer
       ];
 
       allowedDevices = lib.mkIf cfg.tailscaleAccess [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
       ];
 
       bindMounts = lib.mkIf cfg.tailscaleAccess {
@@ -61,21 +72,27 @@ in
       };
 
       config = { config, lib, ... }: {
-        nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-          "teamspeak-server"
-        ];
+        nixpkgs.config.allowUnfreePredicate =
+          pkg:
+          builtins.elem (lib.getName pkg) [
+            "teamspeak-server"
+          ];
 
         services.tailscale.enable = cfg.tailscaleAccess;
         services.teamspeak3.enable = true;
 
         networking = {
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
+          nameservers = [
+            "9.9.9.9"
+            "1.1.1.1"
+          ];
           firewall = {
             enable = true;
 
             trustedInterfaces = lib.mkIf cfg.tailscaleAccess [ "tailscale0" ];
 
-            allowedUDPPorts = (lib.optionals cfg.tailscaleAccess [ config.services.tailscale.port ])
+            allowedUDPPorts =
+              (lib.optionals cfg.tailscaleAccess [ config.services.tailscale.port ])
               ++ (lib.optionals cfg.publicAccess [ 9987 ]);
 
             allowedTCPPorts = lib.optionals cfg.publicAccess [ 30033 ];
@@ -94,7 +111,12 @@ in
             ProtectControlGroups = lib.mkForce true;
             ProtectKernelTunables = lib.mkForce true;
             NoNewPrivileges = lib.mkForce true;
-            RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
+            RestrictAddressFamilies = lib.mkForce [
+              "AF_UNIX"
+              "AF_INET"
+              "AF_INET6"
+              "AF_NETLINK"
+            ];
           };
         };
 

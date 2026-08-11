@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.rust;
@@ -15,10 +20,12 @@ in
             command = "clippy";
           };
         };
-        language = [{
-          name = "rust";
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "rust";
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         rustc

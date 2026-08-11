@@ -1,6 +1,14 @@
 # Catalog → llama-swap YAML config.
 # Per-model args so multiple backends can coexist.
-{ lib, pkgs, catalog, weightsOf, vllmImage, podmanCli, hostAddress }:
+{
+  lib,
+  pkgs,
+  catalog,
+  weightsOf,
+  vllmImage,
+  podmanCli,
+  hostAddress,
+}:
 let
   inherit (catalog) models enabled;
 
@@ -43,7 +51,8 @@ let
     "--speculative-config '{\"method\": \"mtp\", \"num_speculative_tokens\": ${num m.vllm.speculativeTokens}}'"
   ];
 
-  modelLines = name:
+  modelLines =
+    name:
     let
       m = models.${name};
       aliasNames = builtins.attrNames (m.aliases or { });

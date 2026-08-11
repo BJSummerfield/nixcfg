@@ -1,6 +1,23 @@
-{ config, lib, pkgs, inputs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
 let
-  inherit (lib) attrNames concatMap filterAttrs genAttrs mkIf mkOption optionals range types unique;
+  inherit (lib)
+    attrNames
+    concatMap
+    filterAttrs
+    genAttrs
+    mkIf
+    mkOption
+    optionals
+    range
+    types
+    unique
+    ;
   inherit (import ./options.nix lib) mkAgentOptions;
   cfg = config.mine.system.coding-agents;
 
@@ -13,21 +30,31 @@ let
   # system groups like wheel or networkmanager stay host-only.
   adminUsers = attrNames (filterAttrs (_: u: u.isSuperUser) config.mine.users);
   adminGroupNames = unique (concatMap (u: config.users.users.${u}.extraGroups) adminUsers);
-  sharedGroups = filterAttrs (_: gid: gid != null && gid >= 1000)
-    (genAttrs adminGroupNames (name: config.users.groups.${name}.gid or null));
+  sharedGroups = filterAttrs (_: gid: gid != null && gid >= 1000) (
+    genAttrs adminGroupNames (name: config.users.groups.${name}.gid or null)
+  );
 
   # The uid the in-container agent runs as: normally the admin's pinned
   # uid (mine.users.<name>.uid), overridable per host via the option.
   agentUid =
-    if cfg.agentUid != null then cfg.agentUid
-    else if adminUsers != [ ] then config.users.users.${lib.head adminUsers}.uid
-    else null;
+    if cfg.agentUid != null then
+      cfg.agentUid
+    else if adminUsers != [ ] then
+      config.users.users.${lib.head adminUsers}.uid
+    else
+      null;
 
   # Script body lives in launcher.sh; only the pool parameters and the
   # per-agent command/state mount are injected here so the shell reads as
   # plain shell. state_src is expanded by the shell at runtime, letting it
   # reference $HOME.
-  mkLauncher = { name, cmd, stateSrc ? "", stateDest ? "" }:
+  mkLauncher =
+    {
+      name,
+      cmd,
+      stateSrc ? "",
+      stateDest ? "",
+    }:
     pkgs.writeShellScriptBin name ''
       set -euo pipefail
       instances="${toString instanceNames}"
@@ -54,7 +81,12 @@ let
         stateDest = "/home/agent/.pi/agent/sessions";
       })
     ]
-    ++ optionals cfg.agents.opencode [ (mkLauncher { name = "opencode"; cmd = "opencode"; }) ]
+    ++ optionals cfg.agents.opencode [
+      (mkLauncher {
+        name = "opencode";
+        cmd = "opencode";
+      })
+    ]
     # Ephemeral containers, but claude's login/config state survives in a
     # dedicated host dir so auth happens once per machine, not per session.
     ++ optionals cfg.agents.claude [
@@ -86,10 +118,12 @@ in
   };
 
   config = mkIf cfg.enable {
-    assertions = [{
-      assertion = agentUid != null;
-      message = "coding-agents: no agent uid available - pin mine.users.<superuser>.uid or set mine.system.coding-agents.agentUid.";
-    }];
+    assertions = [
+      {
+        assertion = agentUid != null;
+        message = "coding-agents: no agent uid available - pin mine.users.<superuser>.uid or set mine.system.coding-agents.agentUid.";
+      }
+    ];
 
     environment.systemPackages = launchers;
 
@@ -106,7 +140,10 @@ in
       # agent is allowed full egress by design.
       privateNetwork = false;
 
-      config = import ./container.nix { inherit inputs sharedGroups agentUid; inherit (cfg) agents; };
+      config = import ./container.nix {
+        inherit inputs sharedGroups agentUid;
+        inherit (cfg) agents;
+      };
     });
   };
 }

@@ -3,8 +3,11 @@
 let
   llm = import ../local-llm/models.nix;
 
-  mkModel = name:
-    let m = llm.models.${name}; in
+  mkModel =
+    name:
+    let
+      m = llm.models.${name};
+    in
     {
       name = name;
       value = {
@@ -38,6 +41,9 @@ in
         };
       };
     };
-    enabled_providers = [ llm.provider "robin" ];
+    enabled_providers = [
+      llm.provider
+      "robin"
+    ];
   };
 }

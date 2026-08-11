@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf optional;
   cfg = config.mine.user.helix.lsp.css;
@@ -17,8 +22,18 @@ in
           args = [ "--stdio" ];
           config = {
             provideFormatter = false;
-            css = { validate = true; lint = { unknownAtRules = "ignore"; }; };
-            scss = { validate = true; lint = { unknownAtRules = "ignore"; }; };
+            css = {
+              validate = true;
+              lint = {
+                unknownAtRules = "ignore";
+              };
+            };
+            scss = {
+              validate = true;
+              lint = {
+                unknownAtRules = "ignore";
+              };
+            };
           };
         };
 
@@ -27,24 +42,34 @@ in
         };
       };
 
-      languages.language = [{
-        name = "css";
+      languages.language = [
+        {
+          name = "css";
 
-        language-servers = [ "vscode-css-language-server" "biome" ]
+          language-servers = [
+            "vscode-css-language-server"
+            "biome"
+          ]
           ++ optional cfg.enableTailwind "tailwindcss-language-server";
 
-        formatter = {
-          command = "prettier";
-          args = [ "--parser" "css" ];
-        };
-        auto-format = true;
-      }];
+          formatter = {
+            command = "prettier";
+            args = [
+              "--parser"
+              "css"
+            ];
+          };
+          auto-format = true;
+        }
+      ];
 
-      extraPackages = with pkgs; [
-        vscode-langservers-extracted
-        prettier
-      ]
-      ++ optional cfg.enableTailwind tailwindcss-language-server;
+      extraPackages =
+        with pkgs;
+        [
+          vscode-langservers-extracted
+          prettier
+        ]
+        ++ optional cfg.enableTailwind tailwindcss-language-server;
     };
   };
 }

@@ -1,6 +1,9 @@
 { ... }:
 let
-  stdOptions = [ "defaults" "nofail" ];
+  stdOptions = [
+    "defaults"
+    "nofail"
+  ];
 in
 {
   mine.system.boot.partitionUuid = "360f73f5-1bf7-4111-aff0-be9b1a4dd579";
@@ -37,7 +40,8 @@ in
   ];
 
   home-manager.sharedModules = [
-    ({ config, ... }:
+    (
+      { config, ... }:
       let
         mkLink = config.lib.file.mkOutOfStoreSymlink;
       in
@@ -48,6 +52,7 @@ in
           "data1".source = mkLink "/mnt/data1";
           "data2".source = mkLink "/mnt/data2";
         };
-      })
+      }
+    )
   ];
 }

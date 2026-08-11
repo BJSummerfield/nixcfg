@@ -1,6 +1,11 @@
 # The nspawn guest — everything here runs inside the container.
 { llamaSwapConfig, cudaEnabled }:
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 {
   # podman CLI for debugging the host socket; llama-swap uses the store path.
   environment.systemPackages = lib.optionals cudaEnabled [ pkgs.podman ];
@@ -41,7 +46,10 @@
   };
 
   networking = {
-    nameservers = [ "9.9.9.9" "1.1.1.1" ];
+    nameservers = [
+      "9.9.9.9"
+      "1.1.1.1"
+    ];
     enableIPv6 = false;
     firewall = {
       enable = true;
@@ -54,8 +62,7 @@
     };
   };
 
-  nixpkgs.config.allowUnfreePredicate = pkg:
-    builtins.elem (lib.getName pkg) [ "open-webui" ];
+  nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "open-webui" ];
 
   system.stateVersion = "24.11";
 }

@@ -9,7 +9,12 @@
 #   sudo nixos-container root-login dns && cd /var/lib/AdGuardHome
 #   Edit AdGuardHome.yaml users block with the hash
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.dns-server;
 in
@@ -31,9 +36,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    networking.firewall.allowedTCPPorts = [ cfg.lanPort cfg.webPort ];
+    networking.firewall.allowedTCPPorts = [
+      cfg.lanPort
+      cfg.webPort
+    ];
     networking.firewall.allowedUDPPorts = [ cfg.lanPort ];
-
 
     networking.nat = {
       enable = true;
@@ -72,7 +79,10 @@ in
       localAddress = "192.168.100.15";
 
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
       ];
 
       bindMounts = {
@@ -90,116 +100,144 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
+      config =
+        {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        {
 
-        environment.systemPackages = with pkgs; [
-          helix
-        ];
+          environment.systemPackages = with pkgs; [
+            helix
+          ];
 
-        services.unbound = {
-          enable = true;
-          settings = {
-            server = {
-              interface = [ "127.0.0.1" ];
-              port = 5335;
-              access-control = [ "127.0.0.0/8 allow" ];
-              do-ip4 = true;
-              do-ip6 = false;
-              do-udp = true;
-              do-tcp = true;
-
-              hide-identity = true;
-              hide-version = true;
-
-              auto-trust-anchor-file = "/var/lib/unbound/root.key";
-
-              harden-glue = true;
-              harden-dnssec-stripped = true;
-              harden-below-nxdomain = true;
-              harden-referral-path = true;
-              use-caps-for-id = false;
-
-              qname-minimisation = true;
-              aggressive-nsec = true;
-
-              prefetch = true;
-              prefetch-key = true;
-              cache-min-ttl = 300;
-              cache-max-ttl = 86400;
-              msg-cache-size = "50m";
-              rrset-cache-size = "100m";
-
-              edns-buffer-size = 1232;
-
-              private-address = [
-                "192.168.0.0/16"
-                "172.16.0.0/12"
-                "10.0.0.0/8"
-                "fd00::/8"
-                "fe80::/10"
-              ];
-            };
-          };
-        };
-
-        services.adguardhome = {
-          enable = true;
-          openFirewall = false;
-          mutableSettings = true;
-          host = "0.0.0.0";
-          port = cfg.webPort;
-          settings = {
-            dns = {
-              bind_hosts = [ "0.0.0.0" ];
-              port = cfg.lanPort;
-              upstream_dns = [ "127.0.0.1:5335" ];
-              bootstrap_dns = [ "9.9.9.9" "1.1.1.1" ];
-              enable_dnssec = true;
-              cache_size = 4194304;
-              cache_ttl_min = 60;
-              cache_ttl_max = 86400;
-            };
-            filtering = {
-              protection_enabled = true;
-              filtering_enabled = true;
-            };
-          };
-        };
-
-        services.tailscale.enable = true;
-
-        networking = {
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
-          firewall = {
+          services.unbound = {
             enable = true;
-            allowedTCPPorts = [ cfg.lanPort cfg.webPort ];
-            allowedUDPPorts = [ cfg.lanPort config.services.tailscale.port ];
-            trustedInterfaces = [ "tailscale0" ];
+            settings = {
+              server = {
+                interface = [ "127.0.0.1" ];
+                port = 5335;
+                access-control = [ "127.0.0.0/8 allow" ];
+                do-ip4 = true;
+                do-ip6 = false;
+                do-udp = true;
+                do-tcp = true;
+
+                hide-identity = true;
+                hide-version = true;
+
+                auto-trust-anchor-file = "/var/lib/unbound/root.key";
+
+                harden-glue = true;
+                harden-dnssec-stripped = true;
+                harden-below-nxdomain = true;
+                harden-referral-path = true;
+                use-caps-for-id = false;
+
+                qname-minimisation = true;
+                aggressive-nsec = true;
+
+                prefetch = true;
+                prefetch-key = true;
+                cache-min-ttl = 300;
+                cache-max-ttl = 86400;
+                msg-cache-size = "50m";
+                rrset-cache-size = "100m";
+
+                edns-buffer-size = 1232;
+
+                private-address = [
+                  "192.168.0.0/16"
+                  "172.16.0.0/12"
+                  "10.0.0.0/8"
+                  "fd00::/8"
+                  "fe80::/10"
+                ];
+              };
+            };
           };
+
+          services.adguardhome = {
+            enable = true;
+            openFirewall = false;
+            mutableSettings = true;
+            host = "0.0.0.0";
+            port = cfg.webPort;
+            settings = {
+              dns = {
+                bind_hosts = [ "0.0.0.0" ];
+                port = cfg.lanPort;
+                upstream_dns = [ "127.0.0.1:5335" ];
+                bootstrap_dns = [
+                  "9.9.9.9"
+                  "1.1.1.1"
+                ];
+                enable_dnssec = true;
+                cache_size = 4194304;
+                cache_ttl_min = 60;
+                cache_ttl_max = 86400;
+              };
+              filtering = {
+                protection_enabled = true;
+                filtering_enabled = true;
+              };
+            };
+          };
+
+          services.tailscale.enable = true;
+
+          networking = {
+            nameservers = [
+              "9.9.9.9"
+              "1.1.1.1"
+            ];
+            firewall = {
+              enable = true;
+              allowedTCPPorts = [
+                cfg.lanPort
+                cfg.webPort
+              ];
+              allowedUDPPorts = [
+                cfg.lanPort
+                config.services.tailscale.port
+              ];
+              trustedInterfaces = [ "tailscale0" ];
+            };
+          };
+
+          systemd.services.unbound.serviceConfig = {
+            ProtectHome = lib.mkForce true;
+            PrivateTmp = lib.mkForce true;
+            ProtectControlGroups = lib.mkForce true;
+            ProtectKernelTunables = lib.mkForce true;
+            NoNewPrivileges = lib.mkForce true;
+            RestrictAddressFamilies = lib.mkForce [
+              "AF_UNIX"
+              "AF_INET"
+              "AF_INET6"
+              "AF_NETLINK"
+            ];
+          };
+
+          systemd.services.adguardhome.serviceConfig = {
+            DynamicUser = lib.mkForce false;
+            ProtectHome = lib.mkForce true;
+            PrivateTmp = lib.mkForce true;
+            ProtectControlGroups = lib.mkForce true;
+            ProtectKernelTunables = lib.mkForce true;
+            NoNewPrivileges = lib.mkForce true;
+            RestrictAddressFamilies = lib.mkForce [
+              "AF_UNIX"
+              "AF_INET"
+              "AF_INET6"
+              "AF_NETLINK"
+            ];
+          };
+
+          system.stateVersion = "24.11";
         };
-
-        systemd.services.unbound.serviceConfig = {
-          ProtectHome = lib.mkForce true;
-          PrivateTmp = lib.mkForce true;
-          ProtectControlGroups = lib.mkForce true;
-          ProtectKernelTunables = lib.mkForce true;
-          NoNewPrivileges = lib.mkForce true;
-          RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-        };
-
-        systemd.services.adguardhome.serviceConfig = {
-          DynamicUser = lib.mkForce false;
-          ProtectHome = lib.mkForce true;
-          PrivateTmp = lib.mkForce true;
-          ProtectControlGroups = lib.mkForce true;
-          ProtectKernelTunables = lib.mkForce true;
-          NoNewPrivileges = lib.mkForce true;
-          RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
-        };
-
-
-        system.stateVersion = "24.11";
-      };
     };
   };
 }

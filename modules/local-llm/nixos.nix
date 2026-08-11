@@ -4,7 +4,12 @@
 # tailscale serve --bg --https=443 8080      # Open WebUI
 # tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for OpenCode
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.local-llm;
 
@@ -28,12 +33,19 @@ let
   ];
 
   catalog = import ./models.nix;
-  allAliasNames = builtins.concatMap
-    (n: builtins.attrNames (catalog.models.${n}.aliases or { }))
-    (builtins.attrNames catalog.models);
+  allAliasNames = builtins.concatMap (n: builtins.attrNames (catalog.models.${n}.aliases or { })) (
+    builtins.attrNames catalog.models
+  );
   weightsOf = import ./weights.nix { inherit lib pkgs; };
   llamaSwapConfig = import ./llama-swap.nix {
-    inherit lib pkgs catalog weightsOf vllmImage podmanCli;
+    inherit
+      lib
+      pkgs
+      catalog
+      weightsOf
+      vllmImage
+      podmanCli
+      ;
     hostAddress = "192.168.100.24";
   };
 in
@@ -65,8 +77,9 @@ in
         # A key with a `/` (the natural mistake: HF repo ids have one) or a
         # space passes nix's attr syntax but breaks podman --name and splits
         # --served-model-name on whitespace, both only at runtime.
-        assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null)
-          (builtins.attrNames catalog.models ++ allAliasNames);
+        assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null) (
+          builtins.attrNames catalog.models ++ allAliasNames
+        );
         message = "local-llm: model and alias names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
       }
     ];
@@ -85,8 +98,16 @@ in
       internalInterfaces = [ "ve-local-llm" ];
       externalInterface = config.mine.system.externalInterface;
       forwardPorts = [
-        { sourcePort = 8080; destination = "192.168.100.25:8080"; proto = "tcp"; }
-        { sourcePort = 8081; destination = "192.168.100.25:8081"; proto = "tcp"; }
+        {
+          sourcePort = 8080;
+          destination = "192.168.100.25:8080";
+          proto = "tcp";
+        }
+        {
+          sourcePort = 8081;
+          destination = "192.168.100.25:8081";
+          proto = "tcp";
+        }
       ];
     };
 
@@ -106,7 +127,12 @@ in
     # llama-swap's PORT macro assigns upwards from 5800; the vllm containers
     # publish those ports on the host end of the veth
     networking.firewall.interfaces."ve-local-llm" = lib.mkIf cudaEnabled {
-      allowedTCPPortRanges = [ { from = 5800; to = 5999; } ];
+      allowedTCPPortRanges = [
+        {
+          from = 5800;
+          to = 5999;
+        }
+      ];
     };
 
     # The declarative half of the image pin: bumping vllmImage re-runs this
@@ -135,19 +161,51 @@ in
       localAddress = "192.168.100.25";
 
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
-        { modifier = "rwm"; node = "/dev/dri/renderD128"; }
-      ] ++ lib.optionals nvidiaEnabled (map (node: { modifier = "rwm"; inherit node; }) nvidiaDevices);
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
+        {
+          modifier = "rwm";
+          node = "/dev/dri/renderD128";
+        }
+      ]
+      ++ lib.optionals nvidiaEnabled (
+        map (node: {
+          modifier = "rwm";
+          inherit node;
+        }) nvidiaDevices
+      );
 
       bindMounts = {
-        "/dev/net/tun" = { hostPath = "/dev/net/tun"; isReadOnly = false; };
-        "/dev/dri" = { hostPath = "/dev/dri"; isReadOnly = false; };
-        "/run/opengl-driver" = { hostPath = "/run/opengl-driver"; isReadOnly = true; };
-        "/var/lib" = { hostPath = "/var/lib/local-llm"; isReadOnly = false; };
-      } // lib.optionalAttrs nvidiaEnabled
-        (lib.genAttrs nvidiaDevices (node: { hostPath = node; isReadOnly = false; }))
+        "/dev/net/tun" = {
+          hostPath = "/dev/net/tun";
+          isReadOnly = false;
+        };
+        "/dev/dri" = {
+          hostPath = "/dev/dri";
+          isReadOnly = false;
+        };
+        "/run/opengl-driver" = {
+          hostPath = "/run/opengl-driver";
+          isReadOnly = true;
+        };
+        "/var/lib" = {
+          hostPath = "/var/lib/local-llm";
+          isReadOnly = false;
+        };
+      }
+      // lib.optionalAttrs nvidiaEnabled (
+        lib.genAttrs nvidiaDevices (node: {
+          hostPath = node;
+          isReadOnly = false;
+        })
+      )
       // lib.optionalAttrs cudaEnabled {
-        "/run/podman/podman.sock" = { hostPath = "/run/podman/podman.sock"; isReadOnly = false; };
+        "/run/podman/podman.sock" = {
+          hostPath = "/run/podman/podman.sock";
+          isReadOnly = false;
+        };
       };
 
       config = import ./container.nix { inherit llamaSwapConfig cudaEnabled; };

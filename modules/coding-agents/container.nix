@@ -4,7 +4,12 @@
 # `sharedGroups` the admin's static-gid groups (name -> gid) mirrored in
 # so group-permissioned bind mounts stay writable, `agentUid` the uid of
 # the host user who runs the sandboxes.
-{ inputs, agents, sharedGroups, agentUid }:
+{
+  inputs,
+  agents,
+  sharedGroups,
+  agentUid,
+}:
 { pkgs, lib, ... }:
 {
   imports = [
@@ -27,7 +32,10 @@
   # nix builds go through the host daemon; the store is shared
   # read-only. Pin the registry so `nix shell nixpkgs#foo` resolves
   # to the host's nixpkgs instantly instead of fetching unstable.
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
 
@@ -36,12 +44,15 @@
   # Conditional on the toggle, unlike the hardcoded list this replaces.
   mine.allowedUnfree = lib.optionals agents.claude [ "claude-code" ];
 
-  environment.systemPackages = with pkgs; [
-    curl
-    fd
-    jq
-    ripgrep
-  ] ++ lib.optionals agents.claude [ claude-code ];
+  environment.systemPackages =
+    with pkgs;
+    [
+      curl
+      fd
+      jq
+      ripgrep
+    ]
+    ++ lib.optionals agents.claude [ claude-code ];
 
   # Claude keeps its login/config in the state dir the launcher
   # bind-mounts from the host; the nix-store binary can't self-update.

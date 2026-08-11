@@ -4,7 +4,12 @@
 #   tailscale up --hostname=jellyfin --advertise-tags=tag:solo-node
 #   tailscale serve --bg 8096
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.jellyfin-server;
   nasCfg = config.mine.system.nas;
@@ -80,8 +85,14 @@ in
       # tun is needed for tailscale network
       # renderD128 for hardware acceleration
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
-        { modifier = "rwm"; node = "/dev/dri/renderD128"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
+        {
+          modifier = "rwm";
+          node = "/dev/dri/renderD128";
+        }
       ];
 
       bindMounts = {
@@ -109,47 +120,67 @@ in
           isReadOnly = false;
         };
       };
-      config = { config, pkgs, lib, ... }: {
-        # container level gid for the media group and nfs mount
-        users.groups.media-ro.gid = mediaRoGid;
+      config =
+        {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        {
+          # container level gid for the media group and nfs mount
+          users.groups.media-ro.gid = mediaRoGid;
 
-        # for hardware acceleration
-        users.groups.render.gid = renderGid;
+          # for hardware acceleration
+          users.groups.render.gid = renderGid;
 
-        services.tailscale.enable = true;
+          services.tailscale.enable = true;
 
-        services.jellyfin.enable = true;
-        networking = {
-          # needed to get the dns for https nameserver
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
-          firewall = {
-            enable = true;
-            # Lan access
-            allowedTCPPorts = [ 8096 ];
-            # allows connection from other tailscale devices
-            trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
+          services.jellyfin.enable = true;
+          networking = {
+            # needed to get the dns for https nameserver
+            nameservers = [
+              "9.9.9.9"
+              "1.1.1.1"
+            ];
+            firewall = {
+              enable = true;
+              # Lan access
+              allowedTCPPorts = [ 8096 ];
+              # allows connection from other tailscale devices
+              trustedInterfaces = [ "tailscale0" ];
+              allowedUDPPorts = [ config.services.tailscale.port ];
+            };
           };
-        };
 
-        # Hardening the container
-        systemd.services.jellyfin = {
-          environment = { LIBVA_DRIVER_NAME = "iHD"; };
-          serviceConfig = {
-            DynamicUser = lib.mkForce true;
-            SupplementaryGroups = [ "media-ro" "render" ];
-            StateDirectory = "jellyfin";
-            CacheDirectory = "jellyfin";
-            ProtectHome = lib.mkForce true;
-            PrivateTmp = lib.mkForce true;
-            ProtectControlGroups = lib.mkForce true;
-            ProtectKernelTunables = lib.mkForce true;
-            NoNewPrivileges = lib.mkForce true;
-            RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
+          # Hardening the container
+          systemd.services.jellyfin = {
+            environment = {
+              LIBVA_DRIVER_NAME = "iHD";
+            };
+            serviceConfig = {
+              DynamicUser = lib.mkForce true;
+              SupplementaryGroups = [
+                "media-ro"
+                "render"
+              ];
+              StateDirectory = "jellyfin";
+              CacheDirectory = "jellyfin";
+              ProtectHome = lib.mkForce true;
+              PrivateTmp = lib.mkForce true;
+              ProtectControlGroups = lib.mkForce true;
+              ProtectKernelTunables = lib.mkForce true;
+              NoNewPrivileges = lib.mkForce true;
+              RestrictAddressFamilies = lib.mkForce [
+                "AF_UNIX"
+                "AF_INET"
+                "AF_INET6"
+                "AF_NETLINK"
+              ];
+            };
           };
+          system.stateVersion = "24.11";
         };
-        system.stateVersion = "24.11";
-      };
     };
   };
 }

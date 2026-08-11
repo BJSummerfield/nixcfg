@@ -1,7 +1,6 @@
 { ... }:
 {
-  imports =
-    [
-      ./nas.nix
-    ];
+  imports = [
+    ./nas.nix
+  ];
 }

@@ -4,7 +4,8 @@
 # Fails open if .envrc is blocked (untrusted); warns on flake eval errors.
 { pkgs, lib }:
 {
-  mkAgent = { name, real }:
+  mkAgent =
+    { name, real }:
     pkgs.writeShellScriptBin name ''
       err=$(${lib.getExe pkgs.direnv} exec . true 2>&1 >/dev/null); rc=$?
       if [ "$rc" -ne 0 ]; then

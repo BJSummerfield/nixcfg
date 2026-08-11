@@ -40,24 +40,33 @@
     };
   };
 
-  outputs = { nixpkgs, ... }@inputs:
+  outputs =
+    { nixpkgs, ... }@inputs:
 
     let
-      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
 
     {
-      devShells = forAllSystems (system:
-        let pkgs = nixpkgs.legacyPackages.${system};
-        in {
+      devShells = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
           default = pkgs.mkShell {
             packages = with pkgs; [
               nixfmt
               sops
             ];
           };
-        });
+        }
+      );
 
       # nixfmt-tree, not bare nixfmt: `nix fmt` passes a directory, and nixfmt
       # deprecates directory args and walks into .direnv's read-only store
@@ -78,9 +87,9 @@
         # Guards the real host against a refactor that only breaks in
         # combination with the rest of its module set. drvPath forces a full
         # evaluation without building anything.
-        redtruck-eval = builtins.seq
-          inputs.self.nixosConfigurations.redtruck.config.system.build.toplevel.drvPath
-          (nixpkgs.legacyPackages.x86_64-linux.runCommand "redtruck-eval" { } "touch $out");
+        redtruck-eval =
+          builtins.seq inputs.self.nixosConfigurations.redtruck.config.system.build.toplevel.drvPath
+            (nixpkgs.legacyPackages.x86_64-linux.runCommand "redtruck-eval" { } "touch $out");
       };
 
       darwinConfigurations = {

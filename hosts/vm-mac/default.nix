@@ -1,11 +1,10 @@
 { pkgs, ... }:
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -70,4 +69,3 @@
     };
   };
 }
-

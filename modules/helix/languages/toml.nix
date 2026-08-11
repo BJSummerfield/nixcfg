@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.toml;
@@ -9,14 +14,19 @@ in
 
     programs.helix = {
       languages = {
-        language = [{
-          name = "toml";
-          formatter = {
-            command = "taplo";
-            args = [ "fmt" "-" ];
-          };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "toml";
+            formatter = {
+              command = "taplo";
+              args = [
+                "fmt"
+                "-"
+              ];
+            };
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         taplo

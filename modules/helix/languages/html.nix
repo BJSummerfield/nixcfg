@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf optional;
   cfg = config.mine.user.helix.lsp.html;
@@ -22,23 +27,29 @@ in
         };
       };
 
-      languages.language = [{
-        name = "html";
+      languages.language = [
+        {
+          name = "html";
 
-        language-servers = [ "superhtml" ]
-          ++ optional cfg.enableTailwind "tailwindcss-language-server";
+          language-servers = [ "superhtml" ] ++ optional cfg.enableTailwind "tailwindcss-language-server";
 
-        formatter = {
-          command = "superhtml";
-          args = [ "fmt" "--stdin" ];
-        };
-        auto-format = true;
-      }];
+          formatter = {
+            command = "superhtml";
+            args = [
+              "fmt"
+              "--stdin"
+            ];
+          };
+          auto-format = true;
+        }
+      ];
 
-      extraPackages = with pkgs; [
-        superhtml
-      ]
-      ++ optional cfg.enableTailwind tailwindcss-language-server;
+      extraPackages =
+        with pkgs;
+        [
+          superhtml
+        ]
+        ++ optional cfg.enableTailwind tailwindcss-language-server;
     };
   };
 }

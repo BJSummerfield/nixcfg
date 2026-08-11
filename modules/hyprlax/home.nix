@@ -1,6 +1,17 @@
-{ pkgs, config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 let
-  inherit (lib) mkEnableOption mkIf mkMerge mkOption types;
+  inherit (lib)
+    mkEnableOption
+    mkIf
+    mkMerge
+    mkOption
+    types
+    ;
   cfg = config.mine.user.hyprlax;
   niriCfg = config.mine.user.niri;
 in

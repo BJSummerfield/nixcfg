@@ -5,7 +5,10 @@
   system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
 
   nix = {
-    settings.experimental-features = [ "nix-command" "flakes" ];
+    settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
     gc = {
       automatic = true;
       options = "--delete-older-than 14d";

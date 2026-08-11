@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 {
   options.mine.user.keybase.enable = lib.mkEnableOption "Enable Keybase config";
   config = lib.mkIf config.mine.user.keybase.enable {

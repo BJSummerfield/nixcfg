@@ -1,5 +1,10 @@
 # Hammerspoon PaperWM config; the app itself is installed via homebrew.
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.hammerspoon;

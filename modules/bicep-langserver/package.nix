@@ -1,4 +1,10 @@
-{ stdenv, fetchzip, dotnetCorePackages, lib, ... }:
+{
+  stdenv,
+  fetchzip,
+  dotnetCorePackages,
+  lib,
+  ...
+}:
 
 stdenv.mkDerivation rec {
   pname = "bicep-langserver";

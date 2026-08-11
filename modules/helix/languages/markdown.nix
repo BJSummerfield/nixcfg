@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   mplsModule = config.mine.user.mpls;
@@ -12,17 +17,22 @@ in
         language-server = {
           mpls = {
             command = "${mplsModule.package}/bin/mpls";
-            args = [ "--dark-mode" "--enable-emoji" ];
+            args = [
+              "--dark-mode"
+              "--enable-emoji"
+            ];
           };
         };
-        language = [{
-          name = "markdown";
-          auto-format = true;
-          language-servers = [
-            "marksman"
-            "mpls"
-          ];
-        }];
+        language = [
+          {
+            name = "markdown";
+            auto-format = true;
+            language-servers = [
+              "marksman"
+              "mpls"
+            ];
+          }
+        ];
       };
 
       extraPackages = [

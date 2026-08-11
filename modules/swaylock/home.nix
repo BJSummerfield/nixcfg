@@ -1,4 +1,10 @@
-{ lib, config, pkgs, themeConstants, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.swaylock;

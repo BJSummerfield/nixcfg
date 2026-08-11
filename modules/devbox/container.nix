@@ -1,7 +1,17 @@
 # NixOS configuration for the devbox container.
 # Tailnet join and serve are manual — see nixos.nix.
-{ inputs, tailnetHostname, gitIdentity, signCommits }:
-{ config, pkgs, lib, ... }:
+{
+  inputs,
+  tailnetHostname,
+  gitIdentity,
+  signCommits,
+}:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
@@ -12,16 +22,23 @@ let
     paths = [ pkgs.pi-coding-agent ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${
-        lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)
-      }
+      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}
     '';
   };
 
   agentPkgs = [
-    (mkAgent { name = "claude"; real = lib.getExe pkgs.claude-code; })
-    (mkAgent { name = "pi"; real = "${piWrapped}/bin/pi"; })
-    (mkAgent { name = "opencode"; real = lib.getExe pkgs.opencode; })
+    (mkAgent {
+      name = "claude";
+      real = lib.getExe pkgs.claude-code;
+    })
+    (mkAgent {
+      name = "pi";
+      real = "${piWrapped}/bin/pi";
+    })
+    (mkAgent {
+      name = "opencode";
+      real = lib.getExe pkgs.opencode;
+    })
   ];
 
   # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
@@ -55,7 +72,10 @@ in
   # Pin the registry so `nix shell nixpkgs#foo` (promised by the design as
   # available inside agent sessions) resolves against the shared host store
   # instantly instead of fetching nixos-unstable over the network.
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
 
@@ -65,9 +85,17 @@ in
   # daemon's inheritUserEnvironment may or may not pick up
   # /etc/profiles/per-user/agent/bin, and a daemon that cannot find
   # `claude` fails in a way that gives no hint why.
-  environment.systemPackages = agentPkgs ++ [ ghWrapped ] ++ (with pkgs; [
-    curl fd jq ripgrep git direnv
-  ]);
+  environment.systemPackages =
+    agentPkgs
+    ++ [ ghWrapped ]
+    ++ (with pkgs; [
+      curl
+      fd
+      jq
+      ripgrep
+      git
+      direnv
+    ]);
 
   environment.sessionVariables = {
     CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
@@ -118,8 +146,10 @@ in
       programs.git = {
         enable = true;
         settings = {
-          user = { inherit (gitIdentity) name email; }
-            // lib.optionalAttrs signCommits {
+          user = {
+            inherit (gitIdentity) name email;
+          }
+          // lib.optionalAttrs signCommits {
             signingkey = "/run/secrets/signing-key";
           };
           # Reads the token at use time so it never lands in a config file
@@ -127,7 +157,8 @@ in
           # a GitHub ruleset is what stops a push to a protected branch.
           credential."https://github.com".helper =
             "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
-        } // lib.optionalAttrs signCommits {
+        }
+        // lib.optionalAttrs signCommits {
           gpg.format = "ssh";
           commit.gpgSign = true;
         };
@@ -196,12 +227,17 @@ in
   # contents, matched or not, so the secret can't reach the unit's
   # stderr/journal.
   systemd.services.paseo.serviceConfig.ExecStartPre = [
-    ("+" + toString (pkgs.writeShellScript "paseo-password-check" ''
-      if ! ${lib.getExe pkgs.gnugrep} -Eq '^PASEO_PASSWORD=.+' /run/secrets/paseo-password; then
-        echo "paseo-password: no non-empty PASEO_PASSWORD=<value> line found - refusing to start paseo unauthenticated (value withheld)" >&2
-        exit 1
-      fi
-    ''))
+    (
+      "+"
+      + toString (
+        pkgs.writeShellScript "paseo-password-check" ''
+          if ! ${lib.getExe pkgs.gnugrep} -Eq '^PASEO_PASSWORD=.+' /run/secrets/paseo-password; then
+            echo "paseo-password: no non-empty PASEO_PASSWORD=<value> line found - refusing to start paseo unauthenticated (value withheld)" >&2
+            exit 1
+          fi
+        ''
+      )
+    )
   ];
 
   ##########################################################################
@@ -215,7 +251,10 @@ in
   networking = {
     # container has no host resolv.conf; needed for the tailscale
     # control plane and for agents fetching from the network
-    nameservers = [ "9.9.9.9" "1.1.1.1" ];
+    nameservers = [
+      "9.9.9.9"
+      "1.1.1.1"
+    ];
     firewall = {
       enable = true;
       trustedInterfaces = [ "tailscale0" ];
@@ -254,7 +293,11 @@ in
       # halfway, leaving a partially-realised shell.
       TimeoutStartSec = "2h";
     };
-    path = with pkgs; [ direnv nix git ];
+    path = with pkgs; [
+      direnv
+      nix
+      git
+    ];
     script = ''
       shopt -s nullglob
       # Paseo (0.3.0-beta.4, server/dist/server/utils/worktree.js) lays worktrees

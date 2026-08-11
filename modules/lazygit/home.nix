@@ -1,4 +1,9 @@
-{ lib, config, themeConstants, ... }:
+{
+  lib,
+  config,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkIf mkEnableOption;
   inherit (themeConstants) colors;
@@ -11,13 +16,19 @@ in
       settings.gui = {
         language = "en";
         theme = {
-          activeBorderColor = [ "#${colors.base0D}" "bold" ];
+          activeBorderColor = [
+            "#${colors.base0D}"
+            "bold"
+          ];
           cherryPickedCommitBgColor = [ "#${colors.base02}" ];
           cherryPickedCommitFgColor = [ "#${colors.base03}" ];
           defaultFgColor = [ "#${colors.base05}" ];
           inactiveBorderColor = [ "#${colors.base03}" ];
           optionsTextColor = [ "#${colors.base06}" ];
-          searchingActiveBorderColor = [ "#${colors.base04}" "bold" ];
+          searchingActiveBorderColor = [
+            "#${colors.base04}"
+            "bold"
+          ];
           selectedLineBgColor = [ "#${colors.base03}" ];
           unstagedChangesColor = [ "#${colors.base08}" ];
         };

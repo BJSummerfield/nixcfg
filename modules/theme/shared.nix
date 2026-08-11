@@ -3,11 +3,13 @@ let
   defaults = import ./constants.nix;
   cfg = config.mine.system.theme;
 
-  mkSize = which: default: lib.mkOption {
-    type = lib.types.int;
-    inherit default;
-    description = "Font size for ${which}.";
-  };
+  mkSize =
+    which: default:
+    lib.mkOption {
+      type = lib.types.int;
+      inherit default;
+      description = "Font size for ${which}.";
+    };
 in
 {
   options.mine.system.theme = {
@@ -34,7 +36,9 @@ in
 
   config = {
     mine.system.theme.constants = defaults // {
-      fonts = defaults.fonts // { sizes = cfg.fontSizes; };
+      fonts = defaults.fonts // {
+        sizes = cfg.fontSizes;
+      };
     };
 
     # Unconditional: home-manager modules (alacritty, fish, firefox, ...)
