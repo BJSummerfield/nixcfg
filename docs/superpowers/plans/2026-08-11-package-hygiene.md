@@ -214,9 +214,11 @@ Expected: no output. (`modules/mpls/package.nix` was deleted in Task 2, so this 
 - [ ] **Step 4: Verify it builds**
 
 ```bash
-nix build --no-link --print-out-paths '.#nixosConfigurations.redtruck.config.mine.user.encode_queue.package'
+nix build --no-link --print-out-paths '.#nixosConfigurations.redtruck.config.home-manager.users.waktu.mine.user.encode_queue.package'
 ```
-Expected: a store path ending `-encode_queue-unstable`.
+Expected: a store path ending `-encode_queue-unstable`. Note the path goes
+through `home-manager.users.waktu` — `mine.user.*` options live in the
+home-manager module tree, not at the top level of the NixOS config.
 
 - [ ] **Step 5: Verify checks still pass**
 
