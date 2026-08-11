@@ -89,7 +89,9 @@ in
     (mkIf cfg.autoUpgrade.enable {
       system.autoUpgrade = {
         enable = true;
-        flake = "github:BJSummerfield/nixcfg";
+        # Not main: CI fast-forwards this ref only when nix flake check is
+        # green, so a broken push leaves the hosts on their last good build.
+        flake = "github:BJSummerfield/nixcfg/verified";
         dates = "04:00";
         allowReboot = true;
         rebootWindow = {
