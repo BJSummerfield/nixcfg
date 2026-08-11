@@ -6,12 +6,13 @@
 
 **Architecture:** Three sequential commits. The first changes logic only (`flake.nix` gains a `formatter` output and a devShell package; the helix module retargets its formatter and drops an unused LSP), written in the tree's existing style so the diff stays readable. The second is a pure mechanical `nix fmt` over the whole repo. The third records the reformat's SHA in `.git-blame-ignore-revs`, which is only possible once that SHA exists.
 
-**Tech Stack:** Nix flakes, home-manager, nixfmt 1.4.0 (`pkgs.nixfmt` in the pinned nixpkgs), helix.
+**Tech Stack:** Nix flakes, home-manager, nixfmt 1.4.0 (`pkgs.nixfmt`), nixfmt-tree 2.5.0 (`pkgs.nixfmt-tree`), helix.
 
 ## Global Constraints
 
-- Use the attribute `pkgs.nixfmt`. In the pinned nixpkgs (`f13ff45`) it resolves to nixfmt 1.4.0, identically to `nixfmt-rfc-style`. Do **not** write `nixfmt-rfc-style`, and do **not** write `nixfmt-classic` — that attribute has been removed from nixpkgs and evaluating it is a hard error.
-- The formatter binary is named `nixfmt`.
+- Use the attribute `pkgs.nixfmt` where a per-file formatter binary is wanted (helix, devShell). In the pinned nixpkgs (`f13ff45`) it resolves to nixfmt 1.4.0, identically to `nixfmt-rfc-style`. Do **not** write `nixfmt-rfc-style`, and do **not** write `nixfmt-classic` — that attribute has been removed from nixpkgs and evaluating it is a hard error.
+- Use `pkgs.nixfmt-tree` for the flake's `formatter` output. `nix fmt` passes a directory; bare nixfmt deprecates directory arguments and crashes walking `.direnv`'s read-only store symlinks. `nixfmt-tree` is treefmt driving nixfmt and honours gitignore. It is in the pinned nixpkgs, so it adds no flake input.
+- The per-file formatter binary is named `nixfmt`; the `nix fmt` wrapper reports itself as `treefmt`.
 - Task 1 must leave its two edited files in the tree's **current** (nixpkgs-fmt) style. Do not run `nix fmt` during Task 1.
 - Task 2's commit must contain only formatting changes and touch only `.nix` files.
 - Every `nix eval` / `nix fmt` command below is run from the repo root.
@@ -61,7 +62,7 @@ Replace the existing `devShells` block (lines 51-59) with this. Note `nixfmt` ad
           };
         });
 
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 ```
 
 - [ ] **Step 3: Verify `nix fmt` now resolves**
@@ -69,7 +70,7 @@ Replace the existing `devShells` block (lines 51-59) with this. Note `nixfmt` ad
 ```bash
 nix fmt -- --version
 ```
-Expected: prints a nixfmt version (`1.4.0`). The `--` passes the flag through to nixfmt rather than to `nix`.
+Expected: prints `treefmt v2.5.0`. The `--` passes the flag through to the formatter rather than to `nix`.
 
 - [ ] **Step 4: Retarget the helix nix module**
 
@@ -139,7 +140,7 @@ helix defaults to nil for nix and nothing selected otherwise."
 - [ ] **Step 1: Confirm the tree is dirty per nixfmt**
 
 ```bash
-nix fmt -- --check . ; echo "exit=$?"
+nix fmt -- --fail-on-change ; echo "exit=$?"
 ```
 Expected: non-zero exit, and a list of files nixfmt would change.
 
@@ -153,10 +154,10 @@ Expected: no output. If anything is listed, stop — the reformat commit must no
 - [ ] **Step 3: Reformat**
 
 ```bash
-nix fmt -- --verify .
+nix fmt
 ```
 
-`--verify` makes nixfmt sanity-check its own output after formatting. It is not the default and is worth the cost exactly once, on a bulk rewrite of 105 files.
+Expected: `traversed 182 files / emitted 138 files for processing / formatted 138 files (105 changed)`. The 182-vs-138 gap is treefmt filtering non-`.nix` files; `.direnv` is excluded via gitignore.
 
 - [ ] **Step 4: Verify nothing but `.nix` files changed**
 
@@ -314,7 +315,7 @@ Expected: `nixfmt` — confirms helix will invoke it on save.
 - [ ] **Step 4: Verify the tree is clean and formatted**
 
 ```bash
-nix fmt -- --check . ; echo "exit=$?"
+nix fmt -- --fail-on-change ; echo "exit=$?"
 git status --porcelain
 ```
 Expected: `exit=0` and no output from `git status`.

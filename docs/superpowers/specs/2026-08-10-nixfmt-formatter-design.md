@@ -25,6 +25,14 @@ helix alike. The tree fully formatted so the declaration is true.
 - **`pkgs.nixfmt`.** In the pinned nixpkgs (`f13ff45`) `nixfmt` and
   `nixfmt-rfc-style` both resolve to nixfmt 1.4.0, and `nixfmt-classic` has
   been removed. The unsuffixed attribute is correct and needs no alias.
+- **`pkgs.nixfmt-tree` for the `formatter` output.** `nix fmt` invokes the
+  formatter with a directory. Bare nixfmt deprecates directory arguments and
+  walks into `.direnv`'s read-only nix store symlinks, where it dies with
+  `openTempFileWithDefaultPermissions: permission denied`. `nixfmt-tree` is
+  the wrapper upstream points at for this — treefmt driving nixfmt, honouring
+  gitignore. It is one package in the pinned nixpkgs (2.5.0), so this adds no
+  flake input. helix and the devShell keep plain `nixfmt`, which is invoked
+  per file and unaffected.
 - **Whole repo, one commit.** All 138 `.nix` files are in scope; 105 actually
   change, ~4000 lines. A formatter is all-or-nothing: leaving part of the tree
   unformatted means the diff reappears inside whatever branch next runs
@@ -64,7 +72,7 @@ Ordered so the reformat commit contains no logic:
 Add the output alongside `devShells`, using the existing `forAllSystems`:
 
 ```nix
-formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 ```
 
 And add the binary to the devShell so direnv puts the declared formatter on
