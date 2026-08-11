@@ -59,7 +59,6 @@
       helix = {
         enable = true;
         lsp = {
-          bicep.enable = true;
           css.enable = true;
           html.enable = true;
           javascript.enable = true;
