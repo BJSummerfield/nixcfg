@@ -146,10 +146,13 @@ GitHub runner. Two small packages are not. This is the narrow exception that
 closes the hole mpls fell through, and it is intentional rather than an
 oversight.
 
-**Cost, measured:** `encode_queue` builds on `x86_64-linux` with a 47.2 MiB
-closure — a substitution rather than a compile, and negligible on a runner
-with ~14 GB free. `bicep-langserver` was measured at 712.5 MiB and is
-excluded for that reason.
+**Cost, measured:** `encode_queue`'s runtime closure is 47.2 MiB, but that
+figure is not the CI cost — `cache.nixos.org` has no prebuilt output for it,
+so CI compiles it from source. That pulls in roughly 2.6 GB of build inputs
+across ~489 paths (rustc, cargo, stdenv, and the rest of the Rust toolchain)
+and runs a cargo build, inside a 30-minute job limit. That still fits
+comfortably on a GitHub runner. `bicep-langserver` was measured at 712.5 MiB
+and is excluded for that reason.
 
 ## Dependency on the CI-gate branch
 
@@ -184,9 +187,26 @@ locally regardless; only publication is blocked.
 
 ## Success Criteria
 
-- No `.nix` file fetches a moving git ref.
+- No `.nix` file fetches `main`, `master` or `HEAD`.
+  **Known remaining instance of the same class:** `modules/hammerspoon/home.nix:23`
+  pins `rev = "release"` — a branch, not a tag or commit — against a fixed
+  hash, and that hash is already stale (expected `sha256-m8gEIeyZ…`, got
+  `sha256-+EAK105r…`). It escaped this work's guard because the guard's
+  search pattern was `rev = "(main|master|HEAD)"` and this branch happens to
+  be called `release`. It is already broken and is deliberately left for
+  separate work.
 - `mine.allowedUnfree` is declared once.
-- `nix flake check` builds every local package that a host actually uses.
+- `nix flake check` builds every package exposed under `packages.x86_64-linux`
+  — currently just `encode_queue`. It does **not** cover derivations defined
+  inside modules (`callPackage`s that never become a flake output), and
+  several of those still exist: `modules/local-llm/weights.nix`,
+  `modules/bicep-langserver/package.nix`, the PaperWM fetch in
+  `modules/hammerspoon/home.nix`, and the overlay `src`s in
+  `modules/gamescope/nixos.nix` and `modules/_1password/nixos.nix`. mpls
+  itself was one of these module-level `callPackage`s before this change, so
+  this check would not have caught the failure that motivated it — only
+  moving mpls's fetch into a flake output (or module-level derivations
+  gaining their own guard) would.
 - mpls still works on the hosts that use it, sourced from nixpkgs.
 - No host closure carries the bicep language server or the .NET 8 SDK.
   Measured saving: **611.8 MiB** unique to `bicep-langserver` — that is its

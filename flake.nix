@@ -115,7 +115,10 @@
           };
         }
         # Unlike the eval-only checks above, these really build. A package
-        # added later is covered without anyone wiring it up.
+        # added later to `packages` is covered without anyone wiring it up —
+        # but derivations defined inside modules (callPackages that never
+        # become a flake output) are structurally outside this set and stay
+        # uncovered.
         // nixpkgs.lib.mapAttrs' (
           name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
         ) inputs.self.packages.x86_64-linux;
