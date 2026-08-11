@@ -12,15 +12,14 @@ in
         language = [{
           name = "nix";
           formatter = {
-            command = "nixpkgs-fmt";
+            command = "nixfmt";
           };
           auto-format = true;
         }];
       };
       extraPackages = with pkgs; [
         nil
-        nixd
-        nixpkgs-fmt
+        nixfmt
       ];
     };
   };

@@ -53,10 +53,16 @@
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              nixfmt
               sops
             ];
           };
         });
+
+      # nixfmt-tree, not bare nixfmt: `nix fmt` passes a directory, and nixfmt
+      # deprecates directory args and walks into .direnv's read-only store
+      # symlinks. The wrapper is treefmt driving nixfmt, and respects gitignore.
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       # Evaluation-only. `nix flake check` builds nothing here beyond two empty
       # marker derivations; the work is in forcing the eval. Scoped to
