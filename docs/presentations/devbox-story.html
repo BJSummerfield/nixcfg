@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Planning with Claude, coding in a box</title>
+<title>The agent in a box</title>
 <style>
 :root{
   --bg:#141416; --ink:#FFFFFF; --ink-2:#C4C4C5; --ink-3:#8F8F8F;
@@ -149,7 +149,7 @@ body.moved #hint{opacity:0}
 
     <div class="slide-text">
       <div class="kicker">A field report from my homelab</div>
-      <h1>Planning with Claude, coding in a box</h1>
+      <h1>The agent in a box</h1>
       <p>How one grab at <code>~/.ssh</code> turned into isolated agent
       containers on a server — and why the code never leaves the box.</p>
     </div>
@@ -157,7 +157,7 @@ body.moved #hint{opacity:0}
     <div class="slide-text">
       <div class="kicker">The incident</div>
       <h1>The agent runs as you</h1>
-      <p>Claude Code, running on my laptop, decided it needed my SSH keys.</p>
+      <p>The coding agent, running on my laptop, decided it needed my SSH keys.</p>
       <p>It runs as my uid — so nothing stood between it and
       <code>~/.ssh</code> but its own judgment. That's not a boundary,
       that's a vibe.</p>
@@ -211,7 +211,7 @@ body.moved #hint{opacity:0}
     <div class="slide-text">
       <div class="kicker">The pivot</div>
       <h1>A box built to contain it</h1>
-      <p><code>redtruck</code>, a NixOS server, grows a persistent container:
+      <p>A NixOS server grows a persistent container:
       the <strong>devbox</strong>. The agent inside runs as
       <code>uid 1500</code> — deliberately outside the host's uid range — on
       its own private veth network.</p>
@@ -231,13 +231,13 @@ body.moved #hint{opacity:0}
 
     <div class="slide-text">
       <div class="kicker">The front door</div>
-      <h1>Paseo: plan anywhere, code in the box</h1>
-      <p>Inside the box, the <strong>paseo</strong> daemon listens on
+      <h1>Plan anywhere, code in the box</h1>
+      <p>Inside the box, an <strong>orchestrator</strong> daemon listens on
       <code>127.0.0.1:6767</code>. The only way in is
       <code>tailscale serve</code> — one door, published to my tailnet,
       password required.</p>
       <p>Laptop, Mac, even my phone are thin clients. Each session gets its
-      own git worktree inside the box. I plan with Claude from anywhere; the
+      own git worktree inside the box. I plan with the agent from anywhere; the
       code never leaves.</p>
     </div>
 
@@ -268,9 +268,9 @@ body.moved #hint{opacity:0}
     <div class="slide-text">
       <div class="kicker">Now</div>
       <h1>Keys on the host. Repos in the box. Code on GitHub.</h1>
-      <p>Two containers on <code>redtruck</code>, each with one scoped
-      credential and one signing identity. Paseo serves each box to the
-      tailnet; I plan with Claude from wherever I am, and nothing the agent
+      <p>Two containers on the server, each with one scoped
+      credential and one signing identity. The orchestrator serves each box to the
+      tailnet; I plan with the agent from wherever I am, and nothing it
       does can reach past its wall.</p>
       <p>This presentation was planned in that setup.</p>
     </div>
@@ -289,7 +289,7 @@ body.moved #hint{opacity:0}
 <g id="claude" class="el">
   <circle class="outline" cx="560" cy="405" r="22" style="stroke:var(--plan)"/>
   <path d="M560 391 L564 401 L574 405 L564 409 L560 419 L556 409 L546 405 L556 401 Z" fill="#889CE7"/>
-  <text class="label mono" x="560" y="455" text-anchor="middle">claude code · uid 1000</text>
+  <text class="label mono" x="560" y="455" text-anchor="middle">the agent · uid 1000</text>
 </g>
 <g id="sshkey" class="el">
   <circle class="outline" cx="1050" cy="600" r="16"/>
@@ -323,7 +323,7 @@ body.moved #hint{opacity:0}
      so nothing collides when workbox spawns in slide 10. -->
 <g id="redtruck" class="el">
   <rect class="outline" x="1860" y="170" width="1240" height="620" rx="14"/>
-  <text class="label bright" x="1880" y="150" style="font-size:18px">redtruck · NixOS server</text>
+  <text class="label bright" x="1880" y="150" style="font-size:18px">the server · NixOS</text>
 </g>
 <g id="devbox" class="el">
   <rect class="outline" x="1940" y="250" width="500" height="380" rx="10" style="stroke:var(--ink)"/>
@@ -372,7 +372,7 @@ body.moved #hint{opacity:0}
 <g id="paseod" class="el glow-plan">
   <circle cx="2160" cy="540" r="10" fill="var(--plan)"/>
   <circle class="outline" cx="2160" cy="540" r="22" style="stroke:var(--plan)"/>
-  <text class="label mono" x="2160" y="590" text-anchor="middle" style="fill:var(--plan)">paseo · 127.0.0.1:6767</text>
+  <text class="label mono" x="2160" y="590" text-anchor="middle" style="fill:var(--plan)">orchestrator · 127.0.0.1:6767</text>
 </g>
 <g id="tsdoor" class="el">
   <rect x="1930" y="490" width="20" height="60" rx="3" fill="var(--bg)" stroke="var(--safe)" stroke-width="1.5"/>
@@ -445,7 +445,7 @@ const VIEW = {w: 1600, h: 900};
 
 const TITLES = [
   'Title', 'The incident', 'Bubblewrap', 'A container per session',
-  'The Mac wall', 'Enter the devbox', 'Scope the token', 'Paseo',
+  'The Mac wall', 'Enter the devbox', 'Scope the token', 'The front door',
   'One box, two lives', 'Workbox', 'Scoreboard', 'The full picture'
 ];
 
