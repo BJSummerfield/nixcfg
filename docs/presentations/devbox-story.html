@@ -67,6 +67,14 @@ main{display:flex;height:100vh}
 .outline{fill:none;stroke:var(--ink-2);stroke-width:1.5}
 .faint{stroke:var(--ink-3)}
 
+/* boundary morph states */
+#boundary{stroke:var(--danger);stroke-dasharray:7 7}
+#boundary.solid{stroke:var(--ink-2);stroke-dasharray:1 0}
+#boundary.pool{x:920px;y:300px;width:150px;height:130px}
+/* repochip flies into the pool slot */
+#repochip.docked{transform:translate(-15px,-6px);}
+#mac.dim rect{stroke:var(--ink-3)}
+
 /* ---- scoreboard overlay (populated in Task 4) ---- */
 #scoreboard{position:absolute;inset:6vh 4vw;opacity:0;pointer-events:none;
   transition:opacity .7s var(--ease)}
@@ -230,7 +238,43 @@ body.moved #hint{opacity:0}
   <div id="stage">
     <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <g id="world">
-        <!-- WORLD-ACT1 -->
+<!-- ================= ACT 1 : the laptop (world x 0..1600) ================= -->
+<g id="laptop" class="el">
+  <rect class="outline" x="430" y="290" width="360" height="230" rx="10"/>
+  <path class="outline faint" d="M 390 520 L 830 520 L 800 560 L 420 560 Z"/>
+  <text class="label" x="610" y="600" text-anchor="middle">my laptop</text>
+</g>
+<g id="claude" class="el">
+  <circle class="outline" cx="560" cy="405" r="22" style="stroke:var(--plan)"/>
+  <path d="M560 391 L564 401 L574 405 L564 409 L560 419 L556 409 L546 405 L556 401 Z" fill="#889CE7"/>
+  <text class="label mono" x="560" y="455" text-anchor="middle">claude code · uid 1000</text>
+</g>
+<g id="sshkey" class="el">
+  <circle class="outline" cx="1050" cy="600" r="16"/>
+  <path class="outline" d="M 1063 609 L 1092 638 M 1082 628 L 1090 620 M 1074 636 L 1082 628"/>
+  <text class="label mono" x="1055" y="670" text-anchor="middle">~/.ssh</text>
+</g>
+<path id="tendril" class="el wire danger glow-danger" style="--len:620"
+  d="M 585 415 C 700 440, 820 500, 1030 592"/>
+<rect id="boundary" class="el outline" x="505" y="350" width="150" height="130" rx="8"/>
+<g id="slot2" class="el"><rect class="outline faint" x="1090" y="300" width="150" height="130" rx="8"/></g>
+<g id="slot3" class="el"><rect class="outline faint" x="1260" y="300" width="150" height="130" rx="8"/></g>
+<g id="slot4" class="el"><rect class="outline faint" x="1175" y="450" width="150" height="130" rx="8"/></g>
+<text id="poollabel" class="el label mono" x="1160" y="260" text-anchor="middle">systemd-nspawn · ephemeral · 4 slots</text>
+<g id="repochip" class="el">
+  <rect class="outline" x="940" y="330" width="120" height="34" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono bright" x="1000" y="352" text-anchor="middle">repo (cwd)</text>
+</g>
+<g id="mac" class="el">
+  <rect class="outline" x="430" y="640" width="300" height="190" rx="10"/>
+  <text class="label" x="580" y="790" text-anchor="middle" style="font-size:13px">my macbook</text>
+</g>
+<g id="macdead" class="el">
+  <rect x="450" y="660" width="120" height="100" rx="8" fill="none"
+    stroke="var(--ink-3)" stroke-dasharray="6 6"/>
+  <text class="label mono" x="510" y="800" text-anchor="middle"
+    style="fill:var(--danger)">namespaces: not found</text>
+</g>
         <!-- WORLD-ACT2 -->
         <!-- WORLD-ACT3 -->
       </g>
@@ -256,11 +300,20 @@ const TITLES = [
 // Each slide: absolute camera + absolute element states.
 // el maps element id -> state classes appended to the element's base classes.
 const SLIDES = [
-  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 1  title
-  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 2  incident
-  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 3  bubblewrap
-  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 4  container per session
-  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 5  mac wall
+  // 1 title — a laptop alone in the dark
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on'}},
+  // 2 incident — claude wakes, tendril reaches for ~/.ssh
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on'}},
+  // 3 bubblewrap — dashed boundary around the agent, tendril blocked (gone)
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on'}},
+  // 4 container per session — boundary morphs to a solid pool slot; slots + repo appear
+  {cam: {x: 0, y: 0, w: 1600}, el: {
+    laptop: 'on', claude: 'on', boundary: 'on solid pool',
+    slot2: 'on', slot3: 'on', slot4: 'on', poollabel: 'on', repochip: 'on docked'}},
+  // 5 mac wall — pool dims context, macbook appears, container fails to render
+  {cam: {x: 0, y: 0, w: 1600}, el: {
+    laptop: 'on', boundary: 'on solid pool', slot2: 'on', slot3: 'on', slot4: 'on',
+    mac: 'on', macdead: 'on'}},
   {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 6  devbox
   {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 7  token
   {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 8  paseo
