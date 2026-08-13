@@ -22,7 +22,7 @@ body{
 main{display:flex;height:100vh}
 
 /* ---- text panel ---- */
-#panel{width:38%;min-width:340px;position:relative}
+#panel{width:33%;min-width:320px;position:relative}
 .slide-text{position:absolute;inset:10vh 3vw 12vh 4vw;opacity:0;transform:translateY(14px);
   transition:opacity .5s var(--ease),transform .5s var(--ease);pointer-events:none}
 .slide-text.current{opacity:1;transform:none;transition-delay:.4s;pointer-events:auto}
@@ -110,6 +110,13 @@ body.moved #hint{opacity:0}
 .packet.p2{offset-path:path('M 1935 525 C 1550 650, 1150 730, 740 735');animation:travel 6s linear infinite reverse}
 .packet.p3{offset-path:path('M 2440 320 C 2650 240, 2820 130, 2920 78');animation:travel 4s linear infinite}
 @keyframes travel{from{offset-distance:0%}to{offset-distance:100%}}
+
+@media (max-aspect-ratio: 1/1){
+  main{flex-direction:column}
+  #panel{width:100%;min-width:0;height:44vh}
+  .slide-text{inset:4vh 6vw 2vh}
+  #stage{height:56vh}
+}
 
 #scoreboard table{width:100%;height:100%;border-collapse:collapse;font-size:clamp(11px,1vw,15px)}
 #scoreboard th,#scoreboard td{border:1px solid rgba(143,143,143,.25);padding:.6em .8em;text-align:left;font-weight:300;vertical-align:middle}
@@ -442,45 +449,45 @@ const TITLES = [
 // el maps element id -> state classes appended to the element's base classes.
 const SLIDES = [
   // 1 title — a laptop alone in the dark
-  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on'}},
+  {cam: {x: 180, y: 110, w: 880}, el: {laptop: 'on'}},
   // 2 incident — claude wakes, tendril reaches for ~/.ssh
-  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on'}},
+  {cam: {x: 300, y: 210, w: 900}, el: {laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on'}},
   // 3 bubblewrap — dashed boundary around the agent, tendril blocked (gone)
-  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on'}},
+  {cam: {x: 300, y: 210, w: 900}, el: {laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on'}},
   // 4 container per session — boundary morphs to a solid pool slot; slots + repo appear
-  {cam: {x: 0, y: 0, w: 1600}, el: {
+  {cam: {x: 350, y: 130, w: 1120}, el: {
     laptop: 'on', claude: 'on', boundary: 'on solid pool',
     slot2: 'on', slot3: 'on', slot4: 'on', poollabel: 'on', repochip: 'on docked'}},
   // 5 mac wall — pool dims context, macbook appears, container fails to render
-  {cam: {x: 0, y: 0, w: 1600}, el: {
+  {cam: {x: 330, y: 170, w: 1190}, el: {
     laptop: 'on', boundary: 'on solid pool', slot2: 'on', slot3: 'on', slot4: 'on',
     mac: 'on', macdead: 'on'}},
   // 6 devbox — camera pans right to redtruck; keys stay outside the wall
-  {cam: {x: 1720, y: -10, w: 1600}, el: {
+  {cam: {x: 1820, y: 70, w: 1330}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on', sopsmounts: 'on'}},
   // 7 scope the token — PAT draws to GitHub, allowlist lights up
-  {cam: {x: 1720, y: -10, w: 1600}, el: {
+  {cam: {x: 1800, y: -5, w: 1420}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
     github: 'on', patline: 'on', patlabel: 'on', allowlist: 'on'}},
   // 8 paseo — wide shot: daemon, door, tailnet mesh to laptop/mac/phone
-  {cam: {x: 0, y: -350, w: 3300}, el: {
+  {cam: {x: 280, y: -370, w: 2950}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
     github: 'on', patline: 'on', allowlist: 'on',
     paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
     laptop: 'on', mac: 'on', phone: 'on'}},
   // 9 contamination — zoom into the devbox; two repos, one haze
-  {cam: {x: 1880, y: 200, w: 1000}, el: {
+  {cam: {x: 1830, y: 205, w: 780}, el: {
     devbox: 'on', agentglyph: 'on', persrepo: 'on', workrepo: 'on', haze: 'on',
     paseod: 'on', worktrees: 'on', dbtoken: 'on'}},
   // 10 workbox — second box splits off; work repo migrates; per-box tokens
-  {cam: {x: 1720, y: -10, w: 1600}, el: {
+  {cam: {x: 1820, y: 70, w: 1330}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', persrepo: 'on',
     workrepo: 'on migrated', workbox: 'on split',
     dbtoken: 'on', wbtoken: 'on', hostkeys: 'on'}},
   // 11 scoreboard — overlay carries the slide; world dims behind it
-  {cam: {x: 1720, y: -10, w: 1600}, el: {}},
+  {cam: {x: 1820, y: 70, w: 1330}, el: {}},
   // 12 full picture — everything on, packets flowing
-  {cam: {x: 0, y: -350, w: 3300}, el: {
+  {cam: {x: 280, y: -370, w: 2950}, el: {
     redtruck: 'on', devbox: 'on', workbox: 'on split', agentglyph: 'on',
     persrepo: 'on', workrepo: 'on migrated', dbtoken: 'on', wbtoken: 'on',
     hostkeys: 'on', github: 'on', patline: 'on', allowlist: 'on',
