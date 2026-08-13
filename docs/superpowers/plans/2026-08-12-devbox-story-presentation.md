@@ -1,0 +1,852 @@
+# Devbox Story Presentation Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** A single self-contained HTML file at `docs/presentations/devbox-story.html` — a click-driven animated slideshow telling the story of the devbox/workbox/paseo setup over one persistent morphing SVG scene.
+
+**Architecture:** One SVG "world" in a large coordinate space; each of 12 slides is a declarative state object (camera rect + CSS classes per element). A ~100-line vanilla JS state machine applies state diffs; all animation is CSS transitions. A fixed left text panel cross-fades copy per slide. No build step, no dependencies.
+
+**Tech Stack:** HTML + inline SVG + CSS + vanilla JS. Verification via `nix shell nixpkgs#python3` / `nixpkgs#nodejs` (no local node/python on this host).
+
+**Spec:** `docs/superpowers/specs/2026-08-12-devbox-story-presentation-design.md` — read it first; it defines the 12-slide narrative each task implements.
+
+## Global Constraints
+
+- Single file: `docs/presentations/devbox-story.html`. No external requests of any kind — no CDN, no `@import`, no webfont URLs, no images. (`xmlns` attributes are the only allowed `http://` strings.)
+- Palette (CSS custom properties, exact values): bg `#141416`, ink `#FFFFFF`, ink-2 `#C4C4C5`, ink-3 `#8F8F8F`, danger `#ED1566`, safe `#0072BC`, plan `#889CE7`, pro-green `#57B98A`.
+- Fonts: `'Roboto','Helvetica Neue',Arial,sans-serif`, weights 100/300/400 — system fallback only, nothing inlined.
+- Motion verbs only: **draw** (`stroke-dashoffset`), **morph** (transition geometry/transform of a persistent element), **dissolve/spawn** (opacity+scale). Transitions on `transform`/`opacity`/stroke props; camera is one transform on `<g id="world">`.
+- Navigation: → / Space / stage-click = next; ← = previous; number dots; `#N` hash deep-links; `Esc` toggles a slide index. `prefers-reduced-motion` collapses all transition/animation durations.
+- Every slide must reach a correct end state from BOTH directions (forward and backward). State objects are absolute, not incremental — never rely on what a previous slide left behind.
+- SVG element ids and the `SLIDES` state shape are the contract between tasks — never rename ids defined by an earlier task. Coordinates given in tasks are starting values; adjust visually if things overlap, but keep ids/classes stable.
+- The hallucinated-key incident stays out of the copy.
+
+**Shared verification commands** (used by every task, referred to as CHECK-JS and CHECK-NET):
+
+CHECK-JS — extract the script and syntax-check it:
+```bash
+nix shell nixpkgs#python3 -c python3 -c "import re; html=open('docs/presentations/devbox-story.html').read(); js='\n'.join(re.findall(r'<script>(.*?)</script>', html, re.S)); open('/tmp/ds.js','w').write(js); print(len(js),'bytes of JS extracted')"
+nix shell nixpkgs#nodejs -c node --check /tmp/ds.js && echo JS-OK
+```
+
+CHECK-NET — no network references:
+```bash
+grep -nE 'https?://' docs/presentations/devbox-story.html | grep -v xmlns; test $? -eq 1 && echo NET-OK
+```
+
+---
+
+### Task 1: Skeleton — layout, all slide copy, state machine, navigation
+
+The deliverable is a fully navigable 12-slide deck where the text panel carries the whole story and the stage is an empty world. Every later task only adds SVG elements and fills in `SLIDES[n].el` / `SLIDES[n].cam`.
+
+**Files:**
+- Create: `docs/presentations/devbox-story.html`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces (later tasks rely on these exact names):
+  - `<g id="world">` — all scene elements go inside it.
+  - Element convention: every animatable SVG element/group has a unique `id` and base class `el` (plus style classes like `wire`). JS records `dataset.base` at init and applies `base + ' ' + (SLIDES[n].el[id] || '')` on every slide change. State class `on` makes an element visible.
+  - `SLIDES` — array of 12 objects `{cam: {x, y, w}, el: {<id>: '<state classes>'}}`. Camera shows the world rect starting at `(x, y)` with width `w` (height follows 16:9).
+  - CSS utility classes: `.el` (hidden default), `.on` (visible), `.wire` (draw-in line, needs inline `--len` set to path length), `.danger`/`.safe`/`.plan`/`.pro` (stroke/color variants), `.chip`/`.chips` (staggered text chips in the panel), `.label` (SVG text style).
+  - Overlay hook: `apply()` toggles class `on` on `#scoreboard` when `n === 10` (slide 11).
+
+- [ ] **Step 1: Write the structural check and see it fail**
+
+Run:
+```bash
+test -f docs/presentations/devbox-story.html && grep -c 'class="slide-text"' docs/presentations/devbox-story.html
+```
+Expected: FAIL (file does not exist).
+
+- [ ] **Step 2: Write the file**
+
+Create `docs/presentations/devbox-story.html` with exactly this content (this is the complete skeleton — later tasks insert into `<g id="world">` and the `SLIDES` array):
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning with Claude, coding in a box</title>
+<style>
+:root{
+  --bg:#141416; --ink:#FFFFFF; --ink-2:#C4C4C5; --ink-3:#8F8F8F;
+  --danger:#ED1566; --safe:#0072BC; --plan:#889CE7; --pro:#57B98A;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(120% 120% at 50% 40%, #1a1a1d 0%, var(--bg) 55%, #0e0e10 100%);
+  color:var(--ink-2);
+  font-family:'Roboto','Helvetica Neue',Arial,sans-serif;
+  font-weight:300;
+  overflow:hidden;
+}
+main{display:flex;height:100vh}
+
+/* ---- text panel ---- */
+#panel{width:38%;min-width:340px;position:relative}
+.slide-text{position:absolute;inset:10vh 3vw 12vh 4vw;opacity:0;transform:translateY(14px);
+  transition:opacity .5s var(--ease),transform .5s var(--ease);pointer-events:none}
+.slide-text.current{opacity:1;transform:none;transition-delay:.4s;pointer-events:auto}
+.kicker{font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-3);margin-bottom:1.1rem}
+.slide-text h1{font-size:clamp(26px,2.6vw,42px);font-weight:100;color:var(--ink);line-height:1.15;margin-bottom:1.3rem}
+.slide-text p{font-size:15px;line-height:1.7;max-width:46ch;margin-bottom:.9rem}
+.slide-text .big{font-size:clamp(20px,1.8vw,28px);font-weight:100;color:var(--ink);line-height:1.4;margin-top:1.4rem}
+.slide-text code{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.9em;color:var(--ink)}
+.chips{display:flex;flex-direction:column;gap:8px;margin-top:1.1rem;list-style:none}
+.chips h2{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin:.8rem 0 .1rem}
+.chip{border:1px solid;border-radius:4px;padding:7px 12px;font-size:13px;line-height:1.45;
+  opacity:0;transform:translateX(-12px);transition:opacity .45s var(--ease),transform .45s var(--ease)}
+.chip.pro{border-color:rgba(87,185,138,.55);color:#a5dfc2}
+.chip.con{border-color:rgba(237,21,102,.55);color:#f2a0bd}
+.current .chip:nth-of-type(1){transition-delay:.55s}
+.current .chip:nth-of-type(2){transition-delay:.63s}
+.current .chip:nth-of-type(3){transition-delay:.71s}
+.current .chip:nth-of-type(4){transition-delay:.79s}
+.current .chip:nth-of-type(5){transition-delay:.87s}
+.current .chip:nth-of-type(6){transition-delay:.95s}
+.current .chip{opacity:1;transform:none}
+
+/* ---- stage / world ---- */
+#stage{flex:1;position:relative;cursor:pointer}
+#stage svg{width:100%;height:100%;display:block}
+#world{transition:transform 1.25s var(--ease)}
+.el{opacity:0;transition:opacity .7s var(--ease),transform 1s var(--ease),
+  x 1s var(--ease),y 1s var(--ease),width 1s var(--ease),height 1s var(--ease),
+  stroke .7s var(--ease),fill .7s var(--ease),stroke-dashoffset 1.1s var(--ease) .25s}
+.el.on{opacity:1}
+.label{fill:var(--ink-3);font-size:15px;letter-spacing:.08em}
+.label.bright{fill:var(--ink-2)}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:13px}
+.wire{fill:none;stroke-width:1.5;stroke-dasharray:var(--len,600);stroke-dashoffset:var(--len,600)}
+.wire.on{stroke-dashoffset:0}
+.danger{stroke:var(--danger)}
+.safe{stroke:var(--safe)}
+.plan{stroke:var(--plan)}
+.glow-danger{filter:drop-shadow(0 0 6px rgba(237,21,102,.7))}
+.glow-safe{filter:drop-shadow(0 0 6px rgba(0,114,188,.7))}
+.glow-plan{filter:drop-shadow(0 0 6px rgba(136,156,231,.7))}
+.outline{fill:none;stroke:var(--ink-2);stroke-width:1.5}
+.faint{stroke:var(--ink-3)}
+
+/* ---- scoreboard overlay (populated in Task 4) ---- */
+#scoreboard{position:absolute;inset:6vh 4vw;opacity:0;pointer-events:none;
+  transition:opacity .7s var(--ease)}
+#scoreboard.on{opacity:1;pointer-events:auto}
+
+/* ---- chrome ---- */
+#dots{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:9px;z-index:5}
+#dots button{width:8px;height:8px;border-radius:50%;border:1px solid var(--ink-3);background:transparent;cursor:pointer;padding:0}
+#dots button.current{background:var(--ink);border-color:var(--ink)}
+#hint{position:fixed;bottom:16px;right:24px;color:var(--ink-3);font-size:13px;letter-spacing:.15em;
+  transition:opacity .5s}
+body.moved #hint{opacity:0}
+#index{position:fixed;inset:0;background:rgba(20,20,22,.94);z-index:10;display:none;
+  padding:10vh 12vw;overflow:auto}
+#index.open{display:block}
+#index ol{list-style:none;counter-reset:s}
+#index li{counter-increment:s;margin:.5rem 0}
+#index a{color:var(--ink-2);text-decoration:none;font-weight:100;font-size:20px}
+#index a::before{content:counter(s,decimal-leading-zero) "  ";color:var(--ink-3);font-size:14px;letter-spacing:.2em}
+#index a:hover{color:var(--ink)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition-duration:.001s !important;transition-delay:0s !important;animation-duration:.001s !important}
+}
+</style>
+</head>
+<body>
+<main>
+  <section id="panel" aria-live="polite">
+
+    <div class="slide-text">
+      <div class="kicker">A field report from my homelab</div>
+      <h1>Planning with Claude, coding in a box</h1>
+      <p>How one grab at <code>~/.ssh</code> turned into isolated agent
+      containers on a server — and why the code never leaves the box.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The incident</div>
+      <h1>The agent runs as you</h1>
+      <p>Claude Code, running on my laptop, decided it needed my SSH keys.</p>
+      <p>It runs as my uid — so nothing stood between it and
+      <code>~/.ssh</code> but its own judgment. That's not a boundary,
+      that's a vibe.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">First fix</div>
+      <h1>Bubblewrap: a sandbox you assemble yourself</h1>
+      <p><code>bwrap</code> builds a sandbox out of Linux namespaces — fresh
+      mount, pid, user and network views for one process, no root daemon.
+      It's the layer under Flatpak.</p>
+      <div class="chips">
+        <h2>What it buys you</h2>
+        <div class="chip pro">No daemon, no root — it's just a process</div>
+        <div class="chip pro">Bind in exactly the paths you choose</div>
+        <div class="chip pro">Mask the rest — <code>~/.ssh</code> simply isn't there</div>
+        <h2>What it costs you</h2>
+        <div class="chip con">The boundary is a flag list <em>you</em> maintain</div>
+        <div class="chip con">One missing <code>--bind</code> is a hole in the wall</div>
+        <div class="chip con">Real agent tooling needs so many holes it turns to Swiss cheese</div>
+      </div>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Going ephemeral</div>
+      <h1>A container per session</h1>
+      <p>The wrapper became a wall: <code>systemd-nspawn</code> containers,
+      grabbed from a four-slot pool per session. Only the repo I'm working on
+      gets bind-mounted in; on exit the root filesystem is discarded.</p>
+      <div class="chips">
+        <h2>What it buys you</h2>
+        <div class="chip pro">A full OS inside — tools just work</div>
+        <div class="chip pro">The boundary is the container, not a rule list</div>
+        <div class="chip pro">Ephemeral by default: every session starts clean</div>
+        <h2>What it costs you</h2>
+        <div class="chip con">Shares the host's network namespace</div>
+        <div class="chip con">Agent uid = my uid, so mounted files stay writable</div>
+        <div class="chip con">One terminal, one session — and Linux only…</div>
+      </div>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The wall</div>
+      <h1>It doesn't work on a Mac</h1>
+      <p><code>systemd-nspawn</code> is Linux namespaces all the way down.
+      macOS has none of it. Half my life is on a MacBook.</p>
+      <p class="big">Stop bringing the sandbox to the machine.<br>
+      Put the agent on a machine that <em>is</em> the sandbox.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The pivot</div>
+      <h1>A box built to contain it</h1>
+      <p><code>redtruck</code>, a NixOS server, grows a persistent container:
+      the <strong>devbox</strong>. The agent inside runs as
+      <code>uid 1500</code> — deliberately outside the host's uid range — on
+      its own private veth network.</p>
+      <p>SSH, sops and signing keys stay on the host. Secrets enter only as
+      read-only bind mounts under <code>/run/secrets</code>.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Blast radius</div>
+      <h1>Scope the token</h1>
+      <p>The agent has to push code — but a classic PAT is
+      keys-to-everything. Each box gets a <strong>fine-grained PAT</strong>
+      scoped to an explicit repo allowlist, and a branch-protection ruleset
+      guards what even that token can do.</p>
+      <p class="big">The box holds a scoped key.<br>GitHub holds the code.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The front door</div>
+      <h1>Paseo: plan anywhere, code in the box</h1>
+      <p>Inside the box, the <strong>paseo</strong> daemon listens on
+      <code>127.0.0.1:6767</code>. The only way in is
+      <code>tailscale serve</code> — one door, published to my tailnet,
+      password required.</p>
+      <p>Laptop, Mac, even my phone are thin clients. Each session gets its
+      own git worktree inside the box. I plan with Claude from anywhere; the
+      code never leaves.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">New problem</div>
+      <h1>One box, two lives</h1>
+      <p>Work repos and personal repos now share a filesystem — and a token.
+      Whatever one project can reach, every project can reach.</p>
+      <p>That's cross-contamination waiting for a prompt injection.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Multi-instance</div>
+      <h1>Workbox: isolation between lives</h1>
+      <p>The container module went multi-instance. <strong>workbox</strong> is
+      a second box with its own GitHub token — a different allowlist — and its
+      own signing key, so a commit's signature says <em>which box</em> made
+      it.</p>
+      <p>Personal and work can no longer touch.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Scoreboard</div>
+      <h1>What each boundary bought</h1>
+      <p>Four eras, five dimensions.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Now</div>
+      <h1>Keys on the host. Repos in the box. Code on GitHub.</h1>
+      <p>Two containers on <code>redtruck</code>, each with one scoped
+      credential and one signing identity. Paseo serves each box to the
+      tailnet; I plan with Claude from wherever I am, and nothing the agent
+      does can reach past its wall.</p>
+      <p>This presentation was planned in that setup.</p>
+    </div>
+
+  </section>
+
+  <div id="stage">
+    <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g id="world">
+        <!-- WORLD-ACT1 -->
+        <!-- WORLD-ACT2 -->
+        <!-- WORLD-ACT3 -->
+      </g>
+    </svg>
+    <div id="scoreboard"><!-- SCOREBOARD --></div>
+  </div>
+</main>
+
+<nav id="dots" aria-label="slides"></nav>
+<div id="hint">&#8594; TO BEGIN &nbsp;&middot;&nbsp; ESC INDEX</div>
+<div id="index"><ol></ol></div>
+
+<script>
+'use strict';
+const VIEW = {w: 1600, h: 900};
+
+const TITLES = [
+  'Title', 'The incident', 'Bubblewrap', 'A container per session',
+  'The Mac wall', 'Enter the devbox', 'Scope the token', 'Paseo',
+  'One box, two lives', 'Workbox', 'Scoreboard', 'The full picture'
+];
+
+// Each slide: absolute camera + absolute element states.
+// el maps element id -> state classes appended to the element's base classes.
+const SLIDES = [
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 1  title
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 2  incident
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 3  bubblewrap
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 4  container per session
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 5  mac wall
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 6  devbox
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 7  token
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 8  paseo
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 9  contamination
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 10 workbox
+  {cam: {x: 0, y: 0, w: 1600}, el: {}},   // 11 scoreboard
+  {cam: {x: 0, y: 0, w: 1600}, el: {}}    // 12 full picture
+];
+
+const world = document.getElementById('world');
+const els = Array.from(world.querySelectorAll('.el'));
+els.forEach(e => { e.dataset.base = e.getAttribute('class'); });
+
+const texts = Array.from(document.querySelectorAll('.slide-text'));
+const dotsNav = document.getElementById('dots');
+texts.forEach((_, i) => {
+  const b = document.createElement('button');
+  b.setAttribute('aria-label', 'slide ' + (i + 1));
+  b.addEventListener('click', ev => { ev.stopPropagation(); go(i); });
+  dotsNav.appendChild(b);
+});
+const dots = Array.from(dotsNav.children);
+
+const indexEl = document.getElementById('index');
+const indexList = indexEl.querySelector('ol');
+TITLES.forEach((t, i) => {
+  const li = document.createElement('li');
+  const a = document.createElement('a');
+  a.href = '#' + (i + 1);
+  a.textContent = t;
+  a.addEventListener('click', ev => { ev.preventDefault(); indexEl.classList.remove('open'); go(i); });
+  li.appendChild(a);
+  indexList.appendChild(li);
+});
+
+let cur = -1;
+function camTransform(c) {
+  const s = VIEW.w / c.w;
+  return 'scale(' + s + ') translate(' + (-c.x) + 'px,' + (-c.y) + 'px)';
+}
+function go(n) {
+  n = Math.max(0, Math.min(SLIDES.length - 1, n));
+  if (n === cur) return;
+  cur = n;
+  const s = SLIDES[n];
+  world.style.transform = camTransform(s.cam);
+  els.forEach(e => e.setAttribute('class', e.dataset.base + ' ' + (s.el[e.id] || '')));
+  texts.forEach((t, i) => t.classList.toggle('current', i === n));
+  dots.forEach((d, i) => d.classList.toggle('current', i === n));
+  document.getElementById('scoreboard').classList.toggle('on', n === 10);
+  if (n > 0) document.body.classList.add('moved');
+  history.replaceState(null, '', '#' + (n + 1));
+}
+
+addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur - 1); }
+  else if (e.key === 'Escape') indexEl.classList.toggle('open');
+});
+document.getElementById('stage').addEventListener('click', () => go(cur + 1));
+addEventListener('hashchange', () => {
+  const n = parseInt(location.hash.slice(1), 10);
+  if (!isNaN(n)) go(n - 1);
+});
+
+const start = parseInt(location.hash.slice(1), 10);
+go(!isNaN(start) ? start - 1 : 0);
+</script>
+</body>
+</html>
+```
+
+- [ ] **Step 3: Verify structure and syntax**
+
+Run:
+```bash
+grep -c 'class="slide-text"' docs/presentations/devbox-story.html
+```
+Expected: `12`
+
+Run CHECK-JS. Expected: `JS-OK`.
+Run CHECK-NET. Expected: `NET-OK`.
+
+- [ ] **Step 4: Verify behavior in a browser (if one is available to you or the user)**
+
+Open `docs/presentations/devbox-story.html` from `file://`. Check: slide 1 copy visible; → advances through all 12 with cross-fading text; ← goes back; dots and Esc-index jump correctly; `#7` in the URL loads slide 7; no console errors. If no browser is available in this environment, state that explicitly and ask the user to eyeball it at this checkpoint.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/presentations/devbox-story.html
+git commit -m "feat(presentation): devbox story skeleton — copy, state machine, navigation"
+```
+
+---
+
+### Task 2: Act 1 scene — laptop, incident, bubblewrap, container pool, Mac wall (slides 1–5)
+
+**Files:**
+- Modify: `docs/presentations/devbox-story.html` (replace `<!-- WORLD-ACT1 -->`; fill `SLIDES[0..4]`)
+
+**Interfaces:**
+- Consumes: `.el`/`on` convention, `.wire` draw mechanic, `SLIDES` shape, camera `{x:0,y:0,w:1600}` for all five slides.
+- Produces element ids used again by Task 3/4: `laptop`, `claude`, `mac` (act-1 devices reused as tailnet clients; `phone` is created in Task 3), plus act-1-only ids: `sshkey`, `tendril`, `boundary`, `slot2`, `slot3`, `slot4`, `poollabel`, `repochip`, `macdead`.
+
+- [ ] **Step 1: Add the Act 1 SVG**
+
+Replace `<!-- WORLD-ACT1 -->` with:
+
+```html
+<!-- ================= ACT 1 : the laptop (world x 0..1600) ================= -->
+<g id="laptop" class="el">
+  <rect class="outline" x="430" y="290" width="360" height="230" rx="10"/>
+  <path class="outline faint" d="M 390 520 L 830 520 L 800 560 L 420 560 Z"/>
+  <text class="label" x="610" y="600" text-anchor="middle">my laptop</text>
+</g>
+<g id="claude" class="el">
+  <circle class="outline" cx="560" cy="405" r="22" style="stroke:var(--plan)"/>
+  <path d="M560 391 L564 401 L574 405 L564 409 L560 419 L556 409 L546 405 L556 401 Z" fill="#889CE7"/>
+  <text class="label mono" x="560" y="455" text-anchor="middle">claude code · uid 1000</text>
+</g>
+<g id="sshkey" class="el">
+  <circle class="outline" cx="1050" cy="600" r="16"/>
+  <path class="outline" d="M 1063 609 L 1092 638 M 1082 628 L 1090 620 M 1074 636 L 1082 628"/>
+  <text class="label mono" x="1055" y="670" text-anchor="middle">~/.ssh</text>
+</g>
+<path id="tendril" class="el wire danger glow-danger" style="--len:620"
+  d="M 585 415 C 700 440, 820 500, 1030 592"/>
+<rect id="boundary" class="el outline" x="505" y="350" width="150" height="130" rx="8"/>
+<g id="slot2" class="el"><rect class="outline faint" x="1090" y="300" width="150" height="130" rx="8"/></g>
+<g id="slot3" class="el"><rect class="outline faint" x="1260" y="300" width="150" height="130" rx="8"/></g>
+<g id="slot4" class="el"><rect class="outline faint" x="1175" y="450" width="150" height="130" rx="8"/></g>
+<text id="poollabel" class="el label mono" x="1160" y="260" text-anchor="middle">systemd-nspawn · ephemeral · 4 slots</text>
+<g id="repochip" class="el">
+  <rect class="outline" x="940" y="330" width="120" height="34" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono bright" x="1000" y="352" text-anchor="middle">repo (cwd)</text>
+</g>
+<g id="mac" class="el">
+  <rect class="outline" x="430" y="640" width="300" height="190" rx="10"/>
+  <text class="label" x="580" y="790" text-anchor="middle" style="font-size:13px">my macbook</text>
+</g>
+<g id="macdead" class="el">
+  <rect x="450" y="660" width="120" height="100" rx="8" fill="none"
+    stroke="var(--ink-3)" stroke-dasharray="6 6"/>
+  <text class="label mono" x="510" y="800" text-anchor="middle"
+    style="fill:var(--danger)">namespaces: not found</text>
+</g>
+```
+
+Add these Act-1 style rules inside `<style>` (before the `@media` block):
+
+```css
+/* boundary morph states */
+#boundary{stroke:var(--danger);stroke-dasharray:7 7}
+#boundary.solid{stroke:var(--ink-2);stroke-dasharray:1 0}
+#boundary.pool{x:920px;y:300px;width:150px;height:130px}
+/* repochip flies into the pool slot */
+#repochip.docked{transform:translate(-15px,-6px);}
+#mac.dim rect{stroke:var(--ink-3)}
+```
+
+- [ ] **Step 2: Fill in `SLIDES[0..4]`**
+
+Replace the first five entries of `SLIDES`:
+
+```js
+  // 1 title — a laptop alone in the dark
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on'}},
+  // 2 incident — claude wakes, tendril reaches for ~/.ssh
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on'}},
+  // 3 bubblewrap — dashed boundary around the agent, tendril blocked (gone)
+  {cam: {x: 0, y: 0, w: 1600}, el: {laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on'}},
+  // 4 container per session — boundary morphs to a solid pool slot; slots + repo appear
+  {cam: {x: 0, y: 0, w: 1600}, el: {
+    laptop: 'on', claude: 'on', boundary: 'on solid pool',
+    slot2: 'on', slot3: 'on', slot4: 'on', poollabel: 'on', repochip: 'on docked'}},
+  // 5 mac wall — pool dims context, macbook appears, container fails to render
+  {cam: {x: 0, y: 0, w: 1600}, el: {
+    laptop: 'on', boundary: 'on solid pool', slot2: 'on', slot3: 'on', slot4: 'on',
+    mac: 'on', macdead: 'on'}},
+```
+
+- [ ] **Step 3: Verify**
+
+Run CHECK-JS (expected `JS-OK`), CHECK-NET (expected `NET-OK`), and:
+```bash
+for id in laptop claude sshkey tendril boundary slot2 slot3 slot4 poollabel repochip mac macdead; do
+  grep -q "id=\"$id\"" docs/presentations/devbox-story.html || echo "MISSING $id"
+done; echo IDS-OK
+```
+Expected: `IDS-OK` with no `MISSING` lines.
+
+- [ ] **Step 4: Visual check**
+
+In a browser: slide 2's tendril draws itself toward the key; slide 3's dashed boundary appears around the agent and the tendril is gone; advancing to slide 4 the SAME rect visibly travels across the stage and becomes solid (the morph — if it pops instead of gliding, the `x/y/width/height` transitions aren't applying); slide 5 shows the grey dashed failed container on the mac. Then walk ← back to slide 1 and confirm every state reverses cleanly. If no browser is available, say so and ask the user to check.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/presentations/devbox-story.html
+git commit -m "feat(presentation): act 1 — incident, bubblewrap, container pool, mac wall"
+```
+
+---
+
+### Task 3: Act 2 scene — redtruck, devbox, token scoping, paseo (slides 6–8)
+
+**Files:**
+- Modify: `docs/presentations/devbox-story.html` (replace `<!-- WORLD-ACT2 -->`; fill `SLIDES[5..7]`)
+
+**Interfaces:**
+- Consumes: Task 2 device ids `laptop`, `mac` (`phone` is created here), `.wire`/`.el` conventions.
+- Produces ids Task 4 reuses: `redtruck`, `devbox`, `agentglyph`, `hostkeys`, `github`, `patline`, `allowlist`, `paseod`, `tsdoor`, `mesh`, `worktrees`, `phone`.
+- Cameras produced: `SRV = {x:1720,y:-10,w:1600}` (slides 6–7), `WIDE = {x:0,y:-350,w:3300}` (slide 8; Task 4 reuses for slide 12).
+
+- [ ] **Step 1: Add the Act 2 SVG**
+
+Replace `<!-- WORLD-ACT2 -->` with:
+
+```html
+<!-- ================= ACT 2 : redtruck (world x 1800..3300) ================= -->
+<!-- Layout invariants: devbox 1940..2440, workbox (Task 4) 2560..3060, both y 250..630;
+     hostkeys is a glass strip along the bottom of redtruck (y 670..770), UNDER both boxes,
+     so nothing collides when workbox spawns in slide 10. -->
+<g id="redtruck" class="el">
+  <rect class="outline" x="1860" y="170" width="1240" height="620" rx="14"/>
+  <text class="label bright" x="1880" y="150" style="font-size:18px">redtruck · NixOS server</text>
+</g>
+<g id="devbox" class="el">
+  <rect class="outline" x="1940" y="250" width="500" height="380" rx="10" style="stroke:var(--ink)"/>
+  <text class="label bright mono" x="1960" y="285">devbox</text>
+</g>
+<g id="agentglyph" class="el">
+  <circle class="outline" cx="2100" cy="400" r="20" style="stroke:var(--plan)"/>
+  <path d="M2100 387 L2104 396 L2113 400 L2104 404 L2100 413 L2096 404 L2087 400 L2096 396 Z" fill="#889CE7"/>
+  <text class="label mono" x="2100" y="450" text-anchor="middle">agent · uid 1500</text>
+  <text class="label mono" x="2100" y="472" text-anchor="middle" style="font-size:11px">outside the host uid range</text>
+</g>
+<g id="hostkeys" class="el">
+  <rect x="1940" y="670" width="1120" height="100" rx="8" fill="rgba(255,255,255,.03)"
+    stroke="var(--safe)" stroke-width="1.5"/>
+  <circle class="outline" cx="2060" cy="710" r="12"/>
+  <path class="outline" d="M 2070 717 L 2092 739 M 2084 731 L 2090 725"/>
+  <circle class="outline" cx="2160" cy="710" r="12"/>
+  <path class="outline" d="M 2170 717 L 2192 739 M 2184 731 L 2190 725"/>
+  <circle class="outline" cx="2260" cy="710" r="12"/>
+  <path class="outline" d="M 2270 717 L 2292 739 M 2284 731 L 2290 725"/>
+  <text class="label mono" x="2400" y="726">ssh · sops · signing — host only</text>
+</g>
+<g id="sopsmounts" class="el">
+  <path class="wire safe" style="--len:40" d="M 2050 668 L 2050 632"/>
+  <text class="label mono" x="2050" y="612" text-anchor="middle" style="fill:var(--safe)">/run/secrets (ro)</text>
+</g>
+<g id="github" class="el">
+  <circle class="outline" cx="2950" cy="60" r="30"/>
+  <text class="label bright" x="2950" y="66" text-anchor="middle" style="font-size:13px">GitHub</text>
+</g>
+<path id="patline" class="el wire safe glow-safe" style="--len:600"
+  d="M 2440 320 C 2650 240, 2820 130, 2920 78"/>
+<g id="patlabel" class="el">
+  <text class="label mono" x="2620" y="150" text-anchor="middle" style="fill:var(--safe)">fine-grained PAT</text>
+  <path class="outline" style="stroke:var(--safe)" d="M 2730 200 L 2750 200 L 2750 220 L 2740 230 L 2730 220 Z"/>
+  <text class="label mono" x="2765" y="220" style="font-size:11px">branch ruleset</text>
+</g>
+<g id="allowlist" class="el">
+  <rect class="outline" x="3020" y="30" width="140" height="30" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono" x="3090" y="50" text-anchor="middle">repo: nixcfg ✓</text>
+  <rect class="outline" x="3020" y="70" width="140" height="30" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono" x="3090" y="90" text-anchor="middle">repo: blog ✓</text>
+  <rect class="outline faint" x="3020" y="110" width="140" height="30" rx="4" stroke-dasharray="5 5"/>
+  <text class="label mono" x="3090" y="130" text-anchor="middle" style="fill:var(--ink-3)">everything else ✕</text>
+</g>
+<g id="paseod" class="el glow-plan">
+  <circle cx="2160" cy="540" r="10" fill="var(--plan)"/>
+  <circle class="outline" cx="2160" cy="540" r="22" style="stroke:var(--plan)"/>
+  <text class="label mono" x="2160" y="590" text-anchor="middle" style="fill:var(--plan)">paseo · 127.0.0.1:6767</text>
+</g>
+<g id="tsdoor" class="el">
+  <rect x="1930" y="490" width="20" height="60" rx="3" fill="var(--bg)" stroke="var(--safe)" stroke-width="1.5"/>
+  <text class="label mono" x="1900" y="585" text-anchor="end" style="fill:var(--safe)">tailscale serve · 443</text>
+</g>
+<g id="worktrees" class="el">
+  <path class="outline faint" d="M 2320 530 h 90 M 2320 555 h 90 M 2320 580 h 90"/>
+  <text class="label mono" x="2365" y="615" text-anchor="middle" style="font-size:11px">a worktree per session</text>
+</g>
+<g id="phone" class="el">
+  <rect class="outline" x="1000" y="640" width="80" height="150" rx="10"/>
+  <text class="label" x="1040" y="830" text-anchor="middle" style="font-size:13px">my phone</text>
+</g>
+<g id="mesh" class="el">
+  <path class="wire plan" style="--len:1200" d="M 1935 505 C 1500 560, 1200 500, 800 430"/>
+  <path class="wire plan" style="--len:1300" d="M 1935 525 C 1550 650, 1150 730, 740 735"/>
+  <path class="wire plan" style="--len:950" d="M 1935 540 C 1650 660, 1350 730, 1090 715"/>
+  <text class="label" x="1450" y="380" text-anchor="middle" style="fill:var(--plan)">the tailnet</text>
+</g>
+```
+
+- [ ] **Step 2: Fill in `SLIDES[5..7]`**
+
+```js
+  // 6 devbox — camera pans right to redtruck; keys stay outside the wall
+  {cam: {x: 1720, y: -10, w: 1600}, el: {
+    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on', sopsmounts: 'on'}},
+  // 7 scope the token — PAT draws to GitHub, allowlist lights up
+  {cam: {x: 1720, y: -10, w: 1600}, el: {
+    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
+    github: 'on', patline: 'on', patlabel: 'on', allowlist: 'on'}},
+  // 8 paseo — wide shot: daemon, door, tailnet mesh to laptop/mac/phone
+  {cam: {x: 0, y: -350, w: 3300}, el: {
+    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
+    github: 'on', patline: 'on', allowlist: 'on',
+    paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
+    laptop: 'on', mac: 'on', phone: 'on'}},
+```
+
+- [ ] **Step 3: Verify**
+
+Run CHECK-JS (`JS-OK`), CHECK-NET (`NET-OK`), and the id probe:
+```bash
+for id in redtruck devbox agentglyph hostkeys sopsmounts github patline patlabel allowlist paseod tsdoor worktrees phone mesh; do
+  grep -q "id=\"$id\"" docs/presentations/devbox-story.html || echo "MISSING $id"
+done; echo IDS-OK
+```
+Expected: `IDS-OK`, no `MISSING`.
+
+- [ ] **Step 4: Visual check**
+
+In a browser: 5→6 pans the camera right in one smooth move; keys sit outside the devbox wall behind blue glass; 6→7 draws the PAT line and lights the allowlist; 7→8 zooms out until laptop, mac and phone are visible with three periwinkle mesh lines drawing toward the door. Walk backward 8→5 and confirm the camera returns and act-1 elements restore. Adjust coordinates if labels collide; keep ids stable.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/presentations/devbox-story.html
+git commit -m "feat(presentation): act 2 — devbox, scoped token, paseo front door"
+```
+
+---
+
+### Task 4: Act 3 — contamination, workbox, scoreboard, full picture (slides 9–12)
+
+**Files:**
+- Modify: `docs/presentations/devbox-story.html` (replace `<!-- WORLD-ACT3 -->` and `<!-- SCOREBOARD -->`; fill `SLIDES[8..11]`)
+
+**Interfaces:**
+- Consumes: all Task 2/3 ids; cameras `SRV`/`WIDE`.
+- Produces: ids `workrepo`, `persrepo`, `haze`, `workbox`, `wbtoken`, `dbtoken`, `packets`; HTML overlay `#scoreboard` content; camera `ZOOM = {x:1880,y:200,w:1000}`.
+
+- [ ] **Step 1: Add the Act 3 SVG**
+
+Replace `<!-- WORLD-ACT3 -->` with:
+
+```html
+<!-- ================= ACT 3 : contamination & workbox ================= -->
+<g id="persrepo" class="el">
+  <rect class="outline" x="2000" y="330" width="130" height="36" rx="4" style="stroke:var(--plan)"/>
+  <text class="label mono" x="2065" y="353" text-anchor="middle">personal repo</text>
+</g>
+<g id="workrepo" class="el">
+  <rect class="outline" x="2280" y="330" width="130" height="36" rx="4" style="stroke:var(--plan)"/>
+  <text class="label mono" x="2345" y="353" text-anchor="middle">work repo</text>
+</g>
+<ellipse id="haze" class="el glow-danger" cx="2205" cy="350" rx="150" ry="55"
+  fill="rgba(237,21,102,.14)" stroke="var(--danger)" stroke-dasharray="4 6"/>
+<g id="workbox" class="el">
+  <rect class="outline" x="2560" y="250" width="500" height="380" rx="10" style="stroke:var(--ink)"/>
+  <text class="label bright mono" x="2580" y="285">workbox</text>
+</g>
+<g id="dbtoken" class="el">
+  <rect class="outline" x="2100" y="262" width="280" height="28" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono" x="2240" y="281" text-anchor="middle" style="font-size:11px">PAT-A · signing key A</text>
+</g>
+<g id="wbtoken" class="el">
+  <rect class="outline" x="2720" y="262" width="280" height="28" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono" x="2860" y="281" text-anchor="middle" style="font-size:11px">PAT-B · signing key B</text>
+</g>
+<g id="packets" class="el">
+  <circle class="packet p1" r="4" fill="var(--plan)"/>
+  <circle class="packet p2" r="4" fill="var(--plan)"/>
+  <circle class="packet p3" r="4" fill="var(--safe)"/>
+</g>
+```
+
+Add to `<style>` (before the `@media` block) — workbox slides in from the devbox (spawn), repos migrate on slide 10, packets travel the mesh on slide 12:
+
+```css
+/* slide 10: workbox spawns from under the devbox and slides to its slot; work repo migrates */
+#workbox{transform:translateX(-620px)}
+#workbox.split{transform:translateX(0)}
+#workrepo.migrated{transform:translate(340px,0)}
+/* slide 9: contamination haze bleeds in late */
+#haze{transition:opacity 1s var(--ease) .5s}
+/* slide 12 packets: travel the mesh and PAT paths (must match the path d= values above) */
+.packet{opacity:0}
+#packets.on .packet{opacity:1}
+.packet.p1{offset-path:path('M 1935 505 C 1500 560, 1200 500, 800 430');animation:travel 5s linear infinite}
+.packet.p2{offset-path:path('M 1935 525 C 1550 650, 1150 730, 740 735');animation:travel 6s linear infinite reverse}
+.packet.p3{offset-path:path('M 2440 320 C 2650 240, 2820 130, 2920 78');animation:travel 4s linear infinite}
+@keyframes travel{from{offset-distance:0%}to{offset-distance:100%}}
+```
+
+- [ ] **Step 2: Add the scoreboard overlay**
+
+Replace `<!-- SCOREBOARD -->` with:
+
+```html
+<table>
+  <thead><tr><th></th><th>raw laptop</th><th>bubblewrap</th><th>ephemeral container</th><th>server devbox</th></tr></thead>
+  <tbody>
+    <tr><th>filesystem</th><td class="bad">everything you own</td><td class="mid">what you remembered to mask</td><td class="good">one repo, bind-mounted</td><td class="good">container fs only</td></tr>
+    <tr><th>network</th><td class="bad">yours</td><td class="mid">yours unless unshared</td><td class="mid">host's</td><td class="good">private veth + one tailscale door</td></tr>
+    <tr><th>credentials</th><td class="bad">all your keys</td><td class="mid">masked, if you remembered</td><td class="good">none mounted</td><td class="good">scoped PAT + per-box signing key</td></tr>
+    <tr><th>portability</th><td class="good">anywhere</td><td class="bad">linux only</td><td class="bad">linux only</td><td class="good">any device on the tailnet</td></tr>
+    <tr><th>persistence</th><td class="bad">agent lives in your home</td><td class="mid">none</td><td class="mid">discarded on exit</td><td class="good">persistent · a worktree per session</td></tr>
+  </tbody>
+</table>
+```
+
+Add to `<style>`:
+
+```css
+#scoreboard table{width:100%;height:100%;border-collapse:collapse;font-size:clamp(11px,1vw,15px)}
+#scoreboard th,#scoreboard td{border:1px solid rgba(143,143,143,.25);padding:.6em .8em;text-align:left;font-weight:300;vertical-align:middle}
+#scoreboard thead th{color:var(--ink);font-weight:400;letter-spacing:.08em;text-transform:uppercase;font-size:.85em}
+#scoreboard tbody th{color:var(--ink-3);letter-spacing:.15em;text-transform:uppercase;font-size:.8em}
+#scoreboard td{opacity:0;transition:opacity .5s var(--ease)}
+#scoreboard.on td{opacity:1}
+#scoreboard.on tbody tr:nth-child(1) td{transition-delay:.3s}
+#scoreboard.on tbody tr:nth-child(2) td{transition-delay:.5s}
+#scoreboard.on tbody tr:nth-child(3) td{transition-delay:.7s}
+#scoreboard.on tbody tr:nth-child(4) td{transition-delay:.9s}
+#scoreboard.on tbody tr:nth-child(5) td{transition-delay:1.1s}
+#scoreboard .good{color:#a5dfc2}
+#scoreboard .mid{color:var(--ink-3)}
+#scoreboard .bad{color:#f2a0bd}
+```
+
+- [ ] **Step 3: Fill in `SLIDES[8..11]`**
+
+```js
+  // 9 contamination — zoom into the devbox; two repos, one haze
+  {cam: {x: 1880, y: 200, w: 1000}, el: {
+    devbox: 'on', agentglyph: 'on', persrepo: 'on', workrepo: 'on', haze: 'on',
+    paseod: 'on', worktrees: 'on', dbtoken: 'on'}},
+  // 10 workbox — second box splits off; work repo migrates; per-box tokens
+  {cam: {x: 1720, y: -10, w: 1600}, el: {
+    redtruck: 'on', devbox: 'on', agentglyph: 'on', persrepo: 'on',
+    workrepo: 'on migrated', workbox: 'on split',
+    dbtoken: 'on', wbtoken: 'on', hostkeys: 'on'}},
+  // 11 scoreboard — overlay carries the slide; world dims behind it
+  {cam: {x: 1720, y: -10, w: 1600}, el: {}},
+  // 12 full picture — everything on, packets flowing
+  {cam: {x: 0, y: -350, w: 3300}, el: {
+    redtruck: 'on', devbox: 'on', workbox: 'on split', agentglyph: 'on',
+    persrepo: 'on', workrepo: 'on migrated', dbtoken: 'on', wbtoken: 'on',
+    hostkeys: 'on', github: 'on', patline: 'on', allowlist: 'on',
+    paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
+    laptop: 'on', mac: 'on', phone: 'on', packets: 'on'}},
+```
+
+Note slide 11's empty `el` map hides the whole world behind the scoreboard — that is intentional (everything fades, table fades in). The scoreboard toggle already exists in `go()` from Task 1.
+
+- [ ] **Step 4: Verify**
+
+Run CHECK-JS (`JS-OK`), CHECK-NET (`NET-OK`), plus:
+```bash
+grep -c '<tr>' docs/presentations/devbox-story.html   # expected: 6 (1 head + 5 body)
+for id in persrepo workrepo haze workbox dbtoken wbtoken packets scoreboard; do
+  grep -q "id=\"$id\"" docs/presentations/devbox-story.html || echo "MISSING $id"
+done; echo IDS-OK
+```
+
+- [ ] **Step 5: Visual check**
+
+In a browser: 8→9 zooms into the box, haze bleeds between the repos; 9→10 the workbox visibly slides out of the devbox while the work repo glides into it; 10→11 world fades, table rows stagger in; 11→12 zoom-out to the full system with packets traveling the mesh. Walk all 12 backward to slide 1. Check `prefers-reduced-motion` (in devtools: Rendering → emulate) still lands every end state.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add docs/presentations/devbox-story.html
+git commit -m "feat(presentation): act 3 — contamination, workbox split, scoreboard, finale"
+```
+
+---
+
+### Task 5: Final verification pass and fixes
+
+**Files:**
+- Modify: `docs/presentations/devbox-story.html` (fixes only)
+
+**Interfaces:**
+- Consumes: the complete deck.
+- Produces: the verified artifact; no new names.
+
+- [ ] **Step 1: Run every automated check**
+
+```bash
+grep -c 'class="slide-text"' docs/presentations/devbox-story.html   # 12
+```
+Run CHECK-JS (`JS-OK`) and CHECK-NET (`NET-OK`).
+
+- [ ] **Step 2: Walk the spec's manual checklist in a browser**
+
+From the spec's Testing section, confirm each item and note failures:
+1. Every slide reachable forward AND backward with correct end states (24 transitions total).
+2. Deep links `#1`…`#12` each land on the right state, including camera position.
+3. Esc index lists 12 titles and jumps correctly; dots match.
+4. Reduced-motion emulation renders every final state correctly (no element stuck mid-transition).
+5. Opened from `file://`: zero console errors, zero network requests (devtools Network tab stays empty).
+6. Text panel copy is legible at 1280px-wide and 1920px-wide windows; no chip overflow on slides 3–4.
+
+If no browser is available in the execution environment, stop and ask the user to run this checklist — do not mark it complete on faith.
+
+- [ ] **Step 3: Fix anything the checklist surfaced**
+
+Make the minimal fix, re-run the relevant check, repeat until clean.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add docs/presentations/devbox-story.html
+git commit -m "fix(presentation): final verification pass"
+```
