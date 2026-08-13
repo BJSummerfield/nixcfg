@@ -100,6 +100,8 @@ body.moved #hint{opacity:0}
 /* slide 10: workbox spawns from under the devbox and slides to its slot; work repo migrates */
 #workbox{transform:translateX(-620px)}
 #workbox.split{transform:translateX(0)}
+#wbsecrets{transform:translateX(-620px)}
+#wbsecrets.split{transform:translateX(0)}
 #workrepo.migrated{transform:translate(340px,0)}
 /* slide 9: contamination haze bleeds in late */
 #haze{transition:opacity 1s var(--ease) .5s}
@@ -427,6 +429,24 @@ body.moved #hint{opacity:0}
   <path d="M 2500 260 L 2500 620" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="4 6"/>
   <text class="label mono" x="2500" y="240" text-anchor="middle" style="font-size:11px">nothing shared</text>
 </g>
+<g id="dbsecrets" class="el">
+  <rect x="1940" y="670" width="500" height="100" rx="8" fill="rgba(255,255,255,.03)"
+    stroke="var(--safe)" stroke-width="1.5"/>
+  <circle class="outline" cx="2010" cy="710" r="12"/>
+  <path class="outline" d="M 2020 717 L 2042 739 M 2034 731 L 2040 725"/>
+  <circle class="outline" cx="2085" cy="710" r="12"/>
+  <path class="outline" d="M 2095 717 L 2117 739 M 2109 731 L 2115 725"/>
+  <text class="label mono" x="2145" y="716">github token · signing key — its own</text>
+</g>
+<g id="wbsecrets" class="el">
+  <rect x="2560" y="670" width="500" height="100" rx="8" fill="rgba(255,255,255,.03)"
+    stroke="var(--safe)" stroke-width="1.5"/>
+  <circle class="outline" cx="2630" cy="710" r="12"/>
+  <path class="outline" d="M 2640 717 L 2662 739 M 2654 731 L 2660 725"/>
+  <circle class="outline" cx="2705" cy="710" r="12"/>
+  <path class="outline" d="M 2715 717 L 2737 739 M 2729 731 L 2735 725"/>
+  <text class="label mono" x="2765" y="716">github token · signing key — its own</text>
+</g>
 <g id="packets" class="el">
   <circle class="packet p1" r="4" fill="var(--plan)"/>
   <circle class="packet p2" r="4" fill="var(--plan)"/>
@@ -499,7 +519,7 @@ const SLIDES = [
   {cam: {x: 1820, y: 70, w: 1330}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', persrepo: 'on',
     workrepo: 'on migrated', workbox: 'on split',
-    dbtoken: 'on', wbtoken: 'on', agentglyph2: 'on', separator: 'on', hostkeys: 'on'}},
+    dbtoken: 'on', wbtoken: 'on', agentglyph2: 'on', separator: 'on', dbsecrets: 'on', wbsecrets: 'on split'}},
   // 11 scoreboard — overlay carries the slide; world dims behind it
   {cam: {x: 1820, y: 70, w: 1330}, el: {}},
   // 12 full picture — everything on, packets flowing
