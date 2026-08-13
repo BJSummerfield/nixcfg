@@ -253,9 +253,12 @@ body.moved #hint{opacity:0}
       <div class="kicker">Multi-instance</div>
       <h1>Workbox: isolation between lives</h1>
       <p>The container module went multi-instance. <strong>workbox</strong> is
-      a second box with its own GitHub token — a different allowlist — and its
-      own signing key, so a commit's signature says <em>which box</em> made
-      it.</p>
+      a second box that shares nothing with the first:</p>
+      <div class="chips">
+        <div class="chip pro">Its own GitHub token — a different fine-grained PAT with a different repo allowlist</div>
+        <div class="chip pro">Its own signing key — a commit's signature says <em>which box</em> made it</div>
+        <div class="chip pro">Its own agent user and filesystem — separate home, separate repos, separate worktrees</div>
+      </div>
       <p>Personal and work can no longer touch.</p>
     </div>
 
@@ -415,6 +418,15 @@ body.moved #hint{opacity:0}
   <rect class="outline" x="2720" y="262" width="280" height="28" rx="4" style="stroke:var(--safe)"/>
   <text class="label mono" x="2860" y="281" text-anchor="middle" style="font-size:11px">PAT-B · signing key B</text>
 </g>
+<g id="agentglyph2" class="el">
+  <circle class="outline" cx="2720" cy="400" r="20" style="stroke:var(--plan)"/>
+  <path d="M2720 387 L2724 396 L2733 400 L2724 404 L2720 413 L2716 404 L2707 400 L2716 396 Z" fill="#889CE7"/>
+  <text class="label mono" x="2720" y="450" text-anchor="middle">its own agent user</text>
+</g>
+<g id="separator" class="el">
+  <path d="M 2500 260 L 2500 620" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="4 6"/>
+  <text class="label mono" x="2500" y="240" text-anchor="middle" style="font-size:11px">nothing shared</text>
+</g>
 <g id="packets" class="el">
   <circle class="packet p1" r="4" fill="var(--plan)"/>
   <circle class="packet p2" r="4" fill="var(--plan)"/>
@@ -487,12 +499,12 @@ const SLIDES = [
   {cam: {x: 1820, y: 70, w: 1330}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', persrepo: 'on',
     workrepo: 'on migrated', workbox: 'on split',
-    dbtoken: 'on', wbtoken: 'on', hostkeys: 'on'}},
+    dbtoken: 'on', wbtoken: 'on', agentglyph2: 'on', separator: 'on', hostkeys: 'on'}},
   // 11 scoreboard — overlay carries the slide; world dims behind it
   {cam: {x: 1820, y: 70, w: 1330}, el: {}},
   // 12 full picture — everything on, packets flowing
   {cam: {x: 280, y: -370, w: 2950}, el: {
-    redtruck: 'on', devbox: 'on', workbox: 'on split', agentglyph: 'on',
+    redtruck: 'on', devbox: 'on', workbox: 'on split', agentglyph: 'on', agentglyph2: 'on',
     persrepo: 'on', workrepo: 'on migrated', dbtoken: 'on', wbtoken: 'on',
     hostkeys: 'on', github: 'on', patline: 'on', allowlist: 'on',
     paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
