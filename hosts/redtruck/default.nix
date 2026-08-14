@@ -148,7 +148,6 @@
         helix = {
           enable = true;
           lsp = {
-            bicep.enable = true;
             css.enable = true;
             graphql.enable = true;
             html.enable = true;

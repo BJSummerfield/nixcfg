@@ -73,6 +73,19 @@
       # symlinks. The wrapper is treefmt driving nixfmt, and respects gitignore.
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
+      # Exposed so `nix build .#encode_queue` works and so the checks below
+      # build it. bicep-langserver is deliberately absent: no host enables it
+      # and its dotnet SDK dependency is a 712 MiB closure.
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          encode_queue = pkgs.callPackage ./modules/encode_queue/package.nix { };
+        }
+      );
+
       # Evaluation-only. `nix flake check` builds nothing beyond one empty
       # marker derivation per configuration (devboxes likewise only touches
       # $out on success); the work is forcing the eval. Everything lives
@@ -100,7 +113,15 @@
             inherit nixpkgs inputs;
             system = "x86_64-linux";
           };
-        };
+        }
+        # Unlike the eval-only checks above, these really build. A package
+        # added later to `packages` is covered without anyone wiring it up —
+        # but derivations defined inside modules (callPackages that never
+        # become a flake output) are structurally outside this set and stay
+        # uncovered.
+        // nixpkgs.lib.mapAttrs' (
+          name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
+        ) inputs.self.packages.x86_64-linux;
 
       darwinConfigurations = {
         mac = inputs.nix-darwin.lib.darwinSystem {

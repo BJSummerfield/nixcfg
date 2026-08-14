@@ -18,7 +18,8 @@ in
           mpls = {
             command = "${mplsModule.package}/bin/mpls";
             args = [
-              "--dark-mode"
+              "--theme"
+              "dark"
               "--enable-emoji"
             ];
           };
