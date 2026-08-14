@@ -3,7 +3,12 @@
 #   sudo nixos-container root-login terraria
 #   tailscale up --hostname=terraria --advertise-tags=tag:solo-node
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.terraria-server;
 in
@@ -49,7 +54,10 @@ in
       localAddress = "192.168.100.31";
 
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
       ];
 
       bindMounts = {
@@ -68,8 +76,7 @@ in
       };
 
       config = { config, lib, ... }: {
-        nixpkgs.config.allowUnfreePredicate = pkg:
-          builtins.elem (lib.getName pkg) [ "terraria-server" ];
+        nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "terraria-server" ];
 
         services.terraria = {
           enable = true;
@@ -84,7 +91,10 @@ in
         services.tailscale.enable = true;
 
         networking = {
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
+          nameservers = [
+            "9.9.9.9"
+            "1.1.1.1"
+          ];
           firewall = {
             enable = true;
             trustedInterfaces = [ "tailscale0" ];

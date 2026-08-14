@@ -1,4 +1,9 @@
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.jellybox;
   jellyfinBin = lib.getExe pkgs.jellyfin-media-player;

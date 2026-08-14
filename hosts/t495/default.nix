@@ -1,14 +1,13 @@
 { pkgs, ... }:
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ./disko.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-      ../../users/sumriri.nix
-      ../../users/sword.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ./disko.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+    ../../users/sumriri.nix
+    ../../users/sword.nix
+  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -47,7 +46,11 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "mac" ];
+    users.waktu.authorizedKeys = [
+      "onepassword"
+      "redtruck"
+      "mac"
+    ];
   };
   home-manager.users = {
     waktu = {

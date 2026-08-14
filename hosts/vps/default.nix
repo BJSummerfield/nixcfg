@@ -1,13 +1,18 @@
-{ pkgs, lib, config, modulesPath, ... }:
 {
-  imports =
-    [
-      ./disko.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-      # QEMU guest tools (virtio drivers, guest agent)
-      "${modulesPath}/profiles/qemu-guest.nix"
-    ];
+  pkgs,
+  lib,
+  config,
+  modulesPath,
+  ...
+}:
+{
+  imports = [
+    ./disko.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+    # QEMU guest tools (virtio drivers, guest agent)
+    "${modulesPath}/profiles/qemu-guest.nix"
+  ];
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
@@ -81,7 +86,12 @@
         tailscaleAccess = false;
       };
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" "mac" ];
+    users.waktu.authorizedKeys = [
+      "onepassword"
+      "redtruck"
+      "t495"
+      "mac"
+    ];
   };
   home-manager.users = {
     waktu = {

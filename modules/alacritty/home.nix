@@ -1,4 +1,9 @@
-{ lib, config, themeConstants, ... }:
+{
+  lib,
+  config,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;

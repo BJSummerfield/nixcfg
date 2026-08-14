@@ -1,4 +1,9 @@
-{ pkgs, config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 let
   cfg = config.mine.user.niri;
 in
@@ -28,7 +33,10 @@ in
         xdg-desktop-portal-gnome
         xdg-desktop-portal-gtk
       ];
-      config.common.default = [ "gnome" "gtk" ];
+      config.common.default = [
+        "gnome"
+        "gtk"
+      ];
     };
     home.packages = with pkgs; [
       brightnessctl

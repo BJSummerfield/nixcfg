@@ -1,0 +1,7 @@
+# Revisions git blame should skip. Append future bulk reformats here.
+#
+# GitHub's blame UI reads this file automatically. Local clones need:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Repo-wide reformat, nixpkgs-fmt -> nixfmt. No logic changed.
+9b06193a386bf5e16dd168174d50d3a9244591c4

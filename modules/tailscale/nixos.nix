@@ -3,20 +3,19 @@ let
   cfg = config.mine.system.tailscale;
 in
 {
-  options.mine.system.tailscale =
-    {
-      enable = lib.mkEnableOption "Tailscale";
+  options.mine.system.tailscale = {
+    enable = lib.mkEnableOption "Tailscale";
 
-      ssh = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Whether to allow SSH connections over the tailnet interface.
-          Requires mine.system.openssh.enable for an sshd to actually be listening.
-        '';
-      };
-
+    ssh = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether to allow SSH connections over the tailnet interface.
+        Requires mine.system.openssh.enable for an sshd to actually be listening.
+      '';
     };
+
+  };
 
   config = lib.mkIf cfg.enable {
     services.tailscale = {

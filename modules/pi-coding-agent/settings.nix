@@ -19,8 +19,12 @@ let
   };
 
   # each enabled model, followed by its aliases
-  entriesFor = name:
-    let m = llm.models.${name}; aliases = m.aliases or { }; in
+  entriesFor =
+    name:
+    let
+      m = llm.models.${name};
+      aliases = m.aliases or { };
+    in
     [ (mkModel name m) ]
     ++ map (aliasId: mkAlias m aliasId aliases.${aliasId}) (builtins.attrNames aliases);
 
@@ -32,8 +36,7 @@ let
   # the smaller-window alias if the default has one, else the model itself.
   # Assumes at most one alias: with two, `head` picks the lexicographically
   # first, which is arbitrary - pick deliberately if a second is ever added.
-  budgetModel =
-    if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
+  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
 in
 {
   settings = {

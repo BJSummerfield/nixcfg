@@ -4,7 +4,12 @@
 #   tailscale up --hostname=vikunja --advertise-tags=tag:solo-node
 #   tailscale serve --bg 3456
 
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   cfg = config.mine.system.vikunja-server;
 in
@@ -48,7 +53,10 @@ in
 
       # tun is needed for tailscale network
       allowedDevices = [
-        { modifier = "rwm"; node = "/dev/net/tun"; }
+        {
+          modifier = "rwm";
+          node = "/dev/net/tun";
+        }
       ];
 
       bindMounts = {
@@ -69,93 +77,110 @@ in
         };
       };
 
-      config = { config, pkgs, lib, ... }: {
-        services.vikunja = {
-          enable = true;
-          # Tailscale serve terminates TLS in front of us
-          frontendScheme = "https";
-          frontendHostname = "vikunja.mist-gamma.ts.net";
-          port = 3456;
-          environmentFiles = [ "/run/secrets/vikunja-jwt-secret" ];
-          database = {
-            type = "postgres";
-            host = "/run/postgresql"; # unix socket — no password
-            user = "vikunja";
-            database = "vikunja";
-          };
-          settings = {
-            service = {
-              enableregistration = true; # flip to false after creating your account
-              # JWTSecret deliberately omitted — comes from environmentFiles
+      config =
+        {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        {
+          services.vikunja = {
+            enable = true;
+            # Tailscale serve terminates TLS in front of us
+            frontendScheme = "https";
+            frontendHostname = "vikunja.mist-gamma.ts.net";
+            port = 3456;
+            environmentFiles = [ "/run/secrets/vikunja-jwt-secret" ];
+            database = {
+              type = "postgres";
+              host = "/run/postgresql"; # unix socket — no password
+              user = "vikunja";
+              database = "vikunja";
+            };
+            settings = {
+              service = {
+                enableregistration = true; # flip to false after creating your account
+                # JWTSecret deliberately omitted — comes from environmentFiles
+              };
             };
           };
-        };
 
-        services.postgresql = {
-          enable = true;
-          ensureDatabases = [ "vikunja" ];
-          ensureUsers = [{
-            name = "vikunja";
-            ensureDBOwnership = true;
-          }];
-        };
-
-        # Nightly DB dump. Lives inside /var/lib/vikunja (the DynamicUser
-        # state dir), so the vikunja user can write it. Restic on the host
-        # backs up the container's whole state dir, capturing files + dump.
-        systemd.services.vikunja-db-dump = {
-          description = "Dump Vikunja Postgres DB for backup";
-          serviceConfig = {
-            Type = "oneshot";
-            User = "postgres";
-          };
-          script = ''
-            mkdir -p /var/lib/postgresql/dumps
-            ${config.services.postgresql.package}/bin/pg_dump \
-              -Fc vikunja > /var/lib/postgresql/dumps/vikunja.dump.tmp
-            mv /var/lib/postgresql/dumps/vikunja.dump.tmp \
-               /var/lib/postgresql/dumps/vikunja.dump
-          '';
-        };
-        systemd.timers.vikunja-db-dump = {
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
-            OnCalendar = "daily";
-            Persistent = true;
-          };
-        };
-        systemd.tmpfiles.rules = [
-          "d /var/lib/postgresql/dumps 0750 postgres postgres -"
-        ];
-
-        # sets the tailscale params
-        services.tailscale.enable = true;
-
-        networking = {
-          # needed to get dns for https nameserver
-          nameservers = [ "9.9.9.9" "1.1.1.1" ];
-          firewall = {
+          services.postgresql = {
             enable = true;
-            # allows connection from other tailscale devices
-            trustedInterfaces = [ "tailscale0" ];
-            allowedUDPPorts = [ config.services.tailscale.port ];
+            ensureDatabases = [ "vikunja" ];
+            ensureUsers = [
+              {
+                name = "vikunja";
+                ensureDBOwnership = true;
+              }
+            ];
           };
-        };
 
-        # Hardening the Vikunja service
-        systemd.services.vikunja = {
-          serviceConfig = {
-            ProtectHome = lib.mkForce true;
-            PrivateTmp = lib.mkForce true;
-            ProtectControlGroups = lib.mkForce true;
-            ProtectKernelTunables = lib.mkForce true;
-            NoNewPrivileges = lib.mkForce true;
-            RestrictAddressFamilies = lib.mkForce [ "AF_UNIX" "AF_INET" "AF_INET6" "AF_NETLINK" ];
+          # Nightly DB dump. Lives inside /var/lib/vikunja (the DynamicUser
+          # state dir), so the vikunja user can write it. Restic on the host
+          # backs up the container's whole state dir, capturing files + dump.
+          systemd.services.vikunja-db-dump = {
+            description = "Dump Vikunja Postgres DB for backup";
+            serviceConfig = {
+              Type = "oneshot";
+              User = "postgres";
+            };
+            script = ''
+              mkdir -p /var/lib/postgresql/dumps
+              ${config.services.postgresql.package}/bin/pg_dump \
+                -Fc vikunja > /var/lib/postgresql/dumps/vikunja.dump.tmp
+              mv /var/lib/postgresql/dumps/vikunja.dump.tmp \
+                 /var/lib/postgresql/dumps/vikunja.dump
+            '';
           };
-        };
+          systemd.timers.vikunja-db-dump = {
+            wantedBy = [ "timers.target" ];
+            timerConfig = {
+              OnCalendar = "daily";
+              Persistent = true;
+            };
+          };
+          systemd.tmpfiles.rules = [
+            "d /var/lib/postgresql/dumps 0750 postgres postgres -"
+          ];
 
-        system.stateVersion = "24.11";
-      };
+          # sets the tailscale params
+          services.tailscale.enable = true;
+
+          networking = {
+            # needed to get dns for https nameserver
+            nameservers = [
+              "9.9.9.9"
+              "1.1.1.1"
+            ];
+            firewall = {
+              enable = true;
+              # allows connection from other tailscale devices
+              trustedInterfaces = [ "tailscale0" ];
+              allowedUDPPorts = [ config.services.tailscale.port ];
+            };
+          };
+
+          # Hardening the Vikunja service
+          systemd.services.vikunja = {
+            serviceConfig = {
+              ProtectHome = lib.mkForce true;
+              PrivateTmp = lib.mkForce true;
+              ProtectControlGroups = lib.mkForce true;
+              ProtectKernelTunables = lib.mkForce true;
+              NoNewPrivileges = lib.mkForce true;
+              RestrictAddressFamilies = lib.mkForce [
+                "AF_UNIX"
+                "AF_INET"
+                "AF_INET6"
+                "AF_NETLINK"
+              ];
+            };
+          };
+
+          system.stateVersion = "24.11";
+        };
     };
   };
 }

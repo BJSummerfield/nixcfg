@@ -1,11 +1,10 @@
 { pkgs, config, ... }:
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -49,7 +48,12 @@
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
     };
-    users.waktu.authorizedKeys = [ "onepassword" "redtruck" "t495" "mac" ];
+    users.waktu.authorizedKeys = [
+      "onepassword"
+      "redtruck"
+      "t495"
+      "mac"
+    ];
   };
   home-manager.users = {
     waktu = {

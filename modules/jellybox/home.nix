@@ -4,8 +4,7 @@ let
   cfg = config.mine.user.jellybox;
 in
 {
-  options.mine.user.jellybox.autoStart.enable =
-    mkEnableOption "Jellyfin auto-launch on login";
+  options.mine.user.jellybox.autoStart.enable = mkEnableOption "Jellyfin auto-launch on login";
 
   config = mkIf cfg.autoStart.enable {
 

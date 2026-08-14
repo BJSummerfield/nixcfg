@@ -1,6 +1,17 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
-  inherit (lib) mkEnableOption mkOption mkIf types optional;
+  inherit (lib)
+    mkEnableOption
+    mkOption
+    mkIf
+    types
+    optional
+    ;
   cfg = config.mine.user.helix.lsp.typescript;
 in
 {
@@ -8,7 +19,10 @@ in
     enable = mkEnableOption "Enable typescript lsp for helix";
 
     formatter = mkOption {
-      type = types.enum [ "biome" "prettier" ];
+      type = types.enum [
+        "biome"
+        "prettier"
+      ];
       default = "biome";
       description = "The formatter to use for TypeScript in Helix.";
     };
@@ -26,28 +40,48 @@ in
             path = "${pkgs.typescript}/lib/node_modules/typescript/lib/tsserver.js";
           };
         };
-        language = [{
-          name = "typescript";
-          language-servers = [
-            { name = "typescript-language-server"; except-features = [ "format" ]; }
-            { name = "biome"; }
-          ];
-          formatter =
-            if cfg.formatter == "biome" then {
-              command = "biome";
-              args = [ "format" "--indent-style" "space" "--stdin-file-path" "file.ts" ];
-            } else {
-              command = "prettier";
-              args = [ "--parser" "typescript" ];
-            };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "typescript";
+            language-servers = [
+              {
+                name = "typescript-language-server";
+                except-features = [ "format" ];
+              }
+              { name = "biome"; }
+            ];
+            formatter =
+              if cfg.formatter == "biome" then
+                {
+                  command = "biome";
+                  args = [
+                    "format"
+                    "--indent-style"
+                    "space"
+                    "--stdin-file-path"
+                    "file.ts"
+                  ];
+                }
+              else
+                {
+                  command = "prettier";
+                  args = [
+                    "--parser"
+                    "typescript"
+                  ];
+                };
+            auto-format = true;
+          }
+        ];
       };
-      extraPackages = with pkgs; [
-        biome
-        typescript-language-server
-        typescript
-      ] ++ optional (cfg.formatter == "prettier") prettier;
+      extraPackages =
+        with pkgs;
+        [
+          biome
+          typescript-language-server
+          typescript
+        ]
+        ++ optional (cfg.formatter == "prettier") prettier;
     };
   };
 }

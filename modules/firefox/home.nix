@@ -1,4 +1,9 @@
-{ lib, config, themeConstants, ... }:
+{
+  lib,
+  config,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkIf mkEnableOption;
   inherit (themeConstants) colors;
@@ -101,33 +106,99 @@ in
           };
         };
         Preferences = {
-          "browser.newtabpage.activity-stream.showWeather" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.feeds.topsites" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.feeds.system.topstories" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.showSponsoredTopSites" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.showSponsored" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.feeds.section.highlights" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.feeds.telemetry" = { Value = false; Status = "locked"; };
-          "browser.newtabpage.activity-stream.telemetry" = { Value = false; Status = "locked"; };
-          "browser.crashReports.unsubmittedCheck.autoSubmit2" = { Value = false; Status = "locked"; };
-          "media.peerconnection.ice.default_address_only" = { Value = true; Status = "locked"; };
-          "media.peerconnection.ice.no_host" = { Value = true; Status = "locked"; };
+          "browser.newtabpage.activity-stream.showWeather" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.feeds.topsites" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.feeds.system.topstories" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.showSponsoredTopSites" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.showSponsored" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.feeds.section.highlights" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.feeds.telemetry" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.newtabpage.activity-stream.telemetry" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.crashReports.unsubmittedCheck.autoSubmit2" = {
+            Value = false;
+            Status = "locked";
+          };
+          "media.peerconnection.ice.default_address_only" = {
+            Value = true;
+            Status = "locked";
+          };
+          "media.peerconnection.ice.no_host" = {
+            Value = true;
+            Status = "locked";
+          };
 
           # No speculative connections to sites that were never clicked
-          "network.prefetch-next" = { Value = false; Status = "locked"; };
-          "network.dns.disablePrefetch" = { Value = true; Status = "locked"; };
-          "network.dns.disablePrefetchFromHTTPS" = { Value = true; Status = "locked"; };
-          "network.predictor.enabled" = { Value = false; Status = "locked"; };
-          "network.http.speculative-parallel-limit" = { Value = 0; Status = "locked"; };
-          "browser.urlbar.speculativeConnect.enabled" = { Value = false; Status = "locked"; };
-          "browser.places.speculativeConnect.enabled" = { Value = false; Status = "locked"; };
+          "network.prefetch-next" = {
+            Value = false;
+            Status = "locked";
+          };
+          "network.dns.disablePrefetch" = {
+            Value = true;
+            Status = "locked";
+          };
+          "network.dns.disablePrefetchFromHTTPS" = {
+            Value = true;
+            Status = "locked";
+          };
+          "network.predictor.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
+          "network.http.speculative-parallel-limit" = {
+            Value = 0;
+            Status = "locked";
+          };
+          "browser.urlbar.speculativeConnect.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.places.speculativeConnect.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
 
           # PPA ad measurement (default-on since FF128)
-          "dom.private-attribution.submission.enabled" = { Value = false; Status = "locked"; };
+          "dom.private-attribution.submission.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
           # Keep Safe Browsing, drop the per-download metadata ping to Google
-          "browser.safebrowsing.downloads.remote.enabled" = { Value = false; Status = "locked"; };
-          "extensions.htmlaboutaddons.recommendations.enabled" = { Value = false; Status = "locked"; };
-          "browser.discovery.enabled" = { Value = false; Status = "locked"; };
+          "browser.safebrowsing.downloads.remote.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
+          "extensions.htmlaboutaddons.recommendations.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
+          "browser.discovery.enabled" = {
+            Value = false;
+            Status = "locked";
+          };
         };
       };
     };

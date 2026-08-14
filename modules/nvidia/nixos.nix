@@ -1,6 +1,11 @@
 { config, lib, ... }:
 let
-  inherit (lib) mkEnableOption mkIf mkOption types;
+  inherit (lib)
+    mkEnableOption
+    mkIf
+    mkOption
+    types
+    ;
   cfg = config.mine.system.nvidia;
 in
 {
@@ -40,7 +45,9 @@ in
     # large CUDA compile here any more, and with it no need to clamp max-jobs.
     nix.settings = {
       substituters = [ "https://cuda-maintainers.cachix.org" ];
-      trusted-public-keys = [ "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E=" ];
+      trusted-public-keys = [
+        "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
+      ];
     };
   };
 }

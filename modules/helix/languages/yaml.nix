@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.yaml;
@@ -9,14 +14,19 @@ in
 
     programs.helix = {
       languages = {
-        language = [{
-          name = "yaml";
-          formatter = {
-            command = "prettier";
-            args = [ "--stdin-filepath" "file.yaml" ];
-          };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "yaml";
+            formatter = {
+              command = "prettier";
+              args = [
+                "--stdin-filepath"
+                "file.yaml"
+              ];
+            };
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         yaml-language-server

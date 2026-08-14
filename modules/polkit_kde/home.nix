@@ -1,6 +1,12 @@
-{ config, lib, pkgs, ... }:
 {
-  options.mine.user.polkit-kde.enable = lib.mkEnableOption "Enable kde Polkit Authentication Agent (polkit-kde)";
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+{
+  options.mine.user.polkit-kde.enable =
+    lib.mkEnableOption "Enable kde Polkit Authentication Agent (polkit-kde)";
   config = lib.mkIf config.mine.user.polkit-kde.enable {
     systemd.user.services.polkit-kde-agent = {
       Unit = {

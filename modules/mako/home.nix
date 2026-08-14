@@ -1,4 +1,9 @@
-{ lib, config, themeConstants, ... }:
+{
+  lib,
+  config,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.mako;
@@ -23,7 +28,6 @@ in
         max-visible = 5;
         border-size = 1;
         outer-margin = "0";
-
 
         default-timeout = 10000;
         sort = "-time";

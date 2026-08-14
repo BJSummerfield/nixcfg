@@ -2,11 +2,13 @@
 lib:
 let
   inherit (lib) mkEnableOption mkOption types;
-  mkAgent = name: mkOption {
-    type = types.bool;
-    default = true;
-    description = "Provide the ${name} launcher (and its container payload) on this host.";
-  };
+  mkAgent =
+    name:
+    mkOption {
+      type = types.bool;
+      default = true;
+      description = "Provide the ${name} launcher (and its container payload) on this host.";
+    };
 in
 {
   mkAgentOptions = {

@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.nix;
@@ -9,18 +14,19 @@ in
 
     programs.helix = {
       languages = {
-        language = [{
-          name = "nix";
-          formatter = {
-            command = "nixpkgs-fmt";
-          };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "nix";
+            formatter = {
+              command = "nixfmt";
+            };
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         nil
-        nixd
-        nixpkgs-fmt
+        nixfmt
       ];
     };
   };

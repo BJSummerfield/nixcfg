@@ -17,15 +17,17 @@ in
     };
   };
 
-  config = lib.mkIf cfg.enable (lib.mkMerge [
-    {
-      environment.sessionVariables.NIXOS_OZONE_WL = "1";
-      programs.niri.enable = true;
-      home-manager.sharedModules = [{ mine.user.niri.enable = true; }];
-    }
+  config = lib.mkIf cfg.enable (
+    lib.mkMerge [
+      {
+        environment.sessionVariables.NIXOS_OZONE_WL = "1";
+        programs.niri.enable = true;
+        home-manager.sharedModules = [ { mine.user.niri.enable = true; } ];
+      }
 
-    (lib.mkIf (cfg.hostConfig != null) {
-      environment.etc."niri/host.kdl".source = cfg.hostConfig;
-    })
-  ]);
+      (lib.mkIf (cfg.hostConfig != null) {
+        environment.etc."niri/host.kdl".source = cfg.hostConfig;
+      })
+    ]
+  );
 }

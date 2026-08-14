@@ -1,4 +1,9 @@
-{ lib, config, themeConstants, ... }:
+{
+  lib,
+  config,
+  themeConstants,
+  ...
+}:
 let
   inherit (lib) mkIf mkMerge;
   cfg = config.mine.user.fuzzel;

@@ -1,6 +1,12 @@
 { lib, config, ... }:
 let
-  inherit (lib) mkOption mkEnableOption mkIf types mkMerge;
+  inherit (lib)
+    mkOption
+    mkEnableOption
+    mkIf
+    types
+    mkMerge
+    ;
   cfg = config.mine.system;
   bootCfg = cfg.boot;
 in
@@ -33,7 +39,10 @@ in
 
     boot = {
       mode = mkOption {
-        type = types.enum [ "systemd-boot" "grub-bios" ];
+        type = types.enum [
+          "systemd-boot"
+          "grub-bios"
+        ];
         default = "systemd-boot";
         description = ''
           Bootloader mode. "systemd-boot" (default) requires an ESP partition;
@@ -61,12 +70,14 @@ in
       networking.hostName = cfg.hostName;
       time.timeZone = "America/Chicago";
 
-
       security.sudo.wheelNeedsPassword = cfg.wheelNeedsPassword;
       sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
       nix = {
-        settings.experimental-features = [ "nix-command" "flakes" ];
+        settings.experimental-features = [
+          "nix-command"
+          "flakes"
+        ];
         gc = {
           automatic = true;
           options = "--delete-older-than 14d";

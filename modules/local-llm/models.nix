@@ -34,7 +34,12 @@
       maxModelLen = 131072;
       headroom = 8192;
       maxTokens = 32768;
-      sampling = { temperature = 0.6; top_p = 0.95; top_k = 20; min_p = 0.0; };
+      sampling = {
+        temperature = 0.6;
+        top_p = 0.95;
+        top_k = 20;
+        min_p = 0.0;
+      };
 
       # null ttl: vLLM cold start is minutes
       ttl = null;
@@ -88,7 +93,12 @@
       maxModelLen = 32768;
       headroom = 4096;
       maxTokens = 8192;
-      sampling = { temperature = 0.6; top_p = 0.95; top_k = 20; min_p = 0.0; };
+      sampling = {
+        temperature = 0.6;
+        top_p = 0.95;
+        top_k = 20;
+        min_p = 0.0;
+      };
       ttl = 3600;
 
       vllm = {

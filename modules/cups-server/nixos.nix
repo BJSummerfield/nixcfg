@@ -1,4 +1,9 @@
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 {
   options.mine.system.cups-server = lib.mkEnableOption "Enable CUPS printing server";
 

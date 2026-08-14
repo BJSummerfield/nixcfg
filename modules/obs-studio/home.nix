@@ -1,4 +1,9 @@
-{ pkgs, config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 {
   options.mine.user.obs-studio.enable = lib.mkEnableOption "Enable obs-studio config";
   config = lib.mkIf config.mine.user.obs-studio.enable {

@@ -1,4 +1,9 @@
-{ lib, config, pkgs, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.pi-coding-agent;
@@ -6,8 +11,7 @@ let
 
   # Deliberately a bare store file rather than a home.file entry - see the
   # activation script below.
-  superagentsConfig =
-    pkgs.writeText "pi-superagents-config.json" (builtins.toJSON data.superagents);
+  superagentsConfig = pkgs.writeText "pi-superagents-config.json" (builtins.toJSON data.superagents);
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -42,13 +46,12 @@ in
     # rebuild also repairs a container still holding the old symlink. The
     # cost is that anything /sp-settings or the migration wrote is reset on
     # the next activation - edit settings.nix instead.
-    home.activation.piSuperagentsConfig =
-      lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent/extensions/subagent"
-        run rm -f $VERBOSE_ARG "$HOME/.pi/agent/extensions/subagent/config.json"
-        run install $VERBOSE_ARG -m 0644 ${superagentsConfig} \
-          "$HOME/.pi/agent/extensions/subagent/config.json"
-      '';
+    home.activation.piSuperagentsConfig = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+      run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent/extensions/subagent"
+      run rm -f $VERBOSE_ARG "$HOME/.pi/agent/extensions/subagent/config.json"
+      run install $VERBOSE_ARG -m 0644 ${superagentsConfig} \
+        "$HOME/.pi/agent/extensions/subagent/config.json"
+    '';
 
     programs.pi-coding-agent = {
       enable = true;

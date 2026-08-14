@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.python;
@@ -9,10 +14,12 @@ in
 
     programs.helix = {
       languages = {
-        language = [{
-          name = "python";
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "python";
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         ruff

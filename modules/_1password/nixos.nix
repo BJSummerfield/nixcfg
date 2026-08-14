@@ -1,13 +1,18 @@
 { config, lib, ... }:
 let
-  inherit (lib) mkEnableOption mkIf mkOption types;
+  inherit (lib)
+    mkEnableOption
+    mkIf
+    mkOption
+    types
+    ;
   cfg = config.mine.system._1password;
 
   # allowedUsers is the names of all users that have 1password enabled
   hmUsers = config.home-manager.users;
-  usersWith1Pass = lib.filterAttrs
-    (name: userConfig: userConfig.mine.user._1password.enable or false)
-    hmUsers;
+  usersWith1Pass = lib.filterAttrs (
+    name: userConfig: userConfig.mine.user._1password.enable or false
+  ) hmUsers;
   allowedUsers = lib.attrNames usersWith1Pass;
 in
 {

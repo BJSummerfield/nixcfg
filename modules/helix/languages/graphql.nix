@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.graphql;
@@ -9,14 +14,19 @@ in
 
     programs.helix = {
       languages = {
-        language = [{
-          name = "graphql";
-          formatter = {
-            command = "prettier";
-            args = [ "--stdin-filepath" "file.graphql" ];
-          };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "graphql";
+            formatter = {
+              command = "prettier";
+              args = [
+                "--stdin-filepath"
+                "file.graphql"
+              ];
+            };
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         graphql-language-service-cli

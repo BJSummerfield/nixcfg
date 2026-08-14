@@ -1,12 +1,11 @@
 { config, pkgs, ... }:
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ./disko.nix
-      ../../modules/nixos.nix
-      ../../users/waktu.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ./disko.nix
+    ../../modules/nixos.nix
+    ../../users/waktu.nix
+  ];
 
   environment.systemPackages = with pkgs; [
     bottom
@@ -128,7 +127,11 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [ "onepassword" "t495" "mac" ];
+    users.waktu.authorizedKeys = [
+      "onepassword"
+      "t495"
+      "mac"
+    ];
   };
   home-manager.users = {
     waktu = { config, ... }: {

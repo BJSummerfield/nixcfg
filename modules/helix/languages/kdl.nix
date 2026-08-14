@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.kdl;
@@ -8,14 +13,19 @@ in
   config = mkIf cfg.enable {
     programs.helix = {
       languages = {
-        language = [{
-          name = "kdl";
-          formatter = {
-            command = "kdlfmt";
-            args = [ "format" "-" ];
-          };
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "kdl";
+            formatter = {
+              command = "kdlfmt";
+              args = [
+                "format"
+                "-"
+              ];
+            };
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         kdlfmt

@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.javascript;
@@ -19,14 +24,19 @@ in
             path = "${pkgs.typescript}/lib/node_modules/typescript/lib/tsserver.js";
           };
         };
-        language = [{
-          name = "javascript";
-          language-servers = [
-            { name = "typescript-language-server"; except-features = [ "format" ]; }
-            { name = "biome"; }
-          ];
-          auto-format = true;
-        }];
+        language = [
+          {
+            name = "javascript";
+            language-servers = [
+              {
+                name = "typescript-language-server";
+                except-features = [ "format" ];
+              }
+              { name = "biome"; }
+            ];
+            auto-format = true;
+          }
+        ];
       };
       extraPackages = with pkgs; [
         biome
