@@ -1,0 +1,37 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  # Write scope is only exercised by the ref-advance step, but it applies to
+  # the whole job, including pull_request runs that never reach that step.
+  contents: write
+
+# Pushes to main share a group and stay serialized, so two cannot race the
+# ref; each PR gets its own group and runs independently.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # a shallow clone cannot push: "shallow update not allowed"
+
+      - uses: cachix/install-nix-action@v31
+
+      - run: nix flake check --print-build-logs
+
+      # Not forced: after a force-push to main this is rejected as a
+      # non-fast-forward and the run goes red, rather than moving the hosts
+      # onto rewritten history.
+      - name: Advance verified
+        if: github.event_name == 'push'
+        run: git push origin HEAD:verified
