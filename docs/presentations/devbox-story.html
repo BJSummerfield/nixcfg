@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>The agent in a box</title>
+<title>Five ways to sandbox a coding agent</title>
 <style>
 :root{
   --bg:#141416; --ink:#FFFFFF; --ink-2:#C4C4C5; --ink-3:#8F8F8F;
@@ -31,7 +31,7 @@ main{display:flex;height:100vh;height:100dvh}
 .slide-text p{font-size:15px;line-height:1.7;max-width:46ch;margin-bottom:.9rem}
 .slide-text .big{font-size:clamp(20px,1.8vw,28px);font-weight:100;color:var(--ink);line-height:1.4;margin-top:1.4rem}
 .slide-text code{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.9em;color:var(--ink)}
-.chips{display:flex;flex-direction:column;gap:8px;margin-top:1.1rem;list-style:none}
+.chips{display:flex;flex-direction:column;gap:8px;margin:1.1rem 0 1.2rem;list-style:none}
 .chips h2{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin:.8rem 0 .1rem}
 .chip{border:1px solid;border-radius:4px;padding:7px 12px;font-size:13px;line-height:1.45;
   opacity:0;transform:translateX(-12px);transition:opacity .45s var(--ease),transform .45s var(--ease)}
@@ -70,16 +70,17 @@ main{display:flex;height:100vh;height:100dvh}
 
 /* boundary morph states */
 #boundary{stroke:var(--danger);stroke-dasharray:7 7}
-#boundary.solid{stroke:var(--ink-2);stroke-dasharray:1 0}
-#boundary.pool{x:920px;y:300px;width:150px;height:130px}
-/* repochip flies into the pool slot */
-#repochip.docked{transform:translate(-15px,-6px);}
-#mac.dim rect{stroke:var(--ink-3)}
+/* option 4 solo shots: the server narrows to hold just the devbox */
+#redtruck rect{transition:width 1s var(--ease)}
+#redtruck.solo rect{width:640px}
+/* access + worked example: the laptop slides toward the tailnet */
+#laptop.near{transform:translateX(500px)}
 
-/* ---- scoreboard overlay (populated in Task 4) ---- */
+/* ---- the comparison table (slide 10). pointer-events stay off so a click
+   on the stage still advances, same as any other slide. ---- */
 #scoreboard{position:absolute;inset:6vh 4vw;opacity:0;pointer-events:none;
   transition:opacity .7s var(--ease)}
-#scoreboard.on{opacity:1;pointer-events:auto}
+#scoreboard.on{opacity:1}
 
 /* ---- chrome ---- */
 #dots{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom, 0px));left:50%;transform:translateX(-50%);display:flex;gap:9px;z-index:5}
@@ -97,19 +98,25 @@ body.moved #hint{opacity:0}
 #index a::before{content:counter(s,decimal-leading-zero) "  ";color:var(--ink-3);font-size:14px;letter-spacing:.2em}
 #index a:hover{color:var(--ink)}
 
-/* slide 10: workbox spawns from under the devbox and slides to its slot; work repo migrates */
+/* option 5: workbox spawns from under the devbox and slides to its slot; work repo migrates */
 #workbox{transform:translateX(-620px)}
 #workbox.split{transform:translateX(0)}
 #wbsecrets{transform:translateX(-620px)}
 #wbsecrets.split{transform:translateX(0)}
 #workrepo.migrated{transform:translate(340px,0)}
-/* slide 9: contamination haze bleeds in late */
-#haze{transition:opacity 1s var(--ease) .5s}
-/* slide 12 packets: travel the mesh and PAT paths (must match the path d= values above) */
+/* ---- the reach field: everything the agent can touch right now, drawn ----
+   This is the spine. It appears with option 1 and shrinks rung by rung. */
+.reach{fill:rgba(237,21,102,.13);stroke:var(--danger);stroke-width:1.5;stroke-dasharray:5 6}
+.reach.solid{stroke-dasharray:1 0}
+.reach-label{fill:#f2a0bd;font-size:13px;letter-spacing:.06em}
+.reach-label.sm{font-size:11px}
+.reach-label.xs{font-size:11px;fill:var(--ink-3);letter-spacing:.04em}
+/* packets: travel the mesh and the PAT path
+   (offset-path values must match the path d= values in the SVG below) */
 .packet{opacity:0}
-#packets.on .packet{opacity:1}
-.packet.p1{offset-path:path('M 1935 505 C 1500 560, 1200 500, 800 430');animation:travel 5s linear infinite}
-.packet.p2{offset-path:path('M 1935 525 C 1550 650, 1150 730, 740 735');animation:travel 6s linear infinite reverse}
+.el.on .packet{opacity:1}
+.packet.p1{offset-path:path('M 1935 505 C 1750 545, 1550 480, 1310 425');animation:travel 5s linear infinite}
+.packet.p2{offset-path:path('M 1935 525 C 1780 640, 1520 725, 1250 735');animation:travel 6s linear infinite reverse}
 .packet.p3{offset-path:path('M 2440 320 C 2650 240, 2820 130, 2920 78');animation:travel 4s linear infinite}
 @keyframes travel{from{offset-distance:0%}to{offset-distance:100%}}
 
@@ -135,8 +142,9 @@ body.moved #hint{opacity:0}
 #scoreboard.on tbody tr:nth-child(3) td{transition-delay:.7s}
 #scoreboard.on tbody tr:nth-child(4) td{transition-delay:.9s}
 #scoreboard.on tbody tr:nth-child(5) td{transition-delay:1.1s}
+#scoreboard.on tbody tr:nth-child(6) td{transition-delay:1.3s}
 #scoreboard .good{color:#a5dfc2}
-#scoreboard .mid{color:var(--ink-3)}
+#scoreboard .mid{color:#d9b16a}
 #scoreboard .bad{color:#f2a0bd}
 
 @media (prefers-reduced-motion: reduce){
@@ -150,134 +158,142 @@ body.moved #hint{opacity:0}
   <section id="panel" aria-live="polite">
 
     <div class="slide-text">
-      <div class="kicker">A field report from my homelab</div>
-      <h1>The agent in a box</h1>
-      <p>How one grab at <code>~/.ssh</code> turned into isolated agent
-      containers on a server — and why the code never leaves the box.</p>
+      <div class="kicker">Isolating a coding agent</div>
+      <h1>Five ways to sandbox a coding agent</h1>
+      <p>A coding agent runs arbitrary code and reads untrusted input. Each
+      option below puts the boundary somewhere different — from nowhere at
+      all to one container per identity.</p>
+      <p>The magenta field on the right is what stays reachable.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">The incident</div>
-      <h1>The agent runs as you</h1>
-      <p>The coding agent, running on my laptop, decided it needed my SSH keys.</p>
-      <p>It runs as my uid — so nothing stood between it and
-      <code>~/.ssh</code> but its own judgment. That's not a boundary,
-      that's a vibe.</p>
+      <div class="kicker">The yardstick</div>
+      <h1>Not malice. Reach.</h1>
+      <p>The assumption is not an attacker with a kernel exploit. It is an
+      agent that is <em>wrong</em> — and the fact that anything it reads is
+      something that can instruct it.</p>
+      <p>One question measures every option:</p>
+      <p class="big">When the agent does the wrong thing,<br>how far does that go?</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">First fix</div>
-      <h1>Bubblewrap: a sandbox you assemble yourself</h1>
-      <p><code>bwrap</code> builds a sandbox out of Linux namespaces — fresh
-      mount, pid, user and network views for one process, no root daemon.
-      It's the layer under Flatpak.</p>
+      <div class="kicker">Option 1 · no boundary</div>
+      <h1>The agent runs as the invoking user</h1>
+      <p>An agent launched from a shell inherits the invoking user's uid.
+      Every file that uid can read, it can read: every key, every repo, every
+      credential in the home directory.</p>
+      <p>Nothing stands between the agent and <code>~/.ssh</code> except its
+      own judgment about what it ought to touch.</p>
+      <p class="big">Reach: everything the user owns.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Option 2 · a sandbox assembled by hand</div>
+      <h1>Bubblewrap</h1>
+      <p><code>bwrap</code> builds a sandbox from Linux namespaces — fresh
+      mount, pid, user and network views for a single process, no root daemon.
+      It is the layer under Flatpak.</p>
       <div class="chips">
-        <h2>What it buys you</h2>
+        <h2>What it gives</h2>
         <div class="chip pro">No daemon, no root — it's just a process</div>
-        <div class="chip pro">Bind in exactly the paths you choose</div>
-        <div class="chip pro">Mask the rest — <code>~/.ssh</code> simply isn't there</div>
-        <h2>What it costs you</h2>
-        <div class="chip con">The boundary is a flag list <em>you</em> maintain</div>
+        <div class="chip pro">Binds in exactly the paths named</div>
+        <div class="chip pro">Masks the rest — <code>~/.ssh</code> simply isn't there</div>
+        <h2>What it costs</h2>
+        <div class="chip con">The boundary is a flag list, maintained by hand</div>
         <div class="chip con">One missing <code>--bind</code> is a hole in the wall</div>
-        <div class="chip con">Real agent tooling needs so many holes it turns to Swiss cheese</div>
+        <div class="chip con">Agent tooling needs enough holes to turn it to Swiss cheese</div>
       </div>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">Going ephemeral</div>
-      <h1>A container per session</h1>
-      <p>The wrapper became a wall: <code>systemd-nspawn</code> containers,
-      grabbed from a four-slot pool per session. Only the repo I'm working on
-      gets bind-mounted in; on exit the root filesystem is discarded.</p>
+      <div class="kicker">Option 3 · a container on your machine</div>
+      <h1>The agent inside a container</h1>
+      <p>The agent moves into a container on your machine: a full OS in a
+      box, with only the working repo mounted. The box can be
+      <code>systemd-nspawn</code> or Docker — the end result is the same.</p>
       <div class="chips">
-        <h2>What it buys you</h2>
-        <div class="chip pro">A full OS inside — tools just work</div>
+        <h2>What it gives</h2>
+        <div class="chip pro">A full OS inside — tooling works unmodified</div>
         <div class="chip pro">The boundary is the container, not a rule list</div>
-        <div class="chip pro">Ephemeral by default: every session starts clean</div>
-        <h2>What it costs you</h2>
-        <div class="chip con">Shares the host's network namespace</div>
-        <div class="chip con">Agent uid = my uid, so mounted files stay writable</div>
-        <div class="chip con">One terminal, one session — and Linux only…</div>
+        <div class="chip pro">Every session can start from a clean image</div>
+        <h2>What it costs</h2>
+        <div class="chip con">An image to define, build and keep current</div>
+        <div class="chip con">Egress to fetch dependencies widens reach back out</div>
+        <div class="chip con">Still your daily machine, one session at a time</div>
       </div>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">The wall</div>
-      <h1>It doesn't work on a Mac</h1>
-      <p><code>systemd-nspawn</code> is Linux namespaces all the way down.
-      macOS has none of it. Half my life is on a MacBook.</p>
-      <p class="big">Stop bringing the sandbox to the machine.<br>
-      Put the agent on a machine that <em>is</em> the sandbox.</p>
-    </div>
-
-    <div class="slide-text">
-      <div class="kicker">The pivot</div>
-      <h1>A box built to contain it</h1>
-      <p>A NixOS server grows a persistent container:
-      the <strong>devbox</strong>. The agent inside runs as
+      <div class="kicker">Option 4 · a server that holds the agent</div>
+      <h1>A persistent container on a server</h1>
+      <p>A NixOS server runs a persistent container. The agent inside runs as
       <code>uid 1500</code> — deliberately outside the host's uid range — on
       its own private veth network.</p>
       <p>SSH, sops and signing keys stay on the host. Secrets enter only as
       read-only bind mounts under <code>/run/secrets</code>.</p>
+      <p>Option 2 returns as depth: each session runs under bubblewrap
+      <em>inside</em> the box, seeing only its worktree and tooling. An agent
+      that is wrong meets that wall before the container's.</p>
+      <p class="big">Reach: a worktree, then the container.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">Blast radius</div>
-      <h1>Scope the token</h1>
-      <p>The agent has to push code — but a classic PAT is
-      keys-to-everything. Each box gets a <strong>fine-grained PAT</strong>
-      scoped to an explicit repo allowlist, and a branch-protection ruleset
-      guards what even that token can do.</p>
-      <p class="big">The box holds a scoped key.<br>GitHub holds the code.</p>
+      <div class="kicker">Option 4 · getting code out</div>
+      <h1>Getting code out</h1>
+      <p>The agent has to push. There are two ways to allow that, and they
+      trade the same thing against each other.</p>
+      <div class="chips">
+        <h2>Inject a scoped token</h2>
+        <div class="chip pro">Reach on GitHub is an explicit repo allowlist, guarded by a branch ruleset</div>
+        <div class="chip con">A live credential exists inside the box</div>
+        <h2>Inject nothing</h2>
+        <div class="chip pro">Reach on GitHub is zero</div>
+        <div class="chip con">A human reviews, pushes and merges every change by hand</div>
+      </div>
+      <p>This option takes the token.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">The front door</div>
-      <h1>Plan anywhere, code in the box</h1>
-      <p>Inside the box, an <strong>orchestrator</strong> daemon listens on
-      <code>127.0.0.1:6767</code>. The only way in is
-      <code>tailscale serve</code> — one door, published to my tailnet,
+      <div class="kicker">Option 4 · access</div>
+      <h1>One door</h1>
+      <p>Inside the box an <strong>orchestrator</strong> daemon listens on
+      <code>127.0.0.1:6767</code>. The only route in is
+      <code>tailscale serve</code> — a single door published to a tailnet,
       password required.</p>
-      <p>Laptop, Mac, even my phone are thin clients. Each session gets its
-      own git worktree inside the box. I plan with the agent from anywhere; the
-      code never leaves.</p>
+      <p>Any device on the tailnet is a thin client. Each session gets its own
+      git worktree inside the box, and the code never leaves it.</p>
+      <p class="big">Reach on the network: one port.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">New problem</div>
-      <h1>One box, two lives</h1>
-      <p>Work repos and personal repos now share a filesystem — and a token.
-      Whatever one project can reach, every project can reach.</p>
-      <p>That's cross-contamination waiting for a prompt injection.</p>
-    </div>
-
-    <div class="slide-text">
-      <div class="kicker">Multi-instance</div>
-      <h1>Workbox: isolation between lives</h1>
-      <p>The container module went multi-instance. <strong>workbox</strong> is
-      a second box that shares nothing with the first:</p>
+      <div class="kicker">Option 5 · one container per identity</div>
+      <h1>Split the box by identity</h1>
+      <p>One box holding two contexts shares a filesystem and a token between
+      them: a poisoned file in a work repo is read by an agent holding the
+      personal credential. Splitting the container ends that.</p>
+      <p>Each box is scoped to one identity — one GitHub user, work apart
+      from personal, one AI account apart from another:</p>
       <div class="chips">
         <div class="chip pro">Its own GitHub token — a different fine-grained PAT with a different repo allowlist</div>
-        <div class="chip pro">Its own signing key — a commit's signature says <em>which box</em> made it</div>
+        <div class="chip pro">Its own signing key — a commit's signature identifies <em>which box</em> made it</div>
         <div class="chip pro">Its own agent user and filesystem — separate home, separate repos, separate worktrees</div>
       </div>
-      <p>Personal and work can no longer touch.</p>
+      <p>An injection reaches the wall and stops.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">Scoreboard</div>
-      <h1>What each boundary bought</h1>
-      <p>Four eras, five dimensions.</p>
+      <div class="kicker">Side by side</div>
+      <h1>Five options</h1>
+      <p>What each one gives, what it costs, and what stays reachable.</p>
     </div>
 
     <div class="slide-text">
-      <div class="kicker">Now</div>
+      <div class="kicker">A worked example</div>
       <h1>Keys on the host. Repos in the box. Code on GitHub.</h1>
-      <p>Two containers on the server, each with one scoped
-      credential and one signing identity. The orchestrator serves each box to the
-      tailnet; I plan with the agent from wherever I am, and nothing it
-      does can reach past its wall.</p>
-      <p>This presentation was planned in that setup.</p>
+      <p>The top options combined: two containers on a server, each scoped to
+      one identity — one credential, one signing key — with an orchestrator
+      serving each box to the tailnet, so any device is a thin client.</p>
+      <p class="big">The agent's behaviour is the same in every option.<br>Only its reach changes.</p>
     </div>
 
   </section>
@@ -285,11 +301,42 @@ body.moved #hint{opacity:0}
   <div id="stage">
     <svg viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <g id="world">
-<!-- ================= ACT 1 : the laptop (world x 0..1600) ================= -->
+<!-- ================= THE REACH FIELD =================
+     Drawn first so everything else paints over it. One magenta field per option,
+     showing what the agent can touch under that boundary. -->
+<g id="reachall" class="el">
+  <rect class="reach" x="400" y="270" width="720" height="382" rx="8"/>
+  <text class="reach-label" x="404" y="252">reach: everything the uid owns</text>
+</g>
+<g id="reachbwrap" class="el">
+  <!-- Drawn 6px outside #boundary so the wall it defines stays visible inside the field.
+       Ragged on purpose: every bind mount added by hand is a spike out of the box. -->
+  <path class="reach" d="M 499 344 L 661 344 L 661 376 L 712 386 L 661 396 L 661 426
+    L 730 441 L 661 451 L 661 486 L 606 486 L 592 532 L 572 486 L 499 486 Z"/>
+  <text class="reach-label" x="499" y="328">reach: what was masked — minus every hole</text>
+</g>
+<g id="reachctr" class="el">
+  <rect class="reach" x="464" y="312" width="302" height="182" rx="10"/>
+  <text class="reach-label" x="468" y="274">reach: this container — one repo</text>
+</g>
+<g id="reachdev" class="el">
+  <rect class="reach" x="1950" y="260" width="480" height="340" rx="8"/>
+  <!-- under the box title: the top-right corner belongs to the per-box token chip -->
+  <text class="reach-label" x="1962" y="312">reach: this container</text>
+</g>
+<g id="reachgh" class="el">
+  <rect class="reach" x="3008" y="20" width="164" height="92" rx="6"/>
+  <text class="reach-label sm" x="3090" y="164" text-anchor="middle">reach on GitHub: two repos</text>
+</g>
+<g id="reachwb" class="el">
+  <rect class="reach" x="2570" y="260" width="480" height="340" rx="8"/>
+  <text class="reach-label" x="2582" y="312">reach: this container</text>
+</g>
+<!-- ================= OPTIONS 1-3 : the laptop (world x 0..1600) ================= -->
 <g id="laptop" class="el">
   <rect class="outline" x="430" y="290" width="360" height="230" rx="10"/>
   <path class="outline faint" d="M 390 520 L 830 520 L 800 560 L 420 560 Z"/>
-  <text class="label" x="610" y="600" text-anchor="middle">my laptop</text>
+  <text class="label" x="610" y="600" text-anchor="middle">laptop</text>
 </g>
 <g id="claude" class="el">
   <circle class="outline" cx="560" cy="405" r="22" style="stroke:var(--plan)"/>
@@ -304,31 +351,25 @@ body.moved #hint{opacity:0}
 <path id="tendril" class="el wire danger glow-danger" style="--len:620"
   d="M 585 415 C 700 440, 820 500, 1030 592"/>
 <rect id="boundary" class="el outline" x="505" y="350" width="150" height="130" rx="8"/>
-<g id="slot2" class="el"><rect class="outline faint" x="1090" y="300" width="150" height="130" rx="8"/></g>
-<g id="slot3" class="el"><rect class="outline faint" x="1260" y="300" width="150" height="130" rx="8"/></g>
-<g id="slot4" class="el"><rect class="outline faint" x="1175" y="450" width="150" height="130" rx="8"/></g>
-<text id="poollabel" class="el label mono" x="1160" y="260" text-anchor="middle">systemd-nspawn · ephemeral · 4 slots</text>
-<g id="repochip" class="el">
-  <rect class="outline" x="940" y="330" width="120" height="34" rx="4" style="stroke:var(--safe)"/>
-  <text class="label mono bright" x="1000" y="352" text-anchor="middle">repo (cwd)</text>
+<!-- Option 3: one container on the laptop, agent and repo inside.
+     nspawn or docker — the wall is the same either way. -->
+<g id="ctrbox" class="el">
+  <rect class="outline" x="470" y="318" width="290" height="170" rx="8" style="stroke:var(--ink)"/>
+  <text class="label mono bright" x="486" y="344">container · nspawn or docker</text>
+  <rect class="outline" x="600" y="380" width="130" height="32" rx="4" style="stroke:var(--safe)"/>
+  <text class="label mono bright" x="665" y="401" text-anchor="middle">repo (cwd)</text>
 </g>
 <g id="mac" class="el">
-  <rect class="outline" x="430" y="640" width="300" height="190" rx="10"/>
-  <text class="label" x="580" y="790" text-anchor="middle" style="font-size:13px">my macbook</text>
+  <rect class="outline" x="930" y="640" width="300" height="190" rx="10"/>
+  <text class="label" x="1080" y="790" text-anchor="middle" style="font-size:13px">macbook</text>
 </g>
-<g id="macdead" class="el">
-  <rect x="450" y="660" width="120" height="100" rx="8" fill="none"
-    stroke="var(--ink-3)" stroke-dasharray="6 6"/>
-  <text class="label mono" x="510" y="800" text-anchor="middle"
-    style="fill:var(--danger)">namespaces: not found</text>
-</g>
-<!-- ================= ACT 2 : redtruck (world x 1800..3300) ================= -->
-<!-- Layout invariants: devbox 1940..2440, workbox (Task 4) 2560..3060, both y 250..630;
+<!-- ================= OPTION 4 : the server (world x 1800..3300) ================= -->
+<!-- Layout invariants: devbox 1940..2440, workbox 2560..3060, both y 250..630;
      hostkeys is a glass strip along the bottom of redtruck (y 670..770), UNDER both boxes,
-     so nothing collides when workbox spawns in slide 10. -->
+     so nothing collides when workbox spawns on the option 5 slide. -->
 <g id="redtruck" class="el">
   <rect class="outline" x="1860" y="170" width="1240" height="620" rx="14"/>
-  <text class="label bright" x="1880" y="150" style="font-size:18px">the server · NixOS</text>
+  <text class="label bright" x="1880" y="150" style="font-size:18px">server · NixOS</text>
 </g>
 <g id="devbox" class="el">
   <rect class="outline" x="1940" y="250" width="500" height="380" rx="10" style="stroke:var(--ink)"/>
@@ -340,16 +381,22 @@ body.moved #hint{opacity:0}
   <text class="label mono" x="2100" y="450" text-anchor="middle">agent · uid 1500</text>
   <text class="label mono" x="2100" y="472" text-anchor="middle" style="font-size:11px">outside the host uid range</text>
 </g>
+<!-- option 2's wrapper, drawn again inside the box: defense in depth -->
+<g id="innerwrap" class="el">
+  <rect x="2020" y="358" width="176" height="132" rx="8" fill="none"
+    stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <text class="label mono" x="2108" y="512" text-anchor="middle" style="font-size:11px">bwrap · its worktree + tooling</text>
+</g>
 <g id="hostkeys" class="el">
-  <rect x="1940" y="670" width="1120" height="100" rx="8" fill="rgba(255,255,255,.03)"
+  <rect x="1940" y="670" width="500" height="100" rx="8" fill="rgba(255,255,255,.03)"
     stroke="var(--safe)" stroke-width="1.5"/>
-  <circle class="outline" cx="2060" cy="710" r="12"/>
-  <path class="outline" d="M 2070 717 L 2092 739 M 2084 731 L 2090 725"/>
-  <circle class="outline" cx="2160" cy="710" r="12"/>
-  <path class="outline" d="M 2170 717 L 2192 739 M 2184 731 L 2190 725"/>
-  <circle class="outline" cx="2260" cy="710" r="12"/>
-  <path class="outline" d="M 2270 717 L 2292 739 M 2284 731 L 2290 725"/>
-  <text class="label mono" x="2400" y="726">ssh · sops · signing — host only</text>
+  <circle class="outline" cx="2060" cy="705" r="12"/>
+  <path class="outline" d="M 2070 712 L 2092 734 M 2084 726 L 2090 720"/>
+  <circle class="outline" cx="2160" cy="705" r="12"/>
+  <path class="outline" d="M 2170 712 L 2192 734 M 2184 726 L 2190 720"/>
+  <circle class="outline" cx="2260" cy="705" r="12"/>
+  <path class="outline" d="M 2270 712 L 2292 734 M 2284 726 L 2290 720"/>
+  <text class="label mono" x="2190" y="756" text-anchor="middle" style="font-size:12px">ssh · sops · signing — host only</text>
 </g>
 <g id="sopsmounts" class="el">
   <path class="wire safe" style="--len:40" d="M 2050 668 L 2050 632"/>
@@ -365,6 +412,14 @@ body.moved #hint{opacity:0}
   <text class="label mono" x="2620" y="150" text-anchor="middle" style="fill:var(--safe)">fine-grained PAT</text>
   <path class="outline" style="stroke:var(--safe)" d="M 2730 200 L 2750 200 L 2750 220 L 2740 230 L 2730 220 Z"/>
   <text class="label mono" x="2765" y="220" style="font-size:11px">branch ruleset</text>
+</g>
+<!-- the branch not taken: no credential in the box, a human on every change -->
+<g id="reviewbranch" class="el">
+  <path class="wire faint" style="--len:700" stroke-dasharray="6 6"
+    d="M 2440 520 C 2700 520, 2870 320, 2932 94"/>
+  <text class="label mono" x="2620" y="466" style="font-size:12px">or: no token — a human reviews,</text>
+  <text class="label mono" x="2620" y="486" style="font-size:12px">pushes and merges every change</text>
+  <text class="reach-label sm" x="2620" y="510">reach on GitHub: none</text>
 </g>
 <g id="allowlist" class="el">
   <rect class="outline" x="3020" y="30" width="140" height="30" rx="4" style="stroke:var(--safe)"/>
@@ -388,16 +443,16 @@ body.moved #hint{opacity:0}
   <text class="label mono" x="2365" y="615" text-anchor="middle" style="font-size:11px">a worktree per session</text>
 </g>
 <g id="phone" class="el">
-  <rect class="outline" x="1000" y="640" width="80" height="150" rx="10"/>
-  <text class="label" x="1040" y="830" text-anchor="middle" style="font-size:13px">my phone</text>
+  <rect class="outline" x="1500" y="640" width="80" height="150" rx="10"/>
+  <text class="label" x="1540" y="830" text-anchor="middle" style="font-size:13px">phone</text>
 </g>
 <g id="mesh" class="el">
-  <path class="wire plan" style="--len:1200" d="M 1935 505 C 1500 560, 1200 500, 800 430"/>
-  <path class="wire plan" style="--len:1300" d="M 1935 525 C 1550 650, 1150 730, 740 735"/>
-  <path class="wire plan" style="--len:950" d="M 1935 540 C 1650 660, 1350 730, 1090 715"/>
+  <path class="wire plan" style="--len:700" d="M 1935 505 C 1750 545, 1550 480, 1310 425"/>
+  <path class="wire plan" style="--len:800" d="M 1935 525 C 1780 640, 1520 725, 1250 735"/>
+  <path class="wire plan" style="--len:450" d="M 1935 540 C 1830 640, 1700 710, 1595 705"/>
   <text class="label" x="1450" y="380" text-anchor="middle" style="fill:var(--plan)">the tailnet</text>
 </g>
-        <!-- ================= ACT 3 : contamination & workbox ================= -->
+        <!-- ================= OPTION 5 : the split ================= -->
 <g id="persrepo" class="el">
   <rect class="outline" x="2000" y="330" width="130" height="36" rx="4" style="stroke:var(--plan)"/>
   <text class="label mono" x="2065" y="353" text-anchor="middle">personal repo</text>
@@ -406,8 +461,13 @@ body.moved #hint{opacity:0}
   <rect class="outline" x="2280" y="330" width="130" height="36" rx="4" style="stroke:var(--plan)"/>
   <text class="label mono" x="2345" y="353" text-anchor="middle">work repo</text>
 </g>
-<ellipse id="haze" class="el glow-danger" cx="2205" cy="350" rx="150" ry="55"
-  fill="rgba(237,21,102,.14)" stroke="var(--danger)" stroke-dasharray="4 6"/>
+<!-- an injection from the workbox dies at the devbox wall -->
+<g id="blocked" class="el glow-danger">
+  <path class="wire danger" style="--len:110" d="M 2616 348 L 2514 348"/>
+  <path d="M 2492 336 L 2512 360 M 2512 336 L 2492 360" fill="none"
+    stroke="var(--danger)" stroke-width="2.5"/>
+  <text class="reach-label sm" x="2502" y="322" text-anchor="middle">blocked</text>
+</g>
 <g id="workbox" class="el">
   <rect class="outline" x="2560" y="250" width="500" height="380" rx="10" style="stroke:var(--ink)"/>
   <text class="label bright mono" x="2580" y="285">workbox</text>
@@ -436,7 +496,8 @@ body.moved #hint{opacity:0}
   <path class="outline" d="M 2020 717 L 2042 739 M 2034 731 L 2040 725"/>
   <circle class="outline" cx="2085" cy="710" r="12"/>
   <path class="outline" d="M 2095 717 L 2117 739 M 2109 731 L 2115 725"/>
-  <text class="label mono" x="2145" y="716">github token · signing key — its own</text>
+  <text class="label mono" x="2145" y="706" style="font-size:12px">github token · signing key</text>
+  <text class="label mono" x="2145" y="728" style="font-size:12px">— its own</text>
 </g>
 <g id="wbsecrets" class="el">
   <rect x="2560" y="670" width="500" height="100" rx="8" fill="rgba(255,255,255,.03)"
@@ -445,7 +506,8 @@ body.moved #hint{opacity:0}
   <path class="outline" d="M 2640 717 L 2662 739 M 2654 731 L 2660 725"/>
   <circle class="outline" cx="2705" cy="710" r="12"/>
   <path class="outline" d="M 2715 717 L 2737 739 M 2729 731 L 2735 725"/>
-  <text class="label mono" x="2765" y="716">github token · signing key — its own</text>
+  <text class="label mono" x="2765" y="706" style="font-size:12px">github token · signing key</text>
+  <text class="label mono" x="2765" y="728" style="font-size:12px">— its own</text>
 </g>
 <g id="packets" class="el">
   <circle class="packet p1" r="4" fill="var(--plan)"/>
@@ -455,13 +517,28 @@ body.moved #hint{opacity:0}
       </g>
     </svg>
     <div id="scoreboard"><table>
-  <thead><tr><th></th><th>raw laptop</th><th>bubblewrap</th><th>ephemeral container</th><th>server devbox</th></tr></thead>
+  <thead><tr><th>option</th><th>what it gives</th><th>what it costs</th><th>still reachable</th></tr></thead>
   <tbody>
-    <tr><th>filesystem</th><td class="bad">everything you own</td><td class="mid">what you remembered to mask</td><td class="good">one repo, bind-mounted</td><td class="good">container fs only</td></tr>
-    <tr><th>network</th><td class="bad">yours</td><td class="mid">yours unless unshared</td><td class="mid">host's</td><td class="good">private veth + one tailscale door</td></tr>
-    <tr><th>credentials</th><td class="bad">all your keys</td><td class="mid">masked, if you remembered</td><td class="good">none mounted</td><td class="good">scoped PAT + per-box signing key</td></tr>
-    <tr><th>portability</th><td class="good">anywhere</td><td class="bad">linux only</td><td class="bad">linux only</td><td class="good">any device on the tailnet</td></tr>
-    <tr><th>persistence</th><td class="bad">agent lives in your home</td><td class="mid">none</td><td class="mid">discarded on exit</td><td class="good">persistent · a worktree per session</td></tr>
+    <tr><th>no boundary</th>
+      <td>nothing to set up</td>
+      <td>no boundary at all</td>
+      <td class="bad">everything the user owns</td></tr>
+    <tr><th>bubblewrap</th>
+      <td>no daemon, no root; precise binds</td>
+      <td>a flag list maintained by hand; one miss is a hole</td>
+      <td class="bad">whatever wasn't masked</td></tr>
+    <tr><th>container on your machine</th>
+      <td>full OS; the boundary is the container, not a rule list</td>
+      <td>nspawn: host network, Linux only · docker: image upkeep or broad egress</td>
+      <td class="mid">one repo — plus the host network or egress</td></tr>
+    <tr><th>container on a server</th>
+      <td>persistent, off the daily driver, bwrap inside, any client</td>
+      <td>one host holds every key; a container is not a VM</td>
+      <td class="mid">the container, and one token for every context</td></tr>
+    <tr><th>one box per identity</th>
+      <td>tokens, keys and filesystems disjoint</td>
+      <td>more boxes to define and keep current</td>
+      <td class="good">one identity, and only that identity</td></tr>
   </tbody>
 </table></div>
   </div>
@@ -476,9 +553,11 @@ body.moved #hint{opacity:0}
 const VIEW = {w: 1600, h: 900};
 
 const TITLES = [
-  'Title', 'The incident', 'Bubblewrap', 'A container per session',
-  'The Mac wall', 'Enter the devbox', 'Scope the token', 'The front door',
-  'One box, two lives', 'Workbox', 'Scoreboard', 'The full picture'
+  'Title', 'The yardstick', 'Option 1 · no boundary', 'Option 2 · bubblewrap',
+  'Option 3 · a container on your machine', 'Option 4 · a server container',
+  'Option 4 · getting code out', 'Option 4 · one door',
+  'Option 5 · one box per identity',
+  'Five options, side by side', 'A worked example'
 ];
 
 // Each slide: absolute camera + absolute element states.
@@ -486,49 +565,49 @@ const TITLES = [
 const SLIDES = [
   // 1 title — a laptop alone in the dark
   {cam: {x: 180, y: 110, w: 880}, el: {laptop: 'on'}},
-  // 2 incident — claude wakes, tendril reaches for ~/.ssh
-  {cam: {x: 300, y: 210, w: 900}, el: {laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on'}},
-  // 3 bubblewrap — dashed boundary around the agent, tendril blocked (gone)
-  {cam: {x: 300, y: 210, w: 900}, el: {laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on'}},
-  // 4 container per session — boundary morphs to a solid pool slot; slots + repo appear
-  {cam: {x: 350, y: 130, w: 1120}, el: {
-    laptop: 'on', claude: 'on', boundary: 'on solid pool',
-    slot2: 'on', slot3: 'on', slot4: 'on', poollabel: 'on', repochip: 'on docked'}},
-  // 5 mac wall — pool dims context, macbook appears, container fails to render
-  {cam: {x: 330, y: 170, w: 1190}, el: {
-    laptop: 'on', boundary: 'on solid pool', slot2: 'on', slot3: 'on', slot4: 'on',
-    mac: 'on', macdead: 'on'}},
-  // 6 devbox — camera pans right to redtruck; keys stay outside the wall
-  {cam: {x: 1820, y: 70, w: 1330}, el: {
-    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on', sopsmounts: 'on'}},
-  // 7 scope the token — PAT draws to GitHub, allowlist lights up
+  // 2 the yardstick — the agent on the machine, the question stated
+  {cam: {x: 300, y: 210, w: 900}, el: {laptop: 'on', claude: 'on'}},
+  // 3 option 1 — the agent's uid is the boundary; the field covers everything
+  {cam: {x: 300, y: 210, w: 900}, el: {
+    laptop: 'on', claude: 'on', sshkey: 'on', tendril: 'on', reachall: 'on'}},
+  // 4 option 2 — boundary draws in; field contracts but stays ragged, ~/.ssh now outside
+  {cam: {x: 300, y: 210, w: 900}, el: {
+    laptop: 'on', claude: 'on', sshkey: 'on', boundary: 'on', reachbwrap: 'on'}},
+  // 5 option 3 — the boundary becomes a container on the laptop, agent inside
+  {cam: {x: 280, y: 170, w: 780}, el: {
+    laptop: 'on', claude: 'on', ctrbox: 'on', reachctr: 'on'}},
+  // 6 option 4, the box — camera pans right; the server holds just the devbox
+  {cam: {x: 1580, y: 95, w: 1200}, el: {
+    redtruck: 'on solo', devbox: 'on', agentglyph: 'on', innerwrap: 'on',
+    hostkeys: 'on', sopsmounts: 'on', reachdev: 'on'}},
+  // 7 option 4, credentials — scoped token to an allowlist, or no token and a human
   {cam: {x: 1800, y: -5, w: 1420}, el: {
-    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
-    github: 'on', patline: 'on', patlabel: 'on', allowlist: 'on'}},
-  // 8 paseo — wide shot: daemon, door, tailnet mesh to laptop/mac/phone
-  {cam: {x: 280, y: -370, w: 2950}, el: {
-    redtruck: 'on', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
+    redtruck: 'on solo', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
+    github: 'on', patline: 'on', patlabel: 'on', allowlist: 'on',
+    reviewbranch: 'on', reachdev: 'on', reachgh: 'on'}},
+  // 8 option 4, access — the tailnet devices sit close by the door
+  {cam: {x: 880, y: -230, w: 2350}, el: {
+    redtruck: 'on solo', devbox: 'on', agentglyph: 'on', hostkeys: 'on',
     github: 'on', patline: 'on', allowlist: 'on',
     paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
-    laptop: 'on', mac: 'on', phone: 'on'}},
-  // 9 contamination — zoom into the devbox; two repos, one haze
-  {cam: {x: 1830, y: 205, w: 780}, el: {
-    devbox: 'on', agentglyph: 'on', persrepo: 'on', workrepo: 'on', haze: 'on',
-    paseod: 'on', worktrees: 'on', dbtoken: 'on'}},
-  // 10 workbox — second box splits off; work repo migrates; per-box tokens
+    laptop: 'on near', mac: 'on', phone: 'on', reachdev: 'on'}},
+  // 9 option 5 — one box per identity; an injection dies at the wall
   {cam: {x: 1820, y: 70, w: 1330}, el: {
     redtruck: 'on', devbox: 'on', agentglyph: 'on', persrepo: 'on',
     workrepo: 'on migrated', workbox: 'on split',
-    dbtoken: 'on', wbtoken: 'on', agentglyph2: 'on', separator: 'on', dbsecrets: 'on', wbsecrets: 'on split'}},
-  // 11 scoreboard — overlay carries the slide; world dims behind it
-  {cam: {x: 1820, y: 70, w: 1330}, el: {}},
-  // 12 full picture — everything on, packets flowing
-  {cam: {x: 280, y: -370, w: 2950}, el: {
+    dbtoken: 'on', wbtoken: 'on', agentglyph2: 'on', separator: 'on',
+    dbsecrets: 'on', wbsecrets: 'on split',
+    reachdev: 'on', reachwb: 'on', blocked: 'on'}},
+  // 10 the table — overlay carries the slide; the world stays empty behind it
+  {cam: {x: 3340, y: 180, w: 1300}, el: {}},
+  // 11 the worked example — everything on, packets flowing, two small fields
+  {cam: {x: 880, y: -230, w: 2350}, el: {
     redtruck: 'on', devbox: 'on', workbox: 'on split', agentglyph: 'on', agentglyph2: 'on',
     persrepo: 'on', workrepo: 'on migrated', dbtoken: 'on', wbtoken: 'on',
-    hostkeys: 'on', github: 'on', patline: 'on', allowlist: 'on',
+    dbsecrets: 'on', wbsecrets: 'on split', github: 'on', patline: 'on', allowlist: 'on',
     paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
-    laptop: 'on', mac: 'on', phone: 'on', packets: 'on'}}
+    laptop: 'on near', mac: 'on', phone: 'on', packets: 'on',
+    reachdev: 'on', reachwb: 'on'}}
 ];
 
 const world = document.getElementById('world');
@@ -557,6 +636,8 @@ TITLES.forEach((t, i) => {
   indexList.appendChild(li);
 });
 
+const board = document.getElementById('scoreboard');
+
 let cur = -1;
 function camTransform(c) {
   const s = VIEW.w / c.w;
@@ -571,7 +652,7 @@ function go(n) {
   els.forEach(e => e.setAttribute('class', e.dataset.base + ' ' + (s.el[e.id] || '')));
   texts.forEach((t, i) => t.classList.toggle('current', i === n));
   dots.forEach((d, i) => d.classList.toggle('current', i === n));
-  document.getElementById('scoreboard').classList.toggle('on', n === 10);
+  board.classList.toggle('on', n === 9);
   if (n > 0) document.body.classList.add('moved');
   history.replaceState(null, '', '#' + (n + 1));
 }
@@ -593,3 +674,4 @@ go(!isNaN(start) ? start - 1 : 0);
 </script>
 </body>
 </html>
+
