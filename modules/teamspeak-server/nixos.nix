@@ -29,6 +29,14 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
+    # ts3server.sqlitedb holds the server identity — losing it forces every
+    # client to re-trust a new server. Rootfs path (DynamicUser +
+    # StateDirectory), so: stop, copy raw, restart.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "/var/lib/nixos-containers/teamspeak/var/lib/private/teamspeak3-server" ];
+      stopContainers = [ "teamspeak" ];
+    };
+
     networking.firewall = lib.mkIf cfg.publicAccess {
       allowedUDPPorts = [ 9987 ]; # Voice
       allowedTCPPorts = [ 30033 ]; # File Transfer
