@@ -111,6 +111,11 @@ body.moved #hint{opacity:0}
 .reach-label{fill:#f2a0bd;font-size:13px;letter-spacing:.06em}
 .reach-label.sm{font-size:11px}
 .reach-label.xs{font-size:11px;fill:var(--ink-3);letter-spacing:.04em}
+/* ---- act 2, the context field: everything the model must SEE right now ----
+   The reach field's periwinkle twin. Same grammar, second budget. */
+.ctx{fill:rgba(136,156,231,.12);stroke:var(--plan);stroke-width:1.5;stroke-dasharray:5 6}
+.ctx-label{fill:#b6c2ef;font-size:13px;letter-spacing:.06em}
+.ctx-label.sm{font-size:11px}
 /* packets: travel the mesh and the PAT path
    (offset-path values must match the path d= values in the SVG below) */
 .packet{opacity:0}
@@ -294,6 +299,91 @@ body.moved #hint{opacity:0}
       one identity — one credential, one signing key — with an orchestrator
       serving each box to the tailnet, so any device is a thin client.</p>
       <p class="big">The agent's behaviour is the same in every option.<br>Only its reach changes.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The second yardstick</div>
+      <h1>Not intelligence. Context.</h1>
+      <p>Every option so far bounded what the agent can <em>touch</em>.
+      Inside the box a second budget appears: what the model must
+      <em>see</em>. On a frontier model every token is billed. On a local
+      model, the window is the hardware.</p>
+      <p>This server runs a 27B on a 31&thinsp;GiB card — 123k tokens of
+      usable window, and that is all there is. One model resident at a
+      time; a swap stalls for minutes.</p>
+      <p class="big">When a model does a task,<br>how much must it see?</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">The problem · a tangled repo</div>
+      <h1>Every task is a whole-repo task</h1>
+      <p>When everything imports everything, a one-line change drags the
+      codebase into the window: the model reads nine files to touch
+      one.</p>
+      <p>A frontier model bills for the tour. A local model simply runs
+      out — and whatever doesn't fit, it silently doesn't know.</p>
+      <p class="big">Context: everything, every time.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Context boundary 1 · in the code</div>
+      <h1>Hexagonal architecture</h1>
+      <p>The core holds the domain logic, pure and small, and speaks only
+      through <strong>ports</strong> — named interfaces.
+      <strong>Adapters</strong> on the outside translate: the database,
+      HTTP, git, the LLM itself.</p>
+      <div class="chips">
+        <h2>What it gives</h2>
+        <div class="chip pro">A task is one port and one adapter — the rest of the repo doesn't need to exist</div>
+        <div class="chip pro">The port is a contract small enough to hand a small model</div>
+        <div class="chip pro">Adapters swap without touching the core</div>
+        <h2>What it costs</h2>
+        <div class="chip con">More files, more indirection</div>
+        <div class="chip con">Ceremony a small script doesn't need</div>
+      </div>
+      <p class="big">A port does for context what the container does for reach.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Context boundary 2 · in the session</div>
+      <h1>Subagents rent context</h1>
+      <p>The orchestrating session holds the plan — and nothing else.
+      Each search and each task goes to a subagent that spawns with a
+      fresh window, reads only its slice, reports one line back, and
+      dissolves.</p>
+      <p>The card is tuned for it: vLLM serves three sequences in
+      parallel — three subagents at a time, without outgrowing the KV
+      pool.</p>
+      <p class="big">Context is rented per task,<br>and returned on exit.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">Context boundary 3 · in the models</div>
+      <h1>Plan up. Implement down. Review up.</h1>
+      <p>A frontier model writes the plan: small task briefs with the
+      interfaces named. Expensive tokens — but few of them.</p>
+      <p>The local model implements each brief in a fresh 32k window.
+      The bulk tokens of the job run on the card, at the price of
+      watts.</p>
+      <p>At the end the frontier model returns once, and reads the whole
+      branch diff.</p>
+      <p class="big">Frontier tokens buy judgment.<br>Bulk tokens stay local.</p>
+    </div>
+
+    <div class="slide-text">
+      <div class="kicker">A case study</div>
+      <h1>To the letter — bugs included</h1>
+      <p>One run's plan carried two structural bugs into its task briefs.
+      The local model implemented every brief faithfully — so it
+      implemented the bugs too. Eleven per-task reviews came back
+      clean.</p>
+      <p>The frontier model's whole-branch review caught four structural
+      bugs, both planted ones among them. A faithful implementer
+      reproduces its plan's flaws; only a pass that sees the whole
+      branch catches them.</p>
+      <p>One model generation later, the same card caught one of those
+      bugs on its own. The gap is closing.</p>
+      <p class="big">Keys on the host. Repos in the box.<br>Code on GitHub. Context on a budget.</p>
     </div>
 
   </section>
@@ -509,6 +599,186 @@ body.moved #hint{opacity:0}
   <text class="label mono" x="2765" y="706" style="font-size:12px">github token · signing key</text>
   <text class="label mono" x="2765" y="728" style="font-size:12px">— its own</text>
 </g>
+<!-- ================= ACT 2 : the context budget (world x 4800..10700) =================
+     The reach field's twin: the periwinkle context field — what the model must SEE.
+     Scenes left to right: the card, the tangle, the hexagon, subagents, tiers.
+     Fields first, so scene elements paint over them. -->
+<g id="ctxall2" class="el">
+  <rect class="ctx" x="5600" y="230" width="840" height="440" rx="8"/>
+  <text class="ctx-label" x="5604" y="214">context: the whole repo — for a one-line change</text>
+</g>
+<g id="ctxslice" class="el">
+  <rect class="ctx" x="7240" y="340" width="360" height="90" rx="8"/>
+  <text class="ctx-label sm" x="7244" y="326">context: one port, one adapter</text>
+</g>
+<g id="orchctx" class="el">
+  <rect class="ctx" x="8170" y="360" width="180" height="140" rx="8"/>
+  <text class="ctx-label sm" x="8174" y="346">context: the plan</text>
+</g>
+<g id="subctx" class="el">
+  <rect class="ctx" x="8570" y="240" width="320" height="100" rx="8"/>
+  <rect class="ctx" x="8570" y="410" width="320" height="100" rx="8"/>
+  <rect class="ctx" x="8570" y="580" width="320" height="100" rx="8"/>
+  <text class="ctx-label sm" x="8574" y="226">a fresh window each</text>
+</g>
+<g id="ctxtask" class="el">
+  <rect class="ctx" x="9990" y="560" width="220" height="110" rx="8"/>
+  <text class="ctx-label sm" x="9994" y="548">context: one brief</text>
+</g>
+<!-- scene: the local model card — the window is the hardware -->
+<g id="llmcard" class="el">
+  <rect class="outline" x="4850" y="300" width="460" height="220" rx="10"/>
+  <text class="label mono bright" x="4880" y="336">the local model</text>
+  <circle class="outline" cx="4930" cy="410" r="20" style="stroke:var(--plan)"/>
+  <path d="M4930 397 L4934 406 L4943 410 L4934 414 L4930 423 L4926 414 L4917 410 L4926 406 Z" fill="#889CE7"/>
+  <text class="label mono bright" x="4990" y="405">a 27B · NVFP4</text>
+  <text class="label mono" x="4990" y="427" style="font-size:11px">31 GiB card · vLLM · llama-swap</text>
+  <text class="label mono" x="4880" y="490" style="font-size:11px">one model resident at a time — a swap stalls for minutes</text>
+</g>
+<g id="ctxwindow" class="el">
+  <rect class="outline faint" x="4850" y="560" width="460" height="26" rx="4"/>
+  <rect x="4852" y="562" width="432" height="22" rx="3" fill="rgba(136,156,231,.22)"/>
+  <text class="ctx-label sm" x="4852" y="612">the context window · 123k usable of 131k — the whole budget</text>
+</g>
+<!-- scene: the tangled repo — everything imports everything -->
+<g id="tangle" class="el">
+  <path d="M 5710 295 L 6040 430 M 5710 295 L 6260 600 M 5980 275 L 5760 445
+           M 5980 275 L 6290 465 M 5980 275 L 5990 625 M 6250 315 L 5760 445
+           M 6250 315 L 5700 605 M 5760 445 L 6260 600 M 6040 430 L 5700 605
+           M 6040 430 L 6250 315 M 6290 465 L 5990 625 M 6290 465 L 5710 295"
+        fill="none" stroke="var(--ink-3)" stroke-width="1" opacity=".45"/>
+  <rect class="outline faint" x="5650" y="280" width="120" height="30" rx="4"/>
+  <text class="label mono" x="5710" y="300" text-anchor="middle" style="font-size:11px">auth</text>
+  <rect class="outline faint" x="5920" y="260" width="120" height="30" rx="4"/>
+  <text class="label mono" x="5980" y="280" text-anchor="middle" style="font-size:11px">http</text>
+  <rect class="outline faint" x="6190" y="300" width="120" height="30" rx="4"/>
+  <text class="label mono" x="6250" y="320" text-anchor="middle" style="font-size:11px">db</text>
+  <rect class="outline faint" x="5700" y="430" width="120" height="30" rx="4"/>
+  <text class="label mono" x="5760" y="450" text-anchor="middle" style="font-size:11px">models</text>
+  <rect class="outline faint" x="5980" y="415" width="120" height="30" rx="4"/>
+  <text class="label mono" x="6040" y="435" text-anchor="middle" style="font-size:11px">queue</text>
+  <rect class="outline faint" x="6230" y="450" width="120" height="30" rx="4"/>
+  <text class="label mono" x="6290" y="470" text-anchor="middle" style="font-size:11px">config</text>
+  <rect class="outline faint" x="5640" y="590" width="120" height="30" rx="4"/>
+  <text class="label mono" x="5700" y="610" text-anchor="middle" style="font-size:11px">jobs</text>
+  <rect class="outline faint" x="5930" y="610" width="120" height="30" rx="4"/>
+  <text class="label mono" x="5990" y="630" text-anchor="middle" style="font-size:11px">utils</text>
+  <rect class="outline faint" x="6200" y="585" width="120" height="30" rx="4"/>
+  <text class="label mono" x="6260" y="605" text-anchor="middle" style="font-size:11px">main</text>
+</g>
+<!-- scene: the hexagon — pure core, ports on the edges, adapters outside -->
+<g id="hexcore" class="el">
+  <path class="outline" style="stroke:var(--ink)" d="M 7330 470 L 7240 626 L 7060 626 L 6970 470 L 7060 314 L 7240 314 Z"/>
+  <text class="label bright" x="7150" y="462" text-anchor="middle">domain core</text>
+  <text class="label mono" x="7150" y="488" text-anchor="middle" style="font-size:11px">pure logic · no I/O</text>
+</g>
+<g id="hexports" class="el">
+  <rect class="outline" x="7275" y="382" width="20" height="20" style="stroke:var(--plan)"/>
+  <rect class="outline" x="7275" y="538" width="20" height="20" style="stroke:var(--plan)"/>
+  <rect class="outline" x="7005" y="382" width="20" height="20" style="stroke:var(--plan)"/>
+  <rect class="outline" x="7005" y="538" width="20" height="20" style="stroke:var(--plan)"/>
+  <text class="label mono" x="7285" y="372" text-anchor="middle" style="font-size:11px;fill:var(--plan)">storage port</text>
+  <text class="label mono" x="7285" y="582" text-anchor="middle" style="font-size:11px;fill:var(--plan)">git port</text>
+  <text class="label mono" x="7015" y="372" text-anchor="middle" style="font-size:11px;fill:var(--plan)">http port</text>
+  <text class="label mono" x="7015" y="582" text-anchor="middle" style="font-size:11px;fill:var(--plan)">llm port</text>
+</g>
+<g id="hexadapters" class="el">
+  <path class="wire plan" style="--len:130" d="M 7297 392 L 7418 378"/>
+  <path class="wire plan" style="--len:130" d="M 7297 548 L 7418 548"/>
+  <path class="wire plan" style="--len:200" d="M 7003 392 L 6812 378"/>
+  <path class="wire plan" style="--len:200" d="M 7003 548 L 6812 548"/>
+  <rect class="outline" x="7420" y="360" width="150" height="36" rx="4"/>
+  <text class="label mono" x="7495" y="383" text-anchor="middle">db adapter</text>
+  <rect class="outline" x="7420" y="530" width="150" height="36" rx="4"/>
+  <text class="label mono" x="7495" y="553" text-anchor="middle">github adapter</text>
+  <rect class="outline" x="6660" y="360" width="150" height="36" rx="4"/>
+  <text class="label mono" x="6735" y="383" text-anchor="middle">http adapter</text>
+  <rect class="outline" x="6660" y="530" width="150" height="36" rx="4"/>
+  <text class="label mono" x="6735" y="553" text-anchor="middle">llm adapter</text>
+</g>
+<!-- scene: subagents — the orchestrator holds the plan, workers rent windows -->
+<g id="orch2" class="el glow-plan">
+  <circle cx="8250" cy="430" r="10" fill="var(--plan)"/>
+  <circle class="outline" cx="8250" cy="430" r="22" style="stroke:var(--plan)"/>
+  <text class="label mono" x="8250" y="485" text-anchor="middle" style="fill:var(--plan)">the orchestrating session</text>
+</g>
+<g id="subs" class="el">
+  <circle class="outline" cx="8640" cy="280" r="14" style="stroke:var(--plan)"/>
+  <circle cx="8640" cy="280" r="4" fill="var(--plan)"/>
+  <text class="label mono" x="8680" y="285" style="font-size:11px">search: find the port's callers</text>
+  <circle class="outline" cx="8640" cy="450" r="14" style="stroke:var(--plan)"/>
+  <circle cx="8640" cy="450" r="4" fill="var(--plan)"/>
+  <text class="label mono" x="8680" y="455" style="font-size:11px">implement: one brief</text>
+  <circle class="outline" cx="8640" cy="620" r="14" style="stroke:var(--plan)"/>
+  <circle cx="8640" cy="620" r="4" fill="var(--plan)"/>
+  <text class="label mono" x="8680" y="625" style="font-size:11px">verify: run the tests</text>
+</g>
+<g id="subwires" class="el">
+  <path class="wire plan" style="--len:450" d="M 8270 420 C 8400 340, 8480 300, 8622 284"/>
+  <path class="wire plan" style="--len:360" d="M 8274 435 L 8622 450"/>
+  <path class="wire plan" style="--len:450" d="M 8270 440 C 8400 520, 8480 560, 8622 616"/>
+  <text class="label mono" x="8420" y="405" style="font-size:11px">one line comes back</text>
+</g>
+<!-- scene: the tiers — plan up, implement down, review up -->
+<g id="frontier1" class="el">
+  <circle class="outline" cx="9500" cy="260" r="30" style="stroke:var(--ink)"/>
+  <circle class="outline" cx="9500" cy="260" r="18" style="stroke:var(--ink-3)"/>
+  <text class="label bright" x="9500" y="322" text-anchor="middle" style="font-size:13px">frontier model</text>
+  <text class="label mono" x="9500" y="342" text-anchor="middle" style="font-size:11px">writes the plan</text>
+</g>
+<g id="tierwire1" class="el">
+  <path class="wire plan" style="--len:420" d="M 9530 280 C 9650 360, 9700 420, 9790 480"/>
+  <text class="label mono" x="9600" y="400" style="font-size:11px">task briefs — interfaces named</text>
+</g>
+<g id="taskcards" class="el">
+  <rect class="outline" x="9740" y="470" width="170" height="32" rx="4" style="stroke:var(--plan)"/>
+  <text class="label mono" x="9825" y="491" text-anchor="middle" style="font-size:11px">task brief 1</text>
+  <rect class="outline" x="9760" y="512" width="170" height="32" rx="4" style="stroke:var(--plan)"/>
+  <text class="label mono" x="9845" y="533" text-anchor="middle" style="font-size:11px">task brief 2</text>
+  <rect class="outline" x="9780" y="554" width="170" height="32" rx="4" style="stroke:var(--plan)"/>
+  <text class="label mono" x="9865" y="575" text-anchor="middle" style="font-size:11px">task brief 3</text>
+  <path class="wire plan" style="--len:150" d="M 9930 580 C 9990 600, 10020 610, 10052 618"/>
+</g>
+<g id="local2" class="el">
+  <circle class="outline" cx="10080" cy="615" r="16" style="stroke:var(--plan)"/>
+  <path d="M10080 604 L10083 612 L10091 615 L10083 618 L10080 626 L10077 618 L10069 615 L10077 612 Z" fill="#889CE7"/>
+  <text class="label mono" x="10080" y="700" text-anchor="middle">the local 27B</text>
+  <text class="label mono" x="10080" y="720" text-anchor="middle" style="font-size:11px">implements — a fresh 32k window per brief</text>
+</g>
+<g id="tierwire2" class="el">
+  <path class="wire plan" style="--len:480" d="M 10108 600 C 10250 480, 10350 360, 10432 292"/>
+  <text class="label mono" x="10310" y="470" style="font-size:11px">the whole branch diff — read once</text>
+</g>
+<g id="frontier2" class="el">
+  <circle class="outline" cx="10460" cy="260" r="30" style="stroke:var(--ink)"/>
+  <circle class="outline" cx="10460" cy="260" r="18" style="stroke:var(--ink-3)"/>
+  <text class="label bright" x="10460" y="322" text-anchor="middle" style="font-size:13px">frontier model</text>
+  <text class="label mono" x="10460" y="342" text-anchor="middle" style="font-size:11px">reviews the whole branch</text>
+</g>
+<g id="costnote" class="el">
+  <text class="label mono" x="9980" y="180" text-anchor="middle" style="font-size:12px">expensive tokens: the plan and the diff — few</text>
+  <text class="label mono" x="9980" y="780" text-anchor="middle" style="font-size:12px">bulk tokens: on the card, at the price of watts</text>
+</g>
+<!-- case study overlays: bugs ride the briefs in, and die at the whole-branch review -->
+<g id="bugplan" class="el glow-danger">
+  <circle cx="9688" cy="410" r="5" fill="var(--danger)"/>
+  <circle cx="9930" cy="528" r="5" fill="var(--danger)"/>
+  <text class="reach-label sm" x="9560" y="368">two bugs, verbatim in the briefs</text>
+</g>
+<g id="bugimpl" class="el">
+  <text class="reach-label sm" x="10080" y="748" text-anchor="middle">implemented faithfully — 11 per-task reviews, all clean</text>
+</g>
+<g id="bugcaught" class="el glow-danger">
+  <path d="M 10510 240 L 10532 262 M 10532 240 L 10510 262" fill="none" stroke="var(--danger)" stroke-width="2.5"/>
+  <path d="M 10542 240 L 10564 262 M 10564 240 L 10542 262" fill="none" stroke="var(--danger)" stroke-width="2.5"/>
+  <text class="reach-label sm" x="10537" y="200" text-anchor="middle">whole-branch review:</text>
+  <text class="reach-label sm" x="10537" y="218" text-anchor="middle">4 bugs — both planted ones</text>
+</g>
+<g id="nextgen" class="el">
+  <rect class="outline" x="10240" y="640" width="250" height="54" rx="6" style="stroke:rgba(87,185,138,.55)"/>
+  <text class="label mono" x="10365" y="662" text-anchor="middle" style="font-size:12px;fill:#a5dfc2">one generation later:</text>
+  <text class="label mono" x="10365" y="680" text-anchor="middle" style="font-size:12px;fill:#a5dfc2">the 27B caught one itself</text>
+</g>
 <g id="packets" class="el">
   <circle class="packet p1" r="4" fill="var(--plan)"/>
   <circle class="packet p2" r="4" fill="var(--plan)"/>
@@ -557,7 +827,12 @@ const TITLES = [
   'Option 3 · a container on your machine', 'Option 4 · a server container',
   'Option 4 · getting code out', 'Option 4 · one door',
   'Option 5 · one box per identity',
-  'Five options, side by side', 'A worked example'
+  'Five options, side by side', 'A worked example',
+  'The second yardstick', 'The tangled repo',
+  'Context boundary 1 · hexagonal architecture',
+  'Context boundary 2 · subagents',
+  'Context boundary 3 · model tiers',
+  'A case study'
 ];
 
 // Each slide: absolute camera + absolute element states.
@@ -607,7 +882,26 @@ const SLIDES = [
     dbsecrets: 'on', wbsecrets: 'on split', github: 'on', patline: 'on', allowlist: 'on',
     paseod: 'on', tsdoor: 'on', worktrees: 'on', mesh: 'on',
     laptop: 'on near', mac: 'on', phone: 'on', packets: 'on',
-    reachdev: 'on', reachwb: 'on'}}
+    reachdev: 'on', reachwb: 'on'}},
+  // 12 the second yardstick — inside the box, a model and its window
+  {cam: {x: 4600, y: 175, w: 980}, el: {llmcard: 'on', ctxwindow: 'on'}},
+  // 13 the tangled repo — the context field covers everything
+  {cam: {x: 5350, y: 105, w: 1350}, el: {tangle: 'on', ctxall2: 'on'}},
+  // 14 hexagonal architecture — the field contracts to one port and one adapter
+  {cam: {x: 6490, y: 115, w: 1320}, el: {
+    hexcore: 'on', hexports: 'on', hexadapters: 'on', ctxslice: 'on'}},
+  // 15 subagents — the orchestrator keeps the plan; workers rent windows
+  {cam: {x: 7880, y: 88, w: 1300}, el: {
+    orch2: 'on', orchctx: 'on', subs: 'on', subctx: 'on', subwires: 'on'}},
+  // 16 tiers — frontier plans, local implements, frontier reviews
+  {cam: {x: 9170, y: -22, w: 1750}, el: {
+    frontier1: 'on', tierwire1: 'on', taskcards: 'on', local2: 'on',
+    ctxtask: 'on', tierwire2: 'on', frontier2: 'on', costnote: 'on'}},
+  // 17 case study — same frame; cost notes yield to the bugs riding in
+  {cam: {x: 9170, y: -22, w: 1750}, el: {
+    frontier1: 'on', tierwire1: 'on', taskcards: 'on', local2: 'on',
+    ctxtask: 'on', tierwire2: 'on', frontier2: 'on',
+    bugplan: 'on', bugimpl: 'on', bugcaught: 'on', nextgen: 'on'}}
 ];
 
 const world = document.getElementById('world');
