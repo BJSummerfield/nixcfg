@@ -1,9 +1,11 @@
 # Adversarial Plan Reviewer Prompt Template
 
-Dispatch ONE read-only reviewer on the most capable available model.
-Under pi-superagents, dispatch sp-review (it pins the max tier) and
-keep the `Review scope: branch` line — sp-review requires it. Fill
-every [BRACKET] before dispatching.
+Dispatch ONE read-only reviewer per hunt-class group on the most
+capable available model. Under pi-superagents, dispatch sp-review (it
+pins the max tier) and keep the `Review scope: branch` line —
+sp-review requires it. Fill every [BRACKET]. `[HUNT_CLASSES]` is
+"1 2 3 4 5 6" for a single-dispatch review, or the group's classes
+under the split protocol (see SKILL.md step 3b).
 
 ```
 Review scope: branch
@@ -19,9 +21,22 @@ to break it and failed.
 
 - Plan: [PLAN_PATH]
 - Spec (if any): [SPEC_PATH]
-- Whole-branch diff package: [PACKAGE_PATH]
-  (merge base [BASE_SHA] → head [HEAD_SHA])
-- Deferred/parked findings from the ledger: [LEDGER_LINES_OR_PATH]
+- What changed: [STAT_PATH] (commit list + diff --stat for merge base
+  [BASE_SHA] → head [HEAD_SHA]; the branch is checked out at HEAD, so
+  the tree in front of you IS the code under review)
+- Findings file: [FINDINGS_PATH] — append your findings here
+- Hunt classes assigned to this dispatch: [HUNT_CLASSES]
+- Deferred/parked ledger findings: [LEDGER_LINES_OR_PATH]
+  (relevant only if class 6 is assigned)
+
+## Context discipline
+
+Work from the tree, never from a bulk diff. For each hunt: grep for
+the symbols, claims, or patterns it implicates, then read only the
+files the grep implicates. Do not read the full unified branch diff,
+and do not re-read what you can re-grep. Your investigation budget is
+turns, not context residency — a fact you need twice is a fact you
+grep twice.
 
 ## Read-only review
 
@@ -30,7 +45,7 @@ Inspect history with `git show`, `git diff`, `git log`. If you need a
 working copy of another revision, use a temporary worktree
 (`git worktree add /tmp/review-[SHA] [SHA]`), never this checkout.
 
-## The hunt — work every class, in order
+## The hunt classes — work each assigned class fully, in order
 
 1. **Cross-API invariants.** For every invariant any constructor or
    validator enforces, enumerate every other path that can create or
@@ -52,29 +67,34 @@ working copy of another revision, use a temporary worktree
    text.
 6. **Deferred-findings triage.** For each deferred or parked ledger
    item, rule: must fix before merge, or stays deferred with a
-   one-line justification.
+   one-line justification. Then read the findings file written by
+   earlier dispatches: dedupe overlapping findings, re-grade anything
+   over- or under-stated, and issue the verdict.
 
 ## Findings discipline
 
 Every Critical or Important finding needs a file:line reference and a
 concrete failure scenario: the exact call sequence or input, and the
 wrong outcome it produces. A finding you cannot make concrete is a
-question, not a finding — list it separately, do not inflate it.
+question, not a finding — record it separately, do not inflate it.
 
-## Output format
+## Output
+
+Append to [FINDINGS_PATH], under a `## Dispatch [HUNT_CLASSES]`
+heading, each finding as:
+
+- `[Critical|Important|Minor]` file:line — what is wrong; the failure
+  scenario; a fix sketch if not obvious.
+- `[Question]` — anything suspicious you could not make concrete.
+
+If class 6 is assigned, end the file with:
 
 ### Verdict
 MERGE-READY or NOT MERGE-READY, one line of justification.
-
-### Critical (must fix)
-### Important (should fix)
-### Minor
-For each: file:line, what is wrong, the failure scenario, and a fix
-sketch if it is not obvious.
-
 ### Deferred-finding rulings
 One line per ledger item: fix-before-merge or deferred, and why.
 
-### Questions
-Anything suspicious you could not make concrete.
+Return to the controller only: counts per severity, and the verdict
+line if class 6 was assigned. The findings file is the record — do
+not restate it in your reply.
 ```

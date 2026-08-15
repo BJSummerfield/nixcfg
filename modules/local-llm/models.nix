@@ -32,7 +32,14 @@
       reasoning = true;
       # measured on 31GiB card; drop maxModelLen if pool shrinks
       maxModelLen = 131072;
-      headroom = 8192;
+      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
+      # only compacts above contextWindow - reserveTokens (16384 default,
+      # dist/core/compaction/compaction.js). headroom must therefore be
+      # >= maxTokens - 16384 plus margin for token-count drift, or there is
+      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
+      # sends a request vLLM must 400. 8192 left an 8k band and a final
+      # review died in it at exactly maxModelLen + 1 tokens.
+      headroom = 20480;
       maxTokens = 32768;
       sampling = {
         temperature = 0.6;
