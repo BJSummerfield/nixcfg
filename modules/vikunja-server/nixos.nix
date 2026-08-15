@@ -35,13 +35,20 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Tailscale state is the only thing we persist on the host directly.
-    # Vikunja files + Postgres data live inside the container's own filesystem
-    # at /var/lib/nixos-containers/vikunja/, which survives restarts and rebuilds.
-    # Back that path up with restic for disaster recovery.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "/var/lib/vikunja-dumps" ];
+    };
+
+    # Tailscale state and the DB dump are the only things persisted on the
+    # host directly. Vikunja files + Postgres data live inside the
+    # container's own filesystem at /var/lib/nixos-containers/vikunja/,
+    # which survives restarts and rebuilds; the nightly dump surfaced at
+    # /var/lib/vikunja-dumps is what mine.backups ships off-site.
     system.activationScripts.vikunja-dirs = ''
       mkdir -p /var/lib/tailscale-vikunja
       chmod 700 /var/lib/tailscale-vikunja
+      mkdir -p /var/lib/vikunja-dumps
+      chmod 700 /var/lib/vikunja-dumps
     '';
 
     containers.vikunja = {
@@ -72,6 +79,13 @@ in
         "/run/secrets/vikunja-jwt-secret" = {
           hostPath = cfg.jwtSecretFile;
           isReadOnly = true;
+        };
+        # Surfaces the nightly pg_dump on the host so the host-side restic
+        # job (modules/backups/nixos.nix) can ship it. The container's
+        # tmpfiles rule re-owns the mount to its postgres user on start.
+        "/var/lib/postgresql/dumps" = {
+          hostPath = "/var/lib/vikunja-dumps";
+          isReadOnly = false;
         };
       };
 
@@ -115,9 +129,10 @@ in
             ];
           };
 
-          # Nightly DB dump. Lives inside /var/lib/vikunja (the DynamicUser
-          # state dir), so the vikunja user can write it. Restic on the host
-          # backs up the container's whole state dir, capturing files + dump.
+          # Nightly DB dump, written where the bind mount surfaces it on the
+          # host as /var/lib/vikunja-dumps for the host-side restic job.
+          # Written as postgres via -Fc so restores work across Postgres
+          # versions; the tmp-then-mv keeps restic from shipping a torn dump.
           systemd.services.vikunja-db-dump = {
             description = "Dump Vikunja Postgres DB for backup";
             serviceConfig = {
