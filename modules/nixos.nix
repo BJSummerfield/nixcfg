@@ -3,6 +3,7 @@
     inputs.sops-nix.nixosModules.sops
     ./_1password/nixos.nix
     ./avahi/nixos.nix
+    ./backups/nixos.nix
     ./dns-server/nixos.nix
     ./docker/nixos.nix
     ./filesystems
