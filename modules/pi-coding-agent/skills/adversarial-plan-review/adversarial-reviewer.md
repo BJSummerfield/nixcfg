@@ -1,11 +1,11 @@
 # Adversarial Plan Reviewer Prompt Template
 
-Dispatch ONE read-only reviewer per hunt-class group on the most
-capable available model. Under pi-superagents, dispatch sp-review (it
-pins the max tier) and keep the `Review scope: branch` line —
-sp-review requires it. Fill every [BRACKET]. `[HUNT_CLASSES]` is
-"1 2 3 4 5 6" for a single-dispatch review, or the group's classes
-under the split protocol (see SKILL.md step 3b).
+The controller copies the fenced prompt below into the dispatch
+VERBATIM — every section, unedited — and fills every [BRACKET].
+`[HUNT_CLASSES]` is `1 2 3 4 5 6` for a single-dispatch review, or
+the group's numbers in split mode (see SKILL.md). Under
+pi-superagents, dispatch sp-review; the first line is its required
+scope marker.
 
 ```
 Review scope: branch
@@ -24,10 +24,9 @@ to break it and failed.
 - What changed: [STAT_PATH] (commit list + diff --stat for merge base
   [BASE_SHA] → head [HEAD_SHA]; the branch is checked out at HEAD, so
   the tree in front of you IS the code under review)
-- Findings file: [FINDINGS_PATH] — append your findings here
 - Hunt classes assigned to this dispatch: [HUNT_CLASSES]
-- Deferred/parked ledger findings: [LEDGER_LINES_OR_PATH]
-  (relevant only if class 6 is assigned)
+- Findings so far (read-only, for class 6): [FINDINGS_PATH_OR_NONE]
+- Deferred/parked ledger findings: [LEDGER_LINES_OR_NONE]
 
 ## Context discipline
 
@@ -40,10 +39,12 @@ grep twice.
 
 ## Read-only review
 
-Do not mutate the working tree, the index, HEAD, or branch state.
-Inspect history with `git show`, `git diff`, `git log`. If you need a
-working copy of another revision, use a temporary worktree
-(`git worktree add /tmp/review-[SHA] [SHA]`), never this checkout.
+You may be running with file edits disabled — never attempt to
+create or edit any file. Do not mutate the working tree, the index,
+HEAD, or branch state. Inspect history with `git show`, `git diff`,
+`git log`. If you need a working copy of another revision, use a
+temporary worktree (`git worktree add /tmp/review-[SHA] [SHA]`),
+never this checkout.
 
 ## The hunt classes — work each assigned class fully, in order
 
@@ -67,9 +68,9 @@ working copy of another revision, use a temporary worktree
    text.
 6. **Deferred-findings triage.** For each deferred or parked ledger
    item, rule: must fix before merge, or stays deferred with a
-   one-line justification. Then read the findings file written by
-   earlier dispatches: dedupe overlapping findings, re-grade anything
-   over- or under-stated, and issue the verdict.
+   one-line justification. Then read the findings file from earlier
+   dispatches: dedupe overlapping findings, re-grade anything over-
+   or under-stated, and issue the verdict.
 
 ## Findings discipline
 
@@ -78,23 +79,25 @@ concrete failure scenario: the exact call sequence or input, and the
 wrong outcome it produces. A finding you cannot make concrete is a
 question, not a finding — record it separately, do not inflate it.
 
-## Output
+A class reported clean must show its work, or the verdict is invalid:
+class 1, the invariants found and the construction/mutation paths
+enumerated for each; class 2, each quantified claim with its counted
+coverage; class 3, each pair and the round trip traced; class 4, the
+interfaces compared. "Clean" with no evidence trail is not a verdict.
 
-Append to [FINDINGS_PATH], under a `## Dispatch [HUNT_CLASSES]`
-heading, each finding as:
+## Output — in your reply; do not write any file
 
-- `[Critical|Important|Minor]` file:line — what is wrong; the failure
-  scenario; a fix sketch if not obvious.
+Under a `## Dispatch [HUNT_CLASSES]` heading:
+
+- Per assigned class: the evidence trail (see above), then each
+  finding as `[Critical|Important|Minor]` file:line — what is wrong;
+  the failure scenario; a fix sketch if not obvious.
 - `[Question]` — anything suspicious you could not make concrete.
 
-If class 6 is assigned, end the file with:
+If class 6 is assigned, end with:
 
 ### Verdict
 MERGE-READY or NOT MERGE-READY, one line of justification.
 ### Deferred-finding rulings
 One line per ledger item: fix-before-merge or deferred, and why.
-
-Return to the controller only: counts per severity, and the verdict
-line if class 6 was assigned. The findings file is the record — do
-not restate it in your reply.
 ```
