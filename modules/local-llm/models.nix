@@ -5,6 +5,69 @@
   baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
 
   models = {
+    "Qwen3.8-27B-NVFP4" = {
+      displayName = "Qwen3.8 27B NVFP4 (redtruck)";
+      repo = "unsloth/Qwen3.8-27B-NVFP4";
+      files = {
+        "chat_template.jinja" = "sha256-EoJ/JLdC6k6AzcEtvPliIicFa595clKjFJJj1Pmqrc4=";
+        "config.json" = "sha256-Gzxxho0SmeUt9vyQfesgLVEyse8Pcqrg720VGF3VOlw=";
+        "generation_config.json" = "sha256-0NDtLjfN+v70pQZ9XqJAewX0+1BSbkfACKWyNdUCQPs=";
+        "model.safetensors" = "sha256-xHNRLHDqzgfiJW/p/XZZasA+MpW+59VM+3JnZBavzAU=";
+        # MTP head — required by llama-swap's speculative-config mtp flag
+        "model_mtp.safetensors" = "sha256-HYJoqoWs4JOlYePntjudOQ2sHNVakM1VtexQnDydqf4=";
+        "model.safetensors.index.json" = "sha256-QpQw4bnmWyy5jv+M0QoG5woJzuicSEh6ORRoSutt9X8=";
+        "preprocessor_config.json" = "sha256-JyJUUKycZSmHLuGST8sJYv9WNINPgXBA9EQRgRb05RY=";
+        "tokenizer.json" = "sha256-BrlQk1LSr1A4GrIkfgg7gNMtXAq6kcJyyp/3Kbag5SM=";
+        "tokenizer_config.json" = "sha256-Up8wAYw23KU4fJm17fNoKH84bywy03kKpxQZVrxRGfo=";
+        "video_preprocessor_config.json" = "sha256-d2ivJ8H6+pzJARwdwgBn4D+JFeA7Y1BFUOEdUGaYbRM=";
+        "vocab.json" = "sha256-zpm0yymD0RiAbOCot3ejWwk+IAClA+veJYUyhMnfoAM=";
+      };
+
+      reasoning = true;
+      # Native context is 262144, and KV is cheap here (only 16 of 64
+      # layers are full attention; the rest are linear with constant
+      # state). 131072 is the conservative start on the 31GiB card —
+      # weights are ~21.8GiB — raise after measuring the KV pool.
+      maxModelLen = 131072;
+      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
+      # only compacts above contextWindow - reserveTokens (16384 default,
+      # dist/core/compaction/compaction.js). headroom must therefore be
+      # >= maxTokens - 16384 plus margin for token-count drift, or there is
+      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
+      # sends a request vLLM must 400.
+      headroom = 20480;
+      maxTokens = 32768;
+      # Model-card thinking-mode settings (temperature 1.0, unlike 3.6's 0.6).
+      sampling = {
+        temperature = 1.0;
+        top_p = 0.95;
+        top_k = 20;
+        min_p = 0.0;
+      };
+
+      # null ttl: vLLM cold start is minutes
+      ttl = null;
+
+      vllm = {
+        gpuMemoryUtilization = 0.94;
+        maxNumSeqs = 3;
+        maxNumBatchedTokens = 2048;
+        kvCacheDtype = "fp8";
+        # recipes.vllm.ai suggests 3 for this model's MTP head
+        speculativeTokens = 3;
+        # 3.8 moved to the qwen3_coder tool-call format (3.6 was qwen3_xml)
+        toolCallParser = "qwen3_coder";
+        reasoningParser = "qwen3";
+      };
+
+      # Aliases share the running instance — no model swap.
+      aliases."Qwen3.8-27B-NVFP4-32k" = {
+        displayName = "Qwen3.8 27B NVFP4 32k budget (redtruck)";
+        contextWindow = 32768;
+        maxTokens = 8192;
+      };
+    };
+
     "Qwen3.6-27B-NVFP4" = {
       displayName = "Qwen3.6 27B NVFP4 (redtruck)";
       repo = "unsloth/Qwen3.6-27B-NVFP4";
@@ -32,7 +95,14 @@
       reasoning = true;
       # measured on 31GiB card; drop maxModelLen if pool shrinks
       maxModelLen = 131072;
-      headroom = 8192;
+      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
+      # only compacts above contextWindow - reserveTokens (16384 default,
+      # dist/core/compaction/compaction.js). headroom must therefore be
+      # >= maxTokens - 16384 plus margin for token-count drift, or there is
+      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
+      # sends a request vLLM must 400. 8192 left an 8k band and a final
+      # review died in it at exactly maxModelLen + 1 tokens.
+      headroom = 20480;
       maxTokens = 32768;
       sampling = {
         temperature = 0.6;
@@ -114,6 +184,11 @@
     };
   };
 
-  enabled = [ "Qwen3.6-27B-NVFP4" ];
-  default = "Qwen3.6-27B-NVFP4";
+  # 3.6 stays enabled as the fallback while 3.8 proves out; drop it from
+  # this list to reclaim its ~22GiB of weights once 3.8 is trusted.
+  enabled = [
+    "Qwen3.8-27B-NVFP4"
+    "Qwen3.6-27B-NVFP4"
+  ];
+  default = "Qwen3.8-27B-NVFP4";
 }

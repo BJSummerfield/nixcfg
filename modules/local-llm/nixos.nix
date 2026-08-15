@@ -18,7 +18,10 @@ let
   cudaEnabled = cfg.cuda.enable;
 
   # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
-  vllmImage = "docker.io/vllm/vllm-openai:v0.25.0";
+  # v0.26.0: first release after Qwen3.8's day-0 support announcement; the
+  # 3.8 models are Qwen3.5-architecture (hybrid linear attention) and get
+  # their optimized kernels here.
+  vllmImage = "docker.io/vllm/vllm-openai:v0.26.0";
   podmanSock = "unix:///run/podman/podman.sock";
   # Drives HOST podman over the bind-mounted API socket; vLLM itself
   # is the upstream OCI image (vllmImage above), not a nix build.
