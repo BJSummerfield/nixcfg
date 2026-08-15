@@ -65,6 +65,14 @@ in
       ];
     };
 
+    # mutableSettings=true makes AdGuardHome.yaml hand-edited runtime state
+    # (admin hash, custom rules, client names). Copied live, container
+    # running: stopping the dns container kills LAN DNS, and a torn copy of
+    # a rarely-rewritten yaml self-heals in the next snapshot.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "/var/lib/adguardhome-data" ];
+    };
+
     system.activationScripts.dns-dirs = ''
       mkdir -p /var/lib/adguardhome-data
       chmod 700 /var/lib/adguardhome-data
