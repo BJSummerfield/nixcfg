@@ -45,8 +45,8 @@ Every reviewer dispatch consists of exactly:
 
 Nothing else. A dispatch that restates, abridges, reorders, or adds
 its own wording of any hunt class is invalid — discard it and
-re-dispatch from the file. Reviewers may be running read-only
-(sp-review is): they return findings in their reply, and the
+re-dispatch from the file. Reviewers may be running read-only on the
+repo (sp-review is): they return findings in their reply, and the
 CONTROLLER appends each reply verbatim to the findings file before
 the next dispatch.
 
@@ -56,25 +56,28 @@ the next dispatch.
    redirected to one file (never the full unified diff), plan path,
    spec path, the ledger's deferred/parked lines. Create an empty
    `findings.md` in the plan workspace.
-2. Size the review: tokens ≈ total bytes / 4 of plan + spec + changed
-   source files. Over a quarter of the review model's context window
-   → split mode; otherwise one dispatch with `[HUNT_CLASSES]` =
-   `1 2 3 4 5 6`.
-3. Dispatch per the contract, on the most capable available model —
-   never the session default. Under pi-superagents: sp-review (the
-   template's first line carries its required scope marker).
-   **Split mode** — three sequential dispatches, fresh context each:
-   - A: `[HUNT_CLASSES]` = `1 3`
-   - B: `[HUNT_CLASSES]` = `2 4`
-   - C: `[HUNT_CLASSES]` = `5 6` — C also adjudicates `findings.md`:
-     dedupe, re-grade, verdict.
+2. Dispatch THREE reviewers, sequentially, fresh context each, per
+   the contract, on the most capable available model — never the
+   session default. Under pi-superagents: sp-review (the template's
+   first line carries its required scope marker).
+   - **Hunt pass A:** `[HUNT_CLASSES]` = `1 2 3 4 5 6`, findings file
+     marked `none yet`.
+   - **Hunt pass B:** the identical dispatch, told nothing about
+     pass A. Independent samples are the point: on this exact review,
+     two passes of the same model have disagreed on a Critical — one
+     caught an invariant hole the other cleared as safe. One pass is
+     a coin flip; the union is the review.
+   - **Adjudication pass:** `[HUNT_CLASSES]` = `6`, with the findings
+     file now holding both hunt replies — dedupe, re-grade, rule on
+     deferred items, verdict.
    After every dispatch, append its reply verbatim to `findings.md`.
-4. Findings → ONE fix wave (a single subagent with the complete
-   findings list), then ONE scoped re-review — it sees only the fix
-   diff and the findings list, so it always fits one dispatch.
-   Adjudicate residuals: park with rulings, or stop and report
-   load-bearing ones.
-5. Only then is the branch merge-ready and
+3. Findings → ONE fix wave (a single subagent with the complete
+   adjudicated findings list), then ONE scoped re-review — it sees
+   only the fix diff and the findings list. On a Critical finding the
+   re-review may challenge the fix's direction, not just its match to
+   the finding. Adjudicate residuals: park with rulings, or stop and
+   report load-bearing ones.
+4. Only then is the branch merge-ready and
    finishing-a-development-branch allowed.
 
 ## Adding this pass to a plan
@@ -104,10 +107,10 @@ individually correct.
 | Excuse | Reality |
 |---|---|
 | "Every task review passed" | Task reviews are task-scoped. The defects this pass exists for are invisible in any single task's diff. |
-| "0 fix rounds — it was a clean run" | Clean tasks say nothing about the seams between them. The run that shipped the bugs was a 0-fix-round run. |
 | "The plan already describes the review step" | A plan summary is a lossy copy of a lossy copy. The template file is the only source; plans may only point at it. |
 | "I'll summarize the template to keep the packet small" | The observed cost of a summarized packet was a review that found zero of the bugs present. Packet tokens are the cheapest thing in this pass. |
-| "I remember the hunt classes" | Remembered classes arrive as one-line questions with the procedures stripped — the exact shape of the dispatch that found nothing. Read the file, copy the file. |
+| "Pass A was thorough — skip pass B" | Pass A of a real review cleared, with a written evidence trail, the exact Critical that an identical pass had caught the day before. Thoroughness does not reduce variance; independence does. |
+| "Reviewing is reading; tests are the implementer's job" | A reviewer that only reads has marked broken invariants clean. The attack test in the scratch copy IS the review. |
 | "Too expensive / too slow" | Observed cost: minutes of review plus one fix wave. Observed alternative: corrupted-state bugs in a merged PR. |
 | "I'll just review it myself in-session" | The controller's context is polluted by every dispatch it made. Fresh subagent, most capable model, or it doesn't count. |
 
@@ -116,10 +119,8 @@ individually correct.
 - About to invoke finishing-a-development-branch with no adversarial
   pass recorded
 - Declaring "merge-ready" citing only per-task reviews
-- Dispatching the final review on the session-default model
+- Dispatching any review pass on the session-default model
 - A dispatch containing your own wording of any hunt class, or
   composed without reading adversarial-reviewer.md this session
-- Handing any reviewer the full unified branch diff, or skipping the
-  size estimate
-- Skipping the pass because the diff "is small" — small branches
-  still drift from their specs
+- Skipping hunt pass B, or letting pass B see pass A's findings
+- Handing any reviewer the full unified branch diff
