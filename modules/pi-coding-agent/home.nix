@@ -22,6 +22,11 @@ in
     # ephemeral containers start with search already configured.
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
+    # Local skill: the mandatory adversarial whole-branch review after
+    # plan execution. Pi auto-discovers ~/.pi/agent/skills/*; the gate
+    # that makes it non-skippable lives in APPEND_SYSTEM.md.
+    home.file.".pi/agent/skills/adversarial-plan-review".source = ./skills/adversarial-plan-review;
+
     # pi-superagents user config; merged over the package's bundled
     # defaults, see the comment in settings.nix.
     #

@@ -24,3 +24,14 @@ commands, so tools behave normally.
   shared store, no download for anything the host already
   has); npm/pip/cargo also work. There is no sudo and you
   will never need it.
+
+# Plan-execution gate
+
+After executing any implementation plan — whichever workflow
+ran it (subagent-driven-development, executing-plans,
+sp-implement, sp-implement-parallel, or manual) — the branch
+is not merge-ready until the adversarial-plan-review skill
+has run: one whole-branch review pass on the most capable
+available model. Per-task code reviews never substitute for
+it. Invoke it before finishing-a-development-branch or
+opening a PR.
