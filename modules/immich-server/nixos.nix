@@ -67,6 +67,15 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
+    # Immich's built-in nightly DB backup (02:00) writes pg_dump output to
+    # /var/lib/immich/backups, bind-mounted from the NAS. Registering the
+    # host-side mount ships those dumps to B2 as well — the NAS's own backup
+    # is unmanaged by this repo and unverifiable from here. Photo blobs stay
+    # NAS-only by design; only the DB metadata is irreplaceable here.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "${immichMountPoint}/backups" ];
+    };
+
     system.activationScripts.immich-dirs = ''
       mkdir -p /var/lib/immich-data
       chmod 700 /var/lib/immich-data
