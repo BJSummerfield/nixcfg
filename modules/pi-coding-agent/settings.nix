@@ -2,21 +2,30 @@
 let
   llm = import ../local-llm/models.nix;
 
-  mkModel = id: m: {
-    inherit id;
-    name = m.displayName;
-    reasoning = m.reasoning;
-    contextWindow = m.maxModelLen - m.headroom;
-    maxTokens = m.maxTokens;
-  };
+  # Aliases inherit the parent's thinkingLevels: same instance, same template.
+  thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
 
-  mkAlias = m: id: a: {
-    inherit id;
-    name = a.displayName;
-    reasoning = m.reasoning;
-    contextWindow = a.contextWindow;
-    maxTokens = a.maxTokens;
-  };
+  mkModel =
+    id: m:
+    {
+      inherit id;
+      name = m.displayName;
+      reasoning = m.reasoning;
+      contextWindow = m.maxModelLen - m.headroom;
+      maxTokens = m.maxTokens;
+    }
+    // thinkingMapOf m;
+
+  mkAlias =
+    m: id: a:
+    {
+      inherit id;
+      name = a.displayName;
+      reasoning = m.reasoning;
+      contextWindow = a.contextWindow;
+      maxTokens = a.maxTokens;
+    }
+    // thinkingMapOf m;
 
   # each enabled model, followed by its aliases
   entriesFor =
@@ -70,7 +79,26 @@ in
         apiKey = "dummy";
         compat = {
           supportsDeveloperRole = false;
-          supportsReasoningEffort = false;
+          supportsReasoningEffort = true;
+          # vLLM renders chat_template_kwargs into the model's jinja template;
+          # Qwen3.8 consumes reasoning_effort there (via thinkingLevelMap on
+          # the model entries), 3.6 ignores the kwarg. Without any signal the
+          # 3.8 template defaults every request to xhigh — the whole point of
+          # this block is making pi's thinking levels actually reach vLLM.
+          thinkingFormat = "chat-template";
+          chatTemplateKwargs = {
+            enable_thinking = {
+              "$var" = "thinking.enabled";
+            };
+            reasoning_effort = {
+              "$var" = "thinking.effort";
+              omitWhenOff = true;
+            };
+          };
+          # Reasoning and the answer share max_tokens on vLLM, so pi caps
+          # thinking via thinking_token_budget (clamped to leave answer room —
+          # matters most for the -32k alias's 8192 maxTokens).
+          supportsThinkingTokenBudget = true;
         };
         models = redtruckModels;
       };
@@ -100,13 +128,17 @@ in
   # cheap/balanced/max at providers we don't have (opencode-go, openai), and
   # an unpinned tier that resolved to the *other* redtruck model would make
   # llama-swap tear down the loaded vllm instance mid-session - so every
-  # tier gets the session model. Thinking levels are omitted: the provider
-  # sets supportsReasoningEffort = false, so they'd be a no-op anyway.
+  # tier gets the session model.
   # cheap (recon/research/implementer - the tiers sp-implement-parallel
   # fans out) takes the -32k llama-swap alias: same instance, smaller
   # declared window, so parallel subagents compact early instead of
   # thrashing the KV pool. max (review/debug) runs one-at-a-time and
   # keeps the full window.
+  # Thinking levels flow to vLLM via the chat-template compat block above.
+  # cheap is medium, not low: the Qwen3.8 model card warns low effort on
+  # multi-turn agentic tasks (sp-implementer) trades per-turn speed for
+  # retries. max gets xhigh for review/debug depth. Each subagent session
+  # holds one constant level, so vLLM prefix caching is unaffected.
   # Note: home.nix copies this over the file on every activation, so a
   # /sp-settings TUI edit survives only until the next rebuild - edit here
   # instead. It is a copy and not a store symlink because the extension
@@ -114,9 +146,18 @@ in
   superagents = {
     superagents = {
       modelTiers = {
-        cheap.model = qualified budgetModel;
-        balanced.model = qualified llm.default;
-        max.model = qualified llm.default;
+        cheap = {
+          model = qualified budgetModel;
+          thinking = "medium";
+        };
+        balanced = {
+          model = qualified llm.default;
+          thinking = "medium";
+        };
+        max = {
+          model = qualified llm.default;
+          thinking = "xhigh";
+        };
       };
     };
   };

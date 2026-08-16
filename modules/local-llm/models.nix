@@ -44,6 +44,19 @@
         top_k = 20;
         min_p = 0.0;
       };
+      # pi thinking levels → chat-template reasoning_effort values. The 3.8
+      # template accepts only xhigh/medium/low and raises on anything else
+      # (it maps high → xhigh itself; we map eagerly so every pi level lands
+      # on an accepted value). 3.6 has no effort support — no map there, and
+      # the unused kwarg is harmless to its template.
+      thinkingLevels = {
+        minimal = "low";
+        low = "low";
+        medium = "medium";
+        high = "xhigh";
+        xhigh = "xhigh";
+        max = "xhigh";
+      };
 
       # null ttl: vLLM cold start is minutes
       ttl = null;
