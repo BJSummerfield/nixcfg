@@ -27,7 +27,12 @@
       # Native context is 262144, and KV is cheap here (only 16 of 64
       # layers are full attention; the rest are linear with constant
       # state). 131072 is the conservative start on the 31GiB card —
-      # weights are ~21.8GiB — raise after measuring the KV pool.
+      # weights are ~21.8GiB. Measured 2026-08-15 via /metrics at this
+      # setting: kv_cache_size_tokens=203579 (~1.55 concurrent full
+      # windows), so the pool fits a ~110k main session plus three
+      # 32k-alias subagents with nothing to spare — don't grow the
+      # alias without shrinking something else. Prefix caching is
+      # auto-disabled by vLLM for this hybrid-attention model.
       maxModelLen = 131072;
       # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
       # only compacts above contextWindow - reserveTokens (16384 default,
