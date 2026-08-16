@@ -97,7 +97,7 @@ in
           };
           # Reasoning and the answer share max_tokens on vLLM, so pi caps
           # thinking via thinking_token_budget (clamped to leave answer room —
-          # matters most for the -32k alias's 8192 maxTokens).
+          # matters most for the -48k alias's 8192 maxTokens).
           supportsThinkingTokenBudget = true;
         };
         models = redtruckModels;
@@ -130,10 +130,10 @@ in
   # llama-swap tear down the loaded vllm instance mid-session - so every
   # tier gets the session model.
   # cheap (recon/research/implementer - the tiers sp-implement-parallel
-  # fans out) takes the -32k llama-swap alias: same instance, smaller
-  # declared window, so parallel subagents compact early instead of
-  # thrashing the KV pool. max (review/debug) runs one-at-a-time and
-  # keeps the full window.
+  # fans out) takes the -48k llama-swap alias: same instance, smaller
+  # declared window, so parallel subagents compact before the wave can
+  # thrash the KV pool (sized in models.nix from the measured pool).
+  # max (review/debug) runs one-at-a-time and keeps the full window.
   # Thinking levels flow to vLLM via the chat-template compat block above.
   # cheap is medium, not low: the Qwen3.8 model card warns low effort on
   # multi-turn agentic tasks (sp-implementer) trades per-turn speed for

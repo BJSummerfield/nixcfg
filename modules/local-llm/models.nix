@@ -29,10 +29,13 @@
       # state). 131072 is the conservative start on the 31GiB card —
       # weights are ~21.8GiB. Measured 2026-08-15 via /metrics at this
       # setting: kv_cache_size_tokens=203579 (~1.55 concurrent full
-      # windows), so the pool fits a ~110k main session plus three
-      # 32k-alias subagents with nothing to spare — don't grow the
-      # alias without shrinking something else. Prefix caching is
-      # auto-disabled by vLLM for this hybrid-attention model.
+      # windows). Only in-flight requests hold KV (no prefix caching —
+      # vLLM auto-disables it for this hybrid-attention model), and
+      # maxNumSeqs caps concurrency at 3, so the binding case is a full
+      # wave: 3 x (48k alias window + 8k output) ≈ 168k of the pool.
+      # A max-length main-session request overlapping two alias
+      # requests can transiently overcommit; vLLM resolves that by
+      # preempting one sequence, not sustained thrashing.
       maxModelLen = 131072;
       # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
       # only compacts above contextWindow - reserveTokens (16384 default,
@@ -78,10 +81,13 @@
         reasoningParser = "qwen3";
       };
 
-      # Aliases share the running instance — no model swap.
-      aliases."Qwen3.8-27B-NVFP4-32k" = {
-        displayName = "Qwen3.8 27B NVFP4 32k budget (redtruck)";
-        contextWindow = 32768;
+      # Aliases share the running instance — no model swap. 48k sized
+      # from the measured pool above: pi compacts past contextWindow -
+      # 16384 reserve, so this gives fan-out subagents ~32k of working
+      # room (16k at the old 32k window was forcing early compaction).
+      aliases."Qwen3.8-27B-NVFP4-48k" = {
+        displayName = "Qwen3.8 27B NVFP4 48k budget (redtruck)";
+        contextWindow = 49152;
         maxTokens = 8192;
       };
     };
