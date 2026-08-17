@@ -61,14 +61,12 @@ in
     # for hardware acceleration
     users.groups.render.gid = renderGid;
 
-    # Allow traffic to enter the container
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-immich" ];
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Make needed directories
     system.activationScripts.immich-dirs = ''
       mkdir -p /var/lib/immich-data
       chmod 700 /var/lib/immich-data
@@ -120,12 +118,10 @@ in
           hostPath = homesMountPoint;
           isReadOnly = true;
         };
-        # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # GPU passthrough for hardware acceleration
         "/dev/dri" = {
           hostPath = "/dev/dri";
           isReadOnly = false;
@@ -172,7 +168,6 @@ in
             "video"
           ];
 
-          # sets the tailscale params
           services.tailscale.enable = true;
 
           networking = {
@@ -189,7 +184,6 @@ in
             };
           };
 
-          # Hardening the container
           systemd.services.immich-server = {
             environment = {
               LIBVA_DRIVER_NAME = "iHD";

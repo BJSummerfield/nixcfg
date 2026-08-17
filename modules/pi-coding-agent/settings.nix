@@ -27,7 +27,6 @@ let
     }
     // thinkingMapOf m;
 
-  # each enabled model, followed by its aliases
   entriesFor =
     name:
     let
@@ -42,7 +41,6 @@ let
   qualified = id: "${llm.provider}/${id}";
   defaultEntry = llm.models.${llm.default};
   defaultAliases = builtins.attrNames (defaultEntry.aliases or { });
-  # the smaller-window alias if the default has one, else the model itself.
   # Assumes at most one alias: with two, `head` picks the lexicographically
   # first, which is arbitrary - pick deliberately if a second is ever added.
   budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;

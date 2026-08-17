@@ -99,7 +99,6 @@ in
           };
         };
 
-        # Hardening the container
         systemd.services.teamspeak3-server = {
           serviceConfig = {
             DynamicUser = lib.mkForce true;

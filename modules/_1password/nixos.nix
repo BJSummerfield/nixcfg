@@ -43,7 +43,6 @@ in
       polkitPolicyOwners = allowedUsers;
     };
 
-    # Apply overlay if needed
     nixpkgs.overlays = lib.optionals cfg.overlay.enable [
       (self: super: {
         _1password-gui = super._1password-gui.overrideAttrs (old: {

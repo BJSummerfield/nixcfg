@@ -10,7 +10,6 @@
     ./disko.nix
     ../../modules/nixos.nix
     ../../users/waktu.nix
-    # QEMU guest tools (virtio drivers, guest agent)
     "${modulesPath}/profiles/qemu-guest.nix"
   ];
 

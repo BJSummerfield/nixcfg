@@ -61,14 +61,12 @@ in
       }
     ];
 
-    # Allow traffic to enter the container
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-jellyfin" ];
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Make needed directories
     system.activationScripts.jellyfin-dirs = ''
       mkdir -p /var/lib/tailscale-jellyfin
       chmod 700 /var/lib/tailscale-jellyfin
@@ -76,7 +74,6 @@ in
 
     containers.jellyfin = {
 
-      # Mapping container to a local port
       autoStart = true;
       privateNetwork = true;
       hostAddress = "192.168.100.10";
@@ -99,12 +96,10 @@ in
         "/media" = {
           hostPath = mediaMountPoint;
         };
-        # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # GPU passthrough for hardware acceleration
         "/dev/dri" = {
           hostPath = "/dev/dri";
           isReadOnly = false;
@@ -153,7 +148,6 @@ in
             };
           };
 
-          # Hardening the container
           systemd.services.jellyfin = {
             environment = {
               LIBVA_DRIVER_NAME = "iHD";

@@ -26,7 +26,6 @@ in
   };
   config = mkIf cfg.enable (mkMerge [
     {
-      # Copy the entire scene directory (images + parallax.toml) into ~/.config/hyprlax
       home.file.".config/hyprlax".source = ./scenes/${cfg.scene};
       systemd.user.services.hyprlax = {
         Unit = {
