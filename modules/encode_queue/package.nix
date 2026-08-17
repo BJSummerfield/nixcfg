@@ -1,6 +1,6 @@
 { rustPlatform, fetchFromGitHub, ... }:
 rustPlatform.buildRustPackage {
-  #fixes build warning in nixos
+  # Fixes a build warning in nixos
   pname = "encode_queue";
   version = "unstable";
   src = fetchFromGitHub {

@@ -76,7 +76,6 @@ in
 
   config = {
     users.mutableUsers = false;
-    # Allow admins to use nix
     nix.settings.trusted-users = [ "root" ] ++ adminUsernames;
 
     # Make sure there is always at least 1 admin user
@@ -96,7 +95,6 @@ in
       ) cfg
     );
 
-    # Map the users to some defaults
     users.users = lib.mapAttrs (name: user: {
       isNormalUser = true;
       inherit (user)
@@ -117,7 +115,6 @@ in
       lib.mapAttrsToList (userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );
 
-    # Map the users to home-manager
     home-manager = {
       useGlobalPkgs = true;
       useUserPackages = true;

@@ -17,8 +17,5 @@ in
         bicepModule.package
       ];
     };
-    # home.packages = [
-    #   bicepModule.package
-    # ];
   };
 }

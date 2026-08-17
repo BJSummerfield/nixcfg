@@ -29,7 +29,6 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Allow traffic to enter the container
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-vikunja" ];
@@ -60,7 +59,6 @@ in
       ];
 
       bindMounts = {
-        # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
@@ -145,7 +143,6 @@ in
             "d /var/lib/postgresql/dumps 0750 postgres postgres -"
           ];
 
-          # sets the tailscale params
           services.tailscale.enable = true;
 
           networking = {
@@ -162,7 +159,6 @@ in
             };
           };
 
-          # Hardening the Vikunja service
           systemd.services.vikunja = {
             serviceConfig = {
               ProtectHome = lib.mkForce true;
