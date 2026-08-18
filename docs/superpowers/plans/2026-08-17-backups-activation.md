@@ -50,8 +50,36 @@ The decision for every stateful thing in this repo, after this plan lands:
 | NAS (photo blobs, homes, media) | NAS hardware | the media library | NAS's own backup — out of scope, unmanaged by this repo, unverifiable from here |
 | Host age keys | all | sops decryption | None by design — recovery is re-keying `.sops.yaml` for the rebuilt host |
 | local-llm / open-webui DB | (module exists, no host enables it) | would be: open-webui sqlite | None today — module is dormant. Revisit if a host enables it; the dump strategy applies |
+| Paseo daemon | redtruck | session history, config.json; worktrees under `/var/lib/paseo/worktrees` | **None — decision: skip** (2026-08-17). Worktrees are bind-mounted git content — protection is pushing, not restic. Session state is disposable. Cost of covering it = a third B2 bucket + per-host secrets |
+| Tailscale node state | all hosts | per-container node identity (`/var/lib/tailscale-*`) | **None — re-runnable.** Every module's bring-up comment documents its `tailscale up --advertise-tags=...`; worst case is re-approving a tagged node in the tailnet admin UI |
+| Steam saves / personal data | redtruck, t495, elitebook, mac | game saves, browser profiles | Outside this repo's convention (spec: devbox hosts out). Owner: personal; Steam Cloud covers what it covers |
 
 ---
+
+## Scope decisions (2026-08-17 scoping conversation)
+
+The reduced mental model is "jellyfin db, immich db, stalwart". The
+inventory above is the complete list; the deltas:
+
+- **Cost is per host, not per path.** The paynefield job runs for immich +
+  jellyfin whether or not vikunja and adguard ride along, so skipping them
+  saves nothing (a few MB of dumps per night) and would mean editing
+  registrations already merged in #105. **Vikunja and AdGuard stay, for
+  free.**
+- **In the reduced scope, the only content of the vps `mine.backups` job is
+  TeamSpeak** — Stalwart is already covered by its own bespoke job. That is a
+  *decision, not an oversight*: the teamspeak sqlite is server identity
+  (losing it forces every client to re-trust a new server), and it costs zero
+  if the vps job runs. If the call is "no vps bucket at all", TeamSpeak is
+  uncovered — say so explicitly rather than by silence. **Default: keep.**
+- **Paseo is skipped** — the daemon (devbox container on redtruck) holds
+  session history and worktrees that are bind-mounted git content; not an
+  always-on server, and the per-host cost (third bucket + key + password +
+  secrets) buys nothing irreplaceable. Pushed work is already safe; unpushed
+  work is a git-hygiene problem, not a backup problem.
+- **Tailscale node state is skipped** — re-runnable via the documented
+  bring-up commands; the failure mode is re-approving tagged nodes, which is
+  friction, not data loss.
 
 ## Out of scope (decisions, with reasons)
 
@@ -69,6 +97,10 @@ The decision for every stateful thing in this repo, after this plan lands:
 - **Stalwart migration onto `mine.backups`** — see Task 4; default is to
   leave it as-is.
 - **Backup alerting and restore automation** — v2 candidates (Task 5).
+- **Paseo daemon state** (redtruck) — see scope decisions above.
+- **Tailscale node state** — re-runnable; see scope decisions above.
+- **Steam saves / personal data on the desktop and box hosts** — personal
+  ownership, outside this repo's convention.
 
 ---
 
