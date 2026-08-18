@@ -115,6 +115,45 @@ inventory above is the complete list; the deltas:
 
 ---
 
+## Execution protocol (who does what, in what order)
+
+Three actors: you, the agent (executor), and the hosts (auto-upgrade).
+
+1. **You — Task 1, end to end.** B2 console (bucket + app key), 1Password
+   (two passwords), `sops secrets/hosts/{paynefield,vps}.yaml` (two keys per
+   host), commit + push. This is the only part the agent *cannot* do, for two
+   reasons: the values live in your B2 account and 1Password, and sops
+   re-encryption needs your age key, which the agent's container does not
+   have (host secrets are not available to it).
+2. **Handoff signal.** You commit and say "Task 1 done" (or just tell the
+   agent and let it verify). The agent checks that `restic-b2-env` and
+   `restic-repo-password` exist in both host yamls. Until then, Task 2's
+   eval is intentionally red — that is the plan working, not a bug.
+3. **Agent — Task 2.** Branch from the main that includes your secrets
+   commit, run the TDD steps (enable → red eval → declare secrets → green
+   eval → `nix flake check`), open the PR. The agent can also do the
+   optional `repository`-example polish in the same PR.
+4. **You — merge Task 2's PR.** Both hosts have `autoUpgrade.enable = true`,
+   so the config reaches paynefield and vps on their next auto-upgrade; no
+   manual `nixos-rebuild` is needed unless you want it immediately.
+5. **You — Task 3, on each host.** Run the verification commands; paste
+   output back to the agent if anything is unexpected. The one check with a
+   real branch is the Immich dump dir: empty → either enable Immich's
+   built-in backup in the UI or file the pg_dump-timer follow-up.
+
+**Commit placement:** Task 1's sops commit goes to main first (direct or a
+small `chore(secrets)` PR — your call; the repo's convention is PRs, but a
+secrets-only commit is trivial to review). Task 2's branch bases on top of
+it. Alternative: sops edit and host wiring on one branch — the branch head
+evaluates green even though the intermediate commit does not; two commits
+in sequence keep each step individually green and are the recommended shape.
+
+**What the agent cannot do in this plan:** create the B2 resources,
+hold the 1Password values, re-encrypt sops, or reach the hosts for Task 3
+verification. Everything else is agent-executable.
+
+---
+
 ### Task 1: HUMAN — B2 bucket, password, sops secrets
 
 Based on the 2026-08-14 plan (Task 6), amended 2026-08-17 to a single shared
