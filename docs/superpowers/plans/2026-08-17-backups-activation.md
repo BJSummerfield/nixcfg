@@ -80,6 +80,17 @@ inventory above is the complete list; the deltas:
 - **Tailscale node state is skipped** — re-runnable via the documented
   bring-up commands; the failure mode is re-approving tagged nodes, which is
   friction, not data loss.
+- **Single B2 bucket, one repo per host as a path prefix** (2026-08-17):
+  `spacefunk-backups` holds `:paynefield` and `:vps` repos, so the B2 console
+  shows every backup under one bucket, split by the host prefix. One app key
+  scoped to that bucket; the repos stay separate (own passwords, locks, prune)
+  so hosts do not contend on repo locks. A single *shared* repo for both
+  hosts was rejected: restic locks the repo during a run, so same-hour runs
+  would collide, and one host's prune would govern the other's history. Trade
+  accepted: any host with the app key can read the whole bucket — all hosts
+  and all data are the same owner. Stalwart's live `b2:spacefunk-mail-backups:stalwart`
+  repo is left as-is; consolidating it into `spacefunk-backups` (via
+  `restic copy`) is an optional later cleanup, not part of this plan.
 
 ## Out of scope (decisions, with reasons)
 
@@ -104,19 +115,18 @@ inventory above is the complete list; the deltas:
 
 ---
 
-### Task 1: HUMAN — B2 buckets, passwords, sops secrets
+### Task 1: HUMAN — B2 bucket, password, sops secrets
 
-Carried over verbatim from the 2026-08-14 plan (Task 6). No code. The
-executor STOPS here and hands this checklist to the human; Task 2 cannot
-evaluate until it is done.
+Based on the 2026-08-14 plan (Task 6), amended 2026-08-17 to a single shared
+bucket (see scope decisions). No code. The executor STOPS here and hands this
+checklist to the human; Task 2 cannot evaluate until it is done.
 
-- [ ] Create B2 bucket `spacefunk-paynefield-backups` (private) and an application key scoped to only that bucket.
-- [ ] Create B2 bucket `spacefunk-vps-backups` (private) and an application key scoped to only that bucket.
-- [ ] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks.
+- [ ] Create B2 bucket `spacefunk-backups` (private) and ONE application key scoped to only that bucket.
+- [ ] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks. The bucket is shared, but the repos are not: `:paynefield` and `:vps` are separate restic repositories under path prefixes inside the one bucket, each with its own password, locks, and prune.
 - [ ] `sops secrets/hosts/paynefield.yaml` — add:
   - `restic-b2-env`: multiline value `B2_ACCOUNT_ID=<keyID>` newline `B2_ACCOUNT_KEY=<applicationKey>`
   - `restic-repo-password`: the paynefield password
-- [ ] `sops secrets/hosts/vps.yaml` — add the same two keys with the vps credentials.
+- [ ] `sops secrets/hosts/vps.yaml` — add the same two keys with the vps password (same app key).
 - [ ] Commit the re-encrypted yaml files:
 
 ```bash
@@ -145,7 +155,7 @@ In `hosts/paynefield/default.nix`, inside the `mine = { ... }` attrset (sibling 
 ```nix
     backups = {
       enable = true;
-      repository = "b2:spacefunk-paynefield-backups:paynefield";
+      repository = "b2:spacefunk-backups:paynefield";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
@@ -196,7 +206,7 @@ Inside `mine = { ... }`:
 ```nix
     backups = {
       enable = true;
-      repository = "b2:spacefunk-vps-backups:vps";
+      repository = "b2:spacefunk-backups:vps";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
@@ -215,6 +225,10 @@ nix fmt
 git add hosts/paynefield/default.nix hosts/vps/default.nix
 git commit -m "feat(backups): enable nightly B2 backups on paynefield and vps"
 ```
+
+Optional polish (same or follow-up commit): update the stale
+`repository` option example in `modules/backups/nixos.nix` from
+`b2:spacefunk-paynefield-backups:paynefield` to `b2:spacefunk-backups:paynefield`.
 
 ---
 
@@ -271,7 +285,7 @@ Stalwart's bespoke `services.restic.backups.stalwart` job goes away.
   migration changes the RPO for mail from ~12h to ~24h.
 - **Repository:** Stalwart's snapshots live in
   `b2:spacefunk-mail-backups:stalwart`; the host job writes
-  `b2:spacefunk-vps-backups:vps`. Migration orphans the old repository
+  `b2:spacefunk-backups:vps`. Migration orphans the old repository
   (keep it read-only for a while, or `restic copy` history over).
 - **Benefit:** one mechanism, one pattern, less bespoke code — the only gain.
 
