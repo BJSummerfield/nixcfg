@@ -27,6 +27,20 @@ jobs:
 
       - uses: cachix/install-nix-action@v31
 
+      # impureEnvVars are read from the builder's environment, which is
+      # nix-daemon under a multi-user install, so a shell export would not
+      # reach the fetch.
+      - name: Give nix-daemon the private-repo credentials
+        run: |
+          sudo mkdir -p /etc/systemd/system/nix-daemon.service.d
+          sudo tee /etc/systemd/system/nix-daemon.service.d/private-repo.conf >/dev/null <<EOF
+          [Service]
+          Environment="NIX_GITHUB_PRIVATE_USERNAME=x-access-token"
+          Environment="NIX_GITHUB_PRIVATE_PASSWORD=${{ secrets.PHOTOFORM_PAT }}"
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl restart nix-daemon
+
       - run: nix flake check --print-build-logs
 
       # Not forced: after a force-push to main this is rejected as a
