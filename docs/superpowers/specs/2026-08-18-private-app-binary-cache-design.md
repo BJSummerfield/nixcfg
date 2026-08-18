@@ -49,7 +49,9 @@ unchanged.
   flake in the app repo with its own nixpkgs pin would push paths vps never
   asks for, and the cache would silently do nothing while vps compiled anyway.
 
-- **The private repo stays pure source.** No flake in it. Packaging lives in
+- **Packaging lives in nixcfg, not in the app repo.** The app repo does carry a
+  `flake.nix`, but it exposes only a `devShell` and no package output, so there
+  is nothing there to build from and nothing to reconcile. Packaging sits in
   nixcfg exactly as encode_queue's does. A consequence worth naming: bumping
   nixpkgs in nixcfg rebuilds and re-pushes the app automatically, so the cache
   cannot drift out of sync with what hosts want.
@@ -101,10 +103,19 @@ unchanged.
   The existing `Advance verified` step already carries the right guard
   (`if: github.event_name == 'push'`).
 
-- **`cargoLock.lockFile` rather than `cargoHash`.** We own the repo, so the
-  lock file is in the fetched source. A release bump then edits `rev` and
-  `sha256` instead of three values. Requires crates.io-only dependencies; git
-  dependencies would need `outputHashes`.
+- **`cargoHash`, and specifically NOT `cargoLock.lockFile`.** Pointing
+  `cargoLock.lockFile` at `"${src}/Cargo.lock"` looks attractive — we own the
+  repo, so the lock file is right there in the fetched source, and it would
+  remove a hash from every release bump. It is also fatal here, because it is
+  import-from-derivation: reading a file out of `src` forces `src` to be
+  realised *during evaluation*. Measured, not inferred — `nix eval` of the
+  package's `drvPath` with a deliberately wrong source hash fails with "hash
+  mismatch in fixed-output derivation ...-source.drv", proving evaluation
+  fetched. For a private `src` that means every evaluator needs the GitHub
+  credential, which destroys the property the first Decision above rests on and
+  removes the only reason to prefer this route over a flake input. `cargoHash`
+  is a plain string and evaluates purely. Cost: one more hash to refresh per
+  bump. This is also why `modules/encode_queue/package.nix` uses `cargoHash`.
 
 ## Scope
 
@@ -142,7 +153,7 @@ src = fetchFromGitHub {
   sha256 = "...";
   private = true;
 };
-cargoLock.lockFile = "${src}/Cargo.lock";
+cargoHash = "...";
 ```
 
 `private = true` adds a `netrcPhase` building a netrc from

@@ -18,6 +18,7 @@
 - Retention: keep the 2 most recent manifests and everything they reference.
 - Cache writes and prunes run **only** on `github.event_name == 'push'`. Never on `pull_request`.
 - Never add a time-based B2 lifecycle rule to this bucket. `nix copy` skips paths already present, so object timestamps do not track whether a path is still in use.
+- **The derivation references `src` only through its declared hash.** Never read a file out of `src` — no `cargoLock.lockFile = "${src}/Cargo.lock"`, no `builtins.readFile "${src}/..."`. That is import-from-derivation: it makes *evaluation* fetch the private source, which would require a GitHub credential on every host and defeat the whole design. Task 1 Step 4 is the regression test for this.
 - Comments state the reason in one sentence, lead with the conclusion, carry no history and no cross-references, per `docs/superpowers/specs/2026-08-09-comment-style-design.md`.
 - Run `nix fmt` before committing any `.nix` change; the formatter is `nixfmt-tree`.
 - Sub-project B (the container, caddy routing, PhotoForm's own runtime secrets, backup registration) is out of scope. This plan does not put `photoform` into any host's closure.
@@ -78,26 +79,27 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "BJSummerfield";
     repo = "Sheet-Automation-FF";
-    rev = "HEAD-PLACEHOLDER";
+    rev = "4ed5a58e03b3c1aa5af5ca6ba179802ccdcde27f";
     sha256 = lib.fakeSha256;
     # Routes the fetch through api.github.com with a netrc built from
     # NIX_GITHUB_PRIVATE_USERNAME/PASSWORD in the nix-daemon environment.
     private = true;
   };
-  # The lock file ships in the source, so there is no cargoHash to maintain.
-  cargoLock.lockFile = "${src}/Cargo.lock";
+  # cargoHash, never cargoLock.lockFile: reading the lock file out of src is
+  # import-from-derivation, so evaluation would fetch the private source and
+  # every evaluator would need the GitHub credential.
+  cargoHash = lib.fakeHash;
   meta = {
-    description = "PhotoForm web service";
-    mainProgram = "photoform";
+    description = "PhotoForm booking web service";
+    mainProgram = "nesting-box-booking";
   };
 }
 ```
 
-Replace `HEAD-PLACEHOLDER` with the current commit SHA of the repo's default branch. Get it with:
+Two values here are already resolved and must be used verbatim rather than re-derived:
 
-```bash
-gh api repos/BJSummerfield/Sheet-Automation-FF/commits/HEAD --jq .sha
-```
+- `rev` is `main`'s HEAD as of writing. Confirm it is still current with `gh api repos/BJSummerfield/Sheet-Automation-FF/commits/HEAD --jq .sha`; if it has moved, use the new value.
+- `mainProgram` is `nesting-box-booking`, **not** `photoform`. `Cargo.toml` declares `[[bin]] name = "nesting-box-booking"`, so that is the only executable in `$out/bin`. The Nix-level `pname` stays `photoform`.
 
 - [ ] **Step 2: Expose it as a flake output**
 
@@ -138,15 +140,17 @@ In `.github/workflows/check.yml`, insert this step immediately after `- uses: ca
           sudo systemctl restart nix-daemon
 ```
 
-- [ ] **Step 4: Verify the flake still evaluates locally**
+- [ ] **Step 4: Verify the flake still evaluates without credentials**
 
-Evaluation must not need the credential — that is the property the whole design rests on. Run, on any machine, with no token present:
+This is the most important check in the plan. Evaluation must not need the credential — that property is the entire reason this design uses a fixed-output derivation instead of a flake input. Run on any machine, with no GitHub token in the environment:
 
 ```bash
-nix eval --raw .#packages.x86_64-linux.photoform.drvPath
+env -u GH_TOKEN -u GITHUB_TOKEN nix eval --raw .#packages.x86_64-linux.photoform.drvPath
 ```
 
-Expected: a `/nix/store/...-photoform-unstable.drv` path, printed without any network access or authentication error. If this asks for credentials, the design is broken; stop and re-read the spec's first Decision.
+Expected: a `/nix/store/...-photoform-unstable.drv` path, printed immediately, with no network access.
+
+**If it instead fails with `hash mismatch in fixed-output derivation '/nix/store/...-source.drv'`, evaluation is fetching the source.** That is import-from-derivation and it breaks the design — every host would need the credential just to evaluate. The known cause is reading a file out of `src` (for example `cargoLock.lockFile = "${src}/Cargo.lock"`). Do not proceed past this step until a plain `drvPath` is printed; the derivation must reference `src` only through its declared hash.
 
 - [ ] **Step 5: Push the branch and read the CI result**
 
@@ -220,7 +224,9 @@ reach nix-daemon rather than the workflow shell."
 - Consumes: the real source hash recorded in Task 1 Step 5.
 - Produces: a `photoform` derivation that builds; `pkg-photoform` passing in `nix flake check`.
 
-- [ ] **Step 1: Substitute the real hash**
+There are **two** hashes to discover, and they must be found in order: `cargoHash` cannot be computed until the source fetch succeeds, so each one costs a CI round trip. Expect three runs in this task.
+
+- [ ] **Step 1: Substitute the real source hash**
 
 In `modules/photoform/package.nix`, replace
 
@@ -228,13 +234,40 @@ In `modules/photoform/package.nix`, replace
     sha256 = lib.fakeSha256;
 ```
 
-with the `got:` value from Task 1, quoted:
+with the `got:` value from Task 1 Step 5, quoted:
 
 ```nix
     sha256 = "sha256-<value recorded in Task 1>";
 ```
 
-Then drop `lib` from the argument set, since nothing else uses it:
+Leave `cargoHash = lib.fakeHash;` and the `lib` argument alone for now — both are still needed.
+
+- [ ] **Step 2: Push and read the cargo vendor hash**
+
+```bash
+nix fmt
+git add modules/photoform/package.nix
+git commit -m "wip(photoform): real source hash, placeholder vendor hash"
+git push
+```
+
+Expected: the source fetch now succeeds and the run fails later, at the cargo vendor stage, with a second hash mismatch naming a `-vendor.tar.gz` or `-cargo-deps` derivation:
+
+```
+error: hash mismatch in fixed-output derivation '/nix/store/...-photoform-unstable-vendor.tar.gz.drv':
+         specified: sha256-AAAAAAAA...
+            got:    sha256-<the real vendor hash>
+```
+
+Record the `got:` value. Reaching this error is progress — it means authentication and the source hash are both correct.
+
+- [ ] **Step 3: Substitute the vendor hash and drop `lib`**
+
+```nix
+  cargoHash = "sha256-<value recorded in Step 2>";
+```
+
+`lib` is now unused, so remove it from the argument set:
 
 ```nix
 {
@@ -244,15 +277,10 @@ Then drop `lib` from the argument set, since nothing else uses it:
 }:
 ```
 
-- [ ] **Step 2: Format**
+- [ ] **Step 4: Push and confirm the build passes**
 
 ```bash
 nix fmt
-```
-
-- [ ] **Step 3: Push and confirm the build passes**
-
-```bash
 git add modules/photoform/package.nix
 git commit -m "feat(photoform): package the private repo at a pinned commit"
 git push
@@ -260,9 +288,9 @@ git push
 
 Expected: the Actions run is green.
 
-**If it fails with a `cargoLock` error** such as `Cargo.lock not found` or an unresolvable git dependency, the app has dependencies outside crates.io. The spec puts that out of scope. Fall back to `cargoHash` by replacing the `cargoLock.lockFile` line with `cargoHash = lib.fakeHash;`, re-running to read the real value, and substituting it — accepting a third hash to maintain per release.
+**If it fails inside the Rust compile with an sqlx error** mentioning `DATABASE_URL` or `set DATABASE_URL to use query macros`, the app has gained a compile-time-checked query since this plan was written. The fix is upstream, not here: run `cargo sqlx prepare` in the app repo, commit the resulting `.sqlx/` directory, and bump `rev`. Do not add a database to the Nix build.
 
-- [ ] **Step 4: Confirm the check is registered**
+- [ ] **Step 5: Confirm the check is registered**
 
 ```bash
 nix flake check --print-build-logs 2>&1 | tail -5
