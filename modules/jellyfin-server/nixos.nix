@@ -67,6 +67,15 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
+    # Jellyfin runs DynamicUser with StateDirectory=jellyfin, so its sqlite
+    # library (users, watch state) lives in the container rootfs with no
+    # host bind. Backed up raw with the container stopped — sqlite copied
+    # live can be torn, and minutes of downtime at 04:00 are free.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "/var/lib/nixos-containers/jellyfin/var/lib/private/jellyfin" ];
+      stopContainers = [ "jellyfin" ];
+    };
+
     system.activationScripts.jellyfin-dirs = ''
       mkdir -p /var/lib/tailscale-jellyfin
       chmod 700 /var/lib/tailscale-jellyfin
