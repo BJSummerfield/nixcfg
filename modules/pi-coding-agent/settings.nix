@@ -118,6 +118,67 @@ in
           }
         ];
       };
+      # jason (AMD) — llama.cpp Vulkan box at 184.15.93.212, serving
+      # Qwen3.8-27B Q4_K_XL with MTP. Same model family - and same unsloth chat template
+      # - as redtruck's NVFP4 build, so the thinking plumbing is the same:
+      # chat-template kwargs carry enable_thinking and reasoning_effort per
+      # request. llama.cpp merges request kwargs over the --chat-template-kwargs
+      # server default key-by-key, so the compose's preserve_thinking=true stays
+      # in effect; it is also sent per request so the entry keeps working if the
+      # compose drops the flag. Without any effort signal the 3.8 template
+      # defaults every request to xhigh.
+      #
+      # Context is pinned by the compose --ctx-size 140000 (the server reports
+      # 140032 including template tokens), so the headroom math is models.nix's
+      # with maxModelLen = 140000: contextWindow = 140000 - 20480, maxTokens
+      # 32768.
+      #
+      # The box swaps models via docker compose (Qwen3.8 <-> Qwen3.6, single
+      # GPU), so the served id can change out from under this entry; the other
+      # model gets its own entry when a swap turns out to be permanent.
+      jason = {
+        baseUrl = "http://184.15.93.212:8080/v1";
+        api = "openai-completions";
+        apiKey = "dummy";
+        compat = {
+          supportsDeveloperRole = false;
+          supportsReasoningEffort = true;
+          thinkingFormat = "chat-template";
+          chatTemplateKwargs = {
+            enable_thinking = {
+              "$var" = "thinking.enabled";
+            };
+            reasoning_effort = {
+              "$var" = "thinking.effort";
+              omitWhenOff = true;
+            };
+            preserve_thinking = true;
+          };
+          # Thinking and the answer share max_tokens on llama.cpp just as on
+          # vLLM, so pi's thinking_token_budget clamping applies here too.
+          supportsThinkingTokenBudget = true;
+        };
+        models = [
+          {
+            id = "Qwen3.8-27B-MTP-Q4";
+            name = "Qwen3.8 27B Q4 MTP (jason)";
+            reasoning = true;
+            contextWindow = 119520;
+            maxTokens = 32768;
+            # The 3.8 template accepts xhigh/medium/low and raises on
+            # anything else (it maps high -> xhigh itself; map eagerly so
+            # every pi level lands on an accepted value).
+            thinkingLevelMap = {
+              minimal = "low";
+              low = "low";
+              medium = "medium";
+              high = "xhigh";
+              xhigh = "xhigh";
+              max = "xhigh";
+            };
+          }
+        ];
+      };
     };
   };
 
