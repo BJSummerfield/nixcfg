@@ -100,21 +100,59 @@ in
         };
         models = redtruckModels;
       };
+      # robin - llama.cpp box at 84.216.57.22. As of 2026-08-19 it serves
+      # Qwen3.8-27B GGUF (Q4_K, 27.3B params) - the same model family and
+      # same unsloth chat template as redtruck's NVFP4 and jason's Q4
+      # builds, so the thinking plumbing is the same (chat-template kwargs
+      # and the 3.8 effort map; the template defaults to xhigh without an
+      # effort signal). The old unsloth/Qwen3-Coder-30B-A3B entry is stale -
+      # the box swapped to Qwen3.8 since.
+      #
+      # The server runs the full native context (262144), so the headroom
+      # math is models.nix's with maxModelLen = 262144: contextWindow =
+      # 262144 - 20480, maxTokens 32768.
+      #
+      # The box is shared - other users' requests share the GPU and hold the
+      # 262k KV pool, so expect slow responses and "Context size has been
+      # exceeded." errors when it is busy.
       robin = {
         baseUrl = "http://84.216.57.22:8080/v1";
         api = "openai-completions";
         apiKey = "dummy";
         compat = {
           supportsDeveloperRole = false;
-          supportsReasoningEffort = false;
+          supportsReasoningEffort = true;
+          thinkingFormat = "chat-template";
+          chatTemplateKwargs = {
+            enable_thinking = {
+              "$var" = "thinking.enabled";
+            };
+            reasoning_effort = {
+              "$var" = "thinking.effort";
+              omitWhenOff = true;
+            };
+            preserve_thinking = true;
+          };
+          supportsThinkingTokenBudget = true;
         };
         models = [
           {
-            id = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF";
-            name = "Qwen3 Coder 30B A3B (robin)";
-            reasoning = false;
-            contextWindow = 122880;
+            id = "Qwen3.8-27B-GGUF";
+            name = "Qwen3.8 27B GGUF (robin)";
+            reasoning = true;
+            contextWindow = 241664;
             maxTokens = 32768;
+            # The 3.8 template accepts xhigh/medium/low and raises on
+            # anything else (it maps high -> xhigh itself; map eagerly so
+            # every pi level lands on an accepted value).
+            thinkingLevelMap = {
+              minimal = "low";
+              low = "low";
+              medium = "medium";
+              high = "xhigh";
+              xhigh = "xhigh";
+              max = "xhigh";
+            };
           }
         ];
       };
