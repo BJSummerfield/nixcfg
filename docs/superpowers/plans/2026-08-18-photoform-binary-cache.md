@@ -15,7 +15,8 @@
 - Package/attribute name: `photoform` (lowercase). Directory `modules/photoform/`, flake attribute `packages.<system>.photoform`, check name `pkg-photoform`.
 - Source repo: `BJSummerfield/Sheet-Automation-FF`. It appears exactly once, in `modules/photoform/package.nix`, so a rename is a one-line change.
 - B2 bucket: `spacefunk-nix-cache`. Endpoint `s3.us-east-005.backblazeb2.com`, region `us-east-005`.
-- Retention: keep the 2 most recent manifests and everything they reference.
+- **What gets cached is opt-in, per package, via `passthru.cache = true`.** Membership in `packages` means CI builds a package; it does not mean anything needs it cached. The criterion is that the consumer cannot or should not build it itself. CI derives the push list from the marker, so adding a future package is one line next to that package and nothing else.
+- Retention: keep the 2 most recent manifests and everything they reference. With more than one cached package the manifest is the `sort -u` union of their closures.
 - Cache writes and prunes run **only** on `github.event_name == 'push'`. Never on `pull_request`.
 - Never add a time-based B2 lifecycle rule to this bucket. `nix copy` skips paths already present, so object timestamps do not track whether a path is still in use.
 - **The derivation references `src` only through its declared hash.** Never read a file out of `src` — no `cargoLock.lockFile = "${src}/Cargo.lock"`, no `builtins.readFile "${src}/..."`. That is import-from-derivation: it makes *evaluation* fetch the private source, which would require a GitHub credential on every host and defeat the whole design. Task 1 Step 4 is the regression test for this.
@@ -29,7 +30,7 @@
 
 | File | Responsibility |
 |---|---|
-| `modules/photoform/package.nix` | **Create.** The derivation. Sole place the private repo is named. |
+| `modules/photoform/package.nix` | **Create.** The derivation. Sole place the private repo is named, and where `passthru.cache = true` opts it into the cache. |
 | `flake.nix` | **Modify.** Expose `photoform` in `packages`; `checks` picks up `pkg-photoform` automatically. |
 | `ci/prune-cache.sh` | **Create.** Manifest-driven retention. The only thing that deletes from the bucket. |
 | `.github/workflows/check.yml` | **Modify.** Daemon credentials, push, manifest, prune. |
@@ -382,52 +383,105 @@ Expected: **fails** with an access-denied error. A success here means the read k
 ## Task 4: Push the signed closure and a manifest from CI
 
 **Files:**
+- Modify: `modules/photoform/package.nix`
+- Modify: `flake.nix`
 - Modify: `.github/workflows/check.yml`
 
 **Interfaces:**
 - Consumes: `packages.x86_64-linux.photoform` from Task 2; the Actions secrets from Task 3.
-- Produces: bucket objects `nix-cache-info`, `<hash>.narinfo`, `nar/<...>`, and `manifests/<zero-padded-run-number>-<sha>.json` containing a JSON array of the closure's store paths.
+- Produces: the `passthru.cache` opt-in marker; bucket objects `nix-cache-info`, `<hash>.narinfo`, `nar/<...>`, and `manifests/<zero-padded-run-number>-<sha>.json` containing a JSON array of the union of every cached package's closure.
+
+**Why a marker rather than pushing everything in `packages`.** Being in `packages` means CI *builds* a package; it does not mean anything needs it cached. The criterion for caching is narrower: the consumer cannot or should not build it itself. `photoform` qualifies — private source, and vps is a 1 GB box running Stalwart. `encode_queue` does not: its source is public and its only consumer, redtruck, compiles it without difficulty. Pushing it would also be pointless unless redtruck held the B2 read key, and redtruck is the machine running devbox and workbox coding-agent containers — the box we deliberately kept credentials off. The marker makes caching a decision someone made rather than a side effect of a file existing.
 
 Note the asymmetry, because it causes confusion later: `nix copy --to` is performed by the **client**, so environment variables on the workflow step are enough here. Substitution on vps is performed by the **daemon**, which is why Task 6 needs an `EnvironmentFile` instead.
 
-- [ ] **Step 1: Add the push step**
+- [ ] **Step 1: Mark photoform for caching**
+
+In `modules/photoform/package.nix`, add a `passthru` attribute immediately before `meta`:
+
+```nix
+  # Opt in to the binary cache: vps has 1 GB of RAM and cannot compile this.
+  passthru.cache = true;
+```
+
+The flag lives on the package rather than in a separate list so it cannot name a package that does not exist.
+
+- [ ] **Step 2: Point at the marker from flake.nix**
+
+The marker is invisible unless you know to grep for it, so record it where packages are declared. In `flake.nix`, extend the existing comment above the `packages` block:
+
+```nix
+      # Exposed so `nix build .#encode_queue` works and so the checks below
+      # build it. Set `passthru.cache = true` on a package to have CI push it
+      # to the private binary cache as well. bicep-langserver is deliberately
+      # absent: no host enables it and its dotnet SDK dependency is a 712 MiB
+      # closure.
+```
+
+- [ ] **Step 3: Add the push step**
 
 In `.github/workflows/check.yml`, insert after the `nix flake check` step and **before** the existing `Advance verified` step:
 
 ```yaml
       # Runs before the ref advances so hosts never see a config whose closure
       # is not yet in the cache.
-      - name: Push photoform to the binary cache
+      - name: Push cached packages to the binary cache
         if: github.event_name == 'push'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
           CACHE_STORE: s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005
         run: |
+          mapfile -t attrs < <(nix eval --json --apply \
+            'ps: builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps)' \
+            .#packages.x86_64-linux | jq -r '.[]')
+
+          # An empty list means the marker was lost, not that there is nothing
+          # to do; pushing nothing would leave vps compiling.
+          if [ "${#attrs[@]}" -eq 0 ]; then
+            echo "no package sets passthru.cache = true" >&2
+            exit 1
+          fi
+          echo "caching: ${attrs[*]}"
+
           umask 077
           printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$RUNNER_TEMP/cache-key.sec"
-          nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" .#photoform
+          nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" "${attrs[@]/#/.#}"
           shred -u "$RUNNER_TEMP/cache-key.sec"
 
           # Retention is manifest-driven because nix copy skips paths already
           # present, so object timestamps do not track whether a path is live.
-          nix path-info -r .#photoform | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
+          nix path-info -r "${attrs[@]/#/.#}" | sort -u | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
           nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblazeb2.com \
             s3 cp "$RUNNER_TEMP/manifest.json" \
             "s3://spacefunk-nix-cache/manifests/$(printf '%08d' "$GITHUB_RUN_NUMBER")-${GITHUB_SHA}.json"
 ```
 
-The run number is zero-padded so that manifest keys sort lexicographically in run order, which `ci/prune-cache.sh` relies on in Task 5.
+The run number is zero-padded so that manifest keys sort lexicographically in run order, which `ci/prune-cache.sh` relies on in Task 5. `sort -u` matters once more than one package is cached: their closures overlap heavily, and the manifest must be a set.
 
-- [ ] **Step 2: Commit and push**
+- [ ] **Step 4: Verify the marker is readable before pushing anything**
+
+The eval expression is the piece most likely to be wrong, and getting it wrong in CI costs a full run. Check it locally first:
 
 ```bash
-git add .github/workflows/check.yml
-git commit -m "ci(photoform): push the signed closure and a retention manifest to B2"
+nix eval --json --apply 'ps: builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps)' .#packages.x86_64-linux
+```
+
+Expected: exactly `["photoform"]`. If it returns `[]`, the `passthru.cache` marker did not land on the derivation. If it also lists `encode_queue`, a marker was added to the wrong package.
+
+- [ ] **Step 5: Commit and push**
+
+```bash
+nix fmt
+git add modules/photoform/package.nix flake.nix .github/workflows/check.yml
+git commit -m "ci(photoform): push passthru.cache packages to B2 with a manifest
+
+Being in `packages` means CI builds it, not that anything needs it cached;
+the marker keeps that an explicit decision."
 git push
 ```
 
-- [ ] **Step 3: Verify on a push to main only**
+- [ ] **Step 6: Verify on a push to main only**
 
 Merge the branch to `main`, then, with the **read** key exported:
 
@@ -438,13 +492,13 @@ nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblaze
 
 Expected: `nix-cache-info`, at least one `.narinfo`, at least one `nar/` object, and exactly one `manifests/00000001-<sha>.json`-style key.
 
-- [ ] **Step 4: Verify a pull request does not write**
+- [ ] **Step 7: Verify a pull request does not write**
 
-Open a trivial PR (a comment change is enough). When its run finishes, re-run the listing from Step 3.
+Open a trivial PR (a comment change is enough). When its run finishes, re-run the listing from Step 6.
 
 Expected: **unchanged**. No new manifest. If a new manifest appeared, the `if: github.event_name == 'push'` guard is missing or misplaced.
 
-- [ ] **Step 5: Verify the closure is signed**
+- [ ] **Step 8: Verify the closure is signed**
 
 ```bash
 nix path-info --store "s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005" \
