@@ -85,7 +85,7 @@ inventory above is the complete list; the deltas:
   bring-up commands; the failure mode is re-approving tagged nodes, which is
   friction, not data loss.
 - **Single B2 bucket, one repo per host as a path prefix** (2026-08-17):
-  `spacefunk-backups` holds `:paynefield` and `:vps` repos, so the B2 console
+  `spacefunk-nix-backups` holds `:paynefield` and `:vps` repos, so the B2 console
   shows every backup under one bucket, split by the host prefix. One app key
   scoped to that bucket; the repos stay separate (own passwords, locks, prune)
   so hosts do not contend on repo locks. A single *shared* repo for both
@@ -188,10 +188,10 @@ bucket and 2026-08-20 to Object Lock + S3 endpoint (see scope decisions).
 No code. The executor STOPS here and hands this checklist to the human;
 Task 2 cannot evaluate until it is done.
 
-- [ ] Create B2 bucket `spacefunk-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **governance mode, 60 days**.
+- [ ] Create B2 bucket `spacefunk-nix-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **governance mode, 60 days**.
 - [ ] Lifecycle Settings on the bucket: **keep prior versions for 60 days** (`daysFromHidingToDeleting = 60`).
-- [ ] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-backups spacefunk-backups-restic listBuckets,listFiles,readFiles,writeFiles`
-- [ ] Note the bucket's S3 endpoint from its details page (`s3.<region>.backblazeb2.com`) — the repo URLs in Task 2 need it.
+- [ ] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-nix-backups spacefunk-nix-backups-restic listBuckets,listFiles,readFiles,writeFiles`
+- [ ] Note the bucket's S3 endpoint from its details page (`s3.us-east-005.backblazeb2.com`) — the repo URLs in Task 2 need it.
 - [ ] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks. The bucket is shared, but the repos are not: `paynefield/` and `vps/` are separate restic repositories under path prefixes inside the one bucket, each with its own password, locks, and prune. Stalwart rides the vps repo — no third password.
 - [ ] `sops secrets/hosts/paynefield.yaml` — add:
   - `restic-b2-env`: multiline value `AWS_ACCESS_KEY_ID=<keyID>` newline `AWS_SECRET_ACCESS_KEY=<applicationKey>` (the B2 key pair used as S3 credentials — restic's `s3:` backend reads AWS-style vars)
@@ -229,7 +229,7 @@ In `hosts/paynefield/default.nix`, inside the `mine = { ... }` attrset (sibling 
 ```nix
     backups = {
       enable = true;
-      repository = "s3:s3.<region>.backblazeb2.com/spacefunk-backups/paynefield";
+      repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
@@ -282,7 +282,7 @@ Inside `mine = { ... }`:
 ```nix
     backups = {
       enable = true;
-      repository = "s3:s3.<region>.backblazeb2.com/spacefunk-backups/vps";
+      repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/vps";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
@@ -316,7 +316,7 @@ Expected: both PASS.
 - [ ] **Step 8: Doc polish in `modules/backups/nixos.nix`**
 
 Update the `repository` example to the S3 form
-(`s3:s3.<region>.backblazeb2.com/spacefunk-backups/paynefield`) and the
+(`s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield`) and the
 `b2EnvFile` description + module header comment to the AWS-style variables
 (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) — with the S3 endpoint they
 are no longer B2-native names, and a stale description here would send a
