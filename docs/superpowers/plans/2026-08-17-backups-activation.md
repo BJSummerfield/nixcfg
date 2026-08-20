@@ -5,7 +5,7 @@
 **Goal:** Make the merged-but-inert `mine.backups` system (2026-08-14 plan,
 Tasks 1–5, now merged as PR #105) actually ship: B2 credentials, sops
 secrets, host wiring for paynefield and vps, and post-deploy verification —
-with the bucket Object-Locked (60-day governance retention, 2026-08-20
+with the bucket Object-Locked (60-day compliance retention, 2026-08-20
 decision) and Stalwart's bespoke job migrated onto the shared module.
 Also settle every remaining piece of state with an explicit decision, so
 "how is X backed up?" has an answer for every service in this repo.
@@ -94,17 +94,18 @@ inventory above is the complete list; the deltas:
   accepted: any host with the app key can read the whole bucket — all hosts
   and all data are the same owner. ~~Stalwart's live `b2:spacefunk-mail-backups:stalwart`
   repo is left as-is~~ — superseded 2026-08-20, see the Stalwart bullet below.
-- **Object Lock, 60-day governance retention** (2026-08-20): the bucket is
+- **Object Lock, 60-day compliance retention** (2026-08-20): the bucket is
   created with Object Lock enabled (creation-time only — it cannot be added
-  later) and a default retention of 60 days in **governance** mode, plus a
+  later) and a default retention of 60 days in **compliance** mode, plus a
   lifecycle rule keeping prior file versions 60 days, plus an app key
   **without** `deleteFiles`. Three layers, each covering the others' gap:
   the lock stops hard version-deletes for 60 days from upload; the lifecycle
   rule keeps anything *hidden* recoverable for 60 days regardless of lock
   age; the delete-less key means even packs whose lock has expired cannot be
-  hard-deleted with stolen host credentials. Governance over compliance:
-  the master account keeps a break-glass bypass for misconfiguration, while
-  the scoped app key (no `bypassGovernance`) gets no such power. Consequence
+  hard-deleted with stolen host credentials. Compliance over governance
+  (user, 2026-08-20): NO escape hatch at all — not even the master account
+  can delete a locked version early, and a bad upload sits for the full 60
+  days. Accepted knowingly over governance's break-glass bypass. Consequence
   for restic: repos move to B2's S3-compatible endpoint (`s3:` URLs, AWS-style
   env vars); restic needs no object-lock awareness — its deletes become
   version-hides, and disk space from a prune reclaims ~60 days later instead
@@ -188,7 +189,7 @@ bucket and 2026-08-20 to Object Lock + S3 endpoint (see scope decisions).
 No code. The executor STOPS here and hands this checklist to the human;
 Task 2 cannot evaluate until it is done.
 
-- [ ] Create B2 bucket `spacefunk-nix-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **governance mode, 60 days**.
+- [ ] Create B2 bucket `spacefunk-nix-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **compliance mode, 60 days** (decided 2026-08-20 — no early-delete escape hatch, not even for the master account).
 - [ ] Lifecycle Settings on the bucket: **keep prior versions for 60 days** (`daysFromHidingToDeleting = 60`).
 - [ ] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-nix-backups spacefunk-nix-backups-restic listBuckets,listFiles,readFiles,writeFiles`
 - [ ] Note the bucket's S3 endpoint from its details page (`s3.us-east-005.backblazeb2.com`) — the repo URLs in Task 2 need it.
