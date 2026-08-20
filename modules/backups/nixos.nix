@@ -58,7 +58,7 @@ in
       default = [ "04:00" ];
       description = ''
         systemd OnCalendar times. 04:00 is the hour stop-strategy containers
-        (jellyfin, teamspeak) may be down; dump-strategy services only need
+        (jellyfin, teamspeak, stalwart) may be down; dump-strategy services only need
         their own timers to have fired earlier (vikunja 00:00, immich 02:00).
       '';
     };
