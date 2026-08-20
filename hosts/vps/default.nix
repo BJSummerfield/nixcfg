@@ -43,11 +43,11 @@
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
-  sops.secrets.restic-stalwart-b2-env = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
+  sops.secrets.restic-b2-env = {
+    sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
   };
-  sops.secrets.restic-stalwart-repo-pw = {
+  sops.secrets.restic-repo-password = {
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
@@ -66,13 +66,9 @@
       stalwart-server = {
         enable = true;
         # hostname, domains, ACME, and all mail config are set in the web UI
-        # (database-managed). Only the box + backup + break-glass admin here.
+        # (database-managed). Only the box + break-glass admin here; backup
+        # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
-        backup = {
-          b2EnvFile = config.sops.secrets.restic-stalwart-b2-env.path;
-          repoPasswordFile = config.sops.secrets.restic-stalwart-repo-pw.path;
-          repository = "b2:spacefunk-mail-backups:stalwart";
-        };
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
@@ -84,6 +80,12 @@
         publicAccess = true;
         tailscaleAccess = false;
       };
+    };
+    backups = {
+      enable = true;
+      repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/vps";
+      b2EnvFile = config.sops.secrets.restic-b2-env.path;
+      repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
     users.waktu.authorizedKeys = [
       "onepassword"

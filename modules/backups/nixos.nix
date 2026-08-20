@@ -35,8 +35,8 @@ in
 
     repository = lib.mkOption {
       type = lib.types.str;
-      example = "b2:spacefunk-paynefield-backups:paynefield";
-      description = "restic repository URL (B2 bucket + path).";
+      example = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield";
+      description = "restic repository URL (S3-compatible endpoint + bucket + path).";
     };
 
     repoPasswordFile = lib.mkOption {
@@ -47,9 +47,9 @@ in
     b2EnvFile = lib.mkOption {
       type = lib.types.path;
       description = ''
-        Host path to a restic B2 credentials env file containing:
-          B2_ACCOUNT_ID=<keyID>
-          B2_ACCOUNT_KEY=<applicationKey>
+        Host path to a restic S3 credentials env file containing:
+          AWS_ACCESS_KEY_ID=<keyID>
+          AWS_SECRET_ACCESS_KEY=<applicationKey>
       '';
     };
 

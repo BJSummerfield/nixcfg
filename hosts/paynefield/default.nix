@@ -17,6 +17,14 @@
     sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
+  sops.secrets.restic-b2-env = {
+    sopsFile = ../../secrets/services/restic-b2.yaml;
+    mode = "0400";
+  };
+  sops.secrets.restic-repo-password = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
 
   environment.pathsToLink = [
     "/share/applications"
@@ -47,6 +55,12 @@
         enable = true;
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
+    };
+    backups = {
+      enable = true;
+      repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield";
+      b2EnvFile = config.sops.secrets.restic-b2-env.path;
+      repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
     users.waktu.authorizedKeys = [
       "onepassword"

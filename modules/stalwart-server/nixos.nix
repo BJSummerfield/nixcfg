@@ -24,7 +24,6 @@
 {
   lib,
   config,
-  pkgs,
   ...
 }:
 let
@@ -42,34 +41,6 @@ in
                 bind-mounted read-only into the container. Store an argon2 hash; log in
                 with the plaintext.
       '';
-    };
-
-    backup = {
-      b2EnvFile = lib.mkOption {
-        type = lib.types.path;
-        description = ''
-          Host path to a restic B2 credentials env file containing:
-            B2_ACCOUNT_ID=<keyID>
-            B2_ACCOUNT_KEY=<applicationKey>
-        '';
-      };
-      repoPasswordFile = lib.mkOption {
-        type = lib.types.path;
-        description = "Host path to the restic repository password.";
-      };
-      repository = lib.mkOption {
-        type = lib.types.str;
-        example = "b2:spacefunk-mail-backups:stalwart";
-        description = "restic repository URL (B2 bucket + path).";
-      };
-      schedule = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [
-          "00:00"
-          "12:00"
-        ];
-        description = "systemd OnCalendar times for the twice-daily backup.";
-      };
     };
   };
 
@@ -116,31 +87,11 @@ in
       ];
     };
 
-    # restic runs HOST-side, against the bind-mount source. The container has no
-    # access to the B2 key, so a mail-service compromise cannot touch backups.
     # This backup carries ALL your DB-managed config (ACME, domains, accounts,
     # aliases) -- it is the source of truth for everything not in this file.
-    services.restic.backups.stalwart = {
-      initialize = true;
-      repository = cfg.backup.repository;
-      passwordFile = cfg.backup.repoPasswordFile;
-      environmentFile = cfg.backup.b2EnvFile;
+    mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ hostStateDir ];
-      timerConfig = {
-        OnCalendar = cfg.backup.schedule;
-        Persistent = true;
-      };
-      backupPrepareCommand = ''
-        ${pkgs.nixos-container}/bin/nixos-container stop stalwart || true
-      '';
-      backupCleanupCommand = ''
-        ${pkgs.nixos-container}/bin/nixos-container start stalwart || true
-      '';
-      pruneOpts = [
-        "--keep-daily 30"
-        "--keep-weekly 12"
-        "--keep-monthly 12"
-      ];
+      stopContainers = [ "stalwart" ];
     };
 
     containers.stalwart = {
