@@ -264,9 +264,17 @@ once, on the 1 GB box. Three steps:
 - **B2 unreachable at 04:00.** nix warns and falls back to other substituters;
   since nothing else serves this path, vps attempts to build it and may OOM.
   Detected by the app's service failing to start rather than silently.
-- **Prune deletes a live path.** Prevented by reference-based pruning,
-  keep-2 retention, and the `push`-only guard. A time-based B2 lifecycle rule
-  would reintroduce this and must not be added.
+- **Prune deletes a live path.** Prevented by reference-based pruning, keep-2
+  retention, and the `push`-only guard. A time-based B2 lifecycle rule would
+  reintroduce this and must not be added. "Reference-based" carries a
+  requirement that is easy to lose: the keep-set must **fail closed**. Every
+  read the prune performs while building that set — listing manifests, fetching
+  a manifest, resolving a narinfo to the NAR it points at — must abort the
+  prune on error rather than continue with a smaller set. A swallowed I/O error
+  silently shrinks the keep-set, which silently grows the delete-set, and the
+  result is deleting a live object while the narinfo referencing it survives to
+  point at the hole. That state does not self-heal. Aborting a prune costs a
+  red CI run; continuing costs the cache.
 - **Signing key lost.** Regenerate, update the Actions secret and
   `trusted-public-keys`, re-push. No data loss; the bucket is derived state.
 - **Cargo git dependencies on other private repos.** These take a different
