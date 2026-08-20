@@ -190,12 +190,12 @@ bucket and 2026-08-20 to Object Lock + S3 endpoint (see scope decisions).
 No code. The executor STOPS here and hands this checklist to the human;
 Task 2 cannot evaluate until it is done.
 
-- [ ] Create B2 bucket `spacefunk-nix-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **compliance mode, 60 days** (decided 2026-08-20 — no early-delete escape hatch, not even for the master account).
-- [ ] Lifecycle Settings on the bucket: **keep prior versions for 60 days** (`daysFromHidingToDeleting = 60`).
-- [ ] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-nix-backups spacefunk-nix-backups-restic listBuckets,listFiles,readFiles,writeFiles`
-- [ ] Note the bucket's S3 endpoint from its details page (`s3.us-east-005.backblazeb2.com`) — the repo URLs in Task 2 need it.
-- [ ] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks. The bucket is shared, but the repos are not: `paynefield/` and `vps/` are separate restic repositories under path prefixes inside the one bucket, each with its own password, locks, and prune. Stalwart rides the vps repo — no third password.
-- [ ] `.sops.yaml` — add a creation rule for the shared credentials file, ABOVE the catch-all rule (sops uses the first match; the catch-all has no host keys, so the hosts could not decrypt it):
+- [x] Create B2 bucket `spacefunk-nix-backups` (private) **with Object Lock enabled at creation** — it cannot be turned on later; if the bucket already exists without it, delete and recreate. Set the bucket's default retention: **compliance mode, 60 days** (decided 2026-08-20 — no early-delete escape hatch, not even for the master account).
+- [x] Lifecycle Settings on the bucket: **keep prior versions for 60 days** (`daysFromHidingToDeleting = 60`).
+- [x] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-nix-backups spacefunk-nix-backups-restic listBuckets,listFiles,readFiles,writeFiles`
+- [x] Note the bucket's S3 endpoint from its details page (`s3.us-east-005.backblazeb2.com`) — the repo URLs in Task 2 need it.
+- [x] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks. The bucket is shared, but the repos are not: `paynefield/` and `vps/` are separate restic repositories under path prefixes inside the one bucket, each with its own password, locks, and prune. Stalwart rides the vps repo — no third password.
+- [x] `.sops.yaml` — add a creation rule for the shared credentials file, ABOVE the catch-all rule (sops uses the first match; the catch-all has no host keys, so the hosts could not decrypt it):
 
 ```yaml
   - path_regex: secrets/services/restic-b2\.yaml$
@@ -207,11 +207,11 @@ Task 2 cannot evaluate until it is done.
           - *host_vps
 ```
 
-- [ ] `sops secrets/services/restic-b2.yaml` — ONE shared copy of the app key (both hosts use the same key; a per-host copy would just be rotation drift). Add:
+- [x] `sops secrets/services/restic-b2.yaml` — ONE shared copy of the app key (both hosts use the same key; a per-host copy would just be rotation drift). Add:
   - `restic-b2-env`: multiline value `AWS_ACCESS_KEY_ID=<keyID>` newline `AWS_SECRET_ACCESS_KEY=<applicationKey>` (the B2 key pair used as S3 credentials — restic's `s3:` backend reads AWS-style vars)
-- [ ] `sops secrets/hosts/paynefield.yaml` — add `restic-repo-password`: the paynefield password.
-- [ ] `sops secrets/hosts/vps.yaml` — add `restic-repo-password`: the vps password.
-- [ ] Commit:
+- [x] `sops secrets/hosts/paynefield.yaml` — add `restic-repo-password`: the paynefield password.
+- [x] `sops secrets/hosts/vps.yaml` — add `restic-repo-password`: the vps password.
+- [x] Commit:
 
 ```bash
 git add .sops.yaml secrets/services/restic-b2.yaml secrets/hosts/paynefield.yaml secrets/hosts/vps.yaml
@@ -239,7 +239,7 @@ shared job's enablement land in one deploy — no backup-less gap for mail.
 **Interfaces:**
 - Consumes: everything from Task 1. Secret names must match Task 1 exactly: `restic-b2-env`, `restic-repo-password`.
 
-- [ ] **Step 1: Write the failing eval test — enable before declaring secrets**
+- [x] **Step 1: Write the failing eval test — enable before declaring secrets**
 
 In `hosts/paynefield/default.nix`, inside the `mine = { ... }` attrset (sibling of `system`), add only:
 
@@ -252,14 +252,14 @@ In `hosts/paynefield/default.nix`, inside the `mine = { ... }` attrset (sibling 
     };
 ```
 
-(`<region>` is the endpoint noted in Task 1, e.g. `us-west-004`.)
+(The endpoint noted in Task 1: `us-east-005`.)
 
-- [ ] **Step 2: Run eval to verify it fails**
+- [x] **Step 2: Run eval to verify it fails**
 
 Run: `nix eval --raw .#nixosConfigurations.paynefield.config.system.build.toplevel.drvPath`
 Expected: FAIL — `restic-b2-env` is not declared in `sops.secrets`.
 
-- [ ] **Step 3: Declare the secrets**
+- [x] **Step 3: Declare the secrets**
 
 In `hosts/paynefield/default.nix`, next to `sops.secrets.vikunja-jwt-secret`:
 
@@ -274,12 +274,12 @@ In `hosts/paynefield/default.nix`, next to `sops.secrets.vikunja-jwt-secret`:
   };
 ```
 
-- [ ] **Step 4: Run eval to verify paynefield is green**
+- [x] **Step 4: Run eval to verify paynefield is green**
 
 Run: `nix eval --raw .#nixosConfigurations.paynefield.config.system.build.toplevel.drvPath`
 Expected: PASS.
 
-- [ ] **Step 5: Wire vps the same way**
+- [x] **Step 5: Wire vps the same way**
 
 In `hosts/vps/default.nix`, next to the stalwart sops secrets:
 
@@ -305,7 +305,7 @@ Inside `mine = { ... }`:
     };
 ```
 
-- [ ] **Step 6: Migrate Stalwart onto the shared job**
+- [x] **Step 6: Migrate Stalwart onto the shared job**
 
 In `modules/stalwart-server/nixos.nix`:
 - Remove the whole `backup = { ... }` option set and the bespoke
@@ -324,13 +324,13 @@ In `hosts/vps/default.nix`: remove the `sops.secrets.restic-stalwart-b2-env`
 and `sops.secrets.restic-stalwart-repo-pw` declarations and the
 `backup = { ... }` block inside `stalwart-server` (keep `adminPasswordFile`).
 
-- [ ] **Step 7: Run the full check**
+- [x] **Step 7: Run the full check**
 
 Run: `nix eval --raw .#nixosConfigurations.vps.config.system.build.toplevel.drvPath`
 Run: `nix flake check --print-build-logs`
 Expected: both PASS.
 
-- [ ] **Step 8: Doc polish in `modules/backups/nixos.nix`**
+- [x] **Step 8: Doc polish in `modules/backups/nixos.nix`**
 
 Update the `repository` example to the S3 form
 (`s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield`) and the
@@ -339,7 +339,7 @@ Update the `repository` example to the S3 form
 are no longer B2-native names, and a stale description here would send a
 future restore down the wrong env-var path.
 
-- [ ] **Step 9: Format and commit**
+- [x] **Step 9: Format and commit**
 
 ```bash
 nix fmt
