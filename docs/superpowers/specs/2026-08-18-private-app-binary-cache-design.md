@@ -67,9 +67,10 @@ unchanged.
 - **A new, dedicated B2 bucket.** The prune step is a bulk-delete script and
   must not be able to reach restic data. `modules/backups/nixos.nix` states the
   principle already: "no container ever sees the B2 credentials — a compromised
-  service cannot read, delete or poison its own backups." restic also speaks
-  B2's native API (`B2_ACCOUNT_ID`/`B2_ACCOUNT_KEY`) while nix speaks its
-  S3-compatible one (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`).
+  service cannot read, delete or poison its own backups." The two buckets also
+  want opposite retention regimes: `spacefunk-nix-backups` is object-locked so
+  nothing can delete early, while the cache bucket must allow deletes and must
+  never gain a lifecycle rule. One bucket cannot be both.
 
 - **Private bucket, read-only key on vps.** A public bucket would need no
   credential at all, but the compiled binary would be fetchable by anyone who
@@ -124,20 +125,25 @@ unchanged.
 - `modules/<app>/package.nix` — new, private `fetchFromGitHub`
 - `flake.nix` — add `<app>` to `packages`; `checks` picks up `pkg-<app>`
   automatically via the existing `mapAttrs'` at `flake.nix:122`
-- `modules/system/nixos.nix` — new `mine.system.privateCache` option
-- `hosts/vps/default.nix` — sops secret + enable the option
-- `secrets/hosts/vps.yaml` — B2 read-only key
+- `modules/system/nixos.nix` — new `mine.system.privateCache` option, owning
+  its sops secret
+- `hosts/vps/default.nix`, `hosts/redtruck/default.nix` — enable the option
+- `secrets/services/nix-cache-b2.yaml` — one shared read-only B2 key,
+  encrypted to every host; a substituter credential is consumed by the daemon
+  and never handed to a build, so it does not carry the `impureEnvVars`
+  exfiltration risk that keeps the PAT off shared machines
 - `.github/workflows/check.yml` — daemon credentials, push step, prune step
 - A prune script in the repo
+- Caching `encode_queue` (`passthru.cache = true`): its public source lets the
+  entire cache pipeline be proven on redtruck before any private credential
+  exists, and redtruck then substitutes instead of compiling
 
 **Out:**
 
 - The service module itself — container, caddy, the app's own runtime secrets,
   backup registration. That is a separate design with its own spec.
-- Caching encode_queue. It is public, redtruck does not auto-upgrade, and the
-  saving is one Rust compile on a workstation. Trivial to add later.
 - Any change to `autoUpgrade`, the `verified` ref, or push-based deployment.
-- Other hosts. elitebook, paynefield, t495, redtruck and mac are untouched.
+- elitebook, paynefield, t495 and mac are untouched.
 
 ## Approach
 

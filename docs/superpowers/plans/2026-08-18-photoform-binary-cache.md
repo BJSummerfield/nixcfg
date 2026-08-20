@@ -6,7 +6,7 @@
 
 **Architecture:** CI builds, signs, and pushes selected packages to a private B2 bucket; hosts add it as a substituter with a shared read-only key. `photoform` uses `fetchFromGitHub { private = true; }`, whose store path derives from a declared hash, so hosts evaluate the flake with no credential and the source is fetched only by the machine that builds it — CI. Retention is manifest-driven, pruned to the last two builds.
 
-**Tech Stack:** Nix 2.34.8, nixpkgs `e5bdc4a` (nixos-unstable), `rustPlatform.buildRustPackage`, sops-nix, GitHub Actions, Backblaze B2 S3-compatible API, awscli2.
+**Tech Stack:** Nix 2.34.8, nixpkgs `0ae2bc1` (nixos-unstable), `rustPlatform.buildRustPackage`, sops-nix, GitHub Actions, Backblaze B2 S3-compatible API, awscli2.
 
 **Spec:** `docs/superpowers/specs/2026-08-18-private-app-binary-cache-design.md`
 
@@ -20,7 +20,7 @@ This also keeps CI green throughout. The moment `photoform` is in `packages`, `n
 
 - B2 bucket: `spacefunk-nix-cache`. Endpoint `s3.us-east-005.backblazeb2.com`, region `us-east-005`.
 - **What gets cached is opt-in per package via `passthru.cache = true`.** Membership in `packages` means CI *builds* a package; it does not mean anything needs it cached. CI derives the push list from the marker, so adding a package later is one line next to that package.
-- **One shared read-only B2 key serves every host**, from `secrets/nix-cache.yaml`. It is not an `impureEnvVar` and is never handed to a build, so it does not carry the exfiltration risk a GitHub PAT would. Rotation is one file.
+- **One shared read-only B2 key serves every host**, from `secrets/services/nix-cache-b2.yaml`. It is not an `impureEnvVar` and is never handed to a build, so it does not carry the exfiltration risk a GitHub PAT would. Rotation is one file.
 - Retention: keep the 2 most recent manifests and everything they reference. The manifest is the `sort -u` union of every cached package's closure.
 - Cache writes and prunes run **only** on `github.event_name == 'push'`. Never on `pull_request`.
 - Never add a time-based B2 lifecycle rule to this bucket. `nix copy` skips paths already present, so object timestamps do not track whether a path is still in use.
@@ -42,7 +42,7 @@ This also keeps CI green throughout. The moment `photoform` is in `packages`, `n
 | `ci/prune-cache.sh` | **Create.** Manifest-driven retention. The only thing that deletes from the bucket. |
 | `.github/workflows/check.yml` | **Modify.** Daemon credentials, push, manifest, prune. |
 | `modules/system/nixos.nix` | **Modify.** New `mine.system.privateCache` option, owning its own sops secret. |
-| `secrets/nix-cache.yaml` | **Create.** Shared B2 read key, encrypted to every host. |
+| `secrets/services/nix-cache-b2.yaml` | **Create.** Shared B2 read key, encrypted to every host. |
 | `.sops.yaml` | **Modify.** Creation rule for the shared file. |
 | `hosts/redtruck/default.nix`, `hosts/vps/default.nix` | **Modify.** One line each to enable the cache. |
 
@@ -155,7 +155,7 @@ Both restricted to `spacefunk-nix-cache` only.
 | Key | Capabilities | Goes to |
 |---|---|---|
 | write key | `listFiles`, `readFiles`, `writeFiles`, `deleteFiles` | Actions secrets |
-| read key | `listFiles`, `readFiles` | `secrets/nix-cache.yaml`, shared by all hosts |
+| read key | `listFiles`, `readFiles` | `secrets/services/nix-cache-b2.yaml`, shared by all hosts |
 
 Record both `keyID` / `applicationKey` pairs. B2 shows an application key exactly once.
 
@@ -455,7 +455,7 @@ Expected: exactly **two** manifest objects, the two most recent, and the third r
 
 **Files:**
 - Modify: `.sops.yaml`
-- Create: `secrets/nix-cache.yaml`
+- Create: `secrets/services/nix-cache-b2.yaml`
 - Modify: `modules/system/nixos.nix`
 - Modify: `hosts/redtruck/default.nix`
 
@@ -470,7 +470,7 @@ The key is shared by every host deliberately. It is a read-only credential over 
 In `.sops.yaml`, add this **before** the final catch-all `secrets/.*\.yaml$` rule — sops takes the first matching rule, and the catch-all encrypts only to the two user keys, which no host could decrypt:
 
 ```yaml
-  - path_regex: secrets/nix-cache\.yaml$
+  - path_regex: secrets/services/nix-cache-b2\.yaml$
     key_groups:
       - age:
           - *waktu_redtruck
@@ -485,7 +485,7 @@ In `.sops.yaml`, add this **before** the final catch-all `secrets/.*\.yaml$` rul
 - [ ] **Step 2: Create the shared secret**
 
 ```bash
-nix shell nixpkgs#sops -c sops secrets/nix-cache.yaml
+nix shell nixpkgs#sops -c sops secrets/services/nix-cache-b2.yaml
 ```
 
 Content, matching the shape `restic-stalwart-b2-env` uses:
@@ -499,7 +499,7 @@ nix-cache-b2-env: |
 - [ ] **Step 3: Confirm every host key is a recipient**
 
 ```bash
-nix shell nixpkgs#sops -c sops -d --extract '["sops"]["age"]' secrets/nix-cache.yaml | grep -c recipient
+nix shell nixpkgs#sops -c sops -d --extract '["sops"]["age"]' secrets/services/nix-cache-b2.yaml | grep -c recipient
 ```
 
 Expected: `7`. A lower number means the rule was added after the catch-all and did not match.
@@ -519,7 +519,7 @@ Add a new element to the existing `mkMerge` list, alongside the `mkIf cfg.autoUp
 ```nix
     (mkIf cfg.privateCache.enable {
       sops.secrets.nix-cache-b2-env = {
-        sopsFile = ../../secrets/nix-cache.yaml;
+        sopsFile = ../../secrets/services/nix-cache-b2.yaml;
         mode = "0400";
       };
 
@@ -564,7 +564,7 @@ Expected: checks pass, and those four drvPaths are unchanged from before this ta
 - [ ] **Step 8: Commit and deploy to redtruck**
 
 ```bash
-git add .sops.yaml secrets/nix-cache.yaml modules/system/nixos.nix hosts/redtruck/default.nix
+git add .sops.yaml secrets/services/nix-cache-b2.yaml modules/system/nixos.nix hosts/redtruck/default.nix
 git commit -m "feat(cache): shared B2 substituter, enabled on redtruck
 
 One read-only key for all hosts: it covers build artifacts only, is never
@@ -771,7 +771,7 @@ In `hosts/vps/default.nix`, inside `mine.system`:
       privateCache.enable = true;
 ```
 
-That is the whole change — the module owns the secret, and `secrets/nix-cache.yaml` is already encrypted to `host_vps` from Task 6.
+That is the whole change — the module owns the secret, and `secrets/services/nix-cache-b2.yaml` is already encrypted to `host_vps` from Task 6.
 
 ```bash
 nix fmt
