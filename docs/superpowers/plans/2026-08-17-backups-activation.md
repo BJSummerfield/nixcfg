@@ -153,8 +153,9 @@ Three actors: you, the agent (executor), and the hosts (auto-upgrade).
    re-encryption needs your age key, which the agent's container does not
    have (host secrets are not available to it).
 2. **Handoff signal.** You commit and say "Task 1 done" (or just tell the
-   agent and let it verify). The agent checks that `restic-b2-env` and
-   `restic-repo-password` exist in both host yamls. Until then, Task 2's
+   agent and let it verify). The agent checks that `restic-b2-env` exists in
+   `secrets/services/restic-b2.yaml` (with a matching `.sops.yaml` rule) and
+   `restic-repo-password` in both host yamls. Until then, Task 2's
    eval is intentionally red — that is the plan working, not a bug.
 3. **Agent — Task 2.** Branch from the main that includes your secrets
    commit, run the TDD steps (enable → red eval → declare secrets → green
@@ -194,16 +195,31 @@ Task 2 cannot evaluate until it is done.
 - [ ] Create ONE application key scoped to only that bucket, **without `deleteFiles`**. The console only offers canned capability sets, so use the CLI: `b2 key create --bucket spacefunk-nix-backups spacefunk-nix-backups-restic listBuckets,listFiles,readFiles,writeFiles`
 - [ ] Note the bucket's S3 endpoint from its details page (`s3.us-east-005.backblazeb2.com`) — the repo URLs in Task 2 need it.
 - [ ] Generate two restic repo passwords (e.g. `openssl rand -base64 32`), one per host. **Store both in 1Password** — the sops copies die with the host disks. The bucket is shared, but the repos are not: `paynefield/` and `vps/` are separate restic repositories under path prefixes inside the one bucket, each with its own password, locks, and prune. Stalwart rides the vps repo — no third password.
-- [ ] `sops secrets/hosts/paynefield.yaml` — add:
+- [ ] `.sops.yaml` — add a creation rule for the shared credentials file, ABOVE the catch-all rule (sops uses the first match; the catch-all has no host keys, so the hosts could not decrypt it):
+
+```yaml
+  - path_regex: secrets/services/restic-b2\.yaml$
+    key_groups:
+      - age:
+          - *waktu_redtruck
+          - *waktu_t495
+          - *host_paynefield
+          - *host_vps
+```
+
+- [ ] `sops secrets/services/restic-b2.yaml` — ONE shared copy of the app key (both hosts use the same key; a per-host copy would just be rotation drift). Add:
   - `restic-b2-env`: multiline value `AWS_ACCESS_KEY_ID=<keyID>` newline `AWS_SECRET_ACCESS_KEY=<applicationKey>` (the B2 key pair used as S3 credentials — restic's `s3:` backend reads AWS-style vars)
-  - `restic-repo-password`: the paynefield password
-- [ ] `sops secrets/hosts/vps.yaml` — add the same two keys with the vps password (same app key).
-- [ ] Commit the re-encrypted yaml files:
+- [ ] `sops secrets/hosts/paynefield.yaml` — add `restic-repo-password`: the paynefield password.
+- [ ] `sops secrets/hosts/vps.yaml` — add `restic-repo-password`: the vps password.
+- [ ] Commit:
 
 ```bash
-git add secrets/hosts/paynefield.yaml secrets/hosts/vps.yaml
-git commit -m "chore(secrets): restic B2 credentials for paynefield and vps"
+git add .sops.yaml secrets/services/restic-b2.yaml secrets/hosts/paynefield.yaml secrets/hosts/vps.yaml
+git commit -m "chore(secrets): restic B2 credentials (shared) and per-host repo passwords"
 ```
+
+(A future host joining the backups = its key added to the `.sops.yaml` rule +
+`sops updatekeys secrets/services/restic-b2.yaml` + its own `restic-repo-password`.)
 
 ---
 
@@ -249,7 +265,7 @@ In `hosts/paynefield/default.nix`, next to `sops.secrets.vikunja-jwt-secret`:
 
 ```nix
   sops.secrets.restic-b2-env = {
-    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
   };
   sops.secrets.restic-repo-password = {
@@ -269,7 +285,7 @@ In `hosts/vps/default.nix`, next to the stalwart sops secrets:
 
 ```nix
   sops.secrets.restic-b2-env = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
+    sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
   };
   sops.secrets.restic-repo-password = {
