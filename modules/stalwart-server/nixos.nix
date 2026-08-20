@@ -136,24 +136,6 @@ in
           ...
         }:
         {
-          # wasm-bindgen-cli_0_2_93 emits duplicate exports binaryen-130 rejects.
-          # Patch with upstream fix (nixpkgs bb15a89). Delete when channel catches up.
-          nixpkgs.overlays = [
-            (final: prev: {
-              wasm-bindgen-cli_0_2_93 = prev.wasm-bindgen-cli_0_2_93.overrideAttrs (old: {
-                postPatch = (old.postPatch or "") + ''
-                  patch -p1 -d "$cargoDepsCopy"/*/wasm-bindgen-cli-support-* < ${
-                    prev.fetchpatch {
-                      url = "https://github.com/wasm-bindgen/wasm-bindgen/commit/b375e974cf30a203f1ea7f6320ad32759c5cb9e6.patch";
-                      relative = "crates/cli-support";
-                      hash = "sha256-pejDKqNbtlpLLqNcdpwgxDSxsGxyv5V8/QeK+OCY3qw=";
-                    }
-                  }
-                '';
-              });
-            })
-          ];
-
           systemd.services.stalwart.serviceConfig.LoadCredential = [
             "admin-pw:/run/stalwart/admin-pw"
           ];
