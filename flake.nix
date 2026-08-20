@@ -74,8 +74,10 @@
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       # Exposed so `nix build .#encode_queue` works and so the checks below
-      # build it. bicep-langserver is deliberately absent: no host enables it
-      # and its dotnet SDK dependency is a 712 MiB closure.
+      # build it. Set `passthru.cache = true` on a package to have CI push it
+      # to the private binary cache as well. bicep-langserver is deliberately
+      # absent: no host enables it and its dotnet SDK dependency is a 712 MiB
+      # closure.
       packages = forAllSystems (
         system:
         let
@@ -83,7 +85,6 @@
         in
         {
           encode_queue = pkgs.callPackage ./modules/encode_queue/package.nix { };
-          photoform = pkgs.callPackage ./modules/photoform/package.nix { };
         }
       );
 

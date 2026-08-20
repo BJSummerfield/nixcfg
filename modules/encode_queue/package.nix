@@ -10,6 +10,8 @@ rustPlatform.buildRustPackage {
     sha256 = "sha256-jUDG5pjkWHTWOoyV7f6Bdmel8ZzNX1VtG9ZXRD709Kc=";
   };
   cargoHash = "sha256-3hfXLgVzT088UAMfxE7ao86nO7Gx8MHwi+9rLBrYYQw=";
+  # Opt in to the binary cache so redtruck substitutes it instead of compiling.
+  passthru.cache = true;
   meta = {
     description = "My custom encode queue tool";
     homepage = "https://github.com/BJSummerfield/encode_queue";
