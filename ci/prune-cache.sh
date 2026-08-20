@@ -6,6 +6,9 @@
 # still in use, and any age-based rule would eventually delete a live NAR.
 set -euo pipefail
 
+# Byte collation so sort/comm/sort -u agree exactly on these keys.
+export LC_ALL=C
+
 BUCKET="${CACHE_BUCKET:?CACHE_BUCKET is required}"
 ENDPOINT="${CACHE_ENDPOINT:?CACHE_ENDPOINT is required}"
 KEEP="${CACHE_KEEP:-2}"
@@ -41,8 +44,20 @@ while read -r path; do
   hash="${path#/nix/store/}"
   hash="${hash%%-*}"
   echo "$hash.narinfo" >> "$work/objects-keep"
-  s3 s3 cp "s3://$BUCKET/$hash.narinfo" - 2>/dev/null \
-    | awk '/^URL: /{print $2}' >> "$work/objects-keep" || true
+
+  # Fail closed: an unreadable narinfo means we cannot know which NAR it
+  # references, and assuming none would delete live data.
+  if ! s3 s3 cp "s3://$BUCKET/$hash.narinfo" - > "$work/narinfo" 2>/dev/null; then
+    echo "prune-cache: cannot read $hash.narinfo; refusing to prune" >&2
+    exit 1
+  fi
+
+  nar=$(awk '/^URL: /{print $2}' "$work/narinfo")
+  if [ -z "$nar" ]; then
+    echo "prune-cache: $hash.narinfo has no URL: line; refusing to prune" >&2
+    exit 1
+  fi
+  echo "$nar" >> "$work/objects-keep"
 done < "$work/paths-keep"
 
 cat "$work/manifests-keep" >> "$work/objects-keep"
