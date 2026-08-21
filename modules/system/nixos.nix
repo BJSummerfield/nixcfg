@@ -120,10 +120,13 @@ in
       # the daemon (non-root clients), the autoUpgrade unit, and root's AWS
       # profile file for interactive nixos-rebuild.
       sops.templates = {
-        "nix-cache-b2.env".content = ''
-          AWS_ACCESS_KEY_ID=${config.sops.placeholder."nix-cache-key-id"}
-          AWS_SECRET_ACCESS_KEY=${config.sops.placeholder."nix-cache-secret-key"}
-        '';
+        "nix-cache-b2.env" = {
+          content = ''
+            AWS_ACCESS_KEY_ID=${config.sops.placeholder."nix-cache-key-id"}
+            AWS_SECRET_ACCESS_KEY=${config.sops.placeholder."nix-cache-secret-key"}
+          '';
+          restartUnits = [ "nix-daemon.service" ];
+        };
         "nix-cache-b2.ini".content = ''
           [default]
           aws_access_key_id = ${config.sops.placeholder."nix-cache-key-id"}
@@ -148,7 +151,9 @@ in
       };
 
       # AWS's chain falls back to the profile file, which covers direct-store
-      # root builds that no EnvironmentFile can reach.
+      # root builds that no EnvironmentFile can reach. Replaces any existing
+      # root AWS profile: privateCache hosts must not also hold other root
+      # AWS credentials.
       systemd.tmpfiles.rules = [
         "d /root/.aws 0700 root root -"
         "L+ /root/.aws/credentials - - - - ${config.sops.templates."nix-cache-b2.ini".path}"

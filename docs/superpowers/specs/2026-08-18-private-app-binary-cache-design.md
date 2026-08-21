@@ -129,9 +129,11 @@ unchanged.
   its sops secret
 - `hosts/vps/default.nix`, `hosts/redtruck/default.nix` — enable the option
 - `secrets/services/nix-cache-b2.yaml` — one shared read-only B2 key,
-  encrypted to every host; a substituter credential is consumed by the daemon
-  and never handed to a build, so it does not carry the `impureEnvVars`
-  exfiltration risk that keeps the PAT off shared machines
+  encrypted to every host; a substituter credential is consumed by whichever
+  nix client realises the path (the daemon for user builds, root's own client
+  for `nixos-rebuild` and `autoUpgrade`) and never handed to a build, so it
+  does not carry the `impureEnvVars` exfiltration risk that keeps the PAT off
+  shared machines
 - `.github/workflows/check.yml` — daemon credentials, push step, prune step
 - A prune script in the repo
 - Caching `encode_queue` (`passthru.cache = true`): its public source lets the
@@ -251,8 +253,11 @@ nix 2.34.8 links `libaws-c-s3`; a store URI of the form
 `s3://spacefunk-nix-cache?endpoint=s3.<region>.backblazeb2.com&region=<region>`
 parses and resolves to
 `https://s3.<region>.backblazeb2.com/spacefunk-nix-cache/nix-cache-info`,
-failing only on absent credentials. Credentials are sourced from the standard
-AWS chain, so environment variables are sufficient.
+failing only on absent credentials. This is what makes the fix possible: the
+standard AWS chain reads environment variables first (daemon and
+`nixos-upgrade` EnvironmentFiles) and falls back to a profile file
+(`/root/.aws/credentials`, for direct-store root builds) with no
+per-consumer code needed.
 
 ### Rollout
 
