@@ -212,7 +212,7 @@ Expected: **fails** with access denied. Success means the read key is over-scope
 - Consumes: the marker from Task 2; the Actions secrets from Task 3.
 - Produces: bucket objects `nix-cache-info`, `<hash>.narinfo`, `nar/<...>`, and `manifests/<zero-padded-run-number>-<sha>.json` holding a JSON array of the union of every cached package's closure.
 
-Note the asymmetry, because it confuses people later: `nix copy --to` is performed by the **client**, so step-level environment variables suffice here. Substitution on a host is performed by the **daemon**, which is why Task 6 needs an `EnvironmentFile`.
+Note the asymmetry, because it confuses people later: `nix copy --to` is performed by the **client**, so step-level environment variables suffice here. Substitution on a host happens in whichever process realises the path — the daemon for non-root clients, but root's own nix client for `nixos-rebuild` and `autoUpgrade`, since root operates on the store directly and never consults the daemon — which is why Task 6 gives credentials to all three.
 
 - [ ] **Step 1: Add the push step**
 
@@ -788,6 +788,8 @@ Merge to `main`, wait for `verified` to advance, then on vps:
 sudo nixos-rebuild switch --flake github:BJSummerfield/nixcfg/verified
 sudo systemctl restart nix-daemon
 ```
+
+`restartUnits` on the sops secrets now restarts `nix-daemon.service` automatically whenever the credential changes, but the first deploy after the direct-store-root fix still wants this one manual restart.
 
 - [ ] **Step 3: Prove substitution**
 

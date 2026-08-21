@@ -238,9 +238,14 @@ does not refresh.
 A `mine.system.privateCache` option under the existing namespace, following the
 shape `modules/nvidia/nixos.nix:46` already uses to add the cuda-maintainers
 substituter and its key. It sets `nix.settings.substituters` and
-`trusted-public-keys`, and points
-`systemd.services.nix-daemon.serviceConfig.EnvironmentFile` at the sops path
-holding `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`.
+`trusted-public-keys`. Substitution is not daemon-only: root's nix client
+operates on the store directly and never consults nix-daemon, so credentials
+must reach three places — `nix-daemon.service`'s `EnvironmentFile` (non-root
+clients), `nixos-upgrade.service`'s `EnvironmentFile` (autoUpgrade), and
+`/root/.aws/credentials` (interactive `sudo nixos-rebuild`, since sudo sets
+`HOME=/root` and the AWS chain falls back to the profile file there). All
+three are rendered from one sops-templated pair of `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY` keys.
 
 nix 2.34.8 links `libaws-c-s3`; a store URI of the form
 `s3://spacefunk-nix-cache?endpoint=s3.<region>.backblazeb2.com&region=<region>`
