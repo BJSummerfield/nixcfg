@@ -212,7 +212,7 @@ Expected: **fails** with access denied. Success means the read key is over-scope
 - Consumes: the marker from Task 2; the Actions secrets from Task 3.
 - Produces: bucket objects `nix-cache-info`, `<hash>.narinfo`, `nar/<...>`, and `manifests/<zero-padded-run-number>-<sha>.json` holding a JSON array of the union of every cached package's closure.
 
-Note the asymmetry, because it confuses people later: `nix copy --to` is performed by the **client**, so step-level environment variables suffice here. Substitution on a host is performed by the **daemon**, which is why Task 6 needs an `EnvironmentFile`.
+Note the asymmetry, because it confuses people later: `nix copy --to` is performed by the **client**, so step-level environment variables suffice here. Substitution on a host happens in whichever process realises the path — the daemon for non-root clients, but root's own nix client for `nixos-rebuild` and `autoUpgrade`, since root operates on the store directly and never consults the daemon — which is why Task 6 gives credentials to all three.
 
 - [ ] **Step 1: Add the push step**
 
@@ -491,9 +491,8 @@ nix shell nixpkgs#sops -c sops secrets/services/nix-cache-b2.yaml
 Content, matching the shape `restic-stalwart-b2-env` uses:
 
 ```yaml
-nix-cache-b2-env: |
-    AWS_ACCESS_KEY_ID=<read keyID>
-    AWS_SECRET_ACCESS_KEY=<read applicationKey>
+nix-cache-key-id: <read keyID>
+nix-cache-secret-key: <read applicationKey>
 ```
 
 - [ ] **Step 3: Confirm every host key is a recipient**
@@ -518,9 +517,34 @@ Add a new element to the existing `mkMerge` list, alongside the `mkIf cfg.autoUp
 
 ```nix
     (mkIf cfg.privateCache.enable {
-      sops.secrets.nix-cache-b2-env = {
-        sopsFile = ../../secrets/services/nix-cache-b2.yaml;
-        mode = "0400";
+      sops.secrets = {
+        nix-cache-key-id = {
+          sopsFile = ../../secrets/services/nix-cache-b2.yaml;
+          restartUnits = [ "nix-daemon.service" ];
+        };
+        nix-cache-secret-key = {
+          sopsFile = ../../secrets/services/nix-cache-b2.yaml;
+          restartUnits = [ "nix-daemon.service" ];
+        };
+      };
+
+      # Root's nix client writes the store directly and never consults the
+      # daemon, so credentials must exist in every context that substitutes:
+      # the daemon (non-root clients), the autoUpgrade unit, and root's AWS
+      # profile file for interactive nixos-rebuild.
+      sops.templates = {
+        "nix-cache-b2.env" = {
+          content = ''
+            AWS_ACCESS_KEY_ID=${config.sops.placeholder."nix-cache-key-id"}
+            AWS_SECRET_ACCESS_KEY=${config.sops.placeholder."nix-cache-secret-key"}
+          '';
+          restartUnits = [ "nix-daemon.service" ];
+        };
+        "nix-cache-b2.ini".content = ''
+          [default]
+          aws_access_key_id = ${config.sops.placeholder."nix-cache-key-id"}
+          aws_secret_access_key = ${config.sops.placeholder."nix-cache-secret-key"}
+        '';
       };
 
       nix.settings = {
@@ -532,10 +556,21 @@ Add a new element to the existing `mkMerge` list, alongside the `mkIf cfg.autoUp
         ];
       };
 
-      # Substitution runs in the daemon, so the credentials belong in its
-      # environment rather than the caller's.
       systemd.services.nix-daemon.serviceConfig.EnvironmentFile =
-        config.sops.secrets.nix-cache-b2-env.path;
+        config.sops.templates."nix-cache-b2.env".path;
+
+      systemd.services.nixos-upgrade = mkIf cfg.autoUpgrade.enable {
+        serviceConfig.EnvironmentFile = config.sops.templates."nix-cache-b2.env".path;
+      };
+
+      # AWS's chain falls back to the profile file, which covers direct-store
+      # root builds that no EnvironmentFile can reach. Replaces any existing
+      # root AWS profile: privateCache hosts must not also hold other root
+      # AWS credentials.
+      systemd.tmpfiles.rules = [
+        "d /root/.aws 0700 root root -"
+        "L+ /root/.aws/credentials - - - - ${config.sops.templates."nix-cache-b2.ini".path}"
+      ];
     })
 ```
 
@@ -593,7 +628,7 @@ The end-to-end proof of the whole cache, using a public package and no PAT.
 On redtruck, testing the key and bucket rather than the daemon:
 
 ```bash
-set -a; source /run/secrets/nix-cache-b2-env; set +a
+set -a; source /run/secrets/rendered/nix-cache-b2.env; set +a
 nix path-info --store "s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005" \
   $(nix eval --raw .#encode_queue)
 ```
@@ -788,6 +823,8 @@ Merge to `main`, wait for `verified` to advance, then on vps:
 sudo nixos-rebuild switch --flake github:BJSummerfield/nixcfg/verified
 sudo systemctl restart nix-daemon
 ```
+
+`restartUnits` on the sops secrets now restarts `nix-daemon.service` automatically whenever the credential changes, but the first deploy after the direct-store-root fix still wants this one manual restart.
 
 - [ ] **Step 3: Prove substitution**
 
