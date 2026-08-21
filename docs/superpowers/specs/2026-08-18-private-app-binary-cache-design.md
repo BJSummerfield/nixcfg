@@ -198,7 +198,7 @@ keys.
 | Cache signing key (private) | nixcfg Actions secret | signs narinfo |
 | Cache signing key (public) | `trusted-public-keys`, in-tree plaintext | — |
 | B2 write key | nixcfg Actions secret | write + delete, one bucket |
-| B2 read key | sops, `secrets/hosts/vps.yaml` | `readFiles`, `listFiles`, one bucket |
+| B2 read key | sops, `secrets/services/nix-cache-b2.yaml` (shared, encrypted to every host, consumed via `mine.system.privateCache`) | `readFiles`, `listFiles`, one bucket |
 
 The signing keypair is generated once with
 `nix-store --generate-binary-cache-key`. vps has `require-sigs = true`, so an
@@ -221,11 +221,13 @@ needed has closed. The last two steps are guarded to `github.event_name ==
 'push'`.
 
 Retention is tracked by a manifest rather than inferred. Each push writes
-`manifests/<commit-sha>.json` into the bucket, listing the store paths of that
-build's closure as computed by `nix path-info -r`. The prune step keeps the two
-most recent manifests, takes the union of the paths they name, and deletes
-every object in the bucket that is neither one of those paths nor one of those
-two manifests.
+`manifests/<zero-padded-run-number>-<commit-sha>.json` into the bucket,
+listing the store paths of that build's closure as computed by
+`nix path-info -r`. The zero-padded run number keeps lexicographic order equal
+to run order, which the prune step's `tail -n` retention relies on. The prune
+step keeps the two most recent manifests, takes the union of the paths they
+name, and deletes every object in the bucket that is neither one of those
+paths nor one of those two manifests.
 
 This makes retention explicit and auditable — the bucket states what it is
 keeping and why — and avoids depending on object timestamps, which `nix copy`
@@ -304,6 +306,7 @@ once, on the 1 GB box. Three steps:
 - vps runs the private app.
 - vps holds no GitHub credential of any kind.
 - vps has never compiled the app.
-- No host other than vps changed.
+- redtruck and vps consume the cache; elitebook, paynefield, t495 and mac are
+  unchanged.
 - The bucket does not grow without bound, and no scheduled job outside CI
   exists to keep it that way.
