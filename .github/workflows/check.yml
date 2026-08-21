@@ -27,7 +27,54 @@ jobs:
 
       - uses: cachix/install-nix-action@v31
 
+      # impureEnvVars are read from the builder's environment, which is
+      # nix-daemon under a multi-user install, so a shell export would not
+      # reach the fetch.
+      - name: Give nix-daemon the private-repo credentials
+        run: |
+          sudo mkdir -p /etc/systemd/system/nix-daemon.service.d
+          sudo tee /etc/systemd/system/nix-daemon.service.d/private-repo.conf >/dev/null <<EOF
+          [Service]
+          Environment="NIX_GITHUB_PRIVATE_USERNAME=x-access-token"
+          Environment="NIX_GITHUB_PRIVATE_PASSWORD=${{ secrets.PHOTOFORM_PAT }}"
+          EOF
+          sudo systemctl daemon-reload
+          sudo systemctl restart nix-daemon
+
       - run: nix flake check --print-build-logs
+
+      # Runs before the ref advances so hosts never see a config whose closure
+      # is not yet in the cache.
+      - name: Push cached packages to the binary cache
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
+          CACHE_STORE: s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005
+        run: |
+          mapfile -t attrs < <(nix eval --json --apply \
+            'ps: builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps)' \
+            .#packages.x86_64-linux | jq -r '.[]')
+
+          # An empty list means the marker was lost, not that there is nothing
+          # to do; pushing nothing would silently leave hosts compiling.
+          if [ "${#attrs[@]}" -eq 0 ]; then
+            echo "no package sets passthru.cache = true" >&2
+            exit 1
+          fi
+          echo "caching: ${attrs[*]}"
+
+          umask 077
+          printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$RUNNER_TEMP/cache-key.sec"
+          nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" "${attrs[@]/#/.#}"
+          shred -u "$RUNNER_TEMP/cache-key.sec"
+
+          # Retention is manifest-driven because nix copy skips paths already
+          # present, so object timestamps do not track whether a path is live.
+          nix path-info -r "${attrs[@]/#/.#}" | sort -u | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
+          nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblazeb2.com \
+            s3 cp "$RUNNER_TEMP/manifest.json" \
+            "s3://spacefunk-nix-cache/manifests/$(printf '%08d' "$GITHUB_RUN_NUMBER")-${GITHUB_SHA}.json"
 
       # Not forced: after a force-push to main this is rejected as a
       # non-fast-forward and the run goes red, rather than moving the hosts
@@ -35,3 +82,14 @@ jobs:
       - name: Advance verified
         if: github.event_name == 'push'
         run: git push origin HEAD:verified
+
+      # Last, so the previous closure stays fetchable until the ref has moved.
+      - name: Prune the binary cache
+        if: github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
+          CACHE_BUCKET: spacefunk-nix-cache
+          CACHE_ENDPOINT: https://s3.us-east-005.backblazeb2.com
+          CACHE_KEEP: "2"
+        run: nix shell nixpkgs#awscli2 nixpkgs#jq -c ./ci/prune-cache.sh

@@ -95,6 +95,7 @@
       };
       nvidia.enable = true;
       openssh.outbound.enable = true;
+      privateCache.enable = true;
       # Paths come from the sops.secrets declarations above rather than
       # being hardcoded, so a change to sops-nix's layout can't silently
       # desync them. Addresses are stated per instance so a collision

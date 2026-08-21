@@ -37,6 +37,8 @@ in
 
     autoUpgrade.enable = mkEnableOption "automatic system upgrades from the flake";
 
+    privateCache.enable = mkEnableOption "the shared B2 binary cache as a substituter";
+
     boot = {
       mode = mkOption {
         type = types.enum [
@@ -99,6 +101,27 @@ in
           upper = "05:00";
         };
       };
+    })
+
+    (mkIf cfg.privateCache.enable {
+      sops.secrets.nix-cache-b2-env = {
+        sopsFile = ../../secrets/services/nix-cache-b2.yaml;
+        mode = "0400";
+      };
+
+      nix.settings = {
+        substituters = [
+          "s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005"
+        ];
+        trusted-public-keys = [
+          "spacefunk-nix-cache-1:y3hr8PFKky16X7YDVH/PUDUG4gGEtrYcthUWKL4XrA4="
+        ];
+      };
+
+      # Substitution runs in the daemon, so the credentials belong in its
+      # environment rather than the caller's.
+      systemd.services.nix-daemon.serviceConfig.EnvironmentFile =
+        config.sops.secrets.nix-cache-b2-env.path;
     })
 
     (mkIf (bootCfg.partitionUuid != null) {
