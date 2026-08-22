@@ -148,7 +148,7 @@ Expected: every test fails on the `expect`, reporting that `config/production.to
 
 - [ ] **Step 3: Write the config**
 
-Create `/tmp/Sheet-Automation-FF/config/production.toml`. This is the working development config with exactly three lines changed — `bind`, `public_url`, `database_url`:
+Create `/tmp/Sheet-Automation-FF/config/production.toml`. This is the working development config with exactly three lines changed — `bind`, `public_url`, `database_url`. The `<sandbox client ID>` and `<spreadsheet ID>` placeholders below stand in for the real values, which come from the repo owner's development config — this plan lives in the public nixcfg repo, so the real values belong only in the app repo:
 
 ```toml
 # The deployed configuration, installed into the nix store by nixcfg's
@@ -201,10 +201,10 @@ sawyer_url = "https://www.hisawyer.com/frenchie-farm/schedules/activity-set/1997
 
 [paypal]
 mode = "sandbox"
-client_id = "BAArlsDcyudE6_pa9ESkSQtbnjvQSnBU3JksMGsDfRKiyLlXyzJblKwk5R2ocX9vLqRMnTy20SMZoi7dto"
+client_id = "<sandbox client ID>"
 
 [sheets]
-spreadsheet_id = "1uur_E6H0wEW8lvVEIveAgnJ0RgUkZ5WjnKee9juHTxA"
+spreadsheet_id = "<spreadsheet ID>"
 sheet_name = "Bookings"
 
 [smtp]
@@ -460,7 +460,7 @@ Hand work: it needs an age key, which only your workstation has. `.sops.yaml` al
 - `photoform-paypal-client-secret` — the **Sandbox** REST app's secret, paired with the client ID already in `config/production.toml`. A live secret against a sandbox client ID fails at capture, not at startup.
 - `photoform-smtp-password` — the Gmail **app password** (16 characters) for `AriSummerfieldPhotography@gmail.com`, never the account password.
 - `photoform-admin-password` — the HTTP Basic password for `/admin`, paired with username `ari`. The app rejects an empty value at startup precisely because an empty one would compare equal to an empty `Authorization` header.
-- `photoform-sheets-sa` — the entire Google service-account JSON key, for an account with Editor access to spreadsheet `1uur_E6H0wEW8lvVEIveAgnJ0RgUkZ5WjnKee9juHTxA`.
+- `photoform-sheets-sa` — the entire Google service-account JSON key, for an account with Editor access to the spreadsheet named by `<spreadsheet ID>`.
 
 - [ ] **Step 2: Add them**
 
@@ -631,8 +631,7 @@ let
         ];
     }
     {
-      # The PayPal client ID is public — src/views/form.rs renders it into
-      # every page's SDK URL — and lives in the config file.
+      # The PayPal client ID is public and lives in the config file.
       name = "the PayPal client ID is not treated as a secret";
       ok =
         !(host.sops.secrets ? photoform-paypal-client-id) && !(host.sops.templates ? "photoform.env");
@@ -990,7 +989,7 @@ Expected: the confirmation page renders.
 
 - [ ] **Step 3: Confirm the booking reached the sheet and the mailbox**
 
-Expected: a new row in spreadsheet `1uur_E6H0wEW8lvVEIveAgnJ0RgUkZ5WjnKee9juHTxA`, and a confirmation email at `AriSummerfieldPhotography@gmail.com`.
+Expected: a new row in the `<spreadsheet ID>` spreadsheet, and a confirmation email at `AriSummerfieldPhotography@gmail.com`.
 
 If either is missing, the app degrades deliberately rather than failing — the booking is recorded and queued. Check which client is disabled:
 

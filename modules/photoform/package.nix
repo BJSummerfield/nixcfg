@@ -3,6 +3,11 @@
   fetchFromGitHub,
   ...
 }:
+let
+  # The module names this file through BOOKING_CONFIG; keeping the path in
+  # one place makes the two unable to drift.
+  configPath = "share/photoform/production.toml";
+in
 rustPlatform.buildRustPackage {
   pname = "photoform";
   version = "unstable";
@@ -19,13 +24,15 @@ rustPlatform.buildRustPackage {
   # import-from-derivation, so evaluation would fetch the private source and
   # every evaluator would need the GitHub credential.
   cargoHash = "sha256-o+gXWxaFNaJE27NmBxifngkJ2SPdIvYjlHtVvCJOCoU=";
-  # cargo installs the binary and nothing else; the module names this file
-  # through BOOKING_CONFIG.
+  # cargo installs the binary and nothing else.
   postInstall = ''
-    install -Dm444 config/production.toml $out/share/photoform/production.toml
+    install -Dm444 config/production.toml $out/${configPath}
   '';
-  # Opt in to the binary cache: vps has 1 GB of RAM and cannot compile this.
-  passthru.cache = true;
+  passthru = {
+    # Opt in to the binary cache: vps has 1 GB of RAM and cannot compile this.
+    cache = true;
+    inherit configPath;
+  };
   meta = {
     description = "PhotoForm booking web service";
     mainProgram = "nesting-box-booking";

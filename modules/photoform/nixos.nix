@@ -125,7 +125,7 @@ in
             # _FILE forms only: the app also accepts the value directly, but
             # that would put four credentials in /proc/<pid>/environ.
             environment = {
-              BOOKING_CONFIG = "${photoform}/share/photoform/production.toml";
+              BOOKING_CONFIG = "${photoform}/${photoform.configPath}";
               BOOKING_PAYPAL_CLIENT_SECRET_FILE = "/run/credentials/photoform.service/paypal-client-secret";
               BOOKING_SMTP_PASSWORD_FILE = "/run/credentials/photoform.service/smtp-password";
               BOOKING_ADMIN_PASSWORD_FILE = "/run/credentials/photoform.service/admin-password";
@@ -136,9 +136,8 @@ in
               Group = "photoform";
               ExecStart = lib.getExe photoform;
               # Copied by root into a per-unit tmpfs owned by User, which is
-              # what makes a 0400 root-owned sops file readable here. The
-              # credentials path is literal: /run/credentials/<unit> is
-              # stable systemd API.
+              # what makes a 0400 root-owned sops file readable here.
+              # /run/credentials/<unit> is stable systemd API.
               LoadCredential = [
                 "paypal-client-secret:/run/host-secrets/photoform-paypal-client-secret"
                 "smtp-password:/run/host-secrets/photoform-smtp-password"

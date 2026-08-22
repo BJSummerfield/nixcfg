@@ -10,6 +10,7 @@
 let
   inherit (nixpkgs) lib;
   pkgs = nixpkgs.legacyPackages.${system};
+  photoform = pkgs.callPackage ../modules/photoform/package.nix { };
 
   host =
     (lib.nixosSystem {
@@ -60,13 +61,16 @@ let
   checks = [
     {
       # The app reads BOOKING_*, and reads the config path from
-      # BOOKING_CONFIG. There is no --config flag.
+      # BOOKING_CONFIG. There is no --config flag. `or null` turns a renamed
+      # variable into a reported FAIL rather than an eval crash.
       name = "every secret is named by its _FILE variable, pointing at a credential";
       ok =
-        env.BOOKING_PAYPAL_CLIENT_SECRET_FILE == "/run/credentials/photoform.service/paypal-client-secret"
-        && env.BOOKING_SMTP_PASSWORD_FILE == "/run/credentials/photoform.service/smtp-password"
-        && env.BOOKING_ADMIN_PASSWORD_FILE == "/run/credentials/photoform.service/admin-password"
-        && env.BOOKING_SHEETS_SERVICE_ACCOUNT_FILE == "/run/credentials/photoform.service/sheets-sa";
+        (env.BOOKING_PAYPAL_CLIENT_SECRET_FILE or null)
+        == "/run/credentials/photoform.service/paypal-client-secret"
+        && (env.BOOKING_SMTP_PASSWORD_FILE or null) == "/run/credentials/photoform.service/smtp-password"
+        && (env.BOOKING_ADMIN_PASSWORD_FILE or null) == "/run/credentials/photoform.service/admin-password"
+        &&
+          (env.BOOKING_SHEETS_SERVICE_ACCOUNT_FILE or null) == "/run/credentials/photoform.service/sheets-sa";
     }
     {
       # A plain BOOKING_X would put the value in /proc/<pid>/environ; the
@@ -79,10 +83,39 @@ let
         && !(env ? BOOKING_SHEETS_SERVICE_ACCOUNT);
     }
     {
+      # Compares against the package's own configPath rather than a literal,
+      # so a postInstall path change fails this instead of only production.
       name = "the config is named out of the package, not passed as a flag";
       ok =
-        lib.hasSuffix "/share/photoform/production.toml" env.BOOKING_CONFIG
+        (env.BOOKING_CONFIG or null) == "${photoform}/${photoform.configPath}"
         && !(lib.hasInfix "--config" unit.serviceConfig.ExecStart);
+    }
+    {
+      # BOOKING_CONFIG is only as trustworthy as configPath is honest about
+      # where postInstall actually writes the file; this reads postInstall's
+      # own source rather than the built output, so it needs no realization.
+      name = "postInstall installs to the path configPath advertises";
+      ok = lib.hasInfix photoform.configPath photoform.postInstall;
+    }
+    {
+      name = "the container's bind mounts pair the state dir and each secret with its host path";
+      ok =
+        let
+          bindMounts = host.containers.photoform.bindMounts;
+        in
+        bindMounts."/var/lib/photoform".hostPath == "/var/lib/photoform-data"
+        &&
+          bindMounts."/run/host-secrets/photoform-paypal-client-secret".hostPath
+          == host.sops.secrets.photoform-paypal-client-secret.path
+        &&
+          bindMounts."/run/host-secrets/photoform-smtp-password".hostPath
+          == host.sops.secrets.photoform-smtp-password.path
+        &&
+          bindMounts."/run/host-secrets/photoform-admin-password".hostPath
+          == host.sops.secrets.photoform-admin-password.path
+        &&
+          bindMounts."/run/host-secrets/photoform-sheets-sa".hostPath
+          == host.sops.secrets.photoform-sheets-sa.path;
     }
     {
       # LoadCredential is what makes a 0400 root-owned sops file readable by
@@ -108,8 +141,7 @@ let
         ];
     }
     {
-      # The PayPal client ID is public — src/views/form.rs renders it into
-      # every page's SDK URL — and lives in the config file.
+      # The PayPal client ID is public and lives in the config file.
       name = "the PayPal client ID is not treated as a secret";
       ok = !(host.sops.secrets ? photoform-paypal-client-id) && !(host.sops.templates ? "photoform.env");
     }

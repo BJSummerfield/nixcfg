@@ -104,7 +104,7 @@ Out of scope:
 
 ### Package
 
-The rev moves `306b3a8` to `deeebae` and both hashes change with it. One
+The rev moves `4ed5a58` to `352b89a` and both hashes change with it. One
 addition installs the config, which cargo has no reason to install on its own:
 
 ```nix
@@ -113,7 +113,7 @@ postInstall = ''
 '';
 ```
 
-`passthru.cache = true` is already set, so CI pushes the closure to
+This same change adds `passthru.cache = true`, so CI pushes the closure to
 `s3://spacefunk-nix-cache` once the attribute is in `packages`.
 `feat/photoform-package` adds that same line to `flake.nix`: expect a conflict
 and keep both attributes.
