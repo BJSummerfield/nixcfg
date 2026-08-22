@@ -30,6 +30,15 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # The container has no port on the external interface: without the edge
+    # its route registration is inert and the site answers nowhere.
+    assertions = [
+      {
+        assertion = config.mine.system.caddy.enable;
+        message = "mine.system.photoform needs mine.system.caddy on the same host to be reachable";
+      }
+    ];
+
     sops.secrets = {
       photoform-paypal-client-id.sopsFile = cfg.sopsFile;
       photoform-paypal-client-secret.sopsFile = cfg.sopsFile;

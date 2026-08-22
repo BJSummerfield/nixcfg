@@ -101,6 +101,13 @@ in
       443
     ];
 
+    # The ACME account key and issued certificates. Restoring them beats
+    # re-issuing into Let's Encrypt's duplicate-certificate limit after a
+    # rebuild. No container to stop: caddy writes JSON files, not a database.
+    mine.backups = lib.mkIf config.mine.backups.enable {
+      paths = [ "/var/lib/caddy" ];
+    };
+
     services.caddy = {
       enable = true;
       # The l4 plugin pin lives in ./package.nix, cached by CI.

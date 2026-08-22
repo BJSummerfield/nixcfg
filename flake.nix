@@ -124,7 +124,31 @@
         # uncovered.
         // nixpkgs.lib.mapAttrs' (
           name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
-        ) inputs.self.packages.x86_64-linux;
+        ) inputs.self.packages.x86_64-linux
+        # The eval-only host checks never render a Caddyfile, so a layer4
+        # syntax error would first surface on a deploy. Running the real
+        # binary's adapter over every caddy host's config makes it a CI
+        # failure instead. Generated, so a second caddy host is covered
+        # the moment it enables the module.
+        //
+          nixpkgs.lib.mapAttrs'
+            (
+              name: cfg:
+              nixpkgs.lib.nameValuePair "caddyfile-${name}" (
+                pkgs.runCommand "caddyfile-${name}"
+                  {
+                    nativeBuildInputs = [ cfg.config.services.caddy.package ];
+                  }
+                  ''
+                    HOME=$TMPDIR caddy adapt \
+                      --config ${cfg.config.services.caddy.configFile} \
+                      --adapter caddyfile > $out
+                  ''
+              )
+            )
+            (
+              nixpkgs.lib.filterAttrs (_: cfg: cfg.config.services.caddy.enable) inputs.self.nixosConfigurations
+            );
 
       darwinConfigurations = {
         mac = inputs.nix-darwin.lib.darwinSystem {

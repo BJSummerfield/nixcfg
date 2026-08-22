@@ -56,6 +56,9 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
+      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
+      # passthru.cache = true and must arrive as substituted closures.
+      privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
