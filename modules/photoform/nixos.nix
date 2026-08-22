@@ -1,8 +1,9 @@
 # PhotoForm booking webapp container, fronted publicly by the caddy edge.
 # The package arrives only through the private binary cache — this host
-# must never compile it. Secrets are env vars rendered host-side by sops
-# and bind-mounted in; the app's content lives in production.toml inside
-# the package, so a new shoot is an app-repo commit plus a rev bump.
+# must never compile it. Each secret is a sops file bind-mounted in and
+# loaded as a systemd credential, so no credential value ever enters the
+# app's environment; the app's content lives in production.toml inside the
+# package, so a new shoot is an app-repo commit plus a rev bump.
 {
   lib,
   config,
@@ -21,10 +22,9 @@ in
     sopsFile = lib.mkOption {
       type = lib.types.path;
       description = ''
-        sops file holding photoform-paypal-client-id,
-        photoform-paypal-client-secret, photoform-smtp-password,
-        photoform-admin-password and photoform-sheets-sa (the Google
-        service-account JSON).
+        sops file holding photoform-paypal-client-secret,
+        photoform-smtp-password, photoform-admin-password and
+        photoform-sheets-sa (the Google service-account JSON).
       '';
     };
   };
@@ -40,23 +40,11 @@ in
     ];
 
     sops.secrets = {
-      photoform-paypal-client-id.sopsFile = cfg.sopsFile;
       photoform-paypal-client-secret.sopsFile = cfg.sopsFile;
       photoform-smtp-password.sopsFile = cfg.sopsFile;
       photoform-admin-password.sopsFile = cfg.sopsFile;
       photoform-sheets-sa.sopsFile = cfg.sopsFile;
     };
-
-    # Rendered on the host so the container never holds an age key. The
-    # credentials path is literal: /run/credentials/<unit> is stable
-    # systemd API, filled by LoadCredential below.
-    sops.templates."photoform.env".content = ''
-      PHOTOFORM_PAYPAL_CLIENT_ID=${config.sops.placeholder."photoform-paypal-client-id"}
-      PHOTOFORM_PAYPAL_CLIENT_SECRET=${config.sops.placeholder."photoform-paypal-client-secret"}
-      PHOTOFORM_SMTP_PASSWORD=${config.sops.placeholder."photoform-smtp-password"}
-      PHOTOFORM_ADMIN_PASSWORD=${config.sops.placeholder."photoform-admin-password"}
-      PHOTOFORM_SHEETS_CREDENTIALS_FILE=/run/credentials/photoform.service/sheets-sa
-    '';
 
     # Outbound only (PayPal, Gmail SMTP, Google Sheets); inbound arrives
     # via the caddy edge on this host, never the external interface.
@@ -73,7 +61,7 @@ in
 
     mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
       routes.photoform = {
-        hostnames = [ "booking.arisummerfieldphotography.com" ];
+        hostnames = [ "booking.summerfieldphotography.com" ];
         mode = "tls";
         target = "192.168.100.51:8080";
       };
@@ -97,8 +85,16 @@ in
           hostPath = hostStateDir;
           isReadOnly = false;
         };
-        "/run/host-secrets/photoform.env" = {
-          hostPath = config.sops.templates."photoform.env".path;
+        "/run/host-secrets/photoform-paypal-client-secret" = {
+          hostPath = config.sops.secrets.photoform-paypal-client-secret.path;
+          isReadOnly = true;
+        };
+        "/run/host-secrets/photoform-smtp-password" = {
+          hostPath = config.sops.secrets.photoform-smtp-password.path;
+          isReadOnly = true;
+        };
+        "/run/host-secrets/photoform-admin-password" = {
+          hostPath = config.sops.secrets.photoform-admin-password.path;
           isReadOnly = true;
         };
         "/run/host-secrets/photoform-sheets-sa" = {
@@ -126,14 +122,28 @@ in
             description = "PhotoForm booking web service";
             wantedBy = [ "multi-user.target" ];
             after = [ "network.target" ];
+            # _FILE forms only: the app also accepts the value directly, but
+            # that would put four credentials in /proc/<pid>/environ.
+            environment = {
+              BOOKING_CONFIG = "${photoform}/${photoform.configPath}";
+              BOOKING_PAYPAL_CLIENT_SECRET_FILE = "/run/credentials/photoform.service/paypal-client-secret";
+              BOOKING_SMTP_PASSWORD_FILE = "/run/credentials/photoform.service/smtp-password";
+              BOOKING_ADMIN_PASSWORD_FILE = "/run/credentials/photoform.service/admin-password";
+              BOOKING_SHEETS_SERVICE_ACCOUNT_FILE = "/run/credentials/photoform.service/sheets-sa";
+            };
             serviceConfig = {
               User = "photoform";
               Group = "photoform";
-              ExecStart = "${lib.getExe photoform} --config ${photoform}/share/photoform/production.toml";
-              # The env file is read by the manager and the credential by
-              # root, so 0400-root host files work unchanged in here.
-              EnvironmentFile = "/run/host-secrets/photoform.env";
-              LoadCredential = [ "sheets-sa:/run/host-secrets/photoform-sheets-sa" ];
+              ExecStart = lib.getExe photoform;
+              # Copied by root into a per-unit tmpfs owned by User, which is
+              # what makes a 0400 root-owned sops file readable here.
+              # /run/credentials/<unit> is stable systemd API.
+              LoadCredential = [
+                "paypal-client-secret:/run/host-secrets/photoform-paypal-client-secret"
+                "smtp-password:/run/host-secrets/photoform-smtp-password"
+                "admin-password:/run/host-secrets/photoform-admin-password"
+                "sheets-sa:/run/host-secrets/photoform-sheets-sa"
+              ];
               WorkingDirectory = "/var/lib/photoform";
               Restart = "on-failure";
               ProtectHome = true;

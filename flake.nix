@@ -86,6 +86,7 @@
         {
           encode_queue = pkgs.callPackage ./modules/encode_queue/package.nix { };
           caddy-l4 = pkgs.callPackage ./modules/caddy/package.nix { };
+          photoform = pkgs.callPackage ./modules/photoform/package.nix { };
         }
       );
 
@@ -113,6 +114,10 @@
         // evalAll "darwin" inputs.self.darwinConfigurations
         // {
           devboxes = import ./tests/devboxes.nix {
+            inherit nixpkgs inputs;
+            system = "x86_64-linux";
+          };
+          photoform = import ./tests/photoform.nix {
             inherit nixpkgs inputs;
             system = "x86_64-linux";
           };
