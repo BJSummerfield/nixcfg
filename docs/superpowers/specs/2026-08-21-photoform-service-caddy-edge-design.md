@@ -127,6 +127,12 @@ private binary cache — vps never compiles it.
    installed by the build to `$out/share/photoform/production.toml`.
 4. Real event/rain dates and the four-vs-five images contradiction in
    `contract.md` resolved (flagged in the repo's own comments).
+5. `--config <path>` selects the config file. The app reads only
+   `BOOKING_CONFIG` today; the NixOS unit passes `--config`.
+6. The deployment contract is written down *in the app repo* — which env
+   vars, which file, why the TOML fields are gone. Nothing in that repo
+   currently mentions it, so the next person to open `config.example.toml`
+   has no way to know a second consumer exists.
 
 ## Approach
 
@@ -172,6 +178,16 @@ are.
   and the reason step 1 of the rollout stands alone.
 - **Registry mistake / unknown SNI.** Falls through to Stalwart — today's
   behaviour. Breaks toward the booking site, never toward mail.
+- **Stalwart loses the client IP on 443.** The one place "byte-for-byte as
+  today" is not literally true: DNAT rewrote only the destination, so
+  Stalwart saw real client addresses, while a userspace proxy dials from
+  the host. Web, JMAP and webadmin now all arrive from `192.168.100.40`;
+  25/465/993 keep their real addresses. The sharp edge is per-IP
+  auto-banning — a brute-force sweep against public 443 can ban the host
+  address and take out every web path through the edge at once. The
+  alternative is PROXY protocol (the handler is in the pinned binary) and
+  a matching listener change in Stalwart's DB-managed config, which
+  architecture A deliberately does not touch.
 - **ACME failure for booking.** Site unreachable until resolved; mail
   untouched. Caddy retries; port 80 is its own lane.
 - **l4 plugin hash rot.** A caddy bump in nixpkgs invalidates the plugin

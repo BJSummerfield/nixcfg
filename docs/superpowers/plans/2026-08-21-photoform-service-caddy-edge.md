@@ -30,6 +30,18 @@
 
 ---
 
+## Status — 2026-08-22
+
+Tasks 3, 4, 5 and 7 are done and merged on `spiffy-blobfish`. Task 6 is done through Step 3; **nothing has been deployed to vps yet** — Steps 4–7 (local build, deploy, mail regression battery, milestone) are open, and until the branch merges and `verified` advances there is no edge running anywhere.
+
+Deviations from the plan as written, all deliberate:
+
+- **`caddy-l4` is pinned at the tag `v0.1.2`, not a pseudo-version.** Task 3 Step 1 assumed the repo had no releases; it does now. `caddy list-modules` confirms the `layer4` app and its handlers are compiled in.
+- **Task 7 landed ahead of its own gate.** The module is written and inert, but Task 1 has not run, so the contract it hardcodes (env var names, `$out/share/photoform/production.toml`, `--config`, `0.0.0.0:8080`) is still unverified against the app. Nothing deploys it until Task 8, so the risk is only rework.
+- **`privateCache.enable = true` is now on vps** (commit `0561554`), ahead of Task 2, because Task 6 Step 5's deploy would otherwise compile caddy-with-l4 in 1 GB of RAM. The store path CI pushes and the one vps wants are the same derivation, verified by comparing `packages.x86_64-linux.caddy-l4.drvPath` against `nixosConfigurations.vps.config.services.caddy.package.drvPath`.
+- **Task 6 Step 3 is now automated.** `checks.x86_64-linux.caddyfile-<host>` runs `caddy adapt` over every caddy-enabled host's rendered config, so the manual validation is a CI gate rather than a one-time step. The eval-only host checks never render a Caddyfile.
+- **Binary-cache Task 8 is already half-done on the unmerged `feat/photoform-package` branch** — rev `306b3a8`, real `sha256`/`cargoHash`, `passthru.cache = true`, `photoform` in `packages`. That rev **predates Task 1**, so both hashes change once the app repo lands its secrets contract. That branch and this one both add a line to the same spot in flake.nix's `packages` block: expect a conflict, and keep both attrs.
+
 ## File Structure
 
 | File | Responsibility |
@@ -50,11 +62,14 @@
 
 Hand work in the private app repo, done outside nixcfg. It defines the contract every later task assumes — do not start Task 7 until each box here is checked, because the NixOS module hardcodes these exact names and paths.
 
+**Superseded by a step-by-step plan:** `docs/superpowers/plans/2026-08-22-photoform-app-secrets-contract.md`. That plan has the actual Rust, the tests, and the README section; the steps below are its summary and its acceptance criteria. Execute it, then tick these boxes.
+
 **Interfaces:**
 - Produces: an app commit (record its `rev` — Task 2 pins it) where:
-  - The four secrets are read **only** from env: `PHOTOFORM_PAYPAL_CLIENT_ID`, `PHOTOFORM_PAYPAL_CLIENT_SECRET`, `PHOTOFORM_SMTP_PASSWORD`, `PHOTOFORM_ADMIN_PASSWORD`. The corresponding TOML fields are deleted (not optional-with-override).
+  - The four secrets are read **only** from env: `PHOTOFORM_PAYPAL_CLIENT_ID`, `PHOTOFORM_PAYPAL_CLIENT_SECRET`, `PHOTOFORM_SMTP_PASSWORD`, `PHOTOFORM_ADMIN_PASSWORD`. The corresponding TOML fields are deleted, and a file that still carries one is a startup error, not a silent fallback.
   - `PHOTOFORM_SHEETS_CREDENTIALS_FILE` overrides `sheets.service_account_json_path`.
-  - `config/production.toml` is committed (real event content, zero secrets) and the build installs it to `$out/share/photoform/production.toml`.
+  - **`--config <path>` selects the config file.** The app as it stands reads only the `BOOKING_CONFIG` env var (`src/main.rs`), but `modules/photoform/nixos.nix` already ships `ExecStart = ... --config …/production.toml`. One of the two has to move; the app grows the flag, keeping `BOOKING_CONFIG` as the dev fallback.
+  - `config/production.toml` is committed (real event content, zero secrets) and lands at `$out/share/photoform/production.toml`.
   - `production.toml` listens on `0.0.0.0:8080` and its sqlite database path is an absolute path under `/var/lib/photoform/` (the container's state dir).
 
 - [ ] **Step 1: Move the four secrets to env, delete the TOML fields**
@@ -117,7 +132,7 @@ Tasks 3–6 (the edge, fallback-only) do not depend on this task and may run in 
 **Interfaces:**
 - Produces: `pkgs.callPackage ./modules/caddy/package.nix { }` — caddy with the layer4 app compiled in, `passthru.cache = true`; flake attr `caddy-l4` so CI builds it (`pkg-caddy-l4` check) and pushes it to the cache, keeping the Go compile off vps's 1 GB.
 
-- [ ] **Step 1: Discover the plugin pseudo-version**
+- [x] **Step 1: Discover the plugin pseudo-version**
 
 `mholt/caddy-l4` has no tagged releases, so the pin is a Go pseudo-version:
 
@@ -127,7 +142,7 @@ nix shell nixpkgs#go -c go list -m github.com/mholt/caddy-l4@latest
 
 Expected output shape: `github.com/mholt/caddy-l4 v0.0.0-20250xxxxxxxxx-xxxxxxxxxxxx`. Record the `v0.0.0-...` string.
 
-- [ ] **Step 2: Write the package with a fake hash**
+- [x] **Step 2: Write the package with a fake hash**
 
 Create `modules/caddy/package.nix`:
 
@@ -150,7 +165,7 @@ Create `modules/caddy/package.nix`:
   })
 ```
 
-- [ ] **Step 3: Expose it in `flake.nix`**
+- [x] **Step 3: Expose it in `flake.nix`**
 
 In the `packages` block, alongside `encode_queue`:
 
@@ -159,7 +174,7 @@ In the `packages` block, alongside `encode_queue`:
           caddy-l4 = pkgs.callPackage ./modules/caddy/package.nix { };
 ```
 
-- [ ] **Step 4: Build locally to discover the real hash**
+- [x] **Step 4: Build locally to discover the real hash**
 
 ```bash
 nix build --no-link .#caddy-l4 2>&1 | tail -5
@@ -167,7 +182,7 @@ nix build --no-link .#caddy-l4 2>&1 | tail -5
 
 Expected: `hash mismatch` with a `got: sha256-...` line. Replace `lib.fakeHash` with that value; `lib` stays (it is still an argument only if used — after the substitution drop `lib` from the argument set since nothing references it).
 
-- [ ] **Step 5: Build again and confirm the plugin is in**
+- [x] **Step 5: Build again and confirm the plugin is in**
 
 ```bash
 nix build --no-link .#caddy-l4
@@ -176,7 +191,7 @@ nix run .#caddy-l4 -- list-modules | grep -c '^layer4'
 
 Expected: the build succeeds and the count is ≥ 1 (the `layer4` app plus its handlers/matchers). `0` means the plugin string is wrong — recheck Step 1's pseudo-version.
 
-- [ ] **Step 6: Confirm host blast radius is zero**
+- [x] **Step 6: Confirm host blast radius is zero**
 
 `packages` entries never enter host closures by themselves:
 
@@ -186,7 +201,7 @@ nix flake check --print-build-logs 2>&1 | tail -3
 
 plus the Global Constraints drvPath loop — all five unchanged from before this task.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 nix fmt
@@ -209,7 +224,7 @@ edge instead of running a Go compile in 1 GB of RAM."
 - Consumes: `modules/caddy/package.nix` (Task 3).
 - Produces: options `mine.system.caddy.{enable, acmeEmail, fallback, routes}`; `routes` is `attrsOf { hostnames : listOf str; mode : "tls" | "tcp"; target : str }`. Service modules register into `routes` guarded on `config.mine.system.caddy.enable` (Task 7 consumes this). The stalwart module reads `config.mine.system.caddy.enable` (Task 5).
 
-- [ ] **Step 1: Write the module**
+- [x] **Step 1: Write the module**
 
 Create `modules/caddy/nixos.nix`:
 
@@ -346,7 +361,7 @@ in
 }
 ```
 
-- [ ] **Step 2: Import it**
+- [x] **Step 2: Import it**
 
 In `modules/nixos.nix`, after `./backups/nixos.nix`:
 
@@ -354,7 +369,7 @@ In `modules/nixos.nix`, after `./backups/nixos.nix`:
     ./caddy/nixos.nix
 ```
 
-- [ ] **Step 3: Verify the module is inert everywhere**
+- [x] **Step 3: Verify the module is inert everywhere**
 
 ```bash
 nix fmt
@@ -363,7 +378,7 @@ nix flake check --print-build-logs 2>&1 | tail -3
 
 plus the drvPath loop — **all five hosts unchanged** (nothing enables the module yet). A changed drvPath means something in the module leaks outside `mkIf cfg.enable`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add modules/caddy/nixos.nix modules/nixos.nix
@@ -385,7 +400,7 @@ fallback so mistakes break toward the routed site, never the fallback."
 - Consumes: `config.mine.system.caddy.enable` (Task 4).
 - Produces: on caddy hosts, host 443 is free for Caddy's socket; mail-port forwards (25/465/993) unconditional; identical behaviour on non-caddy hosts.
 
-- [ ] **Step 1: Make the 443 firewall entry and DNAT conditional**
+- [x] **Step 1: Make the 443 firewall entry and DNAT conditional**
 
 Replace the `networking.firewall.allowedTCPPorts` list and the `forwardPorts` list:
 
@@ -429,7 +444,7 @@ Replace the `networking.firewall.allowedTCPPorts` list and the `forwardPorts` li
 
 The container's own config (its internal 443 listener, its firewall) does not change — Stalwart keeps terminating TLS and running its own ACME.
 
-- [ ] **Step 2: Verify nothing changed anywhere**
+- [x] **Step 2: Verify nothing changed anywhere**
 
 ```bash
 nix fmt
@@ -438,7 +453,7 @@ nix flake check --print-build-logs 2>&1 | tail -3
 
 plus the drvPath loop — **all five unchanged**, vps included: caddy is still disabled, so both conditionals evaluate to today's exact lists.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add modules/stalwart-server/nixos.nix
@@ -461,7 +476,7 @@ This step deliberately stands alone: Caddy in front of Stalwart's web 443 is the
 - Consumes: `mine.system.caddy` options (Task 4), the conditional stalwart forward (Task 5), the cached `caddy-l4` (Task 3, must be merged so CI has pushed it).
 - Produces: a live edge on vps whose only behaviour is today's behaviour.
 
-- [ ] **Step 1: Enable with only the fallback**
+- [x] **Step 1: Enable with only the fallback**
 
 In `hosts/vps/default.nix`, inside `mine.system`, after `stalwart-server`:
 
@@ -475,7 +490,7 @@ In `hosts/vps/default.nix`, inside `mine.system`, after `stalwart-server`:
       };
 ```
 
-- [ ] **Step 2: Confirm the blast radius is vps alone**
+- [x] **Step 2: Confirm the blast radius is vps alone**
 
 ```bash
 nix fmt
@@ -484,7 +499,7 @@ nix flake check --print-build-logs 2>&1 | tail -3
 
 drvPath loop: only vps's drvPath changed.
 
-- [ ] **Step 3: Validate the rendered Caddyfile with the real binary**
+- [x] **Step 3: Validate the rendered Caddyfile with the real binary**
 
 The layer4 Caddyfile syntax is the risky part — prove the plugin parses it before deploying:
 
@@ -553,6 +568,7 @@ Expected: all three 443 probes show Stalwart's cert (subject `mx1.brianjs.com`);
 - [ ] Webadmin loads at `https://stalwart.mist-gamma.ts.net:8443` (tailscale path, should be untouched).
 - [ ] JMAP/web endpoints respond: `curl -sSf https://mx1.brianjs.com/.well-known/jmap -o /dev/null -w '%{http_code}\n'` returns an HTTP status (401 is fine — it answered through the fallback).
 - [ ] Stalwart's ACME still has a lane: `sudo nixos-container run stalwart -- journalctl --since -1h | grep -i -E 'acme|tls' | tail`, no new errors. (Renewal itself flows through the fallback exactly like any TLS client; a forced check can wait for the next natural renewal window — note the current cert's notAfter from the first probe and re-probe after that date.)
+- [ ] **Client IPs on 443 are now the host, not the internet.** DNAT rewrote only the destination, so Stalwart saw real client addresses; a userspace layer4 proxy does not, and every connection through the fallback now arrives from `192.168.100.40`. Ports 25/465/993 are untouched — this is web/JMAP/webadmin only. Check the webadmin's ban/rate-limit settings before leaving this running: a brute-force sweep against public 443 that trips a per-IP auto-ban will ban the host address and take out *all* web access through the edge at once. If that risk is unacceptable, the `layer4.handlers.proxy_protocol` handler is compiled into the pinned binary and Stalwart's listener would have to be taught to trust it — which is DB-managed config on a live mail server, so architecture A's default is to accept the change and watch for it.
 
 **Any mail failure here: `git revert` the Task 6 commit, redeploy, then diagnose.** The revert restores the DNAT (Task 5's conditionals flip back).
 
@@ -577,7 +593,7 @@ git push
 - Consumes: `modules/photoform/package.nix` (pinned by Task 2); `mine.system.caddy.routes` (Task 4); `mine.backups.{paths,stopContainers}`.
 - Produces: `mine.system.photoform.{enable, sopsFile}`. Expects `sopsFile` to contain keys `photoform-paypal-client-id`, `photoform-paypal-client-secret`, `photoform-smtp-password`, `photoform-admin-password`, `photoform-sheets-sa` (Task 8 creates them).
 
-- [ ] **Step 1: Write the module**
+- [x] **Step 1: Write the module**
 
 Create `modules/photoform/nixos.nix`:
 
@@ -746,7 +762,7 @@ in
 }
 ```
 
-- [ ] **Step 2: Import it**
+- [x] **Step 2: Import it**
 
 In `modules/nixos.nix`, after `./pipewire/nixos.nix`:
 
@@ -754,7 +770,7 @@ In `modules/nixos.nix`, after `./pipewire/nixos.nix`:
     ./photoform/nixos.nix
 ```
 
-- [ ] **Step 3: Verify the module is inert**
+- [x] **Step 3: Verify the module is inert**
 
 ```bash
 nix fmt
@@ -763,7 +779,7 @@ nix flake check --print-build-logs 2>&1 | tail -3
 
 drvPath loop: **all five unchanged** — nothing enables photoform yet, and crucially photoform is not yet in vps's closure.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add modules/photoform/nixos.nix modules/nixos.nix
@@ -889,13 +905,15 @@ Expected: vps's IP.
 
 - [ ] **Step 2: Watch Caddy obtain the certificate**
 
-On vps:
+`services.caddy.logLevel` defaults to `ERROR`, and the whole obtain flow logs at INFO — so a successful issuance is *silent* and only failures show up in the journal. Watch the storage instead, and read the journal for the failure case:
 
 ```bash
-sudo journalctl -u caddy -f | grep -i -E 'acme|obtain|certificate'
+# On vps. Appears within a minute or two of the DNS record resolving.
+sudo watch -n5 'ls -R /var/lib/caddy/.local/share/caddy/certificates/'
+sudo journalctl -u caddy -f
 ```
 
-Expected within a minute or two: an obtain flow for `booking.arisummerfieldphotography.com` ending in a successfully obtained certificate (HTTP-01 over port 80, or TLS-ALPN routed back through the layer4 SNI match — both lanes work). Repeated challenge failures: check the A record and that port 80 is reachable (`curl -v http://booking.arisummerfieldphotography.com/`).
+Expected: a directory under `certificates/acme-v02.api.letsencrypt.org-directory/` holding `booking.arisummerfieldphotography.com.crt` and `.key`, and a quiet journal. Repeated challenge failures do log at ERROR: check the A record and that port 80 is reachable (`curl -v http://booking.arisummerfieldphotography.com/`). To watch the flow live instead, set `services.caddy.logLevel = "INFO"` temporarily — it is not worth keeping.
 
 - [ ] **Step 3: Public probes**
 
@@ -924,7 +942,7 @@ git push
 
 - [ ] **Step 1: Full test booking**
 
-Complete the form at `https://booking.arisummerfieldphotography.com` end to end: form → PayPal (use the PayPal sandbox flow if production.toml is pointed at sandbox; if live, a minimal real transaction that gets refunded) → verify a new row appears in the Google Sheet → verify the confirmation/contract email arrives (sent via Gmail). If sandbox credentials were used for the test, swapping to live is a secrets-only change: `sops secrets/hosts/vps.yaml`, then redeploy — no code.
+Complete the form at `https://booking.arisummerfieldphotography.com` end to end: form → PayPal (use the PayPal sandbox flow if production.toml is pointed at sandbox; if live, a minimal real transaction that gets refunded) → verify a new row appears in the Google Sheet → verify the confirmation/contract email arrives (sent via Gmail). If sandbox credentials were used for the test, swapping to live is a nixcfg-only change: `sops secrets/hosts/vps.yaml` **and** `mine.system.photoform.paypalMode = "live"`, then redeploy — no app commit. The mode has to move with the credentials or live keys end up pointed at the sandbox API; that option and its `PHOTOFORM_PAYPAL_MODE` env var come from `docs/superpowers/plans/2026-08-22-photoform-app-secrets-contract.md` Tasks 4 and 7.
 
 - [ ] **Step 2: Verify the booking persisted**
 
