@@ -132,13 +132,13 @@ LoadCredential = [
   "admin-password:/run/host-secrets/photoform-admin-password"
   "sheets-sa:/run/host-secrets/photoform-sheets-sa"
 ];
-Environment = [
-  "BOOKING_CONFIG=${photoform}/share/photoform/production.toml"
-  "BOOKING_PAYPAL_CLIENT_SECRET_FILE=/run/credentials/photoform.service/paypal-client-secret"
-  "BOOKING_SMTP_PASSWORD_FILE=/run/credentials/photoform.service/smtp-password"
-  "BOOKING_ADMIN_PASSWORD_FILE=/run/credentials/photoform.service/admin-password"
-  "BOOKING_SHEETS_SERVICE_ACCOUNT_FILE=/run/credentials/photoform.service/sheets-sa"
-];
+environment = {
+  BOOKING_CONFIG = "${photoform}/share/photoform/production.toml";
+  BOOKING_PAYPAL_CLIENT_SECRET_FILE = "/run/credentials/photoform.service/paypal-client-secret";
+  BOOKING_SMTP_PASSWORD_FILE = "/run/credentials/photoform.service/smtp-password";
+  BOOKING_ADMIN_PASSWORD_FILE = "/run/credentials/photoform.service/admin-password";
+  BOOKING_SHEETS_SERVICE_ACCOUNT_FILE = "/run/credentials/photoform.service/sheets-sa";
+};
 ```
 
 `ExecStart` drops `--config` and becomes the bare binary. The caddy route's
