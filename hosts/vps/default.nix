@@ -80,6 +80,12 @@
         acmeEmail = "brianjsummerfield@gmail.com";
         fallback = "192.168.100.41:443";
       };
+      # Booking site behind the edge, substituted from the cache: 1 GB of
+      # RAM cannot compile it.
+      photoform = {
+        enable = true;
+        sopsFile = ../../secrets/hosts/vps.yaml;
+      };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
         enable = true;
