@@ -1,7 +1,6 @@
 {
   rustPlatform,
   fetchFromGitHub,
-  lib,
   ...
 }:
 rustPlatform.buildRustPackage {
@@ -19,7 +18,7 @@ rustPlatform.buildRustPackage {
   # cargoHash, never cargoLock.lockFile: reading the lock file out of src is
   # import-from-derivation, so evaluation would fetch the private source and
   # every evaluator would need the GitHub credential.
-  cargoHash = lib.fakeHash;
+  cargoHash = "sha256-o+gXWxaFNaJE27NmBxifngkJ2SPdIvYjlHtVvCJOCoU=";
   # Opt in to the binary cache: vps has 1 GB of RAM and cannot compile this.
   passthru.cache = true;
   meta = {
