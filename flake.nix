@@ -116,6 +116,10 @@
             inherit nixpkgs inputs;
             system = "x86_64-linux";
           };
+          photoform = import ./tests/photoform.nix {
+            inherit nixpkgs inputs;
+            system = "x86_64-linux";
+          };
         }
         # Unlike the eval-only checks above, these really build. A package
         # added later to `packages` is covered without anyone wiring it up —
