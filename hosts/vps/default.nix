@@ -70,6 +70,13 @@
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
+      # SNI edge on 443. Fallback-only until photoform lands: every
+      # connection behaves exactly like the old DNAT into Stalwart.
+      caddy = {
+        enable = true;
+        acmeEmail = "brianjsummerfield@gmail.com";
+        fallback = "192.168.100.41:443";
+      };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
         enable = true;
