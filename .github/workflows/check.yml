@@ -36,7 +36,7 @@ jobs:
           sudo tee /etc/systemd/system/nix-daemon.service.d/private-repo.conf >/dev/null <<EOF
           [Service]
           Environment="NIX_GITHUB_PRIVATE_USERNAME=x-access-token"
-          Environment="NIX_GITHUB_PRIVATE_PASSWORD=${{ secrets.PHOTOFORM_PAT }}"
+          Environment="NIX_GITHUB_PRIVATE_PASSWORD=${{ secrets.PRIVATE_SRC_PAT }}"
           EOF
           sudo systemctl daemon-reload
           sudo systemctl restart nix-daemon

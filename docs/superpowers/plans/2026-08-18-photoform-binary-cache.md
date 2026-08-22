@@ -687,7 +687,7 @@ Everything from here needs the PAT. The cache is already proven, so any failure 
 - Modify: `flake.nix`
 - Modify: `modules/photoform/package.nix`
 
-**Prerequisite (by hand):** create a GitHub fine-grained personal access token with **Contents: Read** on `BJSummerfield/Sheet-Automation-FF` only, and add it to nixcfg's Actions secrets as `PHOTOFORM_PAT`. Fine-grained tokens work because nixpkgs routes private fetches through the `api.github.com` tarball endpoint; a classic token is not required.
+**Prerequisite (by hand):** create a GitHub fine-grained personal access token with **Contents: Read** on every private repo nixcfg fetches sources from, and add it to nixcfg's Actions secrets as `PRIVATE_SRC_PAT` — one token serves them all, so a second private source needs no second secret. Fine-grained tokens work because nixpkgs routes private fetches through the `api.github.com` tarball endpoint; a classic token is not required.
 
 There are **two** hashes to discover and they must be found in order — `cargoHash` cannot be computed until the source fetch succeeds — so expect three CI runs.
 
@@ -751,7 +751,7 @@ and replace the whole "Give nix-daemon the private-repo credentials" step with a
       - run: nix flake check --print-build-logs
         env:
           NIX_GITHUB_PRIVATE_USERNAME: x-access-token
-          NIX_GITHUB_PRIVATE_PASSWORD: ${{ secrets.PHOTOFORM_PAT }}
+          NIX_GITHUB_PRIVATE_PASSWORD: ${{ secrets.PRIVATE_SRC_PAT }}
 ```
 
 Push and repeat Step 2.

@@ -396,7 +396,7 @@ git commit -m "feat(photoform): pin the app's shipped contract and install its c
 
 - [ ] **Step 8: Open the PR and let CI build it**
 
-Push the branch and open a PR. CI gives nix-daemon `PHOTOFORM_PAT` and runs `nix flake check`, which builds `pkg-photoform`.
+Push the branch and open a PR. CI gives nix-daemon `PRIVATE_SRC_PAT` and runs `nix flake check`, which builds `pkg-photoform`.
 
 Expected: green. A `cargoHash` mismatch here means Step 3's value was wrong — take the `got:` value from the CI log and repeat from Step 4.
 
