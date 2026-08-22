@@ -56,6 +56,9 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
+      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
+      # passthru.cache = true and must arrive as substituted closures.
+      privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
@@ -69,6 +72,13 @@
         # (database-managed). Only the box + break-glass admin here; backup
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
+      };
+      # SNI edge on 443. Fallback-only until photoform lands: every
+      # connection behaves exactly like the old DNAT into Stalwart.
+      caddy = {
+        enable = true;
+        acmeEmail = "brianjsummerfield@gmail.com";
+        fallback = "192.168.100.41:443";
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {

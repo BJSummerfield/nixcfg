@@ -56,13 +56,15 @@ in
       25
       465
       993
-      443
-    ];
+    ]
+    ++ lib.optional (!config.mine.system.caddy.enable) 443;
 
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-stalwart" ];
       externalInterface = config.mine.system.externalInterface;
+      # When the caddy edge owns host 443, its layer4 fallback replaces
+      # this DNAT byte-for-byte; the mail-port forwards stay unconditional.
       forwardPorts = [
         {
           sourcePort = 25;
@@ -79,6 +81,8 @@ in
           destination = "192.168.100.41:993";
           proto = "tcp";
         }
+      ]
+      ++ lib.optionals (!config.mine.system.caddy.enable) [
         {
           sourcePort = 443;
           destination = "192.168.100.41:443";

@@ -4,6 +4,7 @@
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./backups/nixos.nix
+    ./caddy/nixos.nix
     ./dns-server/nixos.nix
     ./docker/nixos.nix
     ./filesystems
@@ -22,6 +23,7 @@
     ./coding-agents/nixos.nix
     ./devbox/nixos.nix
     ./pipewire/nixos.nix
+    ./photoform/nixos.nix
     ./redlib/nixos.nix
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
