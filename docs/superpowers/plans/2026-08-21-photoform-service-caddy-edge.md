@@ -708,8 +708,7 @@ in
           };
           users.groups.photoform = { };
 
-          # Re-owns the bind mount to the container's photoform uid on
-          # start, same pattern as vikunja's dump dir.
+          # Re-owns the bind mount to the container's photoform uid on start.
           systemd.tmpfiles.rules = [
             "d /var/lib/photoform 0700 photoform photoform -"
           ];
