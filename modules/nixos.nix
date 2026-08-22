@@ -23,6 +23,7 @@
     ./coding-agents/nixos.nix
     ./devbox/nixos.nix
     ./pipewire/nixos.nix
+    ./photoform/nixos.nix
     ./redlib/nixos.nix
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
