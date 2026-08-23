@@ -122,7 +122,10 @@
             system = "x86_64-linux";
           };
         }
-        # Unlike the eval-only checks above, these really build. A package
+        # Unlike the eval-only checks above, these are real builds — though
+        # `nix flake check` skips any check whose output a substituter already
+        # has, so once CI reads from the cache an unchanged package costs
+        # nothing and only a moved pin actually compiles. A package
         # added later to `packages` is covered without anyone wiring it up —
         # but derivations defined inside modules (callPackages that never
         # become a flake output) are structurally outside this set and stay
