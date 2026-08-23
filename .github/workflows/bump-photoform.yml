@@ -1,0 +1,87 @@
+name: bump-photoform
+
+# The app lives in a private repo that nixcfg pins by rev, and Nix has no
+# "track the branch" mode — the pin is what makes evaluation reproducible and
+# credential-free. So the pin is bumped by a bot instead, the way nixpkgs
+# does it, rather than by hand-copying three hashes.
+on:
+  schedule:
+    # 02:00 UTC: far enough ahead of the hosts' 04:00 autoUpgrade window that
+    # a same-night merge still lands in the cache first.
+    - cron: "0 2 * * *"
+  # For the case that motivates this: you just pushed the app and want it now.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# One bump in flight at a time; the PR branch is a fixed name and two runs
+# would race to force-push it.
+concurrency:
+  group: bump-photoform
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v31
+
+      # No cache credentials: this job builds a rev that by definition is not
+      # in the cache yet, so the substituter would buy it nothing.
+      - name: Give nix-daemon the private-source credentials
+        env:
+          PRIVATE_SRC_PAT: ${{ secrets.PRIVATE_SRC_PAT }}
+        run: ./ci/nix-daemon-creds.sh
+
+      # nix-update resolves the branch tip itself, in-process, by reading
+      # github.com/OWNER/REPO/commits/HEAD.atom — which 404s on a private
+      # repo unless authenticated. Its one auth path for that is a netrc
+      # (nix_update/version/github.py), keyed on the *src* URL's host: with
+      # `private = true` the src is api.github.com, while the feed it then
+      # requests is github.com, so both entries have to be present.
+      - name: Give nix-update a netrc for the private repo
+        env:
+          PRIVATE_SRC_PAT: ${{ secrets.PRIVATE_SRC_PAT }}
+        run: |
+          umask 077
+          for host in api.github.com github.com; do
+            printf 'machine %s login x-access-token password %s\n' \
+              "$host" "$PRIVATE_SRC_PAT" >> "$HOME/.netrc"
+          done
+
+      # --version=branch pins to the tip of the default branch and dates the
+      # version string. It recomputes src.sha256 and cargoHash in the same
+      # pass, which is the entire point: those two are what cannot be written
+      # by hand.
+      - name: Bump the photoform pin
+        env:
+          GITHUB_TOKEN: ${{ secrets.PRIVATE_SRC_PAT }}
+        run: nix run nixpkgs#nix-update -- --flake --version=branch photoform
+
+      - name: Open the bump PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          # Not GITHUB_TOKEN: GitHub suppresses workflow runs on PRs opened
+          # with it, which would leave the bump PR with no check to merge on.
+          token: ${{ secrets.PRIVATE_SRC_PAT }}
+          # Fixed branch, so a nightly run that finds a newer rev updates the
+          # open PR instead of stacking another one beside it.
+          branch: bump/photoform
+          commit-message: "chore(photoform): bump the pinned app revision"
+          title: "chore(photoform): bump the pinned app revision"
+          body: |
+            Automated bump of the `photoform` pin in `modules/photoform/package.nix`
+            to the tip of the app's default branch.
+
+            `check` builds the new revision here, so a green run means the app
+            compiles and still satisfies the module contract in
+            `tests/photoform.nix`. It does not run the app — review the source
+            range before merging.
+
+            Merging advances `verified`, and the hosts pick it up at 04:00.
+          delete-branch: true
