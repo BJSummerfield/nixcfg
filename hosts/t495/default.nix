@@ -28,6 +28,7 @@
       niri.enable = true;
       openssh.outbound.enable = true;
       coding-agents.enable = true;
+      printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
       theme = {
