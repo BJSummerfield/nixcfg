@@ -63,12 +63,26 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PRIVATE_SRC_PAT }}
         run: nix run nixpkgs#nix-update -- --flake --version=branch photoform
 
+      # A short-lived installation token rather than a PAT. PRIVATE_SRC_PAT
+      # is read-only on the app repo and must stay that way: `verified` is
+      # what the hosts deploy at 04:00, so write access to this repo is
+      # effectively root on the fleet, and that token is handed to a runner
+      # that builds third-party crates.
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.BUMP_APP_ID }}
+          private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
+
       - name: Open the bump PR
         uses: peter-evans/create-pull-request@v7
         with:
           # Not GITHUB_TOKEN: GitHub suppresses workflow runs on PRs opened
           # with it, which would leave the bump PR with no check to merge on.
-          token: ${{ secrets.PRIVATE_SRC_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
+          # main requires signed commits, and the default git push produces
+          # unsigned ones; this commits through the API so GitHub signs them.
+          sign-commits: true
           # Fixed branch, so a nightly run that finds a newer rev updates the
           # open PR instead of stacking another one beside it.
           branch: bump/photoform
