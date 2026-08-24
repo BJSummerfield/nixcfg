@@ -27,7 +27,6 @@
       avahi.enable = true;
       niri.enable = true;
       openssh.outbound.enable = true;
-      coding-agents.enable = true;
       printing.enable = true;
       steam.enable = true;
       steambox.enable = true;
@@ -59,7 +58,6 @@
         _1password.enable = true;
         alacritty.enable = true;
         battery-notifications.enable = true;
-        claude-code.enable = true;
         direnv.enable = true;
         firefox.enable = true;
         fish.enable = true;
