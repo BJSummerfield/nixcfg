@@ -110,9 +110,29 @@ and a store symlink would fail with `EROFS`.
 **One environment contract, injected per agent.** A new
 `modules/devbox/ENVIRONMENT.md` becomes the single source of truth. pi reads it
 as `.pi/agent/APPEND_SYSTEM.md` exactly as today; Claude receives it via
-`--append-system-prompt` in the `mkAgent` wrapper that already wraps it. Using
-the wrapper rather than a config-dir file keeps the injection deterministic.
+`--append-system-prompt` in the `mkAgent` wrapper that already wraps it.
 `modules/pi-coding-agent/APPEND_SYSTEM.md` is deleted.
+
+The wrapper is the only mechanism that works. Claude's help text mentions an
+`--append-system-prompt-file` form, and `appendSystemPromptFile` exists as a
+string in the bundle, but neither is real in 2.1.234: the flag is not in the
+enumerated CLI options, and setting the key in `settings.json` was probed
+directly and had no effect, while the `--append-system-prompt` flag carried a
+codeword through on the same version. Do not reach for the settings key.
+
+`mkAgent` takes `{ name, real }` and interpolates `real` into **two** `exec`
+lines (`devbox/agents.nix`), one for the direnv-failure path and one for the
+normal path. Injection therefore either extends `mkAgent` with an optional
+`args` parameter — preferred, since it keeps `real` a bare executable — or
+embeds the flag in the `real` string, which works but silently applies to both
+paths and is easy to misread later.
+
+**Devbox-specific seeding lives in `devbox/container.nix`.** The skills
+`home.file` entries for both agents go there, alongside the existing
+`APPEND_SYSTEM.md` entry, rather than in `pi-coding-agent/home.nix`. That keeps
+the pi module generic — it is imported by whatever wants pi, and a path into
+`modules/devbox/` from inside it would invert the dependency. `home.nix` then
+only *loses* the superagents activation block and gains nothing.
 
 **Cleanup is manual and targeted, not a container rebuild.** Only five paths
 are bind-mounted into a devbox container (`devbox/nixos.nix:234-261`):
@@ -133,10 +153,10 @@ it. Targeted `rm` is both safer and cheaper.
 | 6 | Fix stale comment | `modules/users/nixos.nix:38` |
 | 7 | Pinned skills source | new `modules/devbox/skills.nix` |
 | 8 | Shared env contract | new `modules/devbox/ENVIRONMENT.md`; delete `modules/pi-coding-agent/APPEND_SYSTEM.md` |
-| 9 | Seed pi skills; drop superagents activation | `modules/pi-coding-agent/home.nix` |
+| 9 | Drop the superagents activation block | `modules/pi-coding-agent/home.nix` |
 | 10 | Trim packages; delete `superagents`/`modelTiers` | `modules/pi-coding-agent/settings.nix` |
 | 11 | Add `pi-cheap` / `pi-max` | `modules/pi-coding-agent/extra-packages.nix` |
-| 12 | Seed Claude skills + settings.json; inject env into `mkAgent` | `modules/devbox/container.nix` |
+| 12 | Seed both agents' skills + Claude settings.json; inject env via `mkAgent` | `modules/devbox/container.nix`, `modules/devbox/agents.nix` |
 
 Warming needs no change: `devbox-warm` already covers
 `/home/agent/projects/*/` and paseo's `worktrees/<projectHash>/<slug>/`,
@@ -160,6 +180,10 @@ directories. It also makes fan-out cheap, since pi's wrapper runs
 | Repo has none of the five triage state labels | `gh label list` shows only GitHub's 8 stock labels |
 | git and gh authenticate independently | git via `~/.config/git/config` credential helper; gh via `GH_TOKEN` in the `ghWrapped` script |
 | home-manager will hard-fail on clobber | no `backupFileExtension` or `force` anywhere in the repo |
+| `--append-system-prompt` reaches Claude | probe file with a codeword; `claude -p` returned it |
+| `appendSystemPromptFile` in settings.json does **not** | same codeword via the settings key; `claude -p` returned `NONE` |
+| Claude's auth is container-local | `~/.claude-state/.credentials.json` |
+| `/home/agent/projects` is **not** bind-mounted | `devbox/nixos.nix` has exactly five `hostPath` entries, none of them projects or worktrees |
 
 The fan-out mechanism was exercised against jason and robin because redtruck
 was offline for reconfiguration. The redtruck model ids in the wrappers are
@@ -208,5 +232,9 @@ in. Both are expected.
   project. That is per-repo state on a bind-mounted tree, not machine config.
   The five triage state labels do not exist yet and will be created on first
   `/triage`.
+- **opencode gets no environment contract.** devbox still ships it
+  (`container.nix:118`), and it reads neither `ENVIRONMENT.md` nor any
+  equivalent — as is true today. Wiring it up, or dropping it from devbox, is a
+  separate decision.
 - **`docs/superpowers/` naming.** The directory outlives the tool it is named
   after. Renaming it is a separate, purely cosmetic change.
