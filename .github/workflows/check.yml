@@ -59,9 +59,17 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
         run: |
-          mapfile -t attrs < <(nix eval --json --apply \
-            'ps: builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps)' \
-            .#packages.x86_64-linux | jq -r '.[]')
+          # outPath is a pure-eval attribute, so this names every path without
+          # building or fetching anything. A store path is hashed from the
+          # derivation's inputs, so the name alone identifies the build: any
+          # store holding that name holds those exact bits.
+          cached=$(nix eval --json --apply \
+            'ps:
+               let names = builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps);
+               in { inherit names; outs = map (n: ps.${n}.outPath) names; }' \
+            .#packages.x86_64-linux)
+          mapfile -t attrs < <(jq -r '.names[]' <<<"$cached")
+          mapfile -t outs < <(jq -r '.outs[]' <<<"$cached")
 
           # An empty list means the marker was lost, not that there is nothing
           # to do; pushing nothing would silently leave hosts compiling.
@@ -69,16 +77,40 @@ jobs:
             echo "no package sets passthru.cache = true" >&2
             exit 1
           fi
-          echo "caching: ${attrs[*]}"
 
-          umask 077
-          printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$RUNNER_TEMP/cache-key.sec"
-          nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" "${attrs[@]/#/.#}"
-          shred -u "$RUNNER_TEMP/cache-key.sec"
+          # Probed one at a time, and per package rather than in one batch: a
+          # `nix copy` of an already-cached path still realises it locally
+          # before discovering the destination has it, so naming an unchanged
+          # package here would drag its whole closure back down. Resolution
+          # walks .narinfo files — a few hundred bytes each, listing their own
+          # references — so no NAR is fetched either way.
+          echo "probing the cache for: ${attrs[*]}"
+          missing=()
+          for i in "${!attrs[@]}"; do
+            if nix path-info -r --store "$CACHE_STORE" "${outs[$i]}" >/dev/null 2>&1; then
+              echo "  present: ${attrs[$i]}"
+            else
+              echo "  missing: ${attrs[$i]}"
+              missing+=(".#${attrs[$i]}")
+            fi
+          done
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "cache is complete; nothing to push"
+          else
+            umask 077
+            printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$RUNNER_TEMP/cache-key.sec"
+            nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" "${missing[@]}"
+            shred -u "$RUNNER_TEMP/cache-key.sec"
+          fi
 
           # Retention is manifest-driven because nix copy skips paths already
           # present, so object timestamps do not track whether a path is live.
-          nix path-info -r "${attrs[@]/#/.#}" | sort -u | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
+          # Read back from the destination, so it also fails the run if a push
+          # left the closure incomplete, or a prune deleted a dependency out
+          # from under a live path.
+          nix path-info -r --store "$CACHE_STORE" "${outs[@]}" > "$RUNNER_TEMP/closure.txt"
+          sort -u "$RUNNER_TEMP/closure.txt" | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
           nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblazeb2.com \
             s3 cp "$RUNNER_TEMP/manifest.json" \
             "s3://spacefunk-nix-cache/manifests/$(printf '%08d' "$GITHUB_RUN_NUMBER")-${GITHUB_SHA}.json"
