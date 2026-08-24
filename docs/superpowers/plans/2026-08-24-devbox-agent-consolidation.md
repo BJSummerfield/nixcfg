@@ -701,6 +701,11 @@ rm -rf ~/.pi/agent/npm/node_modules/@weiping \
 rm -rf ~/.pi/agent/git/github.com/obra
 rm -rf ~/.pi/agent/extensions/subagent
 rm -rf ~/.claude-state/plugins
+# home.file hard-fails on an unmanaged path in the way (this repo sets
+# neither backupFileExtension nor force). Remove these two only if they
+# exist as real directories from a previous manual install - a symlink
+# into the nix store is this config's own and is replaced normally.
+rm -rf ~/.pi/agent/skills ~/.claude-state/skills
 ```
 
 Claude then needs re-authenticating on devbox; workbox has never been logged in.

@@ -15,6 +15,8 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
+  envContract = ./ENVIRONMENT.md;
+
   # Pi needs bun and node on PATH or plugins crash at startup.
   # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
@@ -30,6 +32,10 @@ let
     (mkAgent {
       name = "claude";
       real = lib.getExe pkgs.claude-code;
+      # Claude has no equivalent of pi's environment-contract file below, and
+      # the appendSystemPromptFile settings key is inert on 2.1.234 - the CLI
+      # flag is the only mechanism that works.
+      args = ''--append-system-prompt "$(cat ${envContract})"'';
     })
     (mkAgent {
       name = "pi";
@@ -191,7 +197,7 @@ in
         ];
 
         home.packages = agentPkgs ++ tierPkgs;
-        home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
+        home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
 
         # Both agents read the same flattened tree. Read-only store symlinks
         # are correct: neither writes skill files.
@@ -229,6 +235,11 @@ in
         # with EROFS. `rm` before `install` because install(1) follows an
         # existing symlink to its read-only target - and because the file
         # already exists unmanaged in every running container.
+        #
+        # This also means anything Claude itself writes to settings.json - a
+        # theme change, a plugin toggle - is reset on the next activation.
+        # That is deliberate, not a gap to close: a container must never
+        # come up with a plugin enabled that this config did not ask for.
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
           run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
