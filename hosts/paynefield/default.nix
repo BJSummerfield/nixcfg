@@ -37,7 +37,6 @@
       externalInterface = "enp1s0";
       renderGroupGid = 303;
       autoUpgrade.enable = true;
-      cups-server = true;
       dns-server.enable = true;
       fish.enable = true;
       openssh.inbound = {
