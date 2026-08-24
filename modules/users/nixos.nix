@@ -35,8 +35,8 @@ in
               Static uid, identical on every host. Without it NixOS
               allocates uids first-come per machine, so the same user can
               end up with different uids on different hosts - which breaks
-              anything keyed on numeric ownership, like the coding-agents
-              bind mounts.
+              anything keyed on numeric ownership, like the devbox
+              container's bind mounts.
             '';
           };
 

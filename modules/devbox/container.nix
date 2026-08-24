@@ -15,6 +15,26 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
+  envContract = ./ENVIRONMENT.md;
+
+  # Model ids for the fan-out tiers below are *derived*, never typed out.
+  # The superagents modelTiers these replaced derived them the same way, and
+  # that link is what keeps a model bump honest: models.nix deliberately
+  # leaves the previous model in `enabled` while a new one proves out, so a
+  # hardcoded id would keep resolving - to the wrong, still-served model -
+  # and llama-swap would evict the parent's loaded instance mid-session.
+  llm = import ../local-llm/models.nix;
+
+  qualified = id: "${llm.provider}/${id}";
+
+  defaultAliases = builtins.attrNames (llm.models.${llm.default}.aliases or { });
+  # Assumes at most one alias, as pi's settings.nix does: with two, `head`
+  # picks the lexicographically first, which is arbitrary - pick deliberately
+  # if a second is ever added. With none, pi-cheap falls back to the full
+  # default model: same served instance, so no swap and no 404 - it only
+  # loses the smaller declared window.
+  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
+
   # Pi needs bun and node on PATH or plugins crash at startup.
   # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
@@ -30,6 +50,10 @@ let
     (mkAgent {
       name = "claude";
       real = lib.getExe pkgs.claude-code;
+      # Claude has no equivalent of pi's environment-contract file below, and
+      # the appendSystemPromptFile settings key is inert on 2.1.234 - the CLI
+      # flag is the only mechanism that works.
+      args = ''--append-system-prompt "$(cat ${envContract})"'';
     })
     (mkAgent {
       name = "pi";
@@ -47,6 +71,60 @@ let
     export GH_TOKEN=$(cat /run/secrets/github-token)
     exec ${lib.getExe pkgs.gh} "$@"
   '';
+
+  agentSkills = import ./skills.nix pkgs;
+
+  # Fan-out tiers. These replace pi-superagents' modelTiers: pi's own CLI
+  # takes provider/id:thinking, which is exactly what that config resolved.
+  #
+  # Strictly read-only - deliberately no `bash`, which is a write vector
+  # regardless of the other tools (a child given bash creates files with
+  # `echo >`). The parent does all git and gh work and hands children a
+  # pre-materialised diff path.
+  #
+  # `-ns` because a child is given its instructions directly; it should not
+  # pay for the whole skill-description block. Calls piWrapped rather than
+  # the mkAgent `pi` on PATH so a child does not re-enter direnv, which the
+  # parent has already loaded.
+  mkTier =
+    {
+      name,
+      model,
+      thinking,
+    }:
+    pkgs.writeShellScriptBin name ''
+      exec ${piWrapped}/bin/pi -p \
+        --model ${model}:${thinking} \
+        --tools read,grep,find,ls \
+        --no-session -ns "$@"
+    '';
+
+  tierPkgs = [
+    # cheap is medium, not low: the Qwen3.8 model card warns that low effort
+    # on multi-turn agentic work trades per-turn speed for retries.
+    (mkTier {
+      name = "pi-cheap";
+      model = qualified budgetModel;
+      thinking = "medium";
+    })
+    (mkTier {
+      name = "pi-max";
+      model = qualified llm.default;
+      thinking = "xhigh";
+    })
+  ];
+
+  # Claude keeps plugins and preferences in one small file. Generated with
+  # enabledPlugins empty so a container never comes up with Superpowers on.
+  # Auth lives separately in .credentials.json and is untouched.
+  claudeSettings = pkgs.writeText "claude-settings.json" (
+    builtins.toJSON {
+      theme = "dark";
+      inputNeededNotifEnabled = true;
+      agentPushNotifEnabled = true;
+      enabledPlugins = { };
+    }
+  );
 in
 {
   imports = [
@@ -87,6 +165,7 @@ in
   # `claude` fails in a way that gives no hint why.
   environment.systemPackages =
     agentPkgs
+    ++ tierPkgs
     ++ [ ghWrapped ]
     ++ (with pkgs; [
       curl
@@ -105,65 +184,95 @@ in
   home-manager = {
     useGlobalPkgs = true;
     useUserPackages = true;
-    users.agent = {
-      imports = [
-        ../direnv/home.nix
-        ../opencode/home.nix
-        ../pi-coding-agent/home.nix
-      ];
-      home.stateVersion = "26.05";
+    users.agent =
+      { lib, ... }:
+      {
+        imports = [
+          ../direnv/home.nix
+          ../opencode/home.nix
+          ../pi-coding-agent/home.nix
+        ];
+        home.stateVersion = "26.05";
 
-      mine.user = {
-        direnv.enable = true;
-        opencode.enable = true;
-        pi-coding-agent.enable = true;
-      };
+        mine.user = {
+          direnv.enable = true;
+          opencode.enable = true;
+          pi-coding-agent.enable = true;
+        };
 
-      # Suppresses the upstream modules' own bin/pi and bin/opencode -
-      # otherwise they collide with the mkAgent wrappers of the same name
-      # in this same home-manager profile (pkgs.buildEnv fails hard on
-      # same-name paths of equal priority). Settings/config generation
-      # from these modules is untouched; only the package is disabled.
-      programs.pi-coding-agent.package = null;
-      programs.opencode.package = null;
+        # Suppresses the upstream modules' own bin/pi and bin/opencode -
+        # otherwise they collide with the mkAgent wrappers of the same name
+        # in this same home-manager profile (pkgs.buildEnv fails hard on
+        # same-name paths of equal priority). Settings/config generation
+        # from these modules is untouched; only the package is disabled.
+        programs.pi-coding-agent.package = null;
+        programs.opencode.package = null;
 
-      # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
-      # can never cover them. Whitelisting both trees — agent runs arbitrary
-      # code by design, and the container is the boundary.
-      programs.direnv.config.whitelist.prefix = [
-        "/home/agent/projects"
-        "/var/lib/paseo/worktrees"
-      ];
+        # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
+        # can never cover them. Whitelisting both trees — agent runs arbitrary
+        # code by design, and the container is the boundary.
+        programs.direnv.config.whitelist.prefix = [
+          "/home/agent/projects"
+          "/var/lib/paseo/worktrees"
+        ];
 
-      home.packages = agentPkgs;
-      home.file.".pi/agent/APPEND_SYSTEM.md".source = ../pi-coding-agent/APPEND_SYSTEM.md;
+        home.packages = agentPkgs ++ tierPkgs;
+        home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
 
-      # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
-      # agent — so these settings are the whole mechanism. All three are
-      # gated on signCommits as one unit: gpgSign left on without a key
-      # present makes git refuse to commit at all, which is worse than an
-      # instance that simply does not sign.
-      programs.git = {
-        enable = true;
-        settings = {
-          user = {
-            inherit (gitIdentity) name email;
+        # Both agents read the same flattened tree. Read-only store symlinks
+        # are correct: neither writes skill files.
+        home.file.".pi/agent/skills".source = agentSkills;
+        home.file.".claude-state/skills".source = agentSkills;
+
+        # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
+        # agent — so these settings are the whole mechanism. All three are
+        # gated on signCommits as one unit: gpgSign left on without a key
+        # present makes git refuse to commit at all, which is worse than an
+        # instance that simply does not sign.
+        programs.git = {
+          enable = true;
+          settings = {
+            user = {
+              inherit (gitIdentity) name email;
+            }
+            // lib.optionalAttrs signCommits {
+              signingkey = "/run/secrets/signing-key";
+            };
+            # Reads the token at use time so it never lands in a config file
+            # or the nix store. The token bounds which repos are reachable;
+            # a GitHub ruleset is what stops a push to a protected branch.
+            credential."https://github.com".helper =
+              "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
           }
           // lib.optionalAttrs signCommits {
-            signingkey = "/run/secrets/signing-key";
+            gpg.format = "ssh";
+            commit.gpgSign = true;
           };
-          # Reads the token at use time so it never lands in a config file
-          # or the nix store. The token bounds which repos are reachable;
-          # a GitHub ruleset is what stops a push to a protected branch.
-          credential."https://github.com".helper =
-            "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
-        }
-        // lib.optionalAttrs signCommits {
-          gpg.format = "ssh";
-          commit.gpgSign = true;
         };
+
+        # Copied, not linked: Claude rewrites settings.json (theme changes,
+        # plugin toggles), and a store symlink would make that write fail
+        # with EROFS. `rm` before `install` because install(1) follows an
+        # existing symlink to its read-only target - and because the file
+        # already exists unmanaged in every running container.
+        #
+        # This also means anything Claude itself writes to settings.json is
+        # reset on the next activation: a theme change, a plugin toggle, and
+        # - the one that actually changes behaviour - any user-scope
+        # `permissions` rules, which live in this same file and are silently
+        # discarded with it. An allow/deny rule added mid-session survives
+        # only until the next rebuild; put anything durable in a project's
+        # own .claude/settings.json instead.
+        # That is deliberate, not a gap to close: a container must never
+        # come up with a plugin enabled - or a permission granted - that
+        # this config did not ask for.
+        home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+          run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
+          run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
+          run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
+            "$HOME/.claude-state/settings.json"
+        '';
       };
-    };
   };
 
   ##########################################################################

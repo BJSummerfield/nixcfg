@@ -91,6 +91,14 @@ let
     && (settings.commit.gpgSign or false) == true
     && (container name).bindMounts ? "/run/secrets/signing-key";
 
+  homeFiles = name: (container name).config.home-manager.users.agent.home.file;
+  # writeShellScriptBin names its derivation after the binary, so the package
+  # name is the command an agent session actually types.
+  pkgNamed =
+    name: pkgName:
+    lib.findFirst (p: (p.name or "") == pkgName) null
+      (container name).config.environment.systemPackages;
+
   checks = [
     {
       name = "every instance is defined";
@@ -175,6 +183,37 @@ let
       ok =
         (container "devbox").config.services.paseo.hostnames == [ "devbox.example.ts.net" ]
         && (container "workbox").config.services.paseo.hostnames == [ "workbox.example.ts.net" ];
+    }
+    # The three below take no per-instance argument - every container gets
+    # them from the same container.nix - so one instance pins them rather
+    # than repeating each assertion three times.
+    {
+      # Same store path for both, not two equivalent copies: the flattening
+      # derivation is what makes the tree discoverable at all, and a second
+      # source would let the two agents drift apart on a rev bump.
+      name = "both agents are seeded from one shared skills tree";
+      ok =
+        let
+          files = homeFiles "devbox";
+        in
+        files ? ".pi/agent/skills"
+        && files ? ".claude-state/skills"
+        && files.".pi/agent/skills".source == files.".claude-state/skills".source;
+    }
+    {
+      # Claude has no APPEND_SYSTEM.md equivalent and its
+      # appendSystemPromptFile settings key is inert on 2.1.234, so losing
+      # this flag means the environment contract silently never reaches it.
+      name = "the claude launcher injects the environment contract";
+      ok =
+        let
+          claude = pkgNamed "devbox" "claude";
+        in
+        claude != null && lib.hasInfix "--append-system-prompt" claude.text;
+    }
+    {
+      name = "both fan-out tiers ship in the container";
+      ok = pkgNamed "devbox" "pi-cheap" != null && pkgNamed "devbox" "pi-max" != null;
     }
   ];
 

@@ -5,7 +5,6 @@
     ./alacritty/linux.nix
     ./battery-notifications/home.nix
     ./bicep-langserver/home.nix
-    ./claude-code/home.nix
     ./direnv/home.nix
     ./encode_queue/home.nix
     ./firefox/home.nix
@@ -22,9 +21,7 @@
     ./mpls/home.nix
     ./niri/home.nix
     ./obs-studio/home.nix
-    ./opencode/home.nix
     ./paseo-desktop/home.nix
-    ./pi-coding-agent/home.nix
     ./polkit_kde/home.nix
     ./steambox/home.nix
     ./swaybg/home.nix

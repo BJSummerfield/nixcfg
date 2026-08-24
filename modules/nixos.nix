@@ -19,7 +19,6 @@
     ./niri/nixos.nix
     ./nvidia/nixos.nix
     ./openssh/nixos.nix
-    ./coding-agents/nixos.nix
     ./devbox/nixos.nix
     ./pipewire/nixos.nix
     ./photoform/nixos.nix
