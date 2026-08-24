@@ -54,8 +54,9 @@ enables either — devbox imports them directly in its own home-manager block
 host module does not break it.
 
 **One pinned skills source, consumed by both agents.** A new
-`modules/devbox/skills.nix` returns `pkgs.fetchFromGitHub` for
-`mattpocock/skills`, pinned by rev and hash. It lives under `devbox/` rather
+`modules/devbox/skills.nix` pins `mattpocock/skills` by rev and hash (see the
+flattening decision below for why it is a derivation rather than a bare
+`fetchFromGitHub`). It lives under `devbox/` rather
 than `pi-coding-agent/` because Claude consumes it too. It is deliberately not
 a flake input: none of the importers pass `extraSpecialArgs`, so `inputs` is
 unreachable from the home-manager modules, and plumbing it through three blocks
@@ -65,6 +66,21 @@ readdirs, stats and reads them.
 
 devbox and workbox are two instances of the same module
 (`hosts/redtruck/default.nix:104-118`), so this is one change covering both.
+
+**The upstream tree must be flattened.** Upstream nests skills as
+`skills/<category>/<name>/SKILL.md`, and Claude discovers skills exactly one
+level under its skills directory — a nested tree yields **zero** skills with no
+error at all: the directory exists, the symlink resolves, and nothing is
+listed. Probed directly with a flat and a nested marker skill; only the flat
+one was found, and re-probing against a flattened copy of the real pack found
+`code-review`. So `modules/devbox/skills.nix` is a derivation, not a bare
+`fetchFromGitHub`: it flattens the categories and drops `deprecated` and
+`in-progress`, yielding 29 skills. Pi would recurse either way
+(`core/skills.js:191`), but one shape keeps both agents reading the same tree.
+
+`triage` and `to-tickets` carry `disable-model-invocation: true` and so are
+correctly absent from model-visible skill lists; they are reachable as explicit
+slash commands. That is upstream's intent, not a discovery failure.
 
 **pi-superagents goes with Superpowers.** Its bundled roles reference
 Superpowers skills by name, its `subagent` tool's own description says "use this
@@ -155,7 +171,7 @@ it. Targeted `rm` is both safer and cheaper.
 | 8 | Shared env contract | new `modules/devbox/ENVIRONMENT.md`; delete `modules/pi-coding-agent/APPEND_SYSTEM.md` |
 | 9 | Drop the superagents activation block | `modules/pi-coding-agent/home.nix` |
 | 10 | Trim packages; delete `superagents`/`modelTiers` | `modules/pi-coding-agent/settings.nix` |
-| 11 | Add `pi-cheap` / `pi-max` | `modules/pi-coding-agent/extra-packages.nix` |
+| 11 | Add `pi-cheap` / `pi-max` | `modules/devbox/container.nix` (needs `piWrapped`, so not `extra-packages.nix`) |
 | 12 | Seed both agents' skills + Claude settings.json; inject env via `mkAgent` | `modules/devbox/container.nix`, `modules/devbox/agents.nix` |
 
 Warming needs no change: `devbox-warm` already covers
@@ -184,6 +200,8 @@ directories. It also makes fan-out cheap, since pi's wrapper runs
 | `appendSystemPromptFile` in settings.json does **not** | same codeword via the settings key; `claude -p` returned `NONE` |
 | Claude's auth is container-local | `~/.claude-state/.credentials.json` |
 | `/home/agent/projects` is **not** bind-mounted | `devbox/nixos.nix` has exactly five `hostPath` entries, none of them projects or worktrees |
+| Claude does **not** discover nested skills | flat + nested marker skills planted; only the flat one was found |
+| Flattening fixes it | flattened copy of the real pack; `code-review` discovered |
 
 The fan-out mechanism was exercised against jason and robin because redtruck
 was offline for reconfiguration. The redtruck model ids in the wrappers are
