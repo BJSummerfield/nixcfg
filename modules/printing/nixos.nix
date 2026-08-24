@@ -1,18 +1,19 @@
 # Printing to the house printer, a Brother HL-L3220CDW on the LAN.
 #
-# The printer is driverless: it reports image/urf (AirPrint) and
-# image/pwg-raster (IPP Everywhere) in document-format-supported, and its
-# device-id carries a URF block. So no Brother driver is needed here or
-# anywhere else - `model = "everywhere"` has cupsd build the PPD by asking
-# the printer what it can do.
+# There is deliberately no queue declared here. The printer is driverless -
+# it reports image/urf and image/pwg-raster in document-format-supported and
+# advertises itself over mDNS as _ipp._tcp plus the _universal AirPrint
+# subtype - so CUPS discovers it and builds a temporary queue at print time,
+# which is the moment the network is guaranteed to be up.
 #
-# A local cupsd is not optional: every GTK/Qt print dialog spools through
-# one. What *is* optional - and deliberately not used - is discovery. CUPS
-# would happily find the printer over mDNS and conjure a temporary queue per
-# job, but those queues are torn down after a minute idle, so the printer
-# keeps vanishing from the printer list and every print feels like a fresh
-# setup. The declarative queue below exists from activation onward and is
-# re-asserted on every rebuild, which is the whole point.
+# An earlier version declared the queue with hardware.printers.ensurePrinters
+# instead. That runs `lpadmin` during boot, which is the one moment WiFi has
+# not associated yet, so it failed on every boot and the queue never existed.
+# Setup has to happen when the printer is reachable, and only printing knows
+# when that is.
+#
+# A local cupsd is not optional either way: every GTK/Qt print dialog spools
+# through one.
 { lib, config, ... }:
 let
   cfg = config.mine.system.printing;
@@ -23,33 +24,14 @@ in
   config = lib.mkIf cfg.enable {
     services.printing = {
       enable = true;
-      # browsed.enable defaults to services.avahi.enable, so enabling avahi
-      # would silently start cups-browsed. Its own CreateIPPPrinterQueues
-      # default is LocalOnly, meaning it ignores network printers entirely -
-      # it would discover nothing and just sit there. The queue is declared
-      # below instead.
+      # Defaults to services.avahi.enable, so avahi below would otherwise
+      # start it. Its own CreateIPPPrinterQueues default is LocalOnly, meaning
+      # it ignores network printers entirely - it would discover nothing and
+      # just sit there. Discovery that matters happens in cupsd itself.
       browsed.enable = false;
     };
 
-    # Resolves the printer's .local name. Using the name rather than an
-    # address keeps a DHCP reservation off the list of things that can
-    # silently break printing.
+    # cupsd finds the printer by talking to avahi over D-Bus.
     mine.system.avahi.enable = true;
-
-    hardware.printers = {
-      ensurePrinters = [
-        {
-          name = "brother";
-          deviceUri = "ipp://BRW58CDC98907E0.local/ipp/print";
-          model = "everywhere";
-        }
-      ];
-      ensureDefaultPrinter = "brother";
-    };
-
-    # ensure-printers resolves a .local name and then queries the printer over
-    # IPP, so it needs avahi answering first. Upstream only orders it after
-    # cups.service.
-    systemd.services.ensure-printers.after = [ "avahi-daemon.service" ];
   };
 }
