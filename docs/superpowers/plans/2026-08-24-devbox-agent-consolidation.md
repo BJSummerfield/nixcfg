@@ -14,7 +14,7 @@
 
 - **Never destroy a devbox container.** Only five paths are bind-mounted; `/home/agent/projects` and `/var/lib/paseo/worktrees` are not among them. Recreating a container destroys every clone and any uncommitted work.
 - **Claude discovers skills exactly one level under its skills directory.** A nested tree yields zero skills with no error. Verified by probe.
-- **Claude's `appendSystemPromptFile` settings key does nothing** on 2.1.234. Only the `--append-system-prompt` CLI flag works. Verified by probe.
+- **Claude's `appendSystemPromptFile` settings key does nothing** on 2.1.234 — verified by probe, so injection must go through a CLI flag. Use `--append-system-prompt`: it is enumerated in `--help` and probe-verified end to end. (`--append-system-prompt-file` is also accepted by the CLI, but it is undocumented — absent from `--help`'s option list, mentioned only in prose — and unprobed, so it buys nothing here.)
 - **`home.file` hard-fails on existing unmanaged paths** — the repo sets neither `backupFileExtension` nor `force`.
 - Skills pin: rev `6654f6b60cd9d5be8b54c6fafe44346dabeb3b76`, hash `sha256-N5tpUIHO2VFeJntBTl6/VLDIVpqoshwFxNJlfXXUwsQ=`.
 - Every task is verified with `nix build .#checks.x86_64-linux.<name>`; this repo has no runtime test suite. `nixos-t495` and `nixos-redtruck` are eval-only checks, `devboxes` is a pure-eval test of the devbox module.
@@ -689,6 +689,21 @@ CLI flag on both exec paths."
 
 ---
 
+## Pre-deploy: clear the two skills directories
+
+Run this **before** `nixos-rebuild switch`, once per box, inside the container. This is not optional housekeeping: home-manager's `checkLinkTargets` runs *during* activation, and `home.file` hard-fails on an unmanaged path in the way (this repo sets neither `backupFileExtension` nor `force`). If either path exists as a real directory, activation aborts and **nothing** from this change lands — no skills, no generated `settings.json`.
+
+```bash
+# Remove these two only if they exist as real directories left by a previous
+# manual install - a symlink into the nix store is this config's own and is
+# replaced normally.
+rm -rf ~/.pi/agent/skills ~/.claude-state/skills
+```
+
+Skipping this step fails safely: activation stops with a clobber error, nothing is lost and nothing is half-applied. Remove the two directories and re-run `nixos-rebuild switch`.
+
+---
+
 ## Post-merge: manual cleanup
 
 Nix adds files; it never removes the ~70M of state these changes orphan. Run once per box, inside the container, after the rebuild lands. Do **not** recreate the container — `/home/agent/projects` and `/var/lib/paseo/worktrees` are not bind-mounted and would be destroyed.
@@ -701,11 +716,6 @@ rm -rf ~/.pi/agent/npm/node_modules/@weiping \
 rm -rf ~/.pi/agent/git/github.com/obra
 rm -rf ~/.pi/agent/extensions/subagent
 rm -rf ~/.claude-state/plugins
-# home.file hard-fails on an unmanaged path in the way (this repo sets
-# neither backupFileExtension nor force). Remove these two only if they
-# exist as real directories from a previous manual install - a symlink
-# into the nix store is this config's own and is replaced normally.
-rm -rf ~/.pi/agent/skills ~/.claude-state/skills
 ```
 
 Claude then needs re-authenticating on devbox; workbox has never been logged in.

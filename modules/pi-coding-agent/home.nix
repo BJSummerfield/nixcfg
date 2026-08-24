@@ -14,8 +14,9 @@ in
     enable = mkEnableOption "pi AI coding agent";
   };
   config = mkIf cfg.enable {
-    # pi-web-access provider config (keyless); seeded declaratively so
-    # ephemeral containers start with search already configured.
+    # pi-web-access provider config (keyless); seeded declaratively so a
+    # freshly built container comes up with search already configured
+    # instead of needing a manual first-run setup.
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
     programs.pi-coding-agent = {

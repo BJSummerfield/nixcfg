@@ -17,6 +17,24 @@ let
 
   envContract = ./ENVIRONMENT.md;
 
+  # Model ids for the fan-out tiers below are *derived*, never typed out.
+  # The superagents modelTiers these replaced derived them the same way, and
+  # that link is what keeps a model bump honest: models.nix deliberately
+  # leaves the previous model in `enabled` while a new one proves out, so a
+  # hardcoded id would keep resolving - to the wrong, still-served model -
+  # and llama-swap would evict the parent's loaded instance mid-session.
+  llm = import ../local-llm/models.nix;
+
+  qualified = id: "${llm.provider}/${id}";
+
+  defaultAliases = builtins.attrNames (llm.models.${llm.default}.aliases or { });
+  # Assumes at most one alias, as pi's settings.nix does: with two, `head`
+  # picks the lexicographically first, which is arbitrary - pick deliberately
+  # if a second is ever added. With none, pi-cheap falls back to the full
+  # default model: same served instance, so no swap and no 404 - it only
+  # loses the smaller declared window.
+  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
+
   # Pi needs bun and node on PATH or plugins crash at startup.
   # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
@@ -82,14 +100,16 @@ let
     '';
 
   tierPkgs = [
+    # cheap is medium, not low: the Qwen3.8 model card warns that low effort
+    # on multi-turn agentic work trades per-turn speed for retries.
     (mkTier {
       name = "pi-cheap";
-      model = "redtruck/Qwen3.8-27B-NVFP4-48k";
+      model = qualified budgetModel;
       thinking = "medium";
     })
     (mkTier {
       name = "pi-max";
-      model = "redtruck/Qwen3.8-27B-NVFP4";
+      model = qualified llm.default;
       thinking = "xhigh";
     })
   ];
@@ -236,10 +256,16 @@ in
         # existing symlink to its read-only target - and because the file
         # already exists unmanaged in every running container.
         #
-        # This also means anything Claude itself writes to settings.json - a
-        # theme change, a plugin toggle - is reset on the next activation.
+        # This also means anything Claude itself writes to settings.json is
+        # reset on the next activation: a theme change, a plugin toggle, and
+        # - the one that actually changes behaviour - any user-scope
+        # `permissions` rules, which live in this same file and are silently
+        # discarded with it. An allow/deny rule added mid-session survives
+        # only until the next rebuild; put anything durable in a project's
+        # own .claude/settings.json instead.
         # That is deliberate, not a gap to close: a container must never
-        # come up with a plugin enabled that this config did not ask for.
+        # come up with a plugin enabled - or a permission granted - that
+        # this config did not ask for.
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
           run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"

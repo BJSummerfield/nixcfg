@@ -129,12 +129,19 @@ as `.pi/agent/APPEND_SYSTEM.md` exactly as today; Claude receives it via
 `--append-system-prompt` in the `mkAgent` wrapper that already wraps it.
 `modules/pi-coding-agent/APPEND_SYSTEM.md` is deleted.
 
-The wrapper is the only mechanism that works. Claude's help text mentions an
-`--append-system-prompt-file` form, and `appendSystemPromptFile` exists as a
-string in the bundle, but neither is real in 2.1.234: the flag is not in the
-enumerated CLI options, and setting the key in `settings.json` was probed
-directly and had no effect, while the `--append-system-prompt` flag carried a
-codeword through on the same version. Do not reach for the settings key.
+Two adjacent-looking mechanisms are *not* interchangeable here, so be precise
+about which is which on 2.1.234:
+
+- `--append-system-prompt <prompt>` — documented, enumerated in `--help`, and
+  probed: a codeword in the appended text came back out of `claude -p`. This
+  is what the implementation uses.
+- `--append-system-prompt-file <path>` — accepted by the CLI
+  (`claude --append-system-prompt-file /dev/null --help` exits 0) but
+  undocumented: it is absent from `--help`'s enumerated option list and
+  appears only in passing prose there. Its behaviour has not been probed, so
+  it buys nothing over the documented flag and is deliberately not used.
+- `appendSystemPromptFile` in `settings.json` — **inert**. Probed directly
+  with the same codeword; `claude -p` returned `NONE`. Do not reach for it.
 
 `mkAgent` takes `{ name, real }` and interpolates `real` into **two** `exec`
 lines (`devbox/agents.nix`), one for the direnv-failure path and one for the
@@ -198,6 +205,7 @@ directories. It also makes fan-out cheap, since pi's wrapper runs
 | home-manager will hard-fail on clobber | no `backupFileExtension` or `force` anywhere in the repo |
 | `--append-system-prompt` reaches Claude | probe file with a codeword; `claude -p` returned it |
 | `appendSystemPromptFile` in settings.json does **not** | same codeword via the settings key; `claude -p` returned `NONE` |
+| `--append-system-prompt-file` is accepted but undocumented | `claude --append-system-prompt-file /dev/null --help` exits 0 on 2.1.234; absent from `--help`'s option list, mentioned only in prose |
 | Claude's auth is container-local | `~/.claude-state/.credentials.json` |
 | `/home/agent/projects` is **not** bind-mounted | `devbox/nixos.nix` has exactly five `hostPath` entries, none of them projects or worktrees |
 | Claude does **not** discover nested skills | flat + nested marker skills planted; only the flat one was found |
@@ -210,8 +218,27 @@ step 6 of the verification below is what closes that gap.
 
 ## Manual cleanup runbook
 
-Run once per box, in the container, after the rebuild lands. Nothing here is
-recreated by nix, and none of it is load-bearing.
+Two halves, and the order matters.
+
+### Pre-deploy — before `nixos-rebuild switch`
+
+home-manager's `checkLinkTargets` runs *during* activation, and `home.file`
+hard-fails on an unmanaged path in the way (this repo sets neither
+`backupFileExtension` nor `force`). If either skills directory exists as a real
+directory, activation aborts and nothing from this change lands — no skills, no
+generated `settings.json`. So this half runs first, per box, in the container:
+
+    # Only if they exist as real directories left by a previous manual
+    # install - a symlink into the nix store is this config's own and is
+    # replaced normally.
+    rm -rf ~/.pi/agent/skills ~/.claude-state/skills
+
+Skipping it fails safely: activation stops with a clobber error, nothing is
+lost and nothing is half-applied. Remove the directories and rebuild again.
+
+### Post-merge — after the rebuild lands
+
+Nothing here is recreated by nix, and none of it is load-bearing.
 
     # pi: extensions dropped from the packages list
     rm -rf ~/.pi/agent/npm/node_modules/@weiping \

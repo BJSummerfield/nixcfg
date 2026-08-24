@@ -14,8 +14,11 @@ your commands, so tools behave normally.
   backed up by anything. Push anything you care about.
 - Every project's devShell is pre-built by the `devbox-warm` service, so
   `direnv exec .` is fast. Agents are launched through a wrapper that
-  loads the project devShell first; if a toolchain binary is missing,
-  the `.envrc` is probably untrusted rather than the tool absent.
+  loads the project devShell first. Both project and worktree trees are
+  whitelisted for direnv, so a missing toolchain binary is never an
+  untrusted `.envrc`: either the devShell failed to build (re-run
+  `direnv exec . true` and read the error), or the package is genuinely
+  not in that shell.
 - Missing tools: prefer `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>`
   - the store is shared with the host, so anything it already has costs
   no download. npm/pip/cargo also work. There is no sudo and you will

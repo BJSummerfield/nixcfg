@@ -52,6 +52,7 @@ in
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "high";
+    # What pi installs its `packages` with; bun is on PATH via extra-packages.nix.
     npmCommand = [ "bun" ];
     packages = [
       "npm:pi-web-access"

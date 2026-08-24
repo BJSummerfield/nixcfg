@@ -20,8 +20,29 @@ let
   };
 in
 pkgs.runCommand "mattpocock-skills" { } ''
+  shopt -s nullglob
   mkdir -p $out
+
+  # Every category upstream has must be either taken or deliberately
+  # dropped. Without this, a rename or a newly added category on a rev bump
+  # just produces fewer skills and no error - the silent shortfall this
+  # derivation exists to prevent.
+  for dir in ${src}/skills/*/; do
+    case "$(basename "$dir")" in
+      engineering | productivity | misc | deprecated | in-progress) ;;
+      *)
+        echo "unrecognised upstream skill category: $(basename "$dir")" >&2
+        echo "take it below or add it to the deliberately-dropped list" >&2
+        exit 1
+        ;;
+    esac
+  done
+
   for category in engineering productivity misc; do
+    if [ ! -d "${src}/skills/$category" ]; then
+      echo "expected skill category is gone upstream: $category" >&2
+      exit 1
+    fi
     for skill in ${src}/skills/$category/*/; do
       [ -f "$skill/SKILL.md" ] || continue
       name=$(basename "$skill")
@@ -34,5 +55,14 @@ pkgs.runCommand "mattpocock-skills" { } ''
       cp -r "$skill" "$out/$name"
     done
   done
+
+  # Backstop for a layout change that leaves the category directories in
+  # place but moves what is under them: zero skills must never be a
+  # successful build, or both agents come up with no skills and no error.
+  if [ -z "$(ls -A $out)" ]; then
+    echo "no skills were copied - upstream layout changed?" >&2
+    exit 1
+  fi
+
   chmod -R u+w $out
 ''
