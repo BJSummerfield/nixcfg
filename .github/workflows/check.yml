@@ -20,26 +20,34 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Named once: the substituter below and the push target further down have
+    # to agree, and the hosts pin the same pair in modules/system/nixos.nix.
+    env:
+      CACHE_STORE: "s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005"
+      CACHE_PUBLIC_KEY: "spacefunk-nix-cache-1:y3hr8PFKky16X7YDVH/PUDUG4gGEtrYcthUWKL4XrA4="
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # a shallow clone cannot push: "shallow update not allowed"
 
+      # A runner starts with an empty store every run, so without the private
+      # cache as a substituter every PR recompiles what main already built.
       - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            extra-substituters = ${{ env.CACHE_STORE }}
+            extra-trusted-public-keys = ${{ env.CACHE_PUBLIC_KEY }}
 
       # impureEnvVars are read from the builder's environment, which is
       # nix-daemon under a multi-user install, so a shell export would not
-      # reach the fetch.
-      - name: Give nix-daemon the private-repo credentials
-        run: |
-          sudo mkdir -p /etc/systemd/system/nix-daemon.service.d
-          sudo tee /etc/systemd/system/nix-daemon.service.d/private-repo.conf >/dev/null <<EOF
-          [Service]
-          Environment="NIX_GITHUB_PRIVATE_USERNAME=x-access-token"
-          Environment="NIX_GITHUB_PRIVATE_PASSWORD=${{ secrets.PRIVATE_SRC_PAT }}"
-          EOF
-          sudo systemctl daemon-reload
-          sudo systemctl restart nix-daemon
+      # reach the fetch. The same is true of the cache read, so both
+      # credentials go in together.
+      - name: Give nix-daemon the private-source and cache credentials
+        env:
+          PRIVATE_SRC_PAT: ${{ secrets.PRIVATE_SRC_PAT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
+        run: ./ci/nix-daemon-creds.sh
 
       - run: nix flake check --print-build-logs
 
@@ -50,7 +58,6 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
-          CACHE_STORE: s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005
         run: |
           mapfile -t attrs < <(nix eval --json --apply \
             'ps: builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps)' \
