@@ -54,6 +54,7 @@ jobs:
       # Runs before the ref advances so hosts never see a config whose closure
       # is not yet in the cache.
       - name: Push cached packages to the binary cache
+        id: cache
         if: github.event_name == 'push'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
@@ -96,24 +97,33 @@ jobs:
           done
 
           if [ "${#missing[@]}" -eq 0 ]; then
+            # Nothing was added, so nothing became garbage and the live set is
+            # exactly what the newest manifest already records. Writing another
+            # identical one would only push a real change further down the
+            # keep-N window, and the prune below has nothing to collect — so
+            # both are skipped, which is also what keeps a 400 MiB awscli2
+            # closure out of the common run.
             echo "cache is complete; nothing to push"
+            nix path-info -r --store "$CACHE_STORE" "${outs[@]}" > /dev/null
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             umask 077
             printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$RUNNER_TEMP/cache-key.sec"
             nix copy --to "$CACHE_STORE&secret-key=$RUNNER_TEMP/cache-key.sec" "${missing[@]}"
             shred -u "$RUNNER_TEMP/cache-key.sec"
-          fi
 
-          # Retention is manifest-driven because nix copy skips paths already
-          # present, so object timestamps do not track whether a path is live.
-          # Read back from the destination, so it also fails the run if a push
-          # left the closure incomplete, or a prune deleted a dependency out
-          # from under a live path.
-          nix path-info -r --store "$CACHE_STORE" "${outs[@]}" > "$RUNNER_TEMP/closure.txt"
-          sort -u "$RUNNER_TEMP/closure.txt" | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
-          nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblazeb2.com \
-            s3 cp "$RUNNER_TEMP/manifest.json" \
-            "s3://spacefunk-nix-cache/manifests/$(printf '%08d' "$GITHUB_RUN_NUMBER")-${GITHUB_SHA}.json"
+            # Retention is manifest-driven because nix copy skips paths already
+            # present, so object timestamps do not track whether a path is
+            # live. Read back from the destination, so it also fails the run if
+            # the push left the closure incomplete, or a prune deleted a
+            # dependency out from under a live path.
+            nix path-info -r --store "$CACHE_STORE" "${outs[@]}" > "$RUNNER_TEMP/closure.txt"
+            sort -u "$RUNNER_TEMP/closure.txt" | jq -R . | jq -s . > "$RUNNER_TEMP/manifest.json"
+            nix shell nixpkgs#awscli2 -c aws --endpoint-url https://s3.us-east-005.backblazeb2.com \
+              s3 cp "$RUNNER_TEMP/manifest.json" \
+              "s3://spacefunk-nix-cache/manifests/$(printf '%08d' "$GITHUB_RUN_NUMBER")-${GITHUB_SHA}.json"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       # Not forced: after a force-push to main this is rejected as a
       # non-fast-forward and the run goes red, rather than moving the hosts
@@ -124,7 +134,7 @@ jobs:
 
       # Last, so the previous closure stays fetchable until the ref has moved.
       - name: Prune the binary cache
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.cache.outputs.changed == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.B2_CACHE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
