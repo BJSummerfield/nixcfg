@@ -17,7 +17,6 @@
     ./keybase/home.nix
     ./lazygit/home.nix
     ./mako/home.nix
-    ./mpls/home.nix
     ./niri/home.nix
     ./obs-studio/home.nix
     ./paseo-desktop/home.nix
