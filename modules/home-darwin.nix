@@ -2,7 +2,6 @@
 { ... }: {
   imports = [
     ./alacritty/home.nix
-    ./bicep-langserver/home.nix
     ./direnv/home.nix
     ./fish/home.nix
     ./gh/home.nix
