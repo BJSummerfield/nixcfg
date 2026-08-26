@@ -14,8 +14,8 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "BJSummerfield";
     repo = "Sheet-Automation-FF";
-    rev = "ef67156c276ce29d6ea53c0df6ab4b5e090943d2";
-    sha256 = "sha256-QTBLYvLibqXNenhRFryu2uCwhu52HQxIxOqyEkLWjVI=";
+    rev = "6e5e011b7faba371c14267f03a2da81b317ed185";
+    sha256 = "sha256-z87Ha1hSrjT8f9h3PU+EG1xzrR6BmIzD5hvQMfFRlwk=";
     # Routes the fetch through api.github.com with a netrc built from
     # NIX_GITHUB_PRIVATE_USERNAME/PASSWORD in the nix-daemon environment.
     private = true;
