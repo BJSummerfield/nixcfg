@@ -2,7 +2,7 @@
 # sudo nixos-container root-login local-llm
 # tailscale up --hostname=llm --advertise-tags=tag:solo-node
 # tailscale serve --bg --https=443 8080      # Open WebUI
-# tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for OpenCode
+# tailscale serve --bg --https=8443 8081     # llama-swap OpenAI endpoint for pi
 
 {
   lib,

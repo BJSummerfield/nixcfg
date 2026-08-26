@@ -9,7 +9,6 @@
     ./hammerspoon/home.nix
     ./helix/home.nix
     ./lazygit/home.nix
-    ./opencode/home.nix
     ./paseo-desktop/home.nix
     ./unfree/home.nix
   ];

@@ -59,10 +59,6 @@ let
       name = "pi";
       real = "${piWrapped}/bin/pi";
     })
-    (mkAgent {
-      name = "opencode";
-      real = lib.getExe pkgs.opencode;
-    })
   ];
 
   # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
@@ -189,24 +185,21 @@ in
       {
         imports = [
           ../direnv/home.nix
-          ../opencode/home.nix
           ../pi-coding-agent/home.nix
         ];
         home.stateVersion = "26.05";
 
         mine.user = {
           direnv.enable = true;
-          opencode.enable = true;
           pi-coding-agent.enable = true;
         };
 
-        # Suppresses the upstream modules' own bin/pi and bin/opencode -
-        # otherwise they collide with the mkAgent wrappers of the same name
-        # in this same home-manager profile (pkgs.buildEnv fails hard on
-        # same-name paths of equal priority). Settings/config generation
-        # from these modules is untouched; only the package is disabled.
+        # Suppresses the upstream module's own bin/pi - otherwise it
+        # collides with the mkAgent wrapper of the same name in this same
+        # home-manager profile (pkgs.buildEnv fails hard on same-name
+        # paths of equal priority). Settings/config generation from the
+        # module is untouched; only the package is disabled.
         programs.pi-coding-agent.package = null;
-        programs.opencode.package = null;
 
         # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
         # can never cover them. Whitelisting both trees — agent runs arbitrary
