@@ -208,11 +208,10 @@
     };
   };
 
-  # 3.6 stays enabled as the fallback while 3.8 proves out; drop it from
-  # this list to reclaim its ~22GiB of weights once 3.8 is trusted.
-  enabled = [
-    "Qwen3.8-27B-NVFP4"
-    "Qwen3.6-27B-NVFP4"
-  ];
+  # 3.8 proved out; 3.6 is out of `enabled` now, which drops it from
+  # llama-swap, pi, and the weight fetches. Its catalog entry (hashes and
+  # tuning) stays, so re-enabling it is a one-line change if a fallback
+  # is ever wanted again.
+  enabled = [ "Qwen3.8-27B-NVFP4" ];
   default = "Qwen3.8-27B-NVFP4";
 }

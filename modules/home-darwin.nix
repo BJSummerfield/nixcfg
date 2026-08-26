@@ -2,7 +2,6 @@
 { ... }: {
   imports = [
     ./alacritty/home.nix
-    ./bicep-langserver/home.nix
     ./direnv/home.nix
     ./fish/home.nix
     ./gh/home.nix
@@ -10,8 +9,6 @@
     ./hammerspoon/home.nix
     ./helix/home.nix
     ./lazygit/home.nix
-    ./mpls/home.nix
-    ./opencode/home.nix
     ./paseo-desktop/home.nix
     ./unfree/home.nix
   ];

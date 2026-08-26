@@ -1,6 +1,5 @@
 {
   imports = [
-    ./bicep.nix
     ./css.nix
     ./graphql.nix
     ./html.nix

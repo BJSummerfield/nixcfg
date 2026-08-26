@@ -6,7 +6,6 @@
 }:
 let
   inherit (lib) mkEnableOption mkIf;
-  mplsModule = config.mine.user.mpls;
   cfg = config.mine.user.helix.lsp.markdown;
 in
 {
@@ -16,7 +15,7 @@ in
       languages = {
         language-server = {
           mpls = {
-            command = "${mplsModule.package}/bin/mpls";
+            command = "${pkgs.mpls}/bin/mpls";
             args = [
               "--theme"
               "dark"
@@ -38,7 +37,7 @@ in
 
       extraPackages = [
         pkgs.marksman
-        mplsModule.package
+        pkgs.mpls
       ];
     };
   };
