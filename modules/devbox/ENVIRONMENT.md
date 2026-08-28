@@ -30,22 +30,13 @@ your commands, so tools behave normally.
   is out of scope - report it rather than retrying.
 - You have unrestricted network access.
 
-## Delegating work (pi only)
+## Subagents
 
-Subagent fan-out comes from the Superpowers workflow via pi-superagents:
-use the sp-* entry points (`/sp-brainstorm`, `/sp-plan`, `/sp-implement`,
-`/sp-implement-parallel`, `/sp-review`, `/sp-debug`). The extension
-launches each child pi with a model tier fixed per role: recon, research
-and implementer children get a smaller declared context window at medium
-thinking; review and debug get the full window at xhigh. Tiers are
-declared in nix (modules/pi-coding-agent/settings.nix), so a
-`/sp-settings` edit survives only until the next rebuild.
-
-A child is a separate process, so its context never enters yours - only
-its report comes back. Children default to read-only tools (read, grep,
-find, ls); only the implementer role also gets write and bash. Keep
-parallel fan-out to two or three tasks: all children share one inference
-server, so a wider wave queues rather than going faster.
+Subagent fan-out comes from the Superpowers plugin - its entry points,
+roles and tier mapping are the plugin's own documentation to read, not
+environment facts. The one environment fact that matters: all children
+hit the same single local inference server, so keep parallel fan-out
+to two or three tasks - a wider wave queues rather than going faster.
 
 ## Updating agent plugins
 
