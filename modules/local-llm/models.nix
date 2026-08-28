@@ -55,11 +55,14 @@
       # pi thinking levels → chat-template reasoning_effort values. The 3.8
       # template accepts only xhigh/medium/low and raises on anything else
       # (it maps high → xhigh itself; we map eagerly so every pi level lands
-      # on an accepted value). 3.6 has no effort support — no map there, and
-      # the unused kwarg is harmless to its template.
+      # on an accepted value). low is deliberately never sent: on this NVFP4
+      # build, low effort degrades multi-turn agentic work enough that the
+      # retries cost more than the per-turn speedup buys, so medium is the
+      # floor for every pi level. 3.6 has no effort support — no map there,
+      # and the unused kwarg is harmless to its template.
       thinkingLevels = {
-        minimal = "low";
-        low = "low";
+        minimal = "medium";
+        low = "medium";
         medium = "medium";
         high = "xhigh";
         xhigh = "xhigh";
