@@ -92,6 +92,23 @@ let
     && (container name).bindMounts ? "/run/secrets/signing-key";
 
   homeFiles = name: (container name).config.home-manager.users.agent.home.file;
+  homeActivation = name: (container name).config.home-manager.users.agent.home.activation;
+
+  # Pure data imported directly: the pi plugin and tier config is what keeps
+  # a model or plugin bump honest, and every property below is visible at
+  # eval time.
+  piData = import ../modules/pi-coding-agent/settings.nix;
+  # Plugin membership is the whole declarative surface for plugins now -
+  # a pure data file with no versions, so it imports directly and asserts
+  # against it without building anything.
+  pluginMembership = import ../modules/devbox/plugins.nix;
+  llmCatalog = import ../modules/local-llm/models.nix;
+  servedIds = map (id: "${llmCatalog.provider}/${id}") (
+    builtins.concatMap (
+      name: [ name ] ++ builtins.attrNames (llmCatalog.models.${name}.aliases or { })
+    ) llmCatalog.enabled
+  );
+  tiers = piData.superagents.superagents.modelTiers;
   # writeShellScriptBin names its derivation after the binary, so the package
   # name is the command an agent session actually types.
   pkgNamed =
@@ -184,21 +201,49 @@ let
         (container "devbox").config.services.paseo.hostnames == [ "devbox.example.ts.net" ]
         && (container "workbox").config.services.paseo.hostnames == [ "workbox.example.ts.net" ];
     }
-    # The three below take no per-instance argument - every container gets
+    # The six below take no per-instance argument - every container gets
     # them from the same container.nix - so one instance pins them rather
     # than repeating each assertion three times.
     {
-      # Same store path for both, not two equivalent copies: the flattening
-      # derivation is what makes the tree discoverable at all, and a second
-      # source would let the two agents drift apart on a rev bump.
-      name = "both agents are seeded from one shared skills tree";
+      # Nix declares plugin membership only - which plugins, no versions,
+      # no refs, no hashes - so nothing version-shaped can go stale
+      # between rebuilds. What this check can see at eval time: pi's
+      # specs are single-sourced from the one membership file, and
+      # neither agent may also get a standalone skills link, which would
+      # list every skill twice. (The claude side - the version-less
+      # enabledPlugins entry in its settings seed - is a build-time fact
+      # the container image build exercises, not eval-assertable.) A
+      # temporary version pin against a bad release belongs in the
+      # membership file itself - see its header - so this test asserts
+      # single-sourcing, not pin-freeness.
+      name = "plugins are declared as versionless membership, not double-seeded";
       ok =
         let
           files = homeFiles "devbox";
+          membership = pluginMembership;
         in
-        files ? ".pi/agent/skills"
-        && files ? ".claude-state/skills"
-        && files.".pi/agent/skills".source == files.".claude-state/skills".source;
+        piData.settings.packages == membership.piPackages
+        && !(files ? ".claude-state/skills")
+        && !(files ? ".pi/agent/skills");
+    }
+    {
+      # pi's settings.json must be a seeded writable copy - the home-
+      # manager module's store-symlink write skipped via settings = {},
+      # and the activation an install (0644), not a link - or pi's own
+      # `pi install` / `pi remove` / `pi update` commands fail silently
+      # against it and live updates stop working.
+      name = "pi settings.json is seeded as a writable copy, not a store link";
+      ok =
+        let
+          files = homeFiles "devbox";
+          activations = homeActivation "devbox";
+        in
+        !(files ? ".pi/agent/settings.json")
+        && (container "devbox").config.home-manager.users.agent.programs
+          ."pi-coding-agent".settings
+          == { }
+        && (lib.hasInfix ".pi/agent/settings.json" activations.piSettings.data)
+        && (lib.hasInfix "-m 0644" activations.piSettings.data);
     }
     {
       # Claude has no APPEND_SYSTEM.md equivalent and its
@@ -212,8 +257,46 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      name = "both fan-out tiers ship in the container";
-      ok = pkgNamed "devbox" "pi-cheap" != null && pkgNamed "devbox" "pi-max" != null;
+      # llama-swap serves one model at a time; a tier resolving to anything
+      # but the served instance would evict the parent's loaded model
+      # mid-session.
+      name = "every superagents tier maps to a served model or alias";
+      ok = lib.all (t: lib.elem t.model servedIds) (lib.attrValues tiers);
+    }
+    {
+      # Fan-out children must take the smaller declared window so a
+      # parallel wave compacts before it thrashes the KV pool.
+      name = "the cheap tier uses the default model's budget alias";
+      ok =
+        let
+          aliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
+        in
+        aliases == [ ] || tiers.cheap.model == "${llmCatalog.provider}/${builtins.head aliases}";
+    }
+    {
+      # Low effort on the NVFP4 build trades per-turn speed for retries, so
+      # medium is the floor - both for superagents tiers and for the
+      # chat-template map every pi request goes through.
+      name = "nothing requests low thinking";
+      ok =
+        lib.all (
+          t:
+          lib.elem (t.thinking or "medium") [
+            "medium"
+            "high"
+            "xhigh"
+          ]
+        ) (lib.attrValues tiers)
+        && lib.all (
+          name:
+          lib.all (
+            v:
+            lib.elem v [
+              "medium"
+              "xhigh"
+            ]
+          ) (lib.attrValues (llmCatalog.models.${name}.thinkingLevels or { }))
+        ) llmCatalog.enabled;
     }
   ];
 

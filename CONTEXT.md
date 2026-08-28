@@ -33,5 +33,5 @@ One or more services running inside a NixOS container (nspawn), reached from any
 _Avoid_: container (alone), VM, microservice (the cloud meaning)
 
 **Devbox**:
-A microserver instance running the coding-agent stack (pi and Claude with seeded skills and fan-out tiers). The instance names `devbox` and `workbox` are deliberate and stable — they are the container names and tailnet hostnames typed daily.
+A microserver instance running the coding-agent stack (pi and Claude with Superpowers skills and subagent fan-out tiers, declared as versionless membership in nix). The instance names `devbox` and `workbox` are deliberate and stable — they are the container names and tailnet hostnames typed daily.
 _Avoid_: dev shell, workspace, kiosk, the module's old name (it is an instance, not the machinery)
