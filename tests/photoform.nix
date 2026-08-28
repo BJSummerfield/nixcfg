@@ -35,7 +35,6 @@ let
               caddy = {
                 enable = true;
                 acmeEmail = "test@example.com";
-                fallback = "192.168.100.41:443";
               };
               photoform = {
                 enable = true;
@@ -146,12 +145,11 @@ let
       ok = !(host.sops.secrets ? photoform-paypal-client-id) && !(host.sops.templates ? "photoform.env");
     }
     {
-      name = "the edge routes the booking hostname to the container";
+      name = "the edge terminates TLS for the booking hostname and reverse-proxies to the container";
       ok =
         host.mine.system.caddy.routes.photoform.hostnames == [
           "booking.summerfieldphotography.com"
         ]
-        && host.mine.system.caddy.routes.photoform.mode == "tls"
         && host.mine.system.caddy.routes.photoform.target == "192.168.100.51:8080";
     }
     {

@@ -45,6 +45,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # The public mail domains the caddy edge terminates for this container's
+    # https listener. mx1 only: the apex has no A record, so Caddy's HTTP-01
+    # could never validate it - and an unvalidatable name in a route fails
+    # the whole certificate, mx1 included. Stalwart keeps its own ACME and
+    # certs for both names (deliberate, 2026-08-28: direct access and a
+    # rollback of the edge still get a valid cert); the edge is the public
+    # presenter only.
+    mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
+      routes.stalwart = {
+        hostnames = [ "mx1.brianjs.com" ];
+        target = "https://192.168.100.41:443";
+      };
+    };
+
     system.activationScripts.stalwart-dirs = ''
       mkdir -p ${hostStateDir}
       chmod 700 ${hostStateDir}
@@ -63,8 +77,9 @@ in
       enable = true;
       internalInterfaces = [ "ve-stalwart" ];
       externalInterface = config.mine.system.externalInterface;
-      # When the caddy edge owns host 443, its layer4 fallback replaces
-      # this DNAT byte-for-byte; the mail-port forwards stay unconditional.
+      # When the caddy edge owns host 443, it terminates TLS for the mail
+      # domains and proxies to this container's https listener; the
+      # mail-port forwards stay unconditional.
       forwardPorts = [
         {
           sourcePort = 25;
