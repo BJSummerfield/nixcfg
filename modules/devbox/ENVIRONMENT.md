@@ -30,22 +30,36 @@ your commands, so tools behave normally.
   is out of scope - report it rather than retrying.
 - You have unrestricted network access.
 
-## Delegating work (pi only)
+## Subagents
 
-Two wrappers spawn a child pi with a fixed model and thinking level:
+Subagent fan-out comes from the Superpowers plugin - its entry points,
+roles and tier mapping are the plugin's own documentation to read, not
+environment facts. The one environment fact that matters: all children
+hit the same single local inference server, so keep parallel fan-out
+to two or three tasks - a wider wave queues rather than going faster.
 
-- `pi-cheap "<task>"` - smaller declared context window, medium thinking.
-  Use this for fan-out.
-- `pi-max "<task>"` - full window, maximum thinking. Use for a single
-  hard review or debugging pass.
+## Updating agent plugins
 
-A child is a separate process, so its context never enters yours - only
-what it prints comes back. Both are strictly read-only: they have no
-`bash`, so a child cannot run `git`, `gh`, or write files. Do that work
-yourself and hand the child what it needs. For a diff, redirect it to a
-file and pass the path (`git diff <base> > /tmp/review.patch`); the
-redirect prints nothing, so you spend no context on a diff you never read.
+Both agents run Superpowers (pi plus the superagents and web-search
+plugins). Nix declares membership only - which plugins, no versions, no
+hashes - in modules/devbox/plugins.nix, so nothing version-shaped goes
+stale between rebuilds. Versions float, and a running container is
+updated with:
 
-Run several at once with `&` and `wait`. Keep it to two or three: they
-all share one inference server, so a wider fan-out queues rather than
-going faster.
+- pi: `pi update --extensions` - latest npm packages, and moves the
+  superpowers clone to the default branch's HEAD.
+- Claude: `claude plugin update` - follows the official marketplace's
+  current pin.
+
+Updates persist across rebuilds: a rebuild re-seeds the membership specs
+and the tier mapping, never the versions. A fresh container gets the pi
+plugins on pi's first start; for Claude run the one-time bootstrap:
+`claude plugin marketplace add anthropics/claude-plugins-official` then
+`claude plugin install superpowers@claude-plugins-official` - the
+seeded enabledPlugins entry turns it on.
+
+A bad release? Pin it down for the interim: add a version or ref to the
+pi spec in modules/devbox/plugins.nix and rebuild. The claude plugin id
+carries no version slot (its version is pinned by the official
+marketplace) - the claude-side lever is temporarily removing the
+enabledPlugins entry in modules/devbox/container.nix.

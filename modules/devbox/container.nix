@@ -17,24 +17,6 @@ let
 
   envContract = ./ENVIRONMENT.md;
 
-  # Model ids for the fan-out tiers below are *derived*, never typed out.
-  # The superagents modelTiers these replaced derived them the same way, and
-  # that link is what keeps a model bump honest: models.nix deliberately
-  # leaves the previous model in `enabled` while a new one proves out, so a
-  # hardcoded id would keep resolving - to the wrong, still-served model -
-  # and llama-swap would evict the parent's loaded instance mid-session.
-  llm = import ../local-llm/models.nix;
-
-  qualified = id: "${llm.provider}/${id}";
-
-  defaultAliases = builtins.attrNames (llm.models.${llm.default}.aliases or { });
-  # Assumes at most one alias, as pi's settings.nix does: with two, `head`
-  # picks the lexicographically first, which is arbitrary - pick deliberately
-  # if a second is ever added. With none, pi-cheap falls back to the full
-  # default model: same served instance, so no swap and no 404 - it only
-  # loses the smaller declared window.
-  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
-
   # Pi needs bun and node on PATH or plugins crash at startup.
   # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
@@ -68,57 +50,23 @@ let
     exec ${lib.getExe pkgs.gh} "$@"
   '';
 
-  agentSkills = import ./skills.nix pkgs;
-
-  # Fan-out tiers. These replace pi-superagents' modelTiers: pi's own CLI
-  # takes provider/id:thinking, which is exactly what that config resolved.
-  #
-  # Strictly read-only - deliberately no `bash`, which is a write vector
-  # regardless of the other tools (a child given bash creates files with
-  # `echo >`). The parent does all git and gh work and hands children a
-  # pre-materialised diff path.
-  #
-  # `-ns` because a child is given its instructions directly; it should not
-  # pay for the whole skill-description block. Calls piWrapped rather than
-  # the mkAgent `pi` on PATH so a child does not re-enter direnv, which the
-  # parent has already loaded.
-  mkTier =
-    {
-      name,
-      model,
-      thinking,
-    }:
-    pkgs.writeShellScriptBin name ''
-      exec ${piWrapped}/bin/pi -p \
-        --model ${model}:${thinking} \
-        --tools read,grep,find,ls \
-        --no-session -ns "$@"
-    '';
-
-  tierPkgs = [
-    # cheap is medium, not low: the Qwen3.8 model card warns that low effort
-    # on multi-turn agentic work trades per-turn speed for retries.
-    (mkTier {
-      name = "pi-cheap";
-      model = qualified budgetModel;
-      thinking = "medium";
-    })
-    (mkTier {
-      name = "pi-max";
-      model = qualified llm.default;
-      thinking = "xhigh";
-    })
-  ];
+  # Plugin membership (which plugins, no versions) - the single source for
+  # both agents; see the file's header for the update commands and the
+  # escalation path.
+  plugins = import ./plugins.nix;
 
   # Claude keeps plugins and preferences in one small file. Generated with
-  # enabledPlugins empty so a container never comes up with Superpowers on.
-  # Auth lives separately in .credentials.json and is untouched.
+  # the one declared plugin enabled - membership only, no version: the
+  # plugin id cannot go stale, and the plugin state itself (marketplace
+  # clone, cache, installed_plugins.json) is claude-owned, installed and
+  # updated by claude. A rebuild re-seeds this file only. Auth lives
+  # separately in .credentials.json and is untouched.
   claudeSettings = pkgs.writeText "claude-settings.json" (
     builtins.toJSON {
       theme = "dark";
       inputNeededNotifEnabled = true;
       agentPushNotifEnabled = true;
-      enabledPlugins = { };
+      enabledPlugins = { "${plugins.claudePluginId}" = true; };
     }
   );
 in
@@ -161,7 +109,6 @@ in
   # `claude` fails in a way that gives no hint why.
   environment.systemPackages =
     agentPkgs
-    ++ tierPkgs
     ++ [ ghWrapped ]
     ++ (with pkgs; [
       curl
@@ -209,13 +156,8 @@ in
           "/var/lib/paseo/worktrees"
         ];
 
-        home.packages = agentPkgs ++ tierPkgs;
+        home.packages = agentPkgs;
         home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
-
-        # Both agents read the same flattened tree. Read-only store symlinks
-        # are correct: neither writes skill files.
-        home.file.".pi/agent/skills".source = agentSkills;
-        home.file.".claude-state/skills".source = agentSkills;
 
         # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
         # agent — so these settings are the whole mechanism. All three are
@@ -265,6 +207,18 @@ in
           run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
             "$HOME/.claude-state/settings.json"
         '';
+
+        # Superpowers plugin state for Claude is claude-owned, not seeded:
+        # the marketplace clone, the plugin cache and installed_plugins
+        # .json are installed and updated by claude itself (`claude plugin
+        # install` on a fresh container, `claude plugin update` for the
+        # current marketplace pin). Seeding any of it from the store would
+        # be read-only litter that claude's own rewrites die against - the
+        # same EROFS failure mode as the settings files above - and a
+        # pinned version would go stale between rebuilds. What nix owns
+        # for claude is the enabledPlugins entry in the settings seed
+        # (membership, no version) and this activation's copy-not-link
+        # mechanics.
       };
   };
 

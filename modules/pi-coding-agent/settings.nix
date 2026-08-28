@@ -1,6 +1,8 @@
-# Pi config data. Model list derived from local-llm/models.nix.
+# Pi config data. Model list derived from local-llm/models.nix; plugin
+# membership (no versions) in devbox/plugins.nix.
 let
   llm = import ../local-llm/models.nix;
+  plugins = import ../devbox/plugins.nix;
 
   # Aliases inherit the parent's thinkingLevels: same instance, same template.
   thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
@@ -39,6 +41,13 @@ let
   redtruckModels = builtins.concatMap entriesFor llm.enabled;
 
   qualified = id: "${llm.provider}/${id}";
+  defaultEntry = llm.models.${llm.default};
+  defaultAliases = builtins.attrNames (defaultEntry.aliases or { });
+  # Assumes at most one alias: with two, `head` picks the lexicographically
+  # first, which is arbitrary - pick deliberately if a second is ever added.
+  # With none, the cheap tier falls back to the full default model: same
+  # served instance, so no swap - it only loses the smaller declared window.
+  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
 in
 {
   settings = {
@@ -52,11 +61,17 @@ in
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "high";
-    # What pi installs its `packages` with; bun is on PATH via extra-packages.nix.
+    # What pi installs its `packages` with; bun is on PATH via
+    # extra-packages.nix. Bun, not node: node refuses
+    # --experimental-strip-types in pi-superagents' postinstall.
     npmCommand = [ "bun" ];
-    packages = [
-      "npm:pi-web-access"
-    ];
+    # Membership, not pins: the specs come from ../devbox/plugins.nix and
+    # carry no versions or refs, so nothing here can go stale between
+    # rebuilds. pi installs a missing package at startup (latest, for an
+    # unpinned spec); floating an installed one to latest is the manual
+    # `pi update --extensions` - a rebuild re-seeds these same specs and
+    # never undoes a live update.
+    packages = plugins.piPackages;
   };
 
   models = {
@@ -89,6 +104,48 @@ in
           supportsThinkingTokenBudget = true;
         };
         models = redtruckModels;
+      };
+    };
+  };
+
+  # pi-superagents tier config, seeded at
+  # ~/.pi/agent/extensions/subagent/config.json. The bundled defaults point
+  # cheap/balanced/max at providers we don't have (opencode-go, openai), and
+  # an unpinned tier that resolved to the *other* redtruck model would make
+  # llama-swap tear down the loaded vllm instance mid-session - so every
+  # tier gets the session model.
+  # cheap (what sp-recon, sp-research and sp-implementer declare in their
+  # frontmatter) takes the -48k llama-swap alias: same instance, smaller
+  # declared window, so parallel subagents compact before the wave can
+  # thrash the KV pool (sized in models.nix from the measured pool).
+  # max (sp-review, sp-debug) runs one-at-a-time and keeps the full window.
+  # Thinking levels flow to vLLM via the chat-template compat block above.
+  # cheap is medium, not low: the Qwen3.8 model card warns low effort on
+  # multi-turn agentic tasks trades per-turn speed for retries - models.nix
+  # maps pi's low/minimal to medium for the same reason. max gets xhigh for
+  # review/debug depth. Each subagent session holds one constant level, so
+  # vLLM prefix caching is unaffected.
+  # 1.14 also reserves a "reasoning" tier name, but no bundled agent
+  # references it - configure it here only when something does.
+  # Note: home.nix copies this over the file on every activation, so a
+  # /sp-settings TUI edit survives only until the next rebuild - edit here
+  # instead. It is a copy and not a store symlink because the extension
+  # itself rewrites the file at startup; see the comment there.
+  superagents = {
+    superagents = {
+      modelTiers = {
+        cheap = {
+          model = qualified budgetModel;
+          thinking = "medium";
+        };
+        balanced = {
+          model = qualified llm.default;
+          thinking = "medium";
+        };
+        max = {
+          model = qualified llm.default;
+          thinking = "xhigh";
+        };
       };
     };
   };
