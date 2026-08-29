@@ -118,6 +118,10 @@
             inherit nixpkgs inputs;
             system = "x86_64-linux";
           };
+          stalwart = import ./tests/stalwart.nix {
+            inherit nixpkgs inputs;
+            system = "x86_64-linux";
+          };
         }
         # Unlike the eval-only checks above, these are real builds — though
         # `nix flake check` skips any check whose output a substituter already
