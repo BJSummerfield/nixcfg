@@ -63,8 +63,10 @@ in
       enable = true;
       internalInterfaces = [ "ve-stalwart" ];
       externalInterface = config.mine.system.externalInterface;
-      # When the caddy edge owns host 443, its layer4 fallback replaces
-      # this DNAT byte-for-byte; the mail-port forwards stay unconditional.
+      # When the caddy edge owns host 443, its mx1 route is the only path
+      # to Stalwart's public listener (caddy terminates TLS, then
+      # reverse-proxies it over TLS); the mail-port forwards stay
+      # unconditional.
       forwardPorts = [
         {
           sourcePort = 25;

@@ -56,8 +56,9 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
-      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
-      # passthru.cache = true and must arrive as substituted closures.
+      # 1 GB of RAM cannot compile photoform: it carries
+      # passthru.cache = true and must arrive as a substituted closure.
+      # caddy is stock nixpkgs and substitutes from cache.nixos.org.
       privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
@@ -73,12 +74,20 @@
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      # SNI edge on 443. Fallback-only until photoform lands: every
-      # connection behaves exactly like the old DNAT into Stalwart.
+      # SNI edge on 443: caddy is the sole TLS authority for every name it
+      # claims. The mail route terminates with its own Let's Encrypt cert
+      # and proxies back to Stalwart's public listener over TLS — Stalwart
+      # keeps its own ACME and certs, caddy is only the public presenter
+      # (two LE accounts then hold certs for the same names; deliberate).
+      # The brianjs.com apex is unclaimed by design (no A record).
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
-        fallback = "192.168.100.41:443";
+        routes.mail = {
+          hostnames = [ "mx1.brianjs.com" ];
+          target = "https://192.168.100.41:443";
+          extraConfig = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
+        };
       };
       # Booking site behind the edge, substituted from the cache: 1 GB of
       # RAM cannot compile it.
