@@ -1,4 +1,3 @@
-# The nspawn guest — everything here runs inside the container.
 { llamaSwapConfig, cudaEnabled }:
 {
   config,

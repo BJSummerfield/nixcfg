@@ -1,4 +1,3 @@
-# Catalog → llama-swap YAML config.
 # Per-model args so multiple backends can coexist.
 {
   lib,
@@ -17,8 +16,8 @@ let
   # container name is cosmetic (--rm --replace)
   containerName = name: "vllm-${lib.toLower name}";
 
-  # one flag per line, in vLLM's documented order; these become the body of
-  # the `cmd: |` block scalar
+  # One flag per line, in vLLM's documented order; becomes the body of the
+  # `cmd: |` block scalar
   vllmArgs = name: m: [
     "${podmanCli} run --rm --replace --pull=never"
     "--name ${containerName name}"

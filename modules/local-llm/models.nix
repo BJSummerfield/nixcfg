@@ -1,5 +1,3 @@
-# Model catalog. Pure data — no pkgs/config/arguments.
-# Add a model: write its attrset, add name to `enabled`, rebuild.
 {
   provider = "redtruck";
   baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
@@ -24,25 +22,19 @@
       };
 
       reasoning = true;
-      # Native context is 262144, and KV is cheap here (only 16 of 64
-      # layers are full attention; the rest are linear with constant
-      # state). 131072 is the conservative start on the 31GiB card —
-      # weights are ~21.8GiB. Measured 2026-08-15 via /metrics at this
-      # setting: kv_cache_size_tokens=203579 (~1.55 concurrent full
-      # windows). Only in-flight requests hold KV (no prefix caching —
-      # vLLM auto-disables it for this hybrid-attention model), and
-      # maxNumSeqs caps concurrency at 3, so the binding case is a full
-      # wave: 3 x (48k alias window + 8k output) ≈ 168k of the pool.
-      # A max-length main-session request overlapping two alias
-      # requests can transiently overcommit; vLLM resolves that by
-      # preempting one sequence, not sustained thrashing.
+      # Native context is 262144; KV is cheap (only 16 of 64 layers are
+      # full attention, the rest linear with constant state). Measured
+      # 2026-08-15 via /metrics: kv_cache_size_tokens=203579 (~1.55
+      # concurrent full windows). No prefix caching (vLLM auto-disables
+      # it for this hybrid-attention model) and maxNumSeqs caps
+      # concurrency at 3, so the binding case is a full wave:
+      # 3 x (48k alias + 8k output) ≈ 168k; transient overcommit
+      # resolves by preemption, not thrashing. 131072 is the
+      # conservative start on the 31GiB card (weights ~21.8GiB).
       maxModelLen = 131072;
-      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
-      # only compacts above contextWindow - reserveTokens (16384 default,
-      # dist/core/compaction/compaction.js). headroom must therefore be
-      # >= maxTokens - 16384 plus margin for token-count drift, or there is
-      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
-      # sends a request vLLM must 400.
+      # pi compacts above contextWindow - 16384 reserve, so headroom must be
+      # >= maxTokens - 16384 plus token-count margin or pi can send a request
+      # vLLM must 400.
       headroom = 20480;
       maxTokens = 32768;
       # Model-card thinking-mode settings (temperature 1.0, unlike 3.6's 0.6).
@@ -52,14 +44,11 @@
         top_k = 20;
         min_p = 0.0;
       };
-      # pi thinking levels → chat-template reasoning_effort values. The 3.8
-      # template accepts only xhigh/medium/low and raises on anything else
-      # (it maps high → xhigh itself; we map eagerly so every pi level lands
-      # on an accepted value). low is deliberately never sent: on this NVFP4
-      # build, low effort degrades multi-turn agentic work enough that the
-      # retries cost more than the per-turn speedup buys, so medium is the
-      # floor for every pi level. 3.6 has no effort support — no map there,
-      # and the unused kwarg is harmless to its template.
+      # pi thinking levels → reasoning_effort. The 3.8 template accepts only
+      # xhigh/medium/low and raises on anything else (it maps high → xhigh),
+      # so we map eagerly. low is never sent: on this NVFP4 build it
+      # degrades multi-turn agentic work, so medium is the floor. 3.6 has no
+      # effort support — the unused kwarg is harmless to its template.
       thinkingLevels = {
         minimal = "medium";
         low = "medium";
@@ -84,10 +73,9 @@
         reasoningParser = "qwen3";
       };
 
-      # Aliases share the running instance — no model swap. 48k sized
-      # from the measured pool above: pi compacts past contextWindow -
-      # 16384 reserve, so this gives fan-out subagents ~32k of working
-      # room (16k at the old 32k window was forcing early compaction).
+      # Aliases share the running instance — no model swap. 48k sized from
+      # the measured pool: past pi's 16384 compaction reserve, subagents get
+      # ~32k working room (the old 32k window forced early compaction).
       aliases."Qwen3.8-27B-NVFP4-48k" = {
         displayName = "Qwen3.8 27B NVFP4 48k budget (redtruck)";
         contextWindow = 49152;
@@ -122,13 +110,10 @@
       reasoning = true;
       # measured on 31GiB card; drop maxModelLen if pool shrinks
       maxModelLen = 131072;
-      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
-      # only compacts above contextWindow - reserveTokens (16384 default,
-      # dist/core/compaction/compaction.js). headroom must therefore be
-      # >= maxTokens - 16384 plus margin for token-count drift, or there is
-      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
-      # sends a request vLLM must 400. 8192 left an 8k band and a final
-      # review died in it at exactly maxModelLen + 1 tokens.
+      # pi compacts above contextWindow - 16384 reserve, so headroom must be
+      # >= maxTokens - 16384 plus token-count margin or pi can send a request
+      # vLLM must 400. 8192 left an 8k band that a final review died in at
+      # maxModelLen + 1 tokens.
       headroom = 20480;
       maxTokens = 32768;
       sampling = {
@@ -211,10 +196,9 @@
     };
   };
 
-  # 3.8 proved out; 3.6 is out of `enabled` now, which drops it from
+  # 3.8 proved out; 3.6 is out of `enabled`, which drops it from
   # llama-swap, pi, and the weight fetches. Its catalog entry (hashes and
-  # tuning) stays, so re-enabling it is a one-line change if a fallback
-  # is ever wanted again.
+  # tuning) stays, so re-enabling is a one-line fallback if wanted again.
   enabled = [ "Qwen3.8-27B-NVFP4" ];
   default = "Qwen3.8-27B-NVFP4";
 }

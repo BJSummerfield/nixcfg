@@ -1,4 +1,3 @@
-# Catalog entry → a directory of the model's HuggingFace files.
 # linkFarm of fetchurl'd blobs: store dedupes, partial download retries one shard.
 { lib, pkgs }:
 modelName: entry:

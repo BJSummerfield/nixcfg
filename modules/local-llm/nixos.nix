@@ -17,14 +17,13 @@ let
   # cuda.enable is separate from nvidia.enable — podman socket grants root-equivalent host access.
   cudaEnabled = cfg.cuda.enable;
 
-  # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
-  # v0.26.0: first release after Qwen3.8's day-0 support announcement; the
-  # 3.8 models are Qwen3.5-architecture (hybrid linear attention) and get
-  # their optimized kernels here.
+  # Upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
+  # v0.26.0: first release after Qwen3.8's day-0 support (3.8 models are
+  # Qwen3.5-architecture and get their optimized kernels here).
   vllmImage = "docker.io/vllm/vllm-openai:v0.26.0";
   podmanSock = "unix:///run/podman/podman.sock";
-  # Drives HOST podman over the bind-mounted API socket; vLLM itself
-  # is the upstream OCI image (vllmImage above), not a nix build.
+  # Drives HOST podman over the bind-mounted API socket; vLLM is the
+  # upstream image (vllmImage), not a nix build.
   podmanCli = "${lib.getExe' pkgs.podman "podman"} --url ${podmanSock}";
   # CUDA talks to these directly instead of /dev/dri
   nvidiaDevices = [
@@ -77,9 +76,8 @@ in
         message = "local-llm: models.nix alias names must not collide with model names (a colliding alias shadows the model in llama-swap and duplicates its id in the clients)";
       }
       {
-        # A key with a `/` (the natural mistake: HF repo ids have one) or a
-        # space passes nix's attr syntax but breaks podman --name and splits
-        # --served-model-name on whitespace, both only at runtime.
+        # `/` (HF repo ids have one) or a space passes nix's attr syntax but
+        # breaks podman --name and --served-model-name, only at runtime.
         assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null) (
           builtins.attrNames catalog.models ++ allAliasNames
         );
@@ -119,11 +117,10 @@ in
       chmod 755 /var/lib/local-llm
     '';
 
-    # The vLLM model containers run on the HOST via podman - nesting a
-    # container runtime inside the nspawn container would mean cgroup and
-    # overlayfs misery. Inside the container llama-swap only runs the podman
-    # *client* against this API socket (root-equivalent on the host; fine for
-    # a single-user box, don't reuse this pattern on a shared machine).
+    # vLLM containers run on the HOST via podman (nesting a runtime in the
+    # nspawn container = cgroup/overlayfs misery); llama-swap only runs the
+    # podman client against this socket. The socket is root-equivalent on the
+    # host — fine for a single-user box, don't reuse on a shared machine.
     virtualisation.podman.enable = lib.mkIf cudaEnabled true;
     hardware.nvidia-container-toolkit.enable = lib.mkIf cudaEnabled true;
     systemd.sockets.podman = lib.mkIf cudaEnabled { wantedBy = [ "sockets.target" ]; };
@@ -138,19 +135,16 @@ in
       ];
     };
 
-    # The declarative half of the image pin: bumping vllmImage re-runs this
-    # on the next switch. Model startup itself never pulls (--pull=never in
-    # the llama-swap cmds) so a missing image fails fast instead of
+    # Re-runs on the next switch when vllmImage is bumped. Models never pull
+    # themselves (--pull=never), so a missing image fails fast instead of
     # downloading 10+ GB inside the health-check window.
     systemd.services.vllm-image-pull = lib.mkIf cudaEnabled {
       description = "pull the pinned vLLM OCI image";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      # Type=exec so neither boot nor nixos-rebuild switch blocks on the
-      # download; it continues in the background (watch with
-      # journalctl -u vllm-image-pull -f). A model started mid-download
-      # fails fast until the image lands.
+      # Type=exec so boot and switch don't block on the download; a model
+      # started mid-download fails fast until the image lands.
       serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
