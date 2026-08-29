@@ -4,7 +4,7 @@
 
 **Goal:** Replace the custom caddy-l4 edge build with stock nixpkgs Caddy so every 443 route is a TLS route, delete the raw-byte fallback, and make the mail domain an ordinary caddy-terminated route.
 
-**Architecture:** The `mine.system.caddy` module stops compiling the layer4 plugin and instead renders one Caddy vhost per claimed hostname (stock caddy is the sole TLS authority, automatic ACME over the port-80 HTTP-01 lane). Routes gain an optional `extraConfig` for the upstream transport; the VPS registers a `mail` route that reverse-proxies `https://192.168.100.41:443` (Stalwart's public listener) with a TLS-insecure upstream. The custom build, its vendor hash, and the 8443 handoff disappear; caddy substitutes from `cache.nixos.org`.
+**Architecture:** The `mine.system.caddy` module stops compiling the layer4 plugin and instead renders one Caddy vhost per claimed hostname (stock caddy is the sole TLS authority, automatic ACME over the port-80 HTTP-01 lane). Routes gain an optional `extraConfig` for the upstream transport; the VPS registers a `mail` route that reverse-proxies `https://192.168.100.41:443` (Stalwart's public listener) over a *verified* upstream hop (`tls_server_name mx1.brianjs.com`). The custom build, its vendor hash, and the 8443 handoff disappear; caddy substitutes from `cache.nixos.org`.
 
 **Tech Stack:** NixOS configuration (flake), nixpkgs at pin `9fbb54b33e91ee4ca368e35a78e0613c720600b3` (stock caddy 2.11.4), GitHub Actions (`check.yml`, unchanged), Let's Encrypt ACME, restic-free verification via `openssl`/`curl`.
 
@@ -88,9 +88,11 @@ Replace the entire contents of `modules/caddy/nixos.nix` with:
 # claimed hostname, terminating with its own Let's Encrypt certificate
 # (automatic ACME over the port 80 HTTP-01 lane) and reverse-proxying to
 # the target. A route's `extraConfig` tunes the upstream transport — a
-# TLS upstream needs `transport http { tls tls_insecure_skip_verify }`. Every
-# connection no route claims (unknown SNI, no SNI) fails closed: it gets
-# the default vhost's cert and a TLS name mismatch, never a data path.
+# TLS upstream needs a `transport http` block. Every connection no route
+# claims (unknown SNI, no SNI) fails closed at the handshake: there is no
+# default vhost and no on-demand issuance, so Caddy serves no certificate
+# at all and aborts with a TLS internal_error alert (verified against
+# caddy 2.11.4) — never a data path.
 {
   lib,
   config,
@@ -99,6 +101,19 @@ Replace the entire contents of `modules/caddy/nixos.nix` with:
 }:
 let
   cfg = config.mine.system.caddy;
+  # The nixpkgs module pipes the rendered Caddyfile through `caddy fmt`,
+  # which owns indentation entirely — so this only has to get the block
+  # structure right, never the whitespace.
+  routeBody =
+    r:
+    if r.extraConfig == "" then
+      "reverse_proxy ${r.target}"
+    else
+      lib.concatStrings [
+        "reverse_proxy ${r.target} {\n"
+        (lib.removeSuffix "\n" r.extraConfig)
+        "\n}"
+      ];
 in
 {
   options.mine.system.caddy = {
@@ -132,13 +147,19 @@ in
               '';
             };
             extraConfig = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              example = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
+              type = lib.types.lines;
+              default = "";
+              example = ''
+                transport http {
+                  tls_server_name mx1.brianjs.com
+                }
+              '';
               description = ''
-                Extra Caddyfile lines nested inside the route's
-                block-form reverse_proxy, e.g. the upstream
-                transport for a TLS target.
+                Extra Caddyfile directives nested inside the route's
+                reverse_proxy block, e.g. the upstream transport for a
+                TLS target. Write them unescaped in an indented string;
+                `caddy fmt` reindents the result, so the indentation
+                here is free-form.
               '';
             };
           };
@@ -152,6 +173,12 @@ in
       {
         assertion = lib.allUnique (lib.concatMap (r: r.hostnames) (lib.attrValues cfg.routes));
         message = "mine.system.caddy: a hostname is claimed by more than one route";
+      }
+      {
+        # genAttrs over an empty list yields no vhost, so such a route
+        # would silently claim nothing rather than fail.
+        assertion = lib.all (r: r.hostnames != [ ]) (lib.attrValues cfg.routes);
+        message = "mine.system.caddy: a route claims no hostnames and would render nothing";
       }
     ];
 
@@ -181,11 +208,7 @@ in
         lib.mapAttrsToList (
           _: r:
           lib.genAttrs r.hostnames (_: {
-            extraConfig =
-              if r.extraConfig != null then
-                "reverse_proxy ${r.target} {\n${r.extraConfig}\n}"
-              else
-                "reverse_proxy ${r.target}";
+            extraConfig = routeBody r;
           })
         ) cfg.routes
       );
@@ -245,15 +268,29 @@ Edit `hosts/vps/default.nix` in two places.
       # claims. The mail route terminates with its own Let's Encrypt cert
       # and proxies back to Stalwart's public listener over TLS — Stalwart
       # keeps its own ACME and certs, caddy is only the public presenter
-      # (two LE accounts then hold certs for the same names; deliberate).
-      # The brianjs.com apex is unclaimed by design (no A record).
+      # (two LE accounts then hold certs for the same names; deliberate,
+      # and different name sets, so they sit in different Let's Encrypt
+      # duplicate-certificate buckets). The brianjs.com apex is unclaimed
+      # by design (no A record).
+      #
+      # The upstream hop is verified, not skipped: Stalwart presents its
+      # own LE cert for mx1.brianjs.com, so `tls_server_name` sends that
+      # SNI over the veth and checks it against the public roots. This is
+      # deliberately load-bearing — if Stalwart's ACME ever stops renewing
+      # (it has no challenge path of its own while caddy owns 80 and
+      # terminates 443), webmail breaks loudly here instead of mail TLS on
+      # 25/465/993 failing silently a quarter later.
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
         routes.mail = {
           hostnames = [ "mx1.brianjs.com" ];
           target = "https://192.168.100.41:443";
-          extraConfig = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
+          extraConfig = ''
+            transport http {
+              tls_server_name mx1.brianjs.com
+            }
+          '';
         };
       };
 ```
@@ -320,14 +357,13 @@ mx1.brianjs.com {
 
 	reverse_proxy https://192.168.100.41:443 {
 		transport http {
-			tls
-			tls_insecure_skip_verify
+			tls_server_name mx1.brianjs.com
 		}
 	}
 }
 ```
 
-The `mx1` vhost must carry the `reverse_proxy https://192.168.100.41:443` line with a nested `transport http { tls tls_insecure_skip_verify }` block; there must be no `layer4`, `:8443`, or raw `route { proxy … }` lines anywhere.
+The `mx1` vhost must carry the `reverse_proxy https://192.168.100.41:443` line with a nested `transport http { tls_server_name mx1.brianjs.com }` block; there must be no `layer4`, `:8443`, or raw `route { proxy … }` lines anywhere.
 
 - [ ] **Step 10: Run the caddyfile and vps eval checks**
 
@@ -348,9 +384,10 @@ git status
 git commit -m "refactor(caddy): make every route a TLS route; drop the caddy-l4 build
 
 Caddy is now the sole TLS authority for every route it claims: the
-layer4 raw-byte fallback is deleted (unknown SNI fails closed with a
-TLS name mismatch) and mx1.brianjs.com rides an ordinary TLS route with
-a TLS-insecure upstream to Stalwart's public listener. The edge is
+layer4 raw-byte fallback is deleted (unknown SNI fails closed at the
+handshake with no certificate presented) and mx1.brianjs.com rides an
+ordinary TLS route whose upstream hop verifies Stalwart's own
+certificate via `tls_server_name`. The edge is
 stock nixpkgs caddy 2.11.4, substituted from cache.nixos.org — the
 custom build, its vendor hash, and the recurring Go-bump breakage class
 are gone. Stalwart keeps its own ACME and certs; the apex stays
@@ -382,8 +419,9 @@ gh pr create \
   --title "refactor(caddy): make every route a TLS route; drop the caddy-l4 build" \
   --body "Implements docs/superpowers/specs/2026-08-28-stock-caddy-edge-design.md.
 
-- Caddy is the sole TLS authority for every route it claims; the layer4 raw-byte fallback is deleted (unknown SNI now fails closed with a TLS name mismatch).
-- mx1.brianjs.com rides an ordinary TLS route: caddy terminates with its own LE cert and reverse-proxies https://192.168.100.41:443 with a TLS-insecure upstream. Stalwart keeps its own ACME/certs; the apex stays unclaimed (no A record).
+- Caddy is the sole TLS authority for every route it claims; the layer4 raw-byte fallback is deleted (unknown SNI now fails closed at the handshake — no certificate is presented at all).
+- mx1.brianjs.com rides an ordinary TLS route: caddy terminates with its own LE cert and reverse-proxies https://192.168.100.41:443 with a *verified* upstream (`tls_server_name mx1.brianjs.com`), which doubles as the tripwire for Stalwart's own cert. Stalwart keeps its own ACME/certs; the apex stays unclaimed (no A record).
+- Deploying is gated on two database-managed Stalwart settings (see Task 3): its ACME challenge must be `dns-01`, and `use-x-forwarded` must be on.
 - The edge is stock nixpkgs caddy (2.11.4 at our pin), substituted from cache.nixos.org — the caddy-l4 build, its vendor hash, and the recurring Go-bump breakage class are gone. No CI workflow changes: photoform and encode_queue keep the cache marker, so the push loop's empty-list guard still passes.
 
 Deploy (VPS): nixos-rebuild switch on the verified ref after CI is green; rollback with nixos-rebuild switch --rollback."
@@ -405,24 +443,38 @@ Expected: the `verified` SHA equals the new `main` HEAD (the merge commit). If `
 
 ---
 
-### Task 3: Pre-deploy diagnostics (record old state; does not gate)
+### Task 3: Pre-deploy blockers and diagnostics
 
-Operator task: run on the VPS (ssh; 1 GB box) and from the devbox. Record every output — it is the baseline Task 4 is verified against.
+Operator task: run on the VPS (ssh; 1 GB box), in the Stalwart admin UI, and from the devbox. Steps 1-2 **gate the deploy**; steps 3-5 only record a baseline.
 
 **Interfaces:**
-- Consumes: the live old caddy-l4 edge on the VPS.
-- Produces: a recorded baseline (direct-to-Stalwart HTTP code, via-edge behavior, devbox TLS handshake outcome).
+- Consumes: the live old caddy-l4 edge on the VPS; Stalwart's database-managed settings.
+- Produces: a go/no-go on the two Stalwart settings, plus a recorded baseline (direct-to-Stalwart HTTP code, via-edge behavior, devbox TLS handshake outcome).
 
-- [ ] **Step 1: On the VPS, record direct and via-edge behavior**
+- [ ] **Step 1 (BLOCKER): Stalwart's ACME challenge type**
+
+In the Stalwart admin UI (Settings -> TLS/ACME), read the configured challenge, the current cert's expiry, and the recent ACME log.
+
+Expected/required: the challenge is `dns-01`. If it is `tls-alpn-01` or `http-01`, **stop — do not deploy.** Caddy owns :80 (HTTP-01 gone) and terminates :443 (TLS-ALPN-01 gone), and the two cannot share HTTP-01 for the same `mx1.brianjs.com`. Stalwart's cert also serves 25/465/993, which bypass caddy, so the failure is silent for up to 90 days and then takes mail TLS down. Switch Stalwart to `dns-01` first, or decide to feed it caddy's certificate instead, and re-plan.
+
+Also note whether renewals are *already* failing: if so, that resolves the open question about whether the l4 fallback was broken (Task 3 Step 4 below), and it needs fixing regardless of this migration.
+
+- [ ] **Step 2 (BLOCKER): turn on Stalwart's `use-x-forwarded`**
+
+After this change every webmail/JMAP/CalDAV request reaches Stalwart from `192.168.100.40`. Stalwart's auth-failure banning and rate limits key on source IP, so without this an internet brute-force can get the gateway banned and lock out every HTTP user at once.
+
+Set `use-x-forwarded` on Stalwart's HTTP listener in the same window as the deploy — caddy already sends `X-Forwarded-For`, and trusting XFF *without* a proxy in front is worse than either end state, so the two changes go together.
+
+- [ ] **Step 3: On the VPS, record direct and via-edge behavior**
 
 ```sh
 curl -sk -o /dev/null -w 'direct:  %{http_code}\n' https://192.168.100.41:443/
 curl -sk -o /dev/null -w 'via-edge:%{http_code}\n' --resolve mx1.brianjs.com:443:127.0.0.1 https://mx1.brianjs.com/
 ```
 
-Expected: `direct:  200`. `via-edge` is either `200` (fallback serving raw bytes) or `000` (handshake dies — corroborates the probe finding that the fallback path is broken; the spec's devbox probe saw EOF on it). Either outcome is acceptable; note which.
+Expected: `direct:  200`. `via-edge` is either `200` (fallback serving raw bytes) or `000` (handshake dies). Note which. Do *not* read `000` as proof the fallback is broken: an abrupt post-ClientHello death is also exactly what caddy does for an unmatched SNI, so this observation does not discriminate between the two explanations — Step 1's ACME log does.
 
-- [ ] **Step 2: From the devbox, record the external fallback probe**
+- [ ] **Step 4: From the devbox, record the external fallback probe**
 
 ```sh
 curl -skI --max-time 10 https://mx1.brianjs.com/; echo "exit: $?"
@@ -430,7 +482,7 @@ curl -skI --max-time 10 https://mx1.brianjs.com/; echo "exit: $?"
 
 Expected before deploy: the TLS handshake to `mx1.brianjs.com:443` (the fallback path from an external vantage point) dies — empty response with `exit: 52` (empty reply) or a TLS error. If it unexpectedly returns 200, the probe finding was vantage-specific; still fine to proceed, note it.
 
-- [ ] **Step 3: Note the time**
+- [ ] **Step 5: Note the time**
 
 Record when the baseline was taken. The deploy (Task 4) should happen at a quiet moment — the only 443 traffic that can transiently mismatch is `mx1.brianjs.com` mail-HTTPS during Caddy's startup cert issuance; IMAP 993 / SMTPS 465 / SMTP 25 bypass caddy entirely and are unaffected.
 
@@ -495,7 +547,13 @@ Expected: `HTTP/2 200` (Stalwart web/JMAP) and `HTTP/2 200` (booking, regression
 curl -sI --max-time 10 --resolve unknown.example:443:178.104.51.195 https://unknown.example/; echo "exit: $?"
 ```
 
-Expected: a TLS certificate/name-mismatch error (`exit: 60`) — the unmatched SNI gets a claimed name's cert and no data path. (Equivalently on the VPS: `echo | openssl s_client -connect 127.0.0.1:443 -servername unknown.example 2>/dev/null | openssl x509 -noout -subject` shows a claimed name, not `unknown.example`.)
+Expected: the handshake aborts and **no certificate is presented** — caddy has no default vhost and no on-demand issuance, so it sends a TLS `internal_error` alert (alert 80). curl reports an SSL connect error (`exit: 35`), not a name mismatch (`exit: 60`). Verified against caddy 2.11.4 locally on 2026-08-29 for both an unknown SNI and an absent SNI.
+
+This is the correct fails-closed result; do not read it as a broken deploy. On the VPS the same check reads `no peer certificate available`:
+
+```sh
+echo | openssl s_client -connect 127.0.0.1:443 -servername unknown.example 2>&1 | grep -E "no peer certificate|alert"
+```
 
 - [ ] **Step 7: Devbox probe that EOF'd before now succeeds**
 
@@ -506,13 +564,24 @@ curl -skI https://mx1.brianjs.com/
 echo | openssl s_client -connect mx1.brianjs.com:443 -servername mx1.brianjs.com 2>/dev/null | openssl x509 -noout -issuer
 ```
 
-Expected: `HTTP/2 200` and a Let's Encrypt issuer — this retroactively confirms the old fallback path was broken (Task 3 Step 2 showed the handshake dying from this same vantage point).
+Expected: `HTTP/2 200` and a Let's Encrypt issuer. Record this as "the new path works" — it is *not* proof the old fallback was broken (see Task 3 Step 3), and it does not need to be for the migration to be correct.
 
-- [ ] **Step 8: Real mailbox round-trip (operator, from a real client)**
+- [ ] **Step 8: Stalwart's cert and client IPs are both healthy**
+
+The `tls_server_name` upstream *verifies* Stalwart's own certificate, so this hop is the tripwire for Task 3 Step 1. On the VPS:
+
+```sh
+curl -sI https://mx1.brianjs.com/           # 502 here means Stalwart's cert failed verification
+echo | openssl s_client -connect 192.168.100.41:443 -servername mx1.brianjs.com 2>/dev/null | openssl x509 -noout -enddate
+```
+
+Expected: 200, and an `notAfter` date comfortably in the future. Then make one deliberate failed webmail login and confirm Stalwart's log records the *real* client IP, not `192.168.100.40` — that is Task 3 Step 2 taking effect. If it shows the gateway, revert or fix `use-x-forwarded` before leaving the box: the ban logic is live.
+
+- [ ] **Step 9: Real mailbox round-trip (operator, from a real client)**
 
 From Thunderbird/phone against the real mailbox: send a test message and fetch it — IMAP 993 (bypasses caddy; regression) and JMAP over `https://mx1.brianjs.com` (through the new route). Both must work before this migration is considered done.
 
-- [ ] **Step 9: Confirm the nightlies**
+- [ ] **Step 10: Confirm the nightlies**
 
 Expected on the next autoUpgrade (04:00 window): the VPS pulls the same verified config with no caddy compilation and no behavior change. No action needed — just do not be surprised by a green autoUpgrade; if it is red, `sudo nixos-rebuild switch --rollback` and investigate.
 

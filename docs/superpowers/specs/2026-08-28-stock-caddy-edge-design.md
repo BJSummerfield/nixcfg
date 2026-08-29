@@ -1,7 +1,7 @@
 # Stock Caddy edge: dropping the caddy-l4 build
 
 Date: 2026-08-28
-Status: implemented on branch plan/base-caddy (2026-08-28); transport syntax corrected to the caddy 2.11.4 block form
+Status: implemented on branch plan/base-caddy (2026-08-28); transport syntax corrected to the caddy 2.11.4 block form; revised 2026-08-29 after an adversarial review (verified upstream TLS, corrected fails-closed and rate-limit claims, added the Stalwart ACME / X-Forwarded-For deploy blockers)
 Hosts affected: `vps` only (sole user of `mine.system.caddy`)
 
 ## Problem
@@ -28,10 +28,14 @@ production: from the devbox, every TLS handshake to
 `mx1.brianjs.com:443` (the fallback path; any SNI, TLS 1.2/1.3, old or new
 ClientHellos) dies with EOF right after the ClientHello, while the same
 hellos to caddy's terminated route succeed. A decisive on-VPS test (direct
-`curl -sk` to `192.168.100.41:443`) was left pending. This migration makes
-that finding moot: the raw fallback is deleted, and `mx1.brianjs.com` rides
-the caddy-terminated path, which is verified working from the same vantage
-point.
+`curl -sk` to `192.168.100.41:443`) was left pending, so the root cause is
+**not** established. Treat this as a symptom, not as evidence: an abrupt
+death right after the ClientHello is also exactly what Caddy does for an
+unmatched SNI (see the behavior table below), so the same observation fits
+"mx1 was reaching Caddy's HTTPS server instead of the l4 fallback". That
+alternative matters, because it would mean Stalwart's own TLS-ALPN-01
+renewals are already failing today. The migration stands on the
+custom-build argument above regardless; it does not rest on this probe.
 
 ## Decision: make every route a TLS route (option A)
 
@@ -60,8 +64,8 @@ DNS facts (checked 2026-08-28 via dns.google):
 | Traffic | Before | After |
 |---|---|---|
 | `booking.summerfieldphotography.com:443` | caddy TLS route → `192.168.100.51:8080` | unchanged |
-| `mx1.brianjs.com:443` | layer4 fallback → raw bytes to `192.168.100.41:443` | caddy TLS route: terminates with its own LE cert, `reverse_proxy https://192.168.100.41:443` with a `transport http` upstream (`tls`, `tls_insecure_skip_verify`) |
-| unknown/absent SNI on 443 | raw bytes to Stalwart | fails closed: unmatched SNI gets the default vhost's cert → TLS name mismatch; no data path |
+| `mx1.brianjs.com:443` | layer4 fallback → raw bytes to `192.168.100.41:443` | caddy TLS route: terminates with its own LE cert, `reverse_proxy https://192.168.100.41:443` with a `transport http` upstream that verifies Stalwart's own cert (`tls_server_name mx1.brianjs.com`) |
+| unknown/absent SNI on 443 | raw bytes to Stalwart | fails closed at the handshake: no default vhost and no on-demand issuance, so Caddy serves no certificate and aborts with a TLS `internal_error` alert (alert 80). No data path. |
 | :80 | caddy HTTP-01 + redirect | unchanged |
 | 25/465/993, 9987 | DNAT / direct | unchanged (never touched caddy) |
 
@@ -71,9 +75,32 @@ Consequences, accepted:
   Stalwart's. Both are LE certs for the same name — clients validating
   against public roots notice nothing.
 - **Stalwart keeps its own ACME and certs (deliberate, user constraint).**
-  Caddy is only the public presenter. Two LE accounts then hold certs for
-  the same names — fine, rate limits are per account. Documented in the
-  config as a note, not automated.
+  Caddy is only the public presenter. Two LE issuers then hold certs for
+  overlapping names. That is safe here, but *not* because "rate limits are
+  per account" — Let's Encrypt's Duplicate Certificate limit (5/week) is
+  keyed on the **exact set of names**, across accounts. It is safe because
+  the sets differ: Caddy issues for `[mx1.brianjs.com]`, Stalwart for
+  `[brianjs.com, mx1.brianjs.com]`. Adding the apex to Caddy would collide
+  the buckets.
+- **Stalwart has no ACME challenge path left, and this is a deploy
+  blocker, not an accepted consequence.** Caddy owns :80 (so HTTP-01 is
+  gone) and terminates :443 (so TLS-ALPN-01 is gone); before this change
+  the l4 fallback handed unmatched-SNI 443 bytes to Stalwart, which gave
+  TLS-ALPN-01 a path. Caddy and Stalwart also cannot share HTTP-01 for the
+  same `mx1.brianjs.com`. Only DNS-01 survives. This matters well beyond
+  the web listener: Stalwart's cert also serves 25/465/993, which bypass
+  Caddy entirely, so a silent renewal failure surfaces as broken mail TLS
+  up to 90 days after a deploy that looked green. **Confirm Stalwart's
+  configured challenge type before deploying** (see Verification).
+- **Client IPs collapse to the gateway.** Every webmail/JMAP/CalDAV
+  request now reaches Stalwart from `192.168.100.40` instead of the real
+  client. Stalwart's auth-failure banning and rate limits key on source
+  IP, so an internet brute-force against webmail can get the *gateway*
+  banned and lock out every HTTP user at once; access logs lose client IP
+  too. Caddy already sends `X-Forwarded-For`; Stalwart's `use-x-forwarded`
+  must be turned on in the same window as the deploy (it is DB-managed, so
+  a UI step, not Nix). Trusting XFF without a proxy in front is worse than
+  either end state, so the two changes go together.
 - The only SNI that resolves to the VPS is claimed, so nothing legitimate
   loses a path by deleting the fallback.
 
@@ -109,7 +136,11 @@ Consequences, accepted:
    caddy.routes.mail = {
      hostnames = [ "mx1.brianjs.com" ];
      target = "https://192.168.100.41:443";
-     extraConfig = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
+     extraConfig = ''
+       transport http {
+         tls_server_name mx1.brianjs.com
+       }
+     '';
    };
    ```
    with a comment carrying the two deliberate facts: Stalwart keeps its
@@ -164,8 +195,7 @@ mx1.brianjs.com {
 
 	reverse_proxy https://192.168.100.41:443 {
 		transport http {
-			tls
-			tls_insecure_skip_verify
+			tls_server_name mx1.brianjs.com
 		}
 	}
 }
@@ -175,8 +205,9 @@ mx1.brianjs.com {
 
 - **Transient mail-443 gap at deploy**: Caddy must issue the new LE cert
   for `mx1.brianjs.com` at startup (http-01; seconds). During that window
-  the name gets the default vhost's cert → mismatch. Single-user box;
-  deploy at a quiet moment. IMAP/SMTPS are unaffected (bypass caddy).
+  the name is unclaimed, so the handshake aborts with no certificate at
+  all (`internal_error`) rather than mismatching. Single-user box; deploy
+  at a quiet moment. IMAP/SMTPS are unaffected (bypass caddy).
 - **Rollback**: `nixos-rebuild switch --rollback` on the VPS. The VPS's
   local store holds the previous generation (GC-protected by the
   `/etc/system` profile roots), so the rollback reinstalls it without
@@ -198,6 +229,23 @@ CI (before the VPS touches anything):
 - `caddyfile-vps` runs `caddy adapt` over the new shape with the stock
   binary; the photoform eval test host still evaluates.
 
+**Pre-deploy blockers (these gate the deploy, not the merge).** Neither
+is fixable in Nix — both live in Stalwart's database — so they are
+checklist items, not code:
+
+1. **Stalwart's ACME challenge type.** In the Stalwart admin UI (or
+   `stalwart-cli`), read the configured ACME challenge. If it is
+   `tls-alpn-01` or `http-01`, **do not deploy**: neither has a path left
+   once Caddy owns :80 and terminates :443, and the failure is silent for
+   up to 90 days before it takes mail TLS on 25/465/993 down with it.
+   Switch Stalwart to `dns-01` first, or accept and plan for feeding it
+   Caddy's certificate instead. Also check the current cert's expiry and
+   the ACME log while there — if renewals are already failing, that
+   settles the open question about the l4 fallback.
+2. **`use-x-forwarded`.** Turn it on in Stalwart in the same window as
+   the deploy, so the gateway's IP does not become the only client IP
+   Stalwart's ban logic ever sees.
+
 Pre-deploy diagnostic on the VPS (records the old state; does not gate):
 
 ```sh
@@ -211,10 +259,20 @@ Post-deploy on the VPS:
 - `openssl s_client -servername mx1.brianjs.com` → Let's Encrypt issuer.
 - `curl -sI https://mx1.brianjs.com/` → 200 (Stalwart web/JMAP).
 - `curl -sI https://booking.summerfieldphotography.com/` → 200 (regression).
-- Unknown SNI → TLS name mismatch (fails closed).
+- Unknown SNI → the handshake aborts with a TLS `internal_error` alert
+  (alert 80) and *no* certificate is presented. This is the correct
+  fails-closed result; do not read it as a broken deploy.
+- Stalwart's own cert is still valid and its expiry has not moved
+  backwards — the `tls_server_name` upstream verifies it, so `curl -sI
+  https://mx1.brianjs.com/` failing with a 502 is the loud signal that
+  Stalwart's ACME has stopped renewing.
+- A deliberate failed webmail login shows the *real* client IP in
+  Stalwart's log, not `192.168.100.40` (confirms `use-x-forwarded`).
 - Real mailbox round-trip from a client (Thunderbird/phone), JMAP and IMAP.
 - From the devbox: the same probes that EOF'd on the old fallback path now
-  succeed — this also retroactively confirms the fallback was broken.
+  succeed. Note this as "the new path works", not as proof the old one was
+  broken — see the probe caveat above; only the pre-deploy blocker check
+  settles that.
 
 ## Out of scope
 
@@ -222,6 +280,10 @@ Post-deploy on the VPS:
   edge daemon and a duplicated SNI registry instead of removing one).
 - Claiming the `brianjs.com` apex (no A record; revisit if one is ever
   added).
-- Turning off Stalwart's ACME (explicitly kept on).
-- Any Stalwart, photoform, DNS, or firewall-topology change beyond the
-  comments listed above.
+- Turning off Stalwart's ACME (explicitly kept on) — but see the
+  pre-deploy blockers: keeping it on requires it to have a working
+  challenge, which this change removes for everything but dns-01.
+- Any Nix-level Stalwart, photoform, DNS, or firewall-topology change
+  beyond the comments listed above. The two Stalwart settings in the
+  pre-deploy blockers are database-managed and deliberately not
+  automated here.

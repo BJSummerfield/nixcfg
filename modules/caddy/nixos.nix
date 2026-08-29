@@ -3,9 +3,11 @@
 # claimed hostname, terminating with its own Let's Encrypt certificate
 # (automatic ACME over the port 80 HTTP-01 lane) and reverse-proxying to
 # the target. A route's `extraConfig` tunes the upstream transport — a
-# TLS upstream needs `transport http { tls tls_insecure_skip_verify }`. Every
-# connection no route claims (unknown SNI, no SNI) fails closed: it gets
-# the default vhost's cert and a TLS name mismatch, never a data path.
+# TLS upstream needs a `transport http` block. Every connection no route
+# claims (unknown SNI, no SNI) fails closed at the handshake: there is no
+# default vhost and no on-demand issuance, so Caddy serves no certificate
+# at all and aborts with a TLS internal_error alert (verified against
+# caddy 2.11.4) — never a data path.
 {
   lib,
   config,
@@ -14,6 +16,19 @@
 }:
 let
   cfg = config.mine.system.caddy;
+  # The nixpkgs module pipes the rendered Caddyfile through `caddy fmt`,
+  # which owns indentation entirely — so this only has to get the block
+  # structure right, never the whitespace.
+  routeBody =
+    r:
+    if r.extraConfig == "" then
+      "reverse_proxy ${r.target}"
+    else
+      lib.concatStrings [
+        "reverse_proxy ${r.target} {\n"
+        (lib.removeSuffix "\n" r.extraConfig)
+        "\n}"
+      ];
 in
 {
   options.mine.system.caddy = {
@@ -47,13 +62,19 @@ in
               '';
             };
             extraConfig = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              example = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
+              type = lib.types.lines;
+              default = "";
+              example = ''
+                transport http {
+                  tls_server_name mx1.brianjs.com
+                }
+              '';
               description = ''
-                Extra Caddyfile lines nested inside the route's
-                block-form reverse_proxy, e.g. the upstream
-                transport for a TLS target.
+                Extra Caddyfile directives nested inside the route's
+                reverse_proxy block, e.g. the upstream transport for a
+                TLS target. Write them unescaped in an indented string;
+                `caddy fmt` reindents the result, so the indentation
+                here is free-form.
               '';
             };
           };
@@ -67,6 +88,12 @@ in
       {
         assertion = lib.allUnique (lib.concatMap (r: r.hostnames) (lib.attrValues cfg.routes));
         message = "mine.system.caddy: a hostname is claimed by more than one route";
+      }
+      {
+        # genAttrs over an empty list yields no vhost, so such a route
+        # would silently claim nothing rather than fail.
+        assertion = lib.all (r: r.hostnames != [ ]) (lib.attrValues cfg.routes);
+        message = "mine.system.caddy: a route claims no hostnames and would render nothing";
       }
     ];
 
@@ -96,11 +123,7 @@ in
         lib.mapAttrsToList (
           _: r:
           lib.genAttrs r.hostnames (_: {
-            extraConfig =
-              if r.extraConfig != null then
-                "reverse_proxy ${r.target} {\n${r.extraConfig}\n}"
-              else
-                "reverse_proxy ${r.target}";
+            extraConfig = routeBody r;
           })
         ) cfg.routes
       );
