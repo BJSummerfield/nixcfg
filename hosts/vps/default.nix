@@ -56,8 +56,9 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
-      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
-      # passthru.cache = true and must arrive as substituted closures.
+      # 1 GB of RAM cannot compile photoform: it carries
+      # passthru.cache = true and must arrive as a substituted closure.
+      # caddy is stock nixpkgs and substitutes from cache.nixos.org.
       privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
@@ -73,12 +74,34 @@
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      # SNI edge on 443. Fallback-only until photoform lands: every
-      # connection behaves exactly like the old DNAT into Stalwart.
+      # SNI edge on 443: caddy is the sole TLS authority for every name it
+      # claims. The mail route terminates with its own Let's Encrypt cert
+      # and proxies back to Stalwart's public listener over TLS — Stalwart
+      # keeps its own ACME and certs, caddy is only the public presenter
+      # (two LE accounts then hold certs for the same names; deliberate,
+      # and different name sets, so they sit in different Let's Encrypt
+      # duplicate-certificate buckets). The brianjs.com apex is unclaimed
+      # by design (no A record).
+      #
+      # The upstream hop is verified, not skipped: Stalwart presents its
+      # own LE cert for mx1.brianjs.com, so `tls_server_name` sends that
+      # SNI over the veth and checks it against the public roots. This is
+      # deliberately load-bearing — if Stalwart's ACME ever stops renewing
+      # (it has no challenge path of its own while caddy owns 80 and
+      # terminates 443), webmail breaks loudly here instead of mail TLS on
+      # 25/465/993 failing silently a quarter later.
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
-        fallback = "192.168.100.41:443";
+        routes.mail = {
+          hostnames = [ "mx1.brianjs.com" ];
+          target = "https://192.168.100.41:443";
+          extraConfig = ''
+            transport http {
+              tls_server_name mx1.brianjs.com
+            }
+          '';
+        };
       };
       # Booking site behind the edge, substituted from the cache: 1 GB of
       # RAM cannot compile it.

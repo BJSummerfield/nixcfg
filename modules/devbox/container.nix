@@ -66,7 +66,9 @@ let
       theme = "dark";
       inputNeededNotifEnabled = true;
       agentPushNotifEnabled = true;
-      enabledPlugins = { "${plugins.claudePluginId}" = true; };
+      enabledPlugins = {
+        "${plugins.claudePluginId}" = true;
+      };
     }
   );
 in

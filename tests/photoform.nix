@@ -35,7 +35,6 @@ let
               caddy = {
                 enable = true;
                 acmeEmail = "test@example.com";
-                fallback = "192.168.100.41:443";
               };
               photoform = {
                 enable = true;
@@ -151,8 +150,15 @@ let
         host.mine.system.caddy.routes.photoform.hostnames == [
           "booking.summerfieldphotography.com"
         ]
-        && host.mine.system.caddy.routes.photoform.mode == "tls"
         && host.mine.system.caddy.routes.photoform.target == "192.168.100.51:8080";
+    }
+    {
+      # The edge terminates with stock nixpkgs caddy (substituted from
+      # cache.nixos.org on the VPS), not a custom plugin build: the caddy-l4
+      # build pinned this repo to plugin-vendor semantics and broke on
+      # nixpkgs' Go bumps alone (2026-08-28).
+      name = "the edge runs the stock caddy package";
+      ok = host.services.caddy.package == pkgs.caddy;
     }
     {
       # restic reads the host side of the bind mount, with the container

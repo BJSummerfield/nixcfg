@@ -62,7 +62,6 @@ in
     mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
       routes.photoform = {
         hostnames = [ "booking.summerfieldphotography.com" ];
-        mode = "tls";
         target = "192.168.100.51:8080";
       };
     };
