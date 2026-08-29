@@ -40,9 +40,8 @@ in
     ];
 
     # Unfree CUDA packages aren't on cache.nixos.org. The only consumer left is
-    # nvtopPackages.nvidia (builds against cuda_nvml_dev) - vLLM now arrives as
-    # a prebuilt OCI image and llama.cpp's CUDA build is gone, so there is no
-    # large CUDA compile here any more, and with it no need to clamp max-jobs.
+    # nvtopPackages.nvidia (builds against cuda_nvml_dev) - there is no large
+    # CUDA compile here any more, so no need to clamp max-jobs.
     nix.settings = {
       substituters = [ "https://cuda-maintainers.cachix.org" ];
       trusted-public-keys = [

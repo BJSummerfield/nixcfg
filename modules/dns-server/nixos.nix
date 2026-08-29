@@ -1,4 +1,3 @@
-# AdGuard Home + Unbound DNS container.
 # Bring-up:
 #   sudo nixos-container root-login dns
 #   tailscale up --hostname=dns --advertise-tags=tag:solo-node --accept-dns=false
@@ -66,9 +65,8 @@ in
     };
 
     # mutableSettings=true makes AdGuardHome.yaml hand-edited runtime state
-    # (admin hash, custom rules, client names). Copied live, container
-    # running: stopping the dns container kills LAN DNS, and a torn copy of
-    # a rarely-rewritten yaml self-heals in the next snapshot.
+    # (admin hash, custom rules, client names). Copied live: stopping the dns
+    # container kills LAN DNS; a torn rarely-rewritten yaml self-heals next snapshot.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "/var/lib/adguardhome-data" ];
     };

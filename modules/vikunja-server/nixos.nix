@@ -1,4 +1,3 @@
-# Vikunja task manager container.
 # Bring-up:
 #   sudo nixos-container root-login vikunja
 #   tailscale up --hostname=vikunja --advertise-tags=tag:solo-node
@@ -40,10 +39,9 @@ in
     };
 
     # Tailscale state and the DB dump are the only things persisted on the
-    # host directly. Vikunja files + Postgres data live inside the
-    # container's own filesystem at /var/lib/nixos-containers/vikunja/,
-    # which survives restarts and rebuilds; the nightly dump surfaced at
-    # /var/lib/vikunja-dumps is what mine.backups ships off-site.
+    # host directly; Vikunja files + Postgres data live in the container's
+    # rootfs (/var/lib/nixos-containers/vikunja/), which survives rebuilds.
+    # The nightly dump at /var/lib/vikunja-dumps is what mine.backups ships.
     system.activationScripts.vikunja-dirs = ''
       mkdir -p /var/lib/tailscale-vikunja
       chmod 700 /var/lib/tailscale-vikunja
@@ -57,7 +55,6 @@ in
       hostAddress = "192.168.100.22";
       localAddress = "192.168.100.23";
 
-      # tun is needed for tailscale network
       allowedDevices = [
         {
           modifier = "rwm";
@@ -80,9 +77,8 @@ in
           hostPath = cfg.jwtSecretFile;
           isReadOnly = true;
         };
-        # Surfaces the nightly pg_dump on the host so the host-side restic
-        # job (modules/backups/nixos.nix) can ship it. The container's
-        # tmpfiles rule re-owns the mount to its postgres user on start.
+        # Surfaces the nightly pg_dump on the host for the host-side restic
+        # job; the container's tmpfiles rule re-owns it to postgres.
         "/var/lib/postgresql/dumps" = {
           hostPath = "/var/lib/vikunja-dumps";
           isReadOnly = false;
@@ -129,10 +125,9 @@ in
             ];
           };
 
-          # Nightly DB dump, written where the bind mount surfaces it on the
-          # host as /var/lib/vikunja-dumps for the host-side restic job.
-          # Written as postgres via -Fc so restores work across Postgres
-          # versions; the tmp-then-mv keeps restic from shipping a torn dump.
+          # Nightly DB dump for the host-side restic job; -Fc so restores
+          # work across Postgres versions, and tmp-then-mv keeps restic
+          # from shipping a torn dump.
           systemd.services.vikunja-db-dump = {
             description = "Dump Vikunja Postgres DB for backup";
             serviceConfig = {
@@ -161,14 +156,12 @@ in
           services.tailscale.enable = true;
 
           networking = {
-            # needed to get dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

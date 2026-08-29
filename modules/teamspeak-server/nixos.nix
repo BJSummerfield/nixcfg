@@ -1,4 +1,3 @@
-# TeamSpeak server container.
 # Bring-up:
 #   sudo nixos-container root-login teamspeak
 #   tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node

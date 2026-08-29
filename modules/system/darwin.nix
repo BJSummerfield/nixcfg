@@ -1,4 +1,3 @@
-# Shared base configuration for darwin hosts.
 { pkgs, inputs, ... }:
 {
   system.stateVersion = 6;

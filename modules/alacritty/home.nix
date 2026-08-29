@@ -102,11 +102,10 @@ in
             white = "#${colors.base04}";
           };
           # Deliberately no indexed_colors. The base16 convention reassigns
-          # cube slots 16-21 to expose the palette's extra colours, but 16
-          # and 17 are the two darkest slots in the 6x6x6 cube (#000000 and
-          # #00005f). Any 256-colour program that quantizes a dark theme
-          # lands there and gets painted a bright pastel instead - which is
-          # what turned pi's background rosewater.
+          # cube slots 16-21 to the palette's extra colours, but 16/17 are
+          # the two darkest slots in the 6x6x6 cube; any 256-colour program
+          # that quantizes a dark theme lands there and gets painted a
+          # bright pastel instead - what turned pi's background rosewater.
         };
         window = {
           decorations = "buttonless";

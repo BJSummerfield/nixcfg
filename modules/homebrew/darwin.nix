@@ -1,4 +1,3 @@
-# Homebrew casks for GUI apps not well packaged by nixpkgs on darwin; undeclared casks are uninstalled.
 { config, inputs, ... }:
 {
   imports = [

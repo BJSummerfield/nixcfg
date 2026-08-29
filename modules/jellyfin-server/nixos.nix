@@ -1,4 +1,3 @@
-# Jellyfin media server container.
 # Bring-up:
 #   sudo nixos-container root-login jellyfin
 #   tailscale up --hostname=jellyfin --advertise-tags=tag:solo-node
@@ -34,7 +33,6 @@ in
       }
     ];
 
-    # Enable the NAS media share as persistent
     mine.system.nas.shares.media = {
       enable = true;
       persistent = true;
@@ -88,8 +86,7 @@ in
       hostAddress = "192.168.100.10";
       localAddress = "192.168.100.11";
 
-      # tun is needed for tailscale network
-      # renderD128 for hardware acceleration
+      # tun for Tailscale; renderD128 for hardware acceleration
       allowedDevices = [
         {
           modifier = "rwm";
@@ -142,16 +139,13 @@ in
 
           services.jellyfin.enable = true;
           networking = {
-            # needed to get the dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # Lan access
               allowedTCPPorts = [ 8096 ];
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

@@ -4,8 +4,7 @@
   ...
 }:
 let
-  # The module names this file through BOOKING_CONFIG; keeping the path in
-  # one place makes the two unable to drift.
+  # Also named from the module via BOOKING_CONFIG; one source, no drift.
   configPath = "share/photoform/production.toml";
 in
 rustPlatform.buildRustPackage {

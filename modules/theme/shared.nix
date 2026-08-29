@@ -44,12 +44,11 @@ in
     # Unconditional: home-manager modules (alacritty, fish, firefox, ...)
     # read themeConstants whether or not system theming is enabled.
     #
-    # Passed as a regular module arg rather than via extraSpecialArgs. A
-    # specialArg is baked into the type of home-manager.users, so touching
-    # any user's config would force the whole theme option tree; as a
-    # _module.args it is only forced by the options that actually read it.
-    # Nothing here needs it during `imports` resolution, which is the only
-    # thing a specialArg would buy.
+    # Passed as a regular module arg, not a specialArg: a specialArg is
+    # baked into the type of home-manager.users, so touching any user's
+    # config would force the whole theme option tree; as a _module.args it
+    # is only forced by the options that read it. Nothing needs it during
+    # `imports` resolution, the only thing a specialArg would buy.
     home-manager.sharedModules = [
       { _module.args.themeConstants = cfg.constants; }
     ];

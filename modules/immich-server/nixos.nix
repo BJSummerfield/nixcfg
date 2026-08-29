@@ -1,4 +1,3 @@
-# Immich photo server container.
 # Bring-up:
 #   sudo nixos-container root-login immich
 #   tailscale up --hostname=immich --advertise-tags=tag:solo-node
@@ -89,8 +88,7 @@ in
       hostAddress = "192.168.100.20";
       localAddress = "192.168.100.21";
 
-      # tun is needed for tailscale network
-      # renderD128 for hardware acceleration
+      # tun for Tailscale; renderD128 for hardware acceleration
       allowedDevices = [
         {
           modifier = "rwm";
@@ -180,14 +178,12 @@ in
           services.tailscale.enable = true;
 
           networking = {
-            # needed to get the dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

@@ -1,5 +1,4 @@
-# Stalwart mail server container.
-# Minimal local config — only boot-critical keys. Everything else is
+# Minimal local config — only boot-critical keys; everything else is
 # database-managed via web UI (certs, domains, accounts, DKIM, spam).
 #
 # Bring-up:
@@ -7,19 +6,12 @@
 #   tailscale up --hostname=stalwart --advertise-tags=tag:solo-node --accept-dns=false
 #   tailscale serve --bg --https=8443 8080
 #     (serve listens on 443 by default and collides with Stalwart's public
-#      https/JMAP/CalDAV listener -- use 8443. Admin UI:
+#      https/JMAP/CalDAV listener; admin UI:
 #      https://stalwart.mist-gamma.ts.net:8443)
 #
-# First login + config (all in the web UI):
-#   1. Log in: admin / the inline fallback password below. CHANGE it in the UI.
-#   2. Settings -> TLS/ACME: configure Let's Encrypt (directory, contact,
-#      domains = brianjs.com + mx1.brianjs.com). The cert won't issue until DNS
-#      points at the box.
-#   3. Settings -> Server/Hostname: set hostname to mx1.brianjs.com.
-#   4. Settings -> Authentication: set must-match-sender = true (multi-user safe).
-#   5. Domains: create brianjs.com -> read the generated DNS records (DKIM etc.)
-#      and add them at Namecheap.
-#   6. Accounts: create your real mailbox + aliases.
+# First login: admin / the inline fallback password below — CHANGE it in
+# the UI. Let's Encrypt is configured there too; the cert won't issue until
+# DNS points at the box.
 
 {
   lib,
@@ -110,7 +102,7 @@ in
         {
           modifier = "rwm";
           node = "/dev/net/tun";
-        } # tun for Tailscale
+        }
       ];
 
       bindMounts = {
@@ -154,13 +146,12 @@ in
             openFirewall = false;
             stateVersion = "24.11";
             settings = {
-              # ---- MINIMAL LOCAL CONFIG ----
-              # Only boot-critical keys are pinned local (read-only file). These
-              # are the stable settings the server needs BEFORE it can read the
-              # database: where the store is, what to listen on, and how to log in.
-              # Everything else is DB-managed in the web UI. Narrow patterns only;
-              # we deliberately avoid broad pins (no acme.*, no resolver.*) so a
-              # future upgrade adding sub-keys there won't fight us.
+              # MINIMAL LOCAL CONFIG
+              # Only boot-critical keys are pinned local (read-only file): the
+              # stable settings the server needs BEFORE it can read the
+              # database. Narrow patterns only - no broad pins (no acme.*, no
+              # resolver.*) so a future upgrade adding sub-keys there won't
+              # fight us.
               config.local-keys = [
                 "store.*"
                 "storage.data"
@@ -176,9 +167,8 @@ in
               ];
 
               server = {
-                # A bootstrap hostname so the server can start before you set the
-                # real one in the UI. Set the production hostname (mx1.brianjs.com)
-                # in the web UI; it then lives in the DB.
+                # A bootstrap hostname so the server can start before the
+                # production one is set in the web UI; it then lives in the DB.
                 hostname = "mx1.brianjs.com";
                 tls = {
                   enable = true;
@@ -212,9 +202,9 @@ in
                 };
               };
 
-              # Store: use the module's built-in 'db' RocksDB store at
-              # /var/lib/stalwart-mail/db. These role assignments are boot-critical
-              # (the server must know its store before reading DB config).
+              # Built-in 'db' RocksDB store at /var/lib/stalwart-mail/db;
+              # boot-critical - the server must know its store before
+              # reading DB config.
               storage = {
                 data = "db";
                 blob = "db";

@@ -107,10 +107,9 @@ in
       openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
     }) cfg;
 
-    # Bridge: propagate per-user mine.allowedUnfree up to system scope
-    # so the system-level allowUnfreePredicate sees them. Required because
-    # home-manager.useGlobalPkgs = true forbids HM modules from writing
-    # nixpkgs.config directly.
+    # Bridge: propagate per-user mine.allowedUnfree up to system scope so
+    # the system-level allowUnfreePredicate sees them - useGlobalPkgs
+    # forbids HM modules from writing nixpkgs.config directly.
     mine.allowedUnfree = lib.concatLists (
       lib.mapAttrsToList (userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );
