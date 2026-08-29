@@ -7,7 +7,7 @@ on:
 
 permissions:
   # Write scope is only exercised by the ref-advance step, but it applies to
-  # the whole job, including pull_request runs that never reach that step.
+  # the whole job, including PR runs that never reach that step.
   contents: write
 
 # Pushes to main share a group and stay serialized, so two cannot race the
@@ -20,8 +20,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Named once: the substituter below and the push target further down have
-    # to agree, and the hosts pin the same pair in modules/system/nixos.nix.
+    # Named once: substituter and push target must agree; hosts pin the same
+    # pair in modules/system/nixos.nix.
     env:
       CACHE_STORE: "s3://spacefunk-nix-cache?endpoint=s3.us-east-005.backblazeb2.com&region=us-east-005"
       CACHE_PUBLIC_KEY: "spacefunk-nix-cache-1:y3hr8PFKky16X7YDVH/PUDUG4gGEtrYcthUWKL4XrA4="
@@ -30,18 +30,17 @@ jobs:
         with:
           fetch-depth: 0   # a shallow clone cannot push: "shallow update not allowed"
 
-      # A runner starts with an empty store every run, so without the private
-      # cache as a substituter every PR recompiles what main already built.
+      # Runners start with an empty store, so without the private cache as a
+      # substituter every PR recompiles what main already built.
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             extra-substituters = ${{ env.CACHE_STORE }}
             extra-trusted-public-keys = ${{ env.CACHE_PUBLIC_KEY }}
 
-      # impureEnvVars are read from the builder's environment, which is
-      # nix-daemon under a multi-user install, so a shell export would not
-      # reach the fetch. The same is true of the cache read, so both
-      # credentials go in together.
+      # impureEnvVars are read from the builder's environment — nix-daemon
+      # under a multi-user install — so a shell export would not reach the
+      # fetch. The cache read is the same, so both credentials go in together.
       - name: Give nix-daemon the private-source and cache credentials
         env:
           PRIVATE_SRC_PAT: ${{ secrets.PRIVATE_SRC_PAT }}
@@ -51,7 +50,7 @@ jobs:
 
       - run: nix flake check --print-build-logs
 
-      # Runs before the ref advances so hosts never see a config whose closure
+      # Before the ref advances, so hosts never see a config whose closure
       # is not yet in the cache.
       - name: Push cached packages to the binary cache
         id: cache
@@ -61,9 +60,9 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_CACHE_APP_KEY }}
         run: |
           # outPath is a pure-eval attribute, so this names every path without
-          # building or fetching anything. A store path is hashed from the
-          # derivation's inputs, so the name alone identifies the build: any
-          # store holding that name holds those exact bits.
+          # building or fetching. A store path is hashed from the derivation's
+          # inputs, so the name alone identifies the build: any store holding
+          # that name holds those exact bits.
           cached=$(nix eval --json --apply \
             'ps:
                let names = builtins.filter (n: (ps.${n}.cache or false)) (builtins.attrNames ps);
@@ -79,12 +78,10 @@ jobs:
             exit 1
           fi
 
-          # Probed one at a time, and per package rather than in one batch: a
-          # `nix copy` of an already-cached path still realises it locally
-          # before discovering the destination has it, so naming an unchanged
-          # package here would drag its whole closure back down. Resolution
-          # walks .narinfo files — a few hundred bytes each, listing their own
-          # references — so no NAR is fetched either way.
+          # Probed one at a time: `nix copy` of an already-cached path still
+          # realises it locally before discovering the destination has it, so
+          # naming an unchanged package would drag its whole closure back down.
+          # Resolution walks .narinfo files only — no NAR is fetched either way.
           echo "probing the cache for: ${attrs[*]}"
           missing=()
           for i in "${!attrs[@]}"; do
@@ -97,12 +94,11 @@ jobs:
           done
 
           if [ "${#missing[@]}" -eq 0 ]; then
-            # Nothing was added, so nothing became garbage and the live set is
-            # exactly what the newest manifest already records. Writing another
-            # identical one would only push a real change further down the
-            # keep-N window, and the prune below has nothing to collect — so
-            # both are skipped, which is also what keeps a 400 MiB awscli2
-            # closure out of the common run.
+            # Nothing was added, so the live set is exactly what the newest
+            # manifest records; another identical one would only push a real
+            # change further down the keep-N window, the prune would collect
+            # nothing, and the 400 MiB awscli2 closure would come down for a
+            # common run — so both are skipped.
             echo "cache is complete; nothing to push"
             nix path-info -r --store "$CACHE_STORE" "${outs[@]}" > /dev/null
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -125,7 +121,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Not forced: after a force-push to main this is rejected as a
+      # Not forced: after a force-push to main this is rejected as
       # non-fast-forward and the run goes red, rather than moving the hosts
       # onto rewritten history.
       - name: Advance verified

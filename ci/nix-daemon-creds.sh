@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Both the private-source fetch and the S3 cache read happen inside
-# nix-daemon, not in the shell that invokes nix, so their credentials have to
-# land in the daemon's environment; a plain export would never reach them.
-# This is the CI counterpart to the sops EnvironmentFile the hosts use.
-#
-# AWS_ACCESS_KEY_ID is optional: a caller that only fetches private sources
-# and never substitutes should not be handed the cache key.
+# The private-source fetch and S3 cache read happen inside nix-daemon, not in
+# the shell that invokes nix, so the credentials must reach the daemon's
+# environment — a plain export would not. AWS_ACCESS_KEY_ID is optional for
+# callers that only fetch private sources and never substitute.
 set -euo pipefail
 
 : "${PRIVATE_SRC_PAT:?the private-source PAT is required}"

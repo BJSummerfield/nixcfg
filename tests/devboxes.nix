@@ -1,9 +1,7 @@
-# Pure-evaluation checks for the multi-instance devbox module. No VM here on
-# purpose: everything this refactor can break is a value derived from an
-# instance's attribute name, and all of those are visible at eval time. The
-# parts a VM could uniquely prove — that the tailnet join works, that
-# `tailscale serve` publishes — are the manual steps the module deliberately
-# keeps out of Nix.
+# Pure-eval checks for the multi-instance devbox module: every instance's
+# values derive from its attribute name and are visible at eval time, so no
+# VM is needed. Tailnet join and `tailscale serve` stay manual — the module
+# keeps them out of Nix.
 {
   nixpkgs,
   inputs,
@@ -13,15 +11,14 @@ let
   inherit (nixpkgs) lib;
   pkgs = nixpkgs.legacyPackages.${system};
 
-  # Only the two modules under test, plus the minimum NixOS needs to evaluate.
-  # Deliberately not modules/nixos.nix: importing the whole module set would
-  # make this check slow and couple it to modules it is not testing.
+  # Just the modules under test plus the minimum NixOS needs to evaluate; the
+  # full set (modules/nixos.nix) would be slow and couple to untested modules.
   host =
     (lib.nixosSystem {
       specialArgs = { inherit inputs; };
       modules = [
-        # modules/system/nixos.nix sets sops.age.sshKeyPaths, so its option
-        # tree has to be present even though nothing here decrypts anything.
+        # sops-nix must be present: modules/system/nixos.nix sets
+        # sops.age.sshKeyPaths, so its option tree has to evaluate.
         inputs.sops-nix.nixosModules.sops
         ../modules/system/nixos.nix
         ../modules/devbox/nixos.nix
@@ -47,8 +44,8 @@ let
                 hostAddress = "192.168.100.26";
                 localAddress = "192.168.100.27";
               };
-              # Overrides gitIdentity, to prove the override reaches the
-              # container and does not leak into the other instance.
+              # Overrides gitIdentity, to prove the override applies without
+              # leaking into the other instance.
               workbox = {
                 githubTokenFile = "/run/secrets/workbox-github-token";
                 paseoPasswordFile = "/run/secrets/workbox-paseo-password";
@@ -61,10 +58,9 @@ let
                   email = "other@example.com";
                 };
               };
-              # No signing key. Exists only to pin the other branch of the
-              # signing gate: getting that branch wrong produces a container
-              # whose git refuses to commit at all, which is worse than one
-              # that simply does not sign.
+              # No signing key: pins the no-key branch of the signing gate —
+              # a mistake there makes git refuse to commit at all, worse
+              # than not signing.
               nokey = {
                 githubTokenFile = "/run/secrets/nokey-github-token";
                 paseoPasswordFile = "/run/secrets/nokey-paseo-password";
@@ -94,13 +90,12 @@ let
   homeFiles = name: (container name).config.home-manager.users.agent.home.file;
   homeActivation = name: (container name).config.home-manager.users.agent.home.activation;
 
-  # Pure data imported directly: the pi plugin and tier config is what keeps
-  # a model or plugin bump honest, and every property below is visible at
+  # Pure data imported directly: the pi settings and tier config is what
+  # keeps a model or plugin bump honest, and every property is visible at
   # eval time.
   piData = import ../modules/pi-coding-agent/settings.nix;
-  # Plugin membership is the whole declarative surface for plugins now -
-  # a pure data file with no versions, so it imports directly and asserts
-  # against it without building anything.
+  # Plugin membership is the whole declarative surface — a pure data file
+  # with no versions, importable without building anything.
   pluginMembership = import ../modules/devbox/plugins.nix;
   llmCatalog = import ../modules/local-llm/models.nix;
   servedIds = map (id: "${llmCatalog.provider}/${id}") (
@@ -201,21 +196,15 @@ let
         (container "devbox").config.services.paseo.hostnames == [ "devbox.example.ts.net" ]
         && (container "workbox").config.services.paseo.hostnames == [ "workbox.example.ts.net" ];
     }
-    # The six below take no per-instance argument - every container gets
-    # them from the same container.nix - so one instance pins them rather
-    # than repeating each assertion three times.
+    # The six below take no per-instance argument — every container gets them
+    # from the same container.nix — so one instance pins them instead of
+    # repeating each assertion three times.
     {
-      # Nix declares plugin membership only - which plugins, no versions,
-      # no refs, no hashes - so nothing version-shaped can go stale
-      # between rebuilds. What this check can see at eval time: pi's
-      # specs are single-sourced from the one membership file, and
-      # neither agent may also get a standalone skills link, which would
-      # list every skill twice. (The claude side - the version-less
-      # enabledPlugins entry in its settings seed - is a build-time fact
-      # the container image build exercises, not eval-assertable.) A
-      # temporary version pin against a bad release belongs in the
-      # membership file itself - see its header - so this test asserts
-      # single-sourcing, not pin-freeness.
+      # Nix declares membership only — no versions — so nothing version-
+      # shaped can go stale; this check sees pi single-sourced from the
+      # membership file and no standalone skills link (which would list every
+      # skill twice). A temporary pin belongs in the membership file — see
+      # its header — so this asserts single-sourcing, not pin-freeness.
       name = "plugins are declared as versionless membership, not double-seeded";
       ok =
         let
@@ -227,10 +216,8 @@ let
         && !(files ? ".pi/agent/skills");
     }
     {
-      # pi's settings.json must be a seeded writable copy - the home-
-      # manager module's store-symlink write skipped via settings = {},
-      # and the activation an install (0644), not a link - or pi's own
-      # `pi install` / `pi remove` / `pi update` commands fail silently
+      # pi's settings.json must be a seeded writable copy, not a store link —
+      # or pi's own `pi install` / `pi remove` / `pi update` fail silently
       # against it and live updates stop working.
       name = "pi settings.json is seeded as a writable copy, not a store link";
       ok =
@@ -244,9 +231,9 @@ let
         && (lib.hasInfix "-m 0644" activations.piSettings.data);
     }
     {
-      # Claude has no APPEND_SYSTEM.md equivalent and its
-      # appendSystemPromptFile settings key is inert on 2.1.234, so losing
-      # this flag means the environment contract silently never reaches it.
+      # Claude has no APPEND_SYSTEM.md equivalent and its appendSystemPromptFile
+      # key is inert on 2.1.234, so losing this flag silently drops the
+      # environment contract.
       name = "the claude launcher injects the environment contract";
       ok =
         let
@@ -255,15 +242,14 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      # llama-swap serves one model at a time; a tier resolving to anything
-      # but the served instance would evict the parent's loaded model
-      # mid-session.
+      # llama-swap serves one model at a time; a tier resolving elsewhere
+      # would evict the parent's loaded model mid-session.
       name = "every superagents tier maps to a served model or alias";
       ok = lib.all (t: lib.elem t.model servedIds) (lib.attrValues tiers);
     }
     {
-      # Fan-out children must take the smaller declared window so a
-      # parallel wave compacts before it thrashes the KV pool.
+      # Fan-out children must take the smaller declared window so a parallel
+      # wave compacts before it thrashes the KV pool.
       name = "the cheap tier uses the default model's budget alias";
       ok =
         let
@@ -273,8 +259,8 @@ let
     }
     {
       # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor - both for superagents tiers and for the
-      # chat-template map every pi request goes through.
+      # medium is the floor — for both superagents tiers and the chat-template
+      # map every pi request goes through.
       name = "nothing requests low thinking";
       ok =
         lib.all (

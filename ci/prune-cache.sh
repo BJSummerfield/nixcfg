@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Prunes the Nix binary cache to the newest $CACHE_KEEP manifests.
-#
 # Retention is manifest-driven, never timestamp-driven: nix copy skips paths
 # already present, so an object's LastModified does not track whether it is
 # still in use, and any age-based rule would eventually delete a live NAR.

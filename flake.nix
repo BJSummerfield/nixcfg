@@ -17,12 +17,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
-    # Trampoline app bundles for nix-installed apps so Spotlight can index
-    # them (it refuses to follow the symlinks home-manager makes).
+    # Trampoline bundles so Spotlight can index nix-installed apps (it refuses
+    # to follow the symlinks home-manager makes).
     mac-app-util = {
       url = "github:hraban/mac-app-util";
-      # collapse its transitive pins (incl. two extra full nixpkgs
-      # snapshots) onto ours so every host isn't fetching dead weight
+      # collapse its transitive pins onto ours so hosts don't fetch the extra
+      # nixpkgs snapshots it would otherwise pull
       inputs = {
         nixpkgs.follows = "nixpkgs";
         treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
@@ -31,9 +31,8 @@
       };
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    # Coding-agent orchestration daemon; upstream ships its own flake with
-    # a NixOS module. nixpkgs.follows keeps the container building against
-    # the same nixpkgs as the shared host store.
+    # Coding-agent orchestration daemon; nixpkgs.follows keeps the container
+    # building against the same nixpkgs as the shared host store.
     paseo = {
       url = "github:getpaseo/paseo";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -68,14 +67,12 @@
         }
       );
 
-      # nixfmt-tree, not bare nixfmt: `nix fmt` passes a directory, and nixfmt
-      # deprecates directory args and walks into .direnv's read-only store
-      # symlinks. The wrapper is treefmt driving nixfmt, and respects gitignore.
+      # nixfmt-tree, not bare nixfmt: it is treefmt driving nixfmt, respects
+      # gitignore, and doesn't walk into .direnv's read-only store symlinks.
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
-      # Exposed so `nix build .#encode_queue` works and so the checks below
-      # build it. Set `passthru.cache = true` on a package to have CI push it
-      # to the private binary cache as well.
+      # Set `passthru.cache = true` on a package to have CI push it to the
+      # private binary cache as well.
       packages = forAllSystems (
         system:
         let
@@ -87,12 +84,10 @@
         }
       );
 
-      # Evaluation-only. `nix flake check` builds nothing beyond one empty
-      # marker derivation per configuration (devboxes likewise only touches
-      # $out on success); the work is forcing the eval. Everything lives
-      # under x86_64-linux because all five NixOS hosts are x86_64-linux and
-      # the darwin config evaluates here too. Generated rather than listed so
-      # a host added later is checked automatically.
+      # Eval-only: the work is forcing the eval; nothing is built. Under
+      # x86_64-linux because all five NixOS hosts are x86_64 (the darwin
+      # config evaluates here too); generated, so a host added later is
+      # checked automatically.
       checks.x86_64-linux =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
@@ -119,14 +114,10 @@
             system = "x86_64-linux";
           };
         }
-        # Unlike the eval-only checks above, these are real builds — though
-        # `nix flake check` skips any check whose output a substituter already
-        # has, so once CI reads from the cache an unchanged package costs
-        # nothing and only a moved pin actually compiles. A package
-        # added later to `packages` is covered without anyone wiring it up —
-        # but derivations defined inside modules (callPackages that never
-        # become a flake output) are structurally outside this set and stay
-        # uncovered.
+        # Real builds — but `nix flake check` skips any check whose output a
+        # substituter already has, so an unchanged package costs nothing.
+        # Module-internal derivations (callPackages that never become a flake
+        # output) stay structurally outside this set.
         // nixpkgs.lib.mapAttrs' (
           name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
         ) inputs.self.packages.x86_64-linux
