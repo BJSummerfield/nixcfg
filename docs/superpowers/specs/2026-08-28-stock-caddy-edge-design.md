@@ -1,7 +1,7 @@
 # Stock Caddy edge: dropping the caddy-l4 build
 
 Date: 2026-08-28
-Status: design approved in chat; pending spec review
+Status: implemented on branch plan/base-caddy (2026-08-28); transport syntax corrected to the caddy 2.11.4 block form
 Hosts affected: `vps` only (sole user of `mine.system.caddy`)
 
 ## Problem
@@ -60,7 +60,7 @@ DNS facts (checked 2026-08-28 via dns.google):
 | Traffic | Before | After |
 |---|---|---|
 | `booking.summerfieldphotography.com:443` | caddy TLS route → `192.168.100.51:8080` | unchanged |
-| `mx1.brianjs.com:443` | layer4 fallback → raw bytes to `192.168.100.41:443` | caddy TLS route: terminates with its own LE cert, `reverse_proxy https://192.168.100.41:443` with `tls { insecure }` upstream |
+| `mx1.brianjs.com:443` | layer4 fallback → raw bytes to `192.168.100.41:443` | caddy TLS route: terminates with its own LE cert, `reverse_proxy https://192.168.100.41:443` with a `transport http` upstream (`tls`, `tls_insecure_skip_verify`) |
 | unknown/absent SNI on 443 | raw bytes to Stalwart | fails closed: unmatched SNI gets the default vhost's cert → TLS name mismatch; no data path |
 | :80 | caddy HTTP-01 + redirect | unchanged |
 | 25/465/993, 9987 | DNAT / direct | unchanged (never touched caddy) |
@@ -109,7 +109,7 @@ Consequences, accepted:
    caddy.routes.mail = {
      hostnames = [ "mx1.brianjs.com" ];
      target = "https://192.168.100.41:443";
-     extraConfig = "transport http { tls { insecure } }";
+     extraConfig = "transport http {\n\t\ttls\n\t\ttls_insecure_skip_verify\n\t}";
    };
    ```
    with a comment carrying the two deliberate facts: Stalwart keeps its
@@ -143,17 +143,29 @@ empty-list guard still passes).
 ```
 {
 	email brianjsummerfield@gmail.com
+
+	log {
+		level ERROR
+	}
 }
 
 booking.summerfieldphotography.com {
+	log {
+		output file /var/log/caddy/access-booking.summerfieldphotography.com.log
+	}
+
 	reverse_proxy 192.168.100.51:8080
 }
 
 mx1.brianjs.com {
-	reverse_proxy https://192.168.100.41:443
-	transport http {
-		tls {
-			insecure
+	log {
+		output file /var/log/caddy/access-mx1.brianjs.com.log
+	}
+
+	reverse_proxy https://192.168.100.41:443 {
+		transport http {
+			tls
+			tls_insecure_skip_verify
 		}
 	}
 }
@@ -165,9 +177,10 @@ mx1.brianjs.com {
   for `mx1.brianjs.com` at startup (http-01; seconds). During that window
   the name gets the default vhost's cert → mismatch. Single-user box;
   deploy at a quiet moment. IMAP/SMTPS are unaffected (bypass caddy).
-- **Rollback**: `nixos-rebuild switch --rollback` on the VPS. The old
-  config keeps working: the caddy-l4 derivation remains in the private
-  cache and `/var/lib/caddy` state is compatible.
+- **Rollback**: `nixos-rebuild switch --rollback` on the VPS. The VPS's
+  local store holds the previous generation (GC-protected by the
+  `/etc/system` profile roots), so the rollback reinstalls it without
+  re-fetching; `/var/lib/caddy` state is compatible.
 - **Cache ordering**: caddy no longer depends on the private cache at
   all (it comes from `cache.nixos.org`), so no push-to-cache step gates
   the VPS. Still deploy after CI is green — as verification
