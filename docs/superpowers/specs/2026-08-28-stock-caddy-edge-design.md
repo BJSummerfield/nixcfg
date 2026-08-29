@@ -85,26 +85,24 @@ Consequences, accepted:
    every route renders one vhost per hostname with
    `reverse_proxy ${target}` plus optional `extraConfig` lines. Kept
    verbatim: `enable`, `acmeEmail`, the unique-hostname assertion, firewall
-   80/443, and the `/var/lib/caddy` backup registration. `package` stays
-   `pkgs.callPackage ./package.nix { }`.
+   80/443, and the `/var/lib/caddy` backup registration. `package` becomes
+   `pkgs.caddy` — stock nixpkgs, no wrapper (see 2).
 
-2. **`modules/caddy/package.nix`** — rewrite (not delete): stock
-   `pkgs.caddy` with `passthru.cache = true`. The marker is load-bearing:
-   the VPS's only substituter is the private B2 cache (its
-   `nix.settings.substituters` *replaces* the default, so `cache.nixos.org`
-   is not reachable from the VPS) and 1 GB of RAM cannot compile a Go
-   build. CI's push step uploads exactly the derivations in `packages`
-   with `cache = true`, so the flake and the module must reference the
-   same derivation — hence the shared `package.nix`, same as today.
-   Side effect: the recurring vendor-hash breakage class goes away;
-   nixpkgs owns the caddy build and its hashes.
+2. **`modules/caddy/package.nix`** — delete. Stock caddy needs no custom
+   build and no cache marker: nixpkgs appends `https://cache.nixos.org/`
+   (and its key) to every NixOS host's substituters via `mkAfter`
+   (`nixos/modules/config/nix.nix` at our pin), even on the VPS, whose
+   `privateCache` sets the host's own `substituters` list — the effective
+   vps config, verified by eval, is private cache + `cache.nixos.org/`.
+   The private B2 cache stays for custom-built app packages (photoform,
+   encode_queue) only. Side effect: the recurring vendor-hash breakage
+   class goes away — nixpkgs owns the caddy build and its hashes.
 
-3. **`flake.nix`** — `packages.caddy-l4` → `packages.caddy` (same
-   `callPackage ./modules/caddy/package.nix`); update the comment that
-   explains the `caddyfile-*` checks in terms of layer4 syntax. The
-   generated `pkg-caddy` check then builds the stock wrapper, and the
-   existing `caddyfile-vps` check validates the new Caddyfile shape with
-   the stock binary.
+3. **`flake.nix`** — drop `packages.caddy-l4` (no replacement); update the
+   comment that explains the `caddyfile-*` checks in terms of layer4
+   syntax. The existing `caddyfile-vps` check validates the new Caddyfile
+   shape, using `services.caddy.package` (now stock) as its binary; the CI
+   runner fetches it from `cache.nixos.org`.
 
 4. **`hosts/vps/default.nix`** — drop `fallback`; add the mail route:
    ```nix
@@ -117,7 +115,9 @@ Consequences, accepted:
    with a comment carrying the two deliberate facts: Stalwart keeps its
    own ACME/cert (caddy is the public presenter only), and the apex is
    unclaimed by design (no A record). Also update the two stale comments
-   ("Fallback-only until photoform lands"; "cannot compile caddy-with-l4").
+   ("Fallback-only until photoform lands"; "cannot compile caddy-with-l4
+   or photoform" — caddy now arrives from `cache.nixos.org`, photoform is
+   what the 1 GB limit is about).
 
 5. **`modules/photoform/nixos.nix`** — drop `mode = "tls"` from the route
    registration.
@@ -132,8 +132,11 @@ Consequences, accepted:
    this DNAT byte-for-byte".
 
 No changes: Stalwart's listener (stays on `192.168.100.41:443`), its
-ACME, its firewall ports, photoform's container, the CI workflow
-mechanics (the `cache = true` push loop works unchanged).
+ACME, its firewall ports, photoform's container, the VPS's nix
+substituter setup (private B2 cache + the always-appended
+cache.nixos.org), the CI workflow mechanics (the `cache = true` push loop
+works unchanged; photoform and encode_queue keep the marker, so the
+empty-list guard still passes).
 
 ## Rendered Caddyfile (vps, after)
 
@@ -165,19 +168,22 @@ mx1.brianjs.com {
 - **Rollback**: `nixos-rebuild switch --rollback` on the VPS. The old
   config keeps working: the caddy-l4 derivation remains in the private
   cache and `/var/lib/caddy` state is compatible.
-- **Cache ordering**: the VPS must not `switch` before CI's main push
-  (checks → push-to-cache → ref advance) has landed, or it will try to
-  compile caddy locally. Same contract as today's custom build.
+- **Cache ordering**: caddy no longer depends on the private cache at
+  all (it comes from `cache.nixos.org`), so no push-to-cache step gates
+  the VPS. Still deploy after CI is green — as verification
+  (`caddyfile-vps`, photoform eval) and because autoUpgrade tracks the
+  verified ref.
 - **Pre-existing, unchanged**: nightly autoUpgrade after a nixpkgs pin
-  move follows the same CI-pushes-first contract as the current build.
+  move pulls the new `pkgs.caddy` derivation from `cache.nixos.org`
+  (built for the unstable channel), so the VPS still never compiles
+  caddy.
 
 ## Verification
 
 CI (before the VPS touches anything):
 
-- `pkg-caddy` builds the stock wrapper; `caddyfile-vps` runs
-  `caddy adapt` over the new shape with the stock binary; the photoform
-  eval test host still evaluates.
+- `caddyfile-vps` runs `caddy adapt` over the new shape with the stock
+  binary; the photoform eval test host still evaluates.
 
 Pre-deploy diagnostic on the VPS (records the old state; does not gate):
 
