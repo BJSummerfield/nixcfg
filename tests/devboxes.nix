@@ -239,9 +239,7 @@ let
           activations = homeActivation "devbox";
         in
         !(files ? ".pi/agent/settings.json")
-        && (container "devbox").config.home-manager.users.agent.programs
-          ."pi-coding-agent".settings
-          == { }
+        && (container "devbox").config.home-manager.users.agent.programs."pi-coding-agent".settings == { }
         && (lib.hasInfix ".pi/agent/settings.json" activations.piSettings.data)
         && (lib.hasInfix "-m 0644" activations.piSettings.data);
     }
