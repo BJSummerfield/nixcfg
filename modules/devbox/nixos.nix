@@ -1,21 +1,19 @@
-# Persistent coding-agent containers. Security boundary: ssh/sops/signing keys
-# stay on the host. Repos live in the container filesystem — GitHub holds the code.
+# Persistent coding-agent containers. Security boundary: ssh/sops/signing
+# keys stay on the host; repos live in the container filesystem - GitHub
+# holds the code.
 #
-# Each attribute of mine.system.devboxes is one container. Once an instance is
-# running, join the tailnet and publish paseo once, substituting its attribute
-# name for <name>:
-# sudo nixos-container root-login <name>
-# tailscale up --hostname=<name> --advertise-tags=tag:devbox
-# tailscale serve --bg 6767
+# Each attribute of mine.system.devboxes is one container. Once running,
+# join the tailnet and publish paseo once (manual - declarative join/serve
+# is flaky on nspawn; substitute the attribute name for <name>):
+#   sudo nixos-container root-login <name>
+#   tailscale up --hostname=<name> --advertise-tags=tag:devbox
+#   tailscale serve --bg 6767
 #
-# Reusing tag:devbox across instances keeps one set of tailnet ACLs; a distinct
-# tag per instance would need ACL edits on the Tailscale side.
-#
-# Both are one-time. /var/lib/tailscale is bind-mounted to
-# /var/lib/tailscale-<name> on the host, so the node identity and the serve
-# config survive container restarts and rebuilds; you only redo this if
-# that host directory is wiped. Manual tailscale join — more reliable than
-# declarative on nspawn containers.
+# tag:devbox is reused across instances to keep one set of tailnet ACLs.
+# Both steps are one-time: /var/lib/tailscale is bind-mounted to
+# /var/lib/tailscale-<name> on the host, so the node identity and serve
+# config survive restarts and rebuilds - redo only if that host directory
+# is wiped.
 {
   config,
   lib,
@@ -182,9 +180,8 @@ in
         '';
       }) cfg
       ++ mapAttrsToList (name: _: {
-        # ve-<name> is a network interface name, and Linux caps those at 15
-        # characters. An over-long name fails when the container starts, not
-        # when it is evaluated.
+        # ve-<name> is the interface name; Linux caps those at 15 chars,
+        # and the failure surfaces at container start, not at eval.
         assertion = builtins.stringLength name <= 12;
         message = ''
           mine.system.devboxes.${name}: instance names may be at most 12
@@ -194,9 +191,8 @@ in
       }) cfg
       ++ [
         {
-          # A duplicate address produces a container that starts cleanly and
-          # then cannot route, which reads as a NAT problem rather than a
-          # config one.
+          # A duplicate address starts cleanly and then cannot route - it
+          # reads as a NAT problem, not a config one.
           assertion = lib.length (lib.unique addresses) == lib.length addresses;
           message = ''
             mine.system.devboxes: hostAddress and localAddress must be unique
@@ -234,18 +230,16 @@ in
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # Persists the tailscale node identity across container restarts
-        # and rebuilds. This is what makes the manual `tailscale up` in the
-        # header comment a genuinely one-time cost rather than a
-        # per-rebuild ritual: wipe this host directory and you re-auth,
-        # otherwise you never touch it again.
+        # Persists the tailscale node identity across restarts and rebuilds:
+        # this makes the manual `tailscale up` a one-time cost - wipe this
+        # host directory and you re-auth.
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-${name}";
           isReadOnly = false;
         };
         # Destination paths carry no instance name: they live in this
-        # container's own mount namespace, so every instance can use the
-        # same two, and container.nix stays free of instance identity.
+        # container's mount namespace, so container.nix stays free of
+        # instance identity.
         "/run/secrets/github-token" = {
           hostPath = box.githubTokenFile;
           isReadOnly = true;
