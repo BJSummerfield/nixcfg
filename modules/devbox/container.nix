@@ -321,114 +321,18 @@ in
   };
 
   ##########################################################################
-  # warming (tmpfiles + service + path + timer)
+  # boot-time directories
   ##########################################################################
 
   systemd.tmpfiles.rules = [
+    # New repos are cloned here; without the directory the first clone of a
+    # new project fails.
     "d /home/agent/projects 0755 agent users -"
     # paseo creates worktrees here at runtime; created ahead of time so the
-    # glob below and the path unit's watch both have something to see from
-    # boot, rather than only after the first worktree is ever created.
+    # path exists from boot rather than only after the first worktree is
+    # ever created.
     "d /var/lib/paseo/worktrees 0755 agent users -"
   ];
-
-  # Builds every repo's (and every worktree's) devShell ahead of first use,
-  # so an agent launched from a phone never blocks on a cold `nix develop`.
-  # nix-direnv creates GC roots, so a warmed shell survives
-  # nix-collect-garbage.
-  systemd.services.devbox-warm = {
-    description = "Warm direnv devShells for all devbox projects and worktrees";
-    # `use flake` comes from nix-direnv's direnvrc, which home-manager
-    # writes out during activation. Without this ordering the path unit
-    # can fire before that activation on first boot, and every repo fails
-    # warming with an unhelpful "unknown command: use flake".
-    after = [ "home-manager-agent.service" ];
-    wants = [ "home-manager-agent.service" ];
-    serviceConfig = {
-      Type = "oneshot";
-      User = "agent";
-      # A cold build of several repos is slow and must not be killed
-      # halfway, leaving a partially-realised shell.
-      TimeoutStartSec = "2h";
-    };
-    path = with pkgs; [
-      direnv
-      nix
-      git
-    ];
-    script = ''
-      shopt -s nullglob
-      # Paseo (0.3.0-beta.4, server/dist/server/utils/worktree.js) lays worktrees
-      # out as $PASEO_HOME/worktrees/<projectHash>/<slug> - an extra directory
-      # level keyed by a hash of the source repo root, not
-      # worktrees/<slug> directly. Hence the double */*/ below.
-      for repo in /home/agent/projects/*/ /var/lib/paseo/worktrees/*/*/; do
-        [ -f "$repo/.envrc" ] || continue
-        cd "$repo" || continue
-        echo "warming $repo"
-        # nix-direnv fails open: a flake that will not build still exits 0
-        # here. Trusting $? would log nothing and warm nothing, silently.
-        # Same detection as modules/devbox/agents.nix.
-        #
-        # `&& rc=0 || rc=$?` rather than `; rc=$?`: NixOS's systemd
-        # `script` wrapper prepends `set -e`, under which a bare
-        # `err=$(failing-cmd); rc=$?` aborts the whole unit on the first
-        # broken repo before `rc=$?` is even reached - the AND-OR form is
-        # exempt from errexit and is required to preserve per-repo
-        # isolation.
-        err=$(direnv exec . true 2>&1 >/dev/null) && rc=0 || rc=$?
-        if [ "$rc" -ne 0 ]; then
-          echo "warming failed for $repo:" >&2
-          printf '%s\n' "$err" >&2
-        elif printf '%s' "$err" | grep -q '^error:'; then
-          echo "devShell build failed for $repo:" >&2
-          printf '%s\n' "$err" >&2
-        fi
-      done
-    '';
-  };
-
-  # Fires when a repo or worktree appears, or its flake changes.
-  #
-  # This watch is necessarily incomplete: systemd.path's PathChanged= takes a
-  # literal directory, not a glob, and is not recursive (see systemd.path(5)
-  # - only PathExistsGlob= globs, and it is an existence check, not a change
-  # notification). Watching /var/lib/paseo/worktrees therefore only ever
-  # sees a project's *first* worktree, which is what creates the
-  # <projectHash> directory directly inside it; a 2nd+ worktree of the same
-  # project only mutates worktrees/<projectHash>/, one level down, which
-  # nothing here is watching (project hashes aren't known ahead of time, so
-  # there is no fixed set of literal paths to list). Closing that requires
-  # either dynamically generated per-hash path units or dropping inotify for
-  # a polling watcher - both disproportionate to what this gap costs. The
-  # devbox-warm timer below is shortened from a daily to an hourly backstop
-  # specifically to bound that staleness instead.
-  systemd.paths.devbox-warm = {
-    description = "Watch devbox projects and worktrees for new or changed flakes";
-    wantedBy = [ "multi-user.target" ];
-    pathConfig.PathChanged = [
-      "/home/agent/projects"
-      "/var/lib/paseo/worktrees"
-    ];
-  };
-
-  # Backstop. Originally just for flake.lock edits made inside an existing
-  # repo (which the path unit's directory watch never sees at all), but also
-  # now the only thing that ever warms a 2nd+ worktree of an existing
-  # project - see the comment on systemd.paths.devbox-warm above. Daily was
-  # too coarse for that case: the whole point of warming is that a task
-  # launched from a phone must not block on a cold `nix develop`, and up to
-  # a day of staleness on every second task in a project defeats that.
-  # Hourly is cheap here - direnv exec on an already-warmed shell is a fast
-  # no-op - and bounds the gap to something that no longer matters in
-  # practice.
-  systemd.timers.devbox-warm = {
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnCalendar = "hourly";
-      Persistent = true;
-    };
-  };
 
   system.stateVersion = "26.05";
 }

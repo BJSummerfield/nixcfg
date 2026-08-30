@@ -12,13 +12,15 @@ your commands, so tools behave normally.
   `/var/lib/paseo/worktrees`. Neither is bind-mounted from the host:
   they exist only inside this container, so uncommitted work is not
   backed up by anything. Push anything you care about.
-- Every project's devShell is pre-built by the `devbox-warm` service, so
-  `direnv exec .` is fast. Agents are launched through a wrapper that
-  loads the project devShell first. Both project and worktree trees are
-  whitelisted for direnv, so a missing toolchain binary is never an
-  untrusted `.envrc`: either the devShell failed to build (re-run
-  `direnv exec . true` and read the error), or the package is genuinely
-  not in that shell.
+- Agents are launched through a wrapper that loads the project devShell
+  (`direnv exec .`) before the agent starts. The first launch after a
+  flake change pays a one-time devShell eval - a few seconds if the
+  dependencies are already in the store, longer only if new dependencies
+  must be downloaded or built - and later launches are fast. Both project
+  and worktree trees are whitelisted for direnv, so a missing toolchain
+  binary is never an untrusted `.envrc`: either the devShell failed to
+  build (re-run `direnv exec . true` and read the error), or the package
+  is genuinely not in that shell.
 - Missing tools: prefer `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>`
   - the store is shared with the host, so anything it already has costs
   no download. npm/pip/cargo also work. There is no sudo and you will
