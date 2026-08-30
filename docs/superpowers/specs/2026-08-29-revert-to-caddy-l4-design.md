@@ -248,10 +248,15 @@ scan traffic. If it recurs, the fix is to allow-list the gateway in Stalwart's
 security settings, and note that clearing a `BlockedIp` entry requires
 `systemctl restart container@stalwart` to take effect.
 
-**Deploy briefly interrupts webmail, not mail.** The container is not
-restarted by this change, but caddy is, and `mx1` reachability moves from a
-terminating vhost to a passthrough route. Ports 25/465/993 are untouched DNAT
-and are unaffected throughout.
+**Deploy restarts both caddy and the stalwart container.** Removing the
+`/var/lib/stalwart-certs` bind mount and the in-container `stalwart-certs`
+group changes `containers.stalwart`'s `restartTriggers`, and
+`restartIfChanged` defaults to true, so `container@stalwart.service` restarts
+on this deploy too. Ports 25/465/993 refuse connections for the restart
+duration (nspawn stop, RocksDB reopen, in-container Tailscale re-up). No mail
+is lost — sending MTAs retry — but the interruption is not caddy-only.
+Meanwhile `mx1` reachability on :443 moves from a terminating vhost to a
+passthrough route.
 
 **Rollback.** `sudo nixos-rebuild switch --rollback`. Nothing in this change
 is database-managed, so unlike #143 the rollback is complete — with one

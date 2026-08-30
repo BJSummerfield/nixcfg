@@ -554,7 +554,10 @@ sudo nixos-rebuild switch --flake github:BJSummerfield/nixcfg/verified#vps
 
 Expected: success with no local compilation — caddy-l4 substitutes from the private cache. If it starts compiling caddy, stop it: the box has 1 GB of RAM and will OOM. That would mean CI did not push the build to the cache.
 
-The stalwart container is not restarted by this change; caddy is.
+Both caddy and the stalwart container restart: removing the cert bind mount
+and the `stalwart-certs` group changes `containers.stalwart`'s
+`restartTriggers`, and `restartIfChanged` defaults to true. Ports 25/465/993
+drop for the restart duration; no mail is lost, since sending MTAs retry.
 
 - [ ] **Step 4: Confirm webmail is passthrough**
 
@@ -574,12 +577,18 @@ Expected: a valid caddy-issued certificate and an HTTP response. This is the rou
 
 - [ ] **Step 6: Confirm unclaimed SNI is closed, not forwarded**
 
-The edge case this whole design exists to fix. From any machine:
+The edge case this whole design exists to fix. From any machine, run the
+unknown-SNI probe and the no-SNI probe:
 
 ```sh
 openssl s_client -connect mx1.brianjs.com:443 -servername nonsense.example.com </dev/null
-openssl s_client -connect mx1.brianjs.com:443 </dev/null
+openssl s_client -noservername -connect mx1.brianjs.com:443 </dev/null
 ```
+
+The second command needs `-noservername`: `openssl s_client` sets the SNI
+extension from `-connect` by default, so without that flag it sends
+`mx1.brianjs.com`, matches the `@mail` route, and returns Stalwart's
+certificate — indistinguishable from Step 4, not a no-SNI test.
 
 Expected: both fail — connection closed, no certificate served. Then confirm nothing reached the backend:
 
@@ -602,6 +611,17 @@ sudo nixos-container run stalwart -- journalctl -u stalwart -n 60 --no-pager | g
 Expected: `Processing ACME certificate (acme.process-cert) id = "letsencrypt-1"` with a `due` date, and **no** `acme.tls-alpn-error` entries.
 
 This is the point of the change, so prove it rather than waiting for 2026-10-04. Force a renewal from the admin UI (Server → TLS → ACME Providers → `letsencrypt-1`) and confirm a new certificate is issued and served. If the renewal fails, the passthrough is not reaching Stalwart intact — re-check Step 6's routing.
+
+A `too many certificates already issued` (rate-limit) rejection is expected
+in this window and does **not** indicate a broken passthrough: Let's Encrypt
+limits new certificates to 5 per 7 days per exact identifier set, counted
+across accounts, and caddy itself issued a fresh `mx1.brianjs.com`
+certificate on 2026-08-29 (`notBefore=Aug 29 18:11:45 2026 GMT`, issuer YE1),
+on top of #140's and #143's issuances in the same window. If forcing is
+blocked, that's not urgent — Stalwart's existing certificate is valid to
+2026-11-03 with renewal due 2026-10-04 — so it's fine to fall back to
+confirming the `due` date from the log above and revisiting the forced
+renewal after the rate-limit window clears.
 
 - [ ] **Step 9: Confirm the gateway is not banned**
 

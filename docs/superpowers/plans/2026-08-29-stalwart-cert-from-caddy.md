@@ -1,5 +1,7 @@
 # Stalwart Certificate From Caddy Implementation Plan
 
+> **Superseded:** this plan describes an architecture that `plan/revert-to-caddy-l4` deletes and that cannot work (see `docs/superpowers/specs/2026-08-29-revert-to-caddy-l4-design.md`). Not implementable as written; kept for history only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make caddy the sole issuer of `mx1.brianjs.com`, publish that certificate to a stable directory the Stalwart container reads, and reload Stalwart whenever caddy renews it.
