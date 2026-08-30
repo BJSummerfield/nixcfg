@@ -172,19 +172,19 @@ let
       ok = host.services.caddy.package != pkgs.caddy;
     }
     {
+      # The matcher and its target are asserted as one contiguous block,
+      # not two independent infixes — otherwise this would still pass if
+      # the tls/tcp proxy targets were swapped, since the tcp route's
+      # target could satisfy the bare "proxy 127.0.0.1:8443" infix.
       name = "a tls route is matched by SNI and handed to caddy's own HTTPS server";
-      ok =
-        lib.hasInfix "@photoform tls sni booking.summerfieldphotography.com" gc
-        && lib.hasInfix "proxy 127.0.0.1:8443" gc;
+      ok = lib.hasInfix "@photoform tls sni booking.summerfieldphotography.com\nroute @photoform {\n  proxy 127.0.0.1:8443" gc;
     }
     {
       # The defining property of the mail path: layer4 hands the raw
       # connection to the backend, so the backend can answer TLS-ALPN-01
       # itself. Terminating here is what broke Stalwart's renewal.
       name = "a tcp route is proxied raw to its target";
-      ok =
-        lib.hasInfix "@passthrough tls sni mx1.example.com" gc
-        && lib.hasInfix "proxy 192.168.100.41:443" gc;
+      ok = lib.hasInfix "@passthrough tls sni mx1.example.com\nroute @passthrough {\n  proxy 192.168.100.41:443" gc;
     }
     {
       # If caddy rendered a vhost for a passthrough hostname it would try
@@ -194,6 +194,13 @@ let
       ok =
         host.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"
         && !(host.services.caddy.virtualHosts ? "mx1.example.com");
+    }
+    {
+      # The fallback sent every unclaimed connection into Stalwart from the
+      # veth gateway, which got that address auto-banned and 502'd webmail.
+      # A bare `route {` with no matcher is what its return would look like.
+      name = "no unmatched route block: unclaimed connections are closed, not forwarded";
+      ok = !(lib.hasInfix "route {" gc);
     }
     {
       # restic reads the host side of the bind mount, with the container
