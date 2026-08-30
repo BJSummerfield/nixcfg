@@ -35,6 +35,15 @@ let
               caddy = {
                 enable = true;
                 acmeEmail = "test@example.com";
+                # A synthetic passthrough, standing in for the mail route.
+                # The mail route itself is registered by the stalwart
+                # module, which this test host does not import — but the
+                # behaviour under test belongs to the caddy module.
+                routes.passthrough = {
+                  hostnames = [ "mx1.example.com" ];
+                  mode = "tcp";
+                  target = "192.168.100.41:443";
+                };
               };
               photoform = {
                 enable = true;
@@ -51,6 +60,18 @@ let
         }
       ];
     }).config;
+
+  gc = host.services.caddy.globalConfig;
+
+  # Binds the real vps configuration, not a synthetic stand-in. The
+  # passthrough behaviour above is exercised only via the test host's
+  # synthetic `routes.passthrough`; nothing else asserts that the actual
+  # mail route on vps is `tcp` mode, so a regression there (or an
+  # outright deletion of the route) would leave every other check in this
+  # file green. Guard against that by reading vps's own config, since it
+  # is a fixed point already realized elsewhere in flake.nix (evalAll,
+  # caddyfile-<host>) and does not depend on this check's output.
+  vps = inputs.self.nixosConfigurations.vps.config;
 
   container = host.containers.photoform.config;
   unit = container.systemd.services.photoform;
@@ -150,15 +171,47 @@ let
         host.mine.system.caddy.routes.photoform.hostnames == [
           "booking.summerfieldphotography.com"
         ]
+        && host.mine.system.caddy.routes.photoform.mode == "tls"
         && host.mine.system.caddy.routes.photoform.target == "192.168.100.51:8080";
     }
     {
-      # The edge terminates with stock nixpkgs caddy (substituted from
-      # cache.nixos.org on the VPS), not a custom plugin build: the caddy-l4
-      # build pinned this repo to plugin-vendor semantics and broke on
-      # nixpkgs' Go bumps alone (2026-08-28).
-      name = "the edge runs the stock caddy package";
-      ok = host.services.caddy.package == pkgs.caddy;
+      # The layer4 app is an out-of-tree plugin, so the edge must run
+      # exactly the module's own caddy-l4 build, not stock nixpkgs caddy.
+      # pkg-caddy-l4 is the CI gate on the vendor hash; this is the gate
+      # on the module actually using that build.
+      name = "the edge runs exactly the module's caddy-l4 build";
+      ok = host.services.caddy.package == pkgs.callPackage ../modules/caddy/package.nix { };
+    }
+    {
+      # The matcher and its target are asserted as one contiguous block,
+      # not two independent infixes — otherwise this would still pass if
+      # the tls/tcp proxy targets were swapped, since the tcp route's
+      # target could satisfy the bare "proxy 127.0.0.1:8443" infix.
+      name = "a tls route is matched by SNI and handed to caddy's own HTTPS server";
+      ok = lib.hasInfix "@photoform tls sni booking.summerfieldphotography.com\nroute @photoform {\n  proxy 127.0.0.1:8443" gc;
+    }
+    {
+      # The defining property of the mail path: layer4 hands the raw
+      # connection to the backend, so the backend can answer TLS-ALPN-01
+      # itself. Terminating here is what broke Stalwart's renewal.
+      name = "a tcp route is proxied raw to its target";
+      ok = lib.hasInfix "@passthrough tls sni mx1.example.com\nroute @passthrough {\n  proxy 192.168.100.41:443" gc;
+    }
+    {
+      # If caddy rendered a vhost for a passthrough hostname it would try
+      # to obtain that certificate itself, racing the backend for the same
+      # name and consuming its duplicate-certificate budget.
+      name = "a tcp route gets no vhost, so caddy never issues for it";
+      ok =
+        host.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"
+        && !(host.services.caddy.virtualHosts ? "mx1.example.com");
+    }
+    {
+      # The fallback sent every unclaimed connection into Stalwart from the
+      # veth gateway, which got that address auto-banned and 502'd webmail.
+      # A bare `route {` with no matcher is what its return would look like.
+      name = "no unmatched route block: unclaimed connections are closed, not forwarded";
+      ok = !(lib.hasInfix "route {" gc);
     }
     {
       # restic reads the host side of the bind mount, with the container
@@ -167,6 +220,28 @@ let
       ok =
         lib.elem "/var/lib/photoform-data" host.mine.backups.paths
         && lib.elem "photoform" host.mine.backups.stopContainers;
+    }
+    {
+      # Flipping vps's real mail route to "tls", or deleting it outright,
+      # would silently reinstate the exact mail-TLS-renewal outage this
+      # branch exists to undo, while every check above (which only
+      # exercises the synthetic `routes.passthrough`) stays green. This
+      # binds the assertion to the real host.
+      name = "vps's real mail route is registered as tcp passthrough to stalwart";
+      ok =
+        vps.mine.system.caddy.routes ? mail
+        && vps.mine.system.caddy.routes.mail.mode == "tcp"
+        && vps.mine.system.caddy.routes.mail.hostnames == [ "mx1.brianjs.com" ]
+        && vps.mine.system.caddy.routes.mail.target == "192.168.100.41:443";
+    }
+    {
+      # A "tls" mail route (or a route rename that stops rendering it)
+      # would make caddy issue and terminate mx1's certificate itself,
+      # exactly the arrangement that broke Stalwart's TLS-ALPN-01 renewal.
+      name = "vps's caddy never gets a vhost for the mail hostname, but does for booking";
+      ok =
+        vps.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"
+        && !(vps.services.caddy.virtualHosts ? "mx1.brianjs.com");
     }
   ];
 

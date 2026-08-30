@@ -43,10 +43,6 @@
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
-  sops.secrets.stalwart-api-key = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
-    mode = "0400";
-  };
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
@@ -60,9 +56,8 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
-      # 1 GB of RAM cannot compile photoform: it carries
-      # passthru.cache = true and must arrive as a substituted closure.
-      # caddy is stock nixpkgs and substitutes from cache.nixos.org.
+      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
+      # passthru.cache = true and must arrive as substituted closures.
       privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
@@ -77,36 +72,17 @@
         # (database-managed). Only the box + break-glass admin here; backup
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
-        apiKeyFile = config.sops.secrets.stalwart-api-key.path;
       };
-      # SNI edge on 443: caddy is the sole TLS authority for every name it
-      # claims. The mail route terminates with its own Let's Encrypt cert
-      # and proxies back to Stalwart's public listener over TLS — Stalwart
-      # keeps its own ACME and certs, caddy is only the public presenter
-      # (two LE accounts then hold certs for the same names; deliberate,
-      # and different name sets, so they sit in different Let's Encrypt
-      # duplicate-certificate buckets). The brianjs.com apex is unclaimed
-      # by design (no A record).
-      #
-      # The upstream hop is verified, not skipped: Stalwart presents its
-      # own LE cert for mx1.brianjs.com, so `tls_server_name` sends that
-      # SNI over the veth and checks it against the public roots. This is
-      # deliberately load-bearing — if Stalwart's ACME ever stops renewing
-      # (it has no challenge path of its own while caddy owns 80 and
-      # terminates 443), webmail breaks loudly here instead of mail TLS on
-      # 25/465/993 failing silently a quarter later.
+      # SNI edge on 443: a layer4 listener routes by ClientHello SNI.
+      # booking.summerfieldphotography.com terminates at caddy;
+      # mx1.brianjs.com passes through untouched, so Stalwart terminates
+      # and renews its own certificate — the one that also serves
+      # 25/465/993. Both routes are registered by their service modules.
+      # Every unclaimed connection is closed at the edge, and the
+      # brianjs.com apex is unclaimed by design (no A record).
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
-        routes.mail = {
-          hostnames = [ "mx1.brianjs.com" ];
-          target = "https://192.168.100.41:443";
-          extraConfig = ''
-            transport http {
-              tls_server_name mx1.brianjs.com
-            }
-          '';
-        };
       };
       # Booking site behind the edge, substituted from the cache: 1 GB of
       # RAM cannot compile it.

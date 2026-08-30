@@ -1,5 +1,7 @@
 # Stalwart Consumes Caddy's Certificate — Design
 
+> **Superseded:** this design describes an architecture that `plan/revert-to-caddy-l4` deletes and that cannot work (see `docs/superpowers/specs/2026-08-29-revert-to-caddy-l4-design.md`). Not implementable as written; kept for history only.
+
 **Status:** approved 2026-08-29, pending implementation plan.
 
 ## Problem
