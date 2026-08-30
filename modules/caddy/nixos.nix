@@ -1,13 +1,15 @@
-# Generic SNI edge: stock Caddy owns host port 443 and is the sole TLS
-# authority for every route it claims. Each route renders one vhost per
-# claimed hostname, terminating with its own Let's Encrypt certificate
-# (automatic ACME over the port 80 HTTP-01 lane) and reverse-proxying to
-# the target. A route's `extraConfig` tunes the upstream transport — a
-# TLS upstream needs a `transport http` block. Every connection no route
-# claims (unknown SNI, no SNI) fails closed at the handshake: there is no
-# default vhost and no on-demand issuance, so Caddy serves no certificate
-# at all and aborts with a TLS internal_error alert (verified against
-# caddy 2.11.4) — never a data path.
+# Generic SNI edge: a layer4 listener owns host 443 and routes by
+# ClientHello SNI — "tls" routes hand off to Caddy's own HTTPS server
+# (automatic ACME, reverse_proxy), "tcp" routes are raw byte proxies that
+# let the backend terminate its own TLS. Every connection no route claims
+# (unknown SNI, no SNI, non-TLS) is closed at the edge: there is no
+# fallback, so internet scan traffic never reaches a backend. An earlier
+# revision proxied unclaimed connections to Stalwart, which auto-banned
+# the veth gateway and took webmail down with it.
+#
+# Port 80 is Caddy's own HTTP-01 lane. A "tcp" route's backend needs a
+# challenge path of its own — for Stalwart that is TLS-ALPN-01, which
+# works precisely because layer4 matches SNI before forwarding any bytes.
 {
   lib,
   config,
@@ -16,19 +18,17 @@
 }:
 let
   cfg = config.mine.system.caddy;
-  # The nixpkgs module pipes the rendered Caddyfile through `caddy fmt`,
-  # which owns indentation entirely — so this only has to get the block
-  # structure right, never the whitespace.
-  routeBody =
-    r:
-    if r.extraConfig == "" then
-      "reverse_proxy ${r.target}"
-    else
-      lib.concatStrings [
-        "reverse_proxy ${r.target} {\n"
-        (lib.removeSuffix "\n" r.extraConfig)
-        "\n}"
-      ];
+  # Where the HTTP app terminates TLS for layer4-matched hostnames. Only
+  # the layer4 proxy dials it; the firewall never opens it.
+  httpsPort = 8443;
+  routeBlock = name: r: ''
+    @${name} tls sni ${lib.concatStringsSep " " r.hostnames}
+    route @${name} {
+      proxy ${if r.mode == "tls" then "127.0.0.1:${toString httpsPort}" else r.target}
+    }
+  '';
+  layer4Server = lib.concatStrings (lib.mapAttrsToList routeBlock cfg.routes);
+  tlsRoutes = lib.filterAttrs (_: r: r.mode == "tls") cfg.routes;
 in
 {
   options.mine.system.caddy = {
@@ -53,29 +53,21 @@ in
               type = lib.types.listOf lib.types.str;
               description = "SNI names this route claims.";
             };
+            mode = lib.mkOption {
+              type = lib.types.enum [
+                "tls"
+                "tcp"
+              ];
+              description = ''
+                tls: Caddy terminates (automatic ACME) and reverse-proxies
+                plain HTTP to target. tcp: encrypted passthrough, leaving
+                target to terminate and renew its own certificate.
+              '';
+            };
             target = lib.mkOption {
               type = lib.types.str;
               example = "192.168.100.51:8080";
-              description = ''
-                host:port (plain-HTTP upstream) or a full URL
-                (https://host:port TLS upstream) behind this route.
-              '';
-            };
-            extraConfig = lib.mkOption {
-              type = lib.types.lines;
-              default = "";
-              example = ''
-                transport http {
-                  tls_server_name mx1.brianjs.com
-                }
-              '';
-              description = ''
-                Extra Caddyfile directives nested inside the route's
-                reverse_proxy block, e.g. the upstream transport for a
-                TLS target. Write them unescaped in an indented string;
-                `caddy fmt` reindents the result, so the indentation
-                here is free-form.
-              '';
+              description = "host:port behind this route.";
             };
           };
         }
@@ -90,8 +82,9 @@ in
         message = "mine.system.caddy: a hostname is claimed by more than one route";
       }
       {
-        # genAttrs over an empty list yields no vhost, so such a route
-        # would silently claim nothing rather than fail.
+        # A layer4 sni matcher with no names matches nothing and genAttrs
+        # over an empty list yields no vhost, so such a route would
+        # silently claim nothing rather than fail.
         assertion = lib.all (r: r.hostnames != [ ]) (lib.attrValues cfg.routes);
         message = "mine.system.caddy: a route claims no hostnames and would render nothing";
       }
@@ -111,21 +104,29 @@ in
 
     services.caddy = {
       enable = true;
-      # Stock nixpkgs caddy. The VPS substitutes it from cache.nixos.org,
-      # which nixpkgs appends (mkAfter) to every NixOS host's substituters
-      # — including this host's private-cache list — so the 1 GB box never
-      # compiles it.
-      package = pkgs.caddy;
+      # The l4 plugin pin lives in ./package.nix, cached by CI.
+      package = pkgs.callPackage ./package.nix { };
       email = cfg.acmeEmail;
-      # One vhost per hostname of every route; Caddy obtains and renews
-      # their certificates automatically.
+      globalConfig = ''
+        http_port 80
+        https_port ${toString httpsPort}
+        layer4 {
+          :443 {
+            ${layer4Server}
+          }
+        }
+      '';
+      # One vhost per hostname of every terminating route; Caddy obtains
+      # and renews their certificates automatically. "tcp" routes are
+      # absent by design — their backend owns the certificate, and a vhost
+      # here would make caddy race it for the same name.
       virtualHosts = lib.mkMerge (
         lib.mapAttrsToList (
           _: r:
           lib.genAttrs r.hostnames (_: {
-            extraConfig = routeBody r;
+            extraConfig = "reverse_proxy ${r.target}";
           })
-        ) cfg.routes
+        ) tlsRoutes
       );
     };
   };

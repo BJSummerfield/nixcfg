@@ -64,8 +64,8 @@ in
       internalInterfaces = [ "ve-stalwart" ];
       externalInterface = config.mine.system.externalInterface;
       # When the caddy edge owns host 443, its mx1 route is the only path
-      # to Stalwart's public listener (caddy terminates TLS, then
-      # reverse-proxies it over TLS); the mail-port forwards stay
+      # to Stalwart's public listener — a raw passthrough, so Stalwart
+      # still terminates its own TLS; the mail-port forwards stay
       # unconditional.
       forwardPorts = [
         {
@@ -98,6 +98,20 @@ in
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ hostStateDir ];
       stopContainers = [ "stalwart" ];
+    };
+
+    # The edge passes mx1 through untouched rather than terminating it.
+    # Stalwart's certificate also serves 25/465/993, which bypass caddy
+    # entirely, and TLS-ALPN-01 is the only challenge it can use — DNS-01
+    # supports Cloudflare/TSIG/SIG0 only and this domain is at Namecheap.
+    # That challenge needs the raw ClientHello on :443 to answer, which is
+    # exactly what a tcp route preserves.
+    mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
+      routes.mail = {
+        hostnames = [ "mx1.brianjs.com" ];
+        mode = "tcp";
+        target = "192.168.100.41:443";
+      };
     };
 
     containers.stalwart = {

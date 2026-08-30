@@ -35,6 +35,15 @@ let
               caddy = {
                 enable = true;
                 acmeEmail = "test@example.com";
+                # A synthetic passthrough, standing in for the mail route.
+                # The mail route itself is registered by the stalwart
+                # module, which this test host does not import — but the
+                # behaviour under test belongs to the caddy module.
+                routes.passthrough = {
+                  hostnames = [ "mx1.example.com" ];
+                  mode = "tcp";
+                  target = "192.168.100.41:443";
+                };
               };
               photoform = {
                 enable = true;
@@ -51,6 +60,8 @@ let
         }
       ];
     }).config;
+
+  gc = host.services.caddy.globalConfig;
 
   container = host.containers.photoform.config;
   unit = container.systemd.services.photoform;
@@ -150,15 +161,39 @@ let
         host.mine.system.caddy.routes.photoform.hostnames == [
           "booking.summerfieldphotography.com"
         ]
+        && host.mine.system.caddy.routes.photoform.mode == "tls"
         && host.mine.system.caddy.routes.photoform.target == "192.168.100.51:8080";
     }
     {
-      # The edge terminates with stock nixpkgs caddy (substituted from
-      # cache.nixos.org on the VPS), not a custom plugin build: the caddy-l4
-      # build pinned this repo to plugin-vendor semantics and broke on
-      # nixpkgs' Go bumps alone (2026-08-28).
-      name = "the edge runs the stock caddy package";
-      ok = host.services.caddy.package == pkgs.caddy;
+      # The layer4 app is an out-of-tree plugin, so the edge cannot be
+      # stock nixpkgs caddy. pkg-caddy-l4 is the CI gate on the vendor
+      # hash; this is the gate on the module actually using the build.
+      name = "the edge runs the caddy-l4 build, not stock caddy";
+      ok = host.services.caddy.package != pkgs.caddy;
+    }
+    {
+      name = "a tls route is matched by SNI and handed to caddy's own HTTPS server";
+      ok =
+        lib.hasInfix "@photoform tls sni booking.summerfieldphotography.com" gc
+        && lib.hasInfix "proxy 127.0.0.1:8443" gc;
+    }
+    {
+      # The defining property of the mail path: layer4 hands the raw
+      # connection to the backend, so the backend can answer TLS-ALPN-01
+      # itself. Terminating here is what broke Stalwart's renewal.
+      name = "a tcp route is proxied raw to its target";
+      ok =
+        lib.hasInfix "@passthrough tls sni mx1.example.com" gc
+        && lib.hasInfix "proxy 192.168.100.41:443" gc;
+    }
+    {
+      # If caddy rendered a vhost for a passthrough hostname it would try
+      # to obtain that certificate itself, racing the backend for the same
+      # name and consuming its duplicate-certificate budget.
+      name = "a tcp route gets no vhost, so caddy never issues for it";
+      ok =
+        host.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"
+        && !(host.services.caddy.virtualHosts ? "mx1.example.com");
     }
     {
       # restic reads the host side of the bind mount, with the container

@@ -83,6 +83,7 @@
         in
         {
           encode_queue = pkgs.callPackage ./modules/encode_queue/package.nix { };
+          caddy-l4 = pkgs.callPackage ./modules/caddy/package.nix { };
           photoform = pkgs.callPackage ./modules/photoform/package.nix { };
         }
       );
@@ -130,7 +131,7 @@
         // nixpkgs.lib.mapAttrs' (
           name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
         ) inputs.self.packages.x86_64-linux
-        # The eval-only host checks never render a Caddyfile, so a Caddyfile
+        # The eval-only host checks never render a layer4
         # syntax error would first surface on a deploy. Running the real
         # binary's adapter over every caddy host's config makes it a CI
         # failure instead. Generated, so a second caddy host is covered
