@@ -36,7 +36,7 @@ in
     adminPasswordFile = lib.mkOption {
       type = lib.types.path;
       description = ''
-        spot        Host path to the decrypted fallback-admin secret (e.g.
+        Host path to the decrypted fallback-admin secret (e.g.
                 config.sops.secrets.stalwart-admin-pw.path). Owned by stalwartUid,
                 bind-mounted read-only into the container. Store an argon2 hash; log in
                 with the plaintext.

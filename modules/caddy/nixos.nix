@@ -10,6 +10,14 @@
 # Port 80 is Caddy's own HTTP-01 lane. A "tcp" route's backend needs a
 # challenge path of its own — for Stalwart that is TLS-ALPN-01, which
 # works precisely because layer4 matches SNI before forwarding any bytes.
+#
+# A "tls" route loses the client's real address: layer4 dials
+# 127.0.0.1:8443 with no proxy_protocol, so caddy's access log records
+# 127.0.0.1 as the remote IP for every request, and a client-supplied
+# X-Forwarded-For survives with 127.0.0.1 merely appended. This is a
+# regression from a terminating stock-caddy edge for the booking site
+# specifically — the mail side of this class of issue is handled by
+# turning Stalwart's own use-x-forwarded off.
 {
   lib,
   config,
@@ -21,6 +29,12 @@ let
   # Where the HTTP app terminates TLS for layer4-matched hostnames. Only
   # the layer4 proxy dials it; the firewall never opens it.
   httpsPort = 8443;
+  # The nixpkgs module pipes the rendered Caddyfile through `caddy fmt`,
+  # which owns indentation entirely — so this only has to get the block
+  # structure right, never the whitespace. That said, tests/photoform.nix
+  # pins this function's exact rendered indentation via lib.hasInfix, so a
+  # reindent here will break those assertions even though behavior did
+  # not change.
   routeBlock = name: r: ''
     @${name} tls sni ${lib.concatStringsSep " " r.hostnames}
     route @${name} {
@@ -79,7 +93,7 @@ in
     assertions = [
       {
         assertion = lib.allUnique (lib.concatMap (r: r.hostnames) (lib.attrValues cfg.routes));
-        message = "mine.system.caddy: a hostname is claimed by more than one route";
+        message = "mine.system.caddy: a hostname is claimed twice";
       }
       {
         # A layer4 sni matcher with no names matches nothing and genAttrs
