@@ -24,20 +24,11 @@
 {
   lib,
   config,
-  pkgs,
   ...
 }:
 let
   cfg = config.mine.system.stalwart-server;
   hostStateDir = "/var/lib/stalwart-data";
-  certDir = "/var/lib/stalwart-certs";
-  # The hostname Stalwart presents on every listener, and the name caddy
-  # obtains the shared certificate for.
-  mailHostname = "mx1.brianjs.com";
-  # Static so the host can chgrp published files to a group the container
-  # resolves to the same number. stalwart-mail's uid is allocated
-  # dynamically and changing it would mean chowning a live mail store.
-  certGid = 700;
 in
 {
   options.mine.system.stalwart-server = {
@@ -51,15 +42,6 @@ in
                 with the plaintext.
       '';
     };
-    apiKeyFile = lib.mkOption {
-      type = lib.types.path;
-      description = ''
-        Host path to a Stalwart API key with the "Refresh system settings"
-        permission, used to reload TLS certificates after caddy renews them.
-        Created in the admin UI; Stalwart's API keys are DB-managed and
-        cannot be declared here.
-      '';
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -68,12 +50,6 @@ in
       chmod 700 ${hostStateDir}
       mkdir -p /var/lib/tailscale-stalwart
       chmod 700 /var/lib/tailscale-stalwart
-      # systemd-nspawn refuses to start when a bind mount's host source is
-      # missing, and the publish unit that creates this one only runs after
-      # caddy -- too late for the container's first start. Ownership is left
-      # to that unit's install -d, which sets it on every run.
-      mkdir -p ${certDir}
-      chmod 750 ${certDir}
     '';
 
     networking.firewall.allowedTCPPorts = [
@@ -124,50 +100,6 @@ in
       stopContainers = [ "stalwart" ];
     };
 
-    # Caddy is the sole issuer for the mail hostname: Stalwart's own
-    # TLS-ALPN-01 cannot complete while caddy terminates :443, and its
-    # certificate still serves 25/465/993, which bypass caddy entirely.
-    mine.system.caddy.certExports = lib.mkIf config.mine.system.caddy.enable {
-      stalwart = {
-        hostname = mailHostname;
-        destination = certDir;
-        owner = "root";
-        group = "stalwart-certs";
-        # Reload in-place rather than restarting: this runs on every renewal
-        # and a restart drops live IMAP and SMTP connections. The management
-        # listener is plain HTTP on the container's loopback, so rotating TLS
-        # never depends on a TLS connection secured by the certificate being
-        # replaced.
-        postPublish = ''
-          if ! ${pkgs.nixos-container}/bin/nixos-container run stalwart -- \
-              ${pkgs.curl}/bin/curl --fail --silent --show-error \
-                -H "Authorization: Bearer $(cat ${cfg.apiKeyFile})" \
-                http://127.0.0.1:8080/api/reload/certificate; then
-            echo "certificate reload failed; restarting stalwart" >&2
-            systemctl restart container@stalwart
-          fi
-
-          # Verify rather than assume. A reload that silently did not take
-          # leaves Stalwart serving the old certificate from memory until it
-          # expires -- the exact silent failure this whole change exists to
-          # remove. Source address is the veth gateway, which must stay
-          # allow-listed in Stalwart's security settings.
-          served=$(openssl s_client -connect 192.168.100.41:443 \
-            -servername ${mailHostname} </dev/null 2>/dev/null \
-            | openssl x509 -noout -fingerprint -sha256)
-          ondisk=$(openssl x509 -in ${certDir}/cert.pem -noout -fingerprint -sha256)
-          if [ "$served" != "$ondisk" ]; then
-            echo "stalwart is not serving the published certificate" >&2
-            echo "  served: $served" >&2
-            echo "  ondisk: $ondisk" >&2
-            exit 1
-          fi
-        '';
-      };
-    };
-
-    users.groups.stalwart-certs.gid = certGid;
-
     containers.stalwart = {
       autoStart = true;
       privateNetwork = true;
@@ -198,11 +130,6 @@ in
         };
         "/run/stalwart/admin-pw" = {
           hostPath = cfg.adminPasswordFile;
-          isReadOnly = true;
-        };
-        # Read-only: caddy renews, the host publishes, Stalwart only reads.
-        "${certDir}" = {
-          hostPath = certDir;
           isReadOnly = true;
         };
       };
@@ -314,11 +241,6 @@ in
               # UI so they live in the (writable, backed-up) database.
             };
           };
-
-          # Matches the host's gid so the bind-mounted 0640 files are readable
-          # without knowing stalwart-mail's dynamically-allocated uid.
-          users.groups.stalwart-certs.gid = certGid;
-          users.users.stalwart-mail.extraGroups = [ "stalwart-certs" ];
 
           networking = {
             nameservers = [

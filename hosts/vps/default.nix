@@ -43,10 +43,6 @@
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
-  sops.secrets.stalwart-api-key = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
-    mode = "0400";
-  };
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
@@ -77,7 +73,6 @@
         # (database-managed). Only the box + break-glass admin here; backup
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
-        apiKeyFile = config.sops.secrets.stalwart-api-key.path;
       };
       # SNI edge on 443: caddy is the sole TLS authority for every name it
       # claims. The mail route terminates with its own Let's Encrypt cert
