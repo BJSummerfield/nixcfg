@@ -31,6 +31,3 @@ your commands, so tools behave normally.
   repositories, so an auth or permission failure usually means the repo
   is out of scope - report it rather than retrying.
 - You have unrestricted network access.
-
-Plugin updates and cleanup are an operator job, not yours: see
-modules/devbox/MAINTENANCE.md in the nixcfg repo.

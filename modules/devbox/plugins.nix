@@ -5,7 +5,8 @@
 # rebuild re-seeds these specs but never pins a version - so a live update
 # persists across rebuilds instead of being undone by them.
 #
-# Update a running container (manual - see ENVIRONMENT.md):
+# Update a running container (manual - see MAINTENANCE.md, which also
+# covers removing a plugin and cleaning up what it left behind):
 #   pi:      pi update --extensions       (latest npm packages)
 #   claude:  claude plugin update
 #             (follows the official marketplace's current pin)

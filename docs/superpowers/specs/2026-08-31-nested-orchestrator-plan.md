@@ -839,7 +839,10 @@ activation.
   everything above, and E5 is deferred until it pairs with `--screenshot`. Separate
   change.
 - **A4, A6, A7.** These live in a project's ledger repo, not in nixcfg. The root
-  dispatcher prompt is recorded in `modules/devbox/ENVIRONMENT.md` so it is not lost.
+  dispatcher prompt stays here in §5.1. It does not belong in
+  `modules/devbox/ENVIRONMENT.md`, which is `--append-system-prompt` for claude and
+  `APPEND_SYSTEM.md` for pi - a workflow prompt there is paid for by every session
+  of both agents, including the ones not running it.
 - **D1 (self-hosted SearXNG).** Dropped on the evidence above: it cannot be reached
   without widening the SSRF guard for every fetch, and its engine-suspension
   penalties run to days against exactly this workload. Revisit if the keyless
