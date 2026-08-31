@@ -72,6 +72,31 @@ in
     # `pi update --extensions` - a rebuild re-seeds these same specs and
     # never undoes a live update.
     packages = plugins.piPackages;
+
+    # Subagent model routing, and nothing else. Which role does what, and
+    # how hard it thinks, is a per-dispatch decision the prompting agent
+    # makes: `subagent { agent, model, thinking, task }` beats every
+    # setting here bar the ceiling. So nix sets a safe default and a guard
+    # rail, not a policy.
+    #
+    # defaultModel is the budget alias - the same served instance with a
+    # smaller declared window, so a child compacts before a wave can
+    # thrash the KV pool. It reaches all six bundled agents, none of which
+    # pin a model. Escalate per call when the work wants the full window.
+    # Both ids are the same instance on purpose: pointing a child at the
+    # other redtruck model would make llama-swap tear down the loaded one
+    # mid-session.
+    #
+    # maxThinking is a hard ceiling - a request above it fails before the
+    # child starts, covering frontmatter, per-run overrides and nested
+    # launches alike. No defaultThinking to go with it: it only fills
+    # agents that declare no level, and of the bundled six only `delegate`
+    # qualifies. models.nix maps pi's levels onto what the chat template
+    # accepts, and folds low to medium there.
+    subagents = {
+      defaultModel = qualified budgetModel;
+      maxThinking = "xhigh";
+    };
   };
 
   models = {
@@ -98,61 +123,59 @@ in
               omitWhenOff = true;
             };
           };
-          # Reasoning and the answer share max_tokens on vLLM, so pi caps
-          # thinking via thinking_token_budget (clamped to leave answer room —
-          # matters most for the -48k alias's 8192 maxTokens).
-          supportsThinkingTokenBudget = true;
+          # Off: vllm#44676 is open against our exact parser pair
+          # (qwen3_coder + qwen3). The budget holder counts tool-call
+          # *argument* tokens as thinking, and on exhaustion force-injects
+          # </think> into the middle of the JSON arguments — a corrupt tool
+          # call, not a truncated answer. The reporter's differential: small
+          # budget 3/4 runs corrupted, large budget 0/8, budget off 0/12.
+          # Thinking is controlled by reasoning_effort through the
+          # chat-template block above instead, which cannot corrupt a call.
+          # Reasoning and the answer still share max_tokens on vLLM; the
+          # exposure that bought is now covered by the effort level rather
+          # than a hard token cap.
+          supportsThinkingTokenBudget = false;
         };
         models = redtruckModels;
       };
     };
   };
 
-  # pi-superagents tier config, seeded at
-  # ~/.pi/agent/extensions/subagent/config.json. The bundled defaults point
-  # cheap/balanced/max at providers we don't have (opencode-go, openai), and
-  # an unpinned tier that resolved to the *other* redtruck model would make
-  # llama-swap tear down the loaded vllm instance mid-session - so every
-  # tier gets the session model.
-  # cheap (what sp-recon, sp-research and sp-implementer declare in their
-  # frontmatter) takes the -48k llama-swap alias: same instance, smaller
-  # declared window, so parallel subagents compact before the wave can
-  # thrash the KV pool (sized in models.nix from the measured pool).
-  # max (sp-review, sp-debug) runs one-at-a-time and keeps the full window.
-  # Thinking levels flow to vLLM via the chat-template compat block above.
-  # cheap is medium, not low: the Qwen3.8 model card warns low effort on
-  # multi-turn agentic tasks trades per-turn speed for retries - models.nix
-  # maps pi's low/minimal to medium for the same reason. max gets xhigh for
-  # review/debug depth. Each subagent session holds one constant level, so
-  # vLLM prefix caching is unaffected.
-  # 1.14 also reserves a "reasoning" tier name, but no bundled agent
-  # references it - configure it here only when something does.
-  # Note: home.nix copies this over the file on every activation, so a
-  # /sp-settings TUI edit survives only until the next rebuild - edit here
-  # instead. It is a copy and not a store symlink because the extension
-  # itself rewrites the file at startup; see the comment there.
-  superagents = {
-    superagents = {
-      modelTiers = {
-        cheap = {
-          model = qualified budgetModel;
-          thinking = "medium";
-        };
-        balanced = {
-          model = qualified llm.default;
-          thinking = "medium";
-        };
-        max = {
-          model = qualified llm.default;
-          thinking = "xhigh";
-        };
-      };
-    };
-  };
-
   webSearch = {
     workflow = "auto-summary";
-    provider = "exa";
+    # Every provider that needs no API key, queried in parallel and merged
+    # (deduplicated by result URL). This was pinned to exa alone, whose
+    # keyless endpoint is the standing "web_search rate-limited" failure -
+    # and research is the one thing this stack does constantly.
+    #
+    # A list, not one of the two keywords, because neither does what it
+    # sounds like:
+    #   "auto" walks a fixed priority order and returns the *first*
+    #     available provider. isExaAvailable() is hardcoded `true`, so with
+    #     no keys set auto resolves to exa every time - unpinning alone
+    #     changes nothing.
+    #   "all" fans out, but over its own list, which explicitly excludes
+    #     duckduckgo, anysearch and parallel-mcp - so it collapses back to
+    #     exa too.
+    # Only an explicit list reaches the other keyless providers.
+    #
+    # Failures are per-provider: a provider that errors becomes a "Provider
+    # errors" note appended to the answer, and only an all-provider failure
+    # throws. So a throttled exa thins the result set instead of blocking
+    # the search - which is the whole point of listing more than one.
+    #
+    # Buying a key later is appending that provider's name here, plus its
+    # `<name>ApiKey` in this same file.
+    #
+    # Note anysearch and parallel-mcp are third-party endpoints that will
+    # see every query. Drop them to ["exa" "duckduckgo"] if that is not
+    # wanted; the two well-known ones already give the redundancy.
+    provider = [
+      "exa"
+      "duckduckgo"
+      "anysearch"
+      "parallel-mcp"
+    ];
     curatorTimeoutSeconds = 20;
     # pi-web-access otherwise picks its own default (claude-haiku / gpt-5.3
     # codex-spark) for the summary pass. Must stay the same provider/model as

@@ -32,10 +32,13 @@
       # windows). Only in-flight requests hold KV (no prefix caching —
       # vLLM auto-disables it for this hybrid-attention model), and
       # maxNumSeqs caps concurrency at 3, so the binding case is a full
-      # wave: 3 x (48k alias window + 8k output) ≈ 168k of the pool.
-      # A max-length main-session request overlapping two alias
-      # requests can transiently overcommit; vLLM resolves that by
-      # preempting one sequence, not sustained thrashing.
+      # wave: 3 x (56k alias window + 8k output) ≈ 197k of the pool.
+      # That cap is server-wide, not per session — queued requests hold
+      # no KV, blocks are allocated when a sequence is scheduled — so
+      # extra pi sessions or a second project buy queueing latency, never
+      # memory pressure. A max-length main-session request overlapping
+      # two alias requests can transiently overcommit; vLLM resolves that
+      # by preempting one sequence, not sustained thrashing.
       maxModelLen = 131072;
       # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
       # only compacts above contextWindow - reserveTokens (16384 default,
@@ -75,7 +78,14 @@
       vllm = {
         gpuMemoryUtilization = 0.94;
         maxNumSeqs = 3;
-        maxNumBatchedTokens = 2048;
+        # Prefill dominates these turns - 20-40k prompts arriving inside a
+        # single 10s window - and the 2048 default chunks one prompt into
+        # ~15 forward passes. 8192 also clears vLLM's
+        # `block_size <= max_num_batched_tokens` assert, which is what
+        # `--mamba-cache-mode align` needs if prefix caching is ever turned
+        # on for this hybrid-attention model. Watch the startup line
+        # "Setting attention block size to N tokens" and keep this >= N.
+        maxNumBatchedTokens = 8192;
         kvCacheDtype = "fp8";
         # recipes.vllm.ai suggests 3 for this model's MTP head
         speculativeTokens = 3;
@@ -84,13 +94,28 @@
         reasoningParser = "qwen3";
       };
 
-      # Aliases share the running instance — no model swap. 48k sized
-      # from the measured pool above: pi compacts past contextWindow -
-      # 16384 reserve, so this gives fan-out subagents ~32k of working
-      # room (16k at the old 32k window was forcing early compaction).
-      aliases."Qwen3.8-27B-NVFP4-48k" = {
-        displayName = "Qwen3.8 27B NVFP4 48k budget (redtruck)";
-        contextWindow = 49152;
+      # Aliases share the running instance — no model swap. Sized against
+      # the pool above, not against the compaction win alone: pi compacts
+      # past contextWindow - 16384 reserve, so 57344 gives a fan-out
+      # subagent 40,960 tokens of working room, +25% on the old 49152.
+      #
+      # The binding case is a full-width wave rather than the average, and
+      # a lane can hold its declared window plus its output allowance:
+      # 3 x (57344 + 8192) = 196,608 against the measured 203,579-token
+      # pool. It fits. 81920 — proposed while chasing the compaction win —
+      # would be 270,336, a 33% overcommit, which vLLM resolves by
+      # preempting a sequence and re-prefilling it later. Trading a
+      # possible 25-40s compaction for a possible 90k re-prefill is not a
+      # win. Revisit only if prefix caching is ever measured working here,
+      # since a same-role fan-out would then share one copy of the
+      # preamble instead of three.
+      #
+      # Rename rather than editing the number in place: llama-swap's
+      # aliases list and pi's model id have to move together, and a stale
+      # id then fails loudly instead of quietly serving the wrong window.
+      aliases."Qwen3.8-27B-NVFP4-56k" = {
+        displayName = "Qwen3.8 27B NVFP4 56k budget (redtruck)";
+        contextWindow = 57344;
         maxTokens = 8192;
       };
     };

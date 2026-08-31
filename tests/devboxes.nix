@@ -103,12 +103,6 @@ let
   # against it without building anything.
   pluginMembership = import ../modules/devbox/plugins.nix;
   llmCatalog = import ../modules/local-llm/models.nix;
-  servedIds = map (id: "${llmCatalog.provider}/${id}") (
-    builtins.concatMap (
-      name: [ name ] ++ builtins.attrNames (llmCatalog.models.${name}.aliases or { })
-    ) llmCatalog.enabled
-  );
-  tiers = piData.superagents.superagents.modelTiers;
   # writeShellScriptBin names its derivation after the binary, so the package
   # name is the command an agent session actually types.
   pkgNamed =
@@ -255,46 +249,20 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      # llama-swap serves one model at a time; a tier resolving to anything
-      # but the served instance would evict the parent's loaded model
-      # mid-session.
-      name = "every superagents tier maps to a served model or alias";
-      ok = lib.all (t: lib.elem t.model servedIds) (lib.attrValues tiers);
-    }
-    {
-      # Fan-out children must take the smaller declared window so a
-      # parallel wave compacts before it thrashes the KV pool.
-      name = "the cheap tier uses the default model's budget alias";
-      ok =
-        let
-          aliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
-        in
-        aliases == [ ] || tiers.cheap.model == "${llmCatalog.provider}/${builtins.head aliases}";
-    }
-    {
       # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor - both for superagents tiers and for the
-      # chat-template map every pi request goes through.
+      # medium is the floor in the chat-template map every pi request goes
+      # through. Hand-written per model, so nothing else derives it.
       name = "nothing requests low thinking";
-      ok =
+      ok = lib.all (
+        name:
         lib.all (
-          t:
-          lib.elem (t.thinking or "medium") [
+          v:
+          lib.elem v [
             "medium"
-            "high"
             "xhigh"
           ]
-        ) (lib.attrValues tiers)
-        && lib.all (
-          name:
-          lib.all (
-            v:
-            lib.elem v [
-              "medium"
-              "xhigh"
-            ]
-          ) (lib.attrValues (llmCatalog.models.${name}.thinkingLevels or { }))
-        ) llmCatalog.enabled;
+        ) (lib.attrValues (llmCatalog.models.${name}.thinkingLevels or { }))
+      ) llmCatalog.enabled;
     }
   ];
 
