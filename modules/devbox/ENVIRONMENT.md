@@ -32,27 +32,5 @@ your commands, so tools behave normally.
   is out of scope - report it rather than retrying.
 - You have unrestricted network access.
 
-## Updating agent plugins
-
-pi runs `pi-subagents` and `pi-web-access`; Claude runs its own
-Superpowers plugin, which is unrelated to either. Nix declares membership
-only - which plugins, no versions, no hashes - in
-modules/devbox/plugins.nix, so nothing version-shaped goes stale between
-rebuilds. Versions float, and a running container is updated with:
-
-- pi: `pi update --extensions` - latest npm packages.
-- Claude: `claude plugin update` - follows the official marketplace's
-  current pin.
-
-Updates persist across rebuilds: a rebuild re-seeds the membership specs
-and the role tiering, never the versions. A fresh container gets the pi
-plugins on pi's first start; for Claude run the one-time bootstrap:
-`claude plugin marketplace add anthropics/claude-plugins-official` then
-`claude plugin install superpowers@claude-plugins-official` - the
-seeded enabledPlugins entry turns it on.
-
-A bad release? Pin it down for the interim: add a version to the pi spec
-in modules/devbox/plugins.nix and rebuild. The claude plugin id carries
-no version slot (its version is pinned by the official marketplace) - the
-claude-side lever is temporarily removing the enabledPlugins entry in
-modules/devbox/container.nix.
+Plugin updates and cleanup are an operator job, not yours: see
+modules/devbox/MAINTENANCE.md in the nixcfg repo.
