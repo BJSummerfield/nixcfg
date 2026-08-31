@@ -32,20 +32,6 @@ your commands, so tools behave normally.
   is out of scope - report it rather than retrying.
 - You have unrestricted network access.
 
-## Subagents
-
-Subagent fan-out comes from the pi-subagents plugin - its entry points,
-roles and tier mapping are the plugin's own documentation to read, not
-environment facts. Three that are:
-
-- All children hit the same single local inference server, so keep
-  parallel fan-out to two or three tasks - a wider wave queues rather
-  than going faster. A child that looks slow while another build is
-  running is waiting for a lane, not stuck.
-- `researcher` is the role with web access; the others do not have it.
-- Nothing here has a browser. Web search and fetch return text, never a
-  rendered page or a screenshot.
-
 ## Updating agent plugins
 
 pi runs `pi-subagents` and `pi-web-access`; Claude runs its own
