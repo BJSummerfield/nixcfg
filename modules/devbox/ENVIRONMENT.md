@@ -34,77 +34,17 @@ your commands, so tools behave normally.
 
 ## Subagents
 
-Delegation on the pi side comes from `pi-subagents`. It ships `scout`,
-`researcher`, `worker`, `reviewer`, `oracle` and `delegate` as builtins,
-and nix adds one custom agent, `wp`, the sub-orchestrator. Per-role model
-and thinking level are declared in
-`modules/pi-coding-agent/settings.nix` under `settings.subagents`; the
-plugin's own docs cover its entry points and tool surface.
-
-The shape the roles are tiered for:
-
-```
-root dispatcher   depth 0   interviews, writes the ledger, then only
-                            dispatches - never reads a diff
-  wp              depth 1   fresh context per unit; researches, delegates,
-                            judges, writes the ledger, commits, dies
-    worker        depth 2   writes code
-    reviewer      depth 2   mechanical review; the verdict is wp's
-    researcher    depth 2   web and repo evidence
-```
-
-`wp` exists to be thrown away. Everything one unit of work accumulates -
-research, the diff, the verdict - dies with it, so the root never grows
-past its dispatch log. A `wp` that compacts is evidence the unit was too
-big; split it rather than raising a window.
-
-Depth 2 is the ceiling (`maxSubagentDepth`, seeded into the extension's
-config). A child at depth 2 cannot spawn, so the tree cannot run away.
-
-Two environment facts that matter regardless of which agent you are:
+Subagent fan-out comes from the pi-subagents plugin - its entry points,
+roles and tier mapping are the plugin's own documentation to read, not
+environment facts. Three that are:
 
 - All children hit the same single local inference server, so keep
   parallel fan-out to two or three tasks - a wider wave queues rather
-  than going faster. A second busy project on this box shares the same
-  three lanes.
-- A subagent that looks slow while something else is mid-build is
-  waiting for a lane, not stuck.
-- Web search reaches subagents through `researcher`, which declares
-  `web_search` / `fetch_content` / `get_search_content` and is the role to
-  delegate research to - the point being that those tokens are spent off
-  the orchestrator's context. `worker` and `reviewer` deliberately have no
-  web tools. Search fans out across every keyless provider at once and
-  merges, so a provider being throttled thins the results rather than
-  failing the search; the answer names any provider that errored.
-- None of this is a browser. `fetch_content` is an HTTP fetch plus text
-  extraction - no JavaScript, no rendering, no screenshots - so a task
-  that needs to see a page rendered is not something search or fetch can
-  do today.
-
-The root dispatcher prompt that goes with this, for a ledger-driven
-project:
-
-```text
-Interview me to realise the project. Then write the ledger: GOAL.md
-(charter), PLAN.md (units of work + status), LEDGER.md (append-only log),
-CONTEXT.md (live state), tasks/NNN-slug.md (one per unit: brief,
-findings, verdict). The test is: I can kill you at any unit boundary and
-a fresh agent resumes from these files alone.
-
-After the interview YOU DO NO WORK. Your only actions are:
-  subagent { agent: "wp", task: "Run the next todo unit in ledger/PLAN.md" }
-...then read ONLY the returned summary, and dispatch the next one. Never
-read a diff, a report file, or source.
-
-Stop when PLAN.md has no todo units, or when wp returns a blocked verdict
-twice in a row.
-```
-
-Recovery order for the ledger is stable-before-volatile:
-`GOAL -> PLAN -> LEDGER (tail) -> CONTEXT -> task file`. `CONTEXT.md` is
-rewritten every unit, so reading it earlier would invalidate everything
-behind it in the server's prefix cache and make each fresh `wp`
-re-prefill its whole preamble.
+  than going faster. A child that looks slow while another build is
+  running is waiting for a lane, not stuck.
+- `researcher` is the role with web access; the others do not have it.
+- Nothing here has a browser. Web search and fetch return text, never a
+  rendered page or a screenshot.
 
 ## Updating agent plugins
 
@@ -124,11 +64,6 @@ plugins on pi's first start; for Claude run the one-time bootstrap:
 `claude plugin marketplace add anthropics/claude-plugins-official` then
 `claude plugin install superpowers@claude-plugins-official` - the
 seeded enabledPlugins entry turns it on.
-
-Removing a spec from plugins.nix changes what is *seeded*; it does not
-uninstall. A container that ran an earlier plugin set needs one
-`pi remove <spec>` per dropped package, or a rebuild from scratch. Check
-`~/.pi/agent/npm/node_modules` afterwards.
 
 A bad release? Pin it down for the interim: add a version to the pi spec
 in modules/devbox/plugins.nix and rebuild. The claude plugin id carries

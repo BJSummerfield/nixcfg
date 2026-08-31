@@ -16,6 +16,13 @@
 # stops matching. The claude plugin id has no version slot - its version
 # is pinned by the official marketplace - so the claude-side lever is
 # temporarily removing the enabledPlugins entry from container.nix.
+#
+# Removing a spec from this list changes what is *seeded*; it does not
+# uninstall. A container that ran an earlier plugin set needs one
+# `pi remove <spec>` per dropped package, or a rebuild from scratch -
+# check ~/.pi/agent/npm/node_modules afterwards. This matters most when
+# two packages register the same tool name, where the leftover is not
+# inert but a collision.
 {
   # pi's package specs, seeded into ~/.pi/agent/settings.json via
   # pi-coding-agent/settings.nix. Unpinned on purpose: pi resolves the
