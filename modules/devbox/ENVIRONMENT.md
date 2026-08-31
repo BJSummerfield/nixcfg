@@ -69,6 +69,17 @@ Two environment facts that matter regardless of which agent you are:
   three lanes.
 - A subagent that looks slow while something else is mid-build is
   waiting for a lane, not stuck.
+- Web search reaches subagents through `researcher`, which declares
+  `web_search` / `fetch_content` / `get_search_content` and is the role to
+  delegate research to - the point being that those tokens are spent off
+  the orchestrator's context. `worker` and `reviewer` deliberately have no
+  web tools. Search fans out across every keyless provider at once and
+  merges, so a provider being throttled thins the results rather than
+  failing the search; the answer names any provider that errored.
+- None of this is a browser. `fetch_content` is an HTTP fetch plus text
+  extraction - no JavaScript, no rendering, no screenshots - so a task
+  that needs to see a page rendered is not something search or fetch can
+  do today.
 
 The root dispatcher prompt that goes with this, for a ledger-driven
 project:

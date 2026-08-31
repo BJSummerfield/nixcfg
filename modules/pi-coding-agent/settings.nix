@@ -206,22 +206,40 @@ in
 
   webSearch = {
     workflow = "auto-summary";
-    # No `provider` pin, which leaves the default `auto`: SearXNG is tried
-    # first and the rest of the chain stays as fallback. It was pinned to
-    # exa, whose free tier is the standing "web_search rate-limited"
-    # failure - and research is the one thing this stack does constantly.
+    # Every provider that needs no API key, queried in parallel and merged
+    # (deduplicated by result URL). This was pinned to exa alone, whose
+    # keyless endpoint is the standing "web_search rate-limited" failure -
+    # and research is the one thing this stack does constantly.
+    #
+    # A list, not one of the two keywords, because neither does what it
+    # sounds like:
+    #   "auto" walks a fixed priority order and returns the *first*
+    #     available provider. isExaAvailable() is hardcoded `true`, so with
+    #     no keys set auto resolves to exa every time - unpinning alone
+    #     changes nothing.
+    #   "all" fans out, but over its own list, which explicitly excludes
+    #     duckduckgo, anysearch and parallel-mcp - so it collapses back to
+    #     exa too.
+    # Only an explicit list reaches the other keyless providers.
+    #
+    # Failures are per-provider: a provider that errors becomes a "Provider
+    # errors" note appended to the answer, and only an all-provider failure
+    # throws. So a throttled exa thins the result set instead of blocking
+    # the search - which is the whole point of listing more than one.
+    #
+    # Buying a key later is appending that provider's name here, plus its
+    # `<name>ApiKey` in this same file.
+    #
+    # Note anysearch and parallel-mcp are third-party endpoints that will
+    # see every query. Drop them to ["exa" "duckduckgo"] if that is not
+    # wanted; the two well-known ones already give the redundancy.
+    provider = [
+      "exa"
+      "duckduckgo"
+      "anysearch"
+      "parallel-mcp"
+    ];
     curatorTimeoutSeconds = 20;
-    # Self-hosted, in the local-llm container (one scraper for the box, not
-    # one per agent). Plain http over the tailnet, which is WireGuard the
-    # whole way. searx must serve `json` in search.formats or every request
-    # 403s - pi-web-access asks for format=json unconditionally.
-    searxngBaseUrl = "http://llm.mist-gamma.ts.net:8888";
-    # pi-web-access refuses to fetch anything that resolves into a private
-    # or reserved range, and the tailnet is 100.64.0.0/10 (CGNAT) - so
-    # without this the self-hosted instance above is unreachable by
-    # construction and search silently falls through to the paid chain.
-    # Scoped to the tailnet block only; RFC1918 stays blocked.
-    ssrf.allowRanges = [ "100.64.0.0/10" ];
     # pi-web-access otherwise picks its own default (claude-haiku / gpt-5.3
     # codex-spark) for the summary pass. Must stay the same provider/model as
     # settings.model above - see the swap note there.

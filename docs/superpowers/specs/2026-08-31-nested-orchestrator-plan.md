@@ -785,17 +785,44 @@ fields the frontmatter left unset (`applyCustomAgentOverride`, guarded by
 `agentHasFrontmatterField`). So `wp.md` deliberately declares neither `model` nor
 `thinking`.
 
-**D1/D2 needs an SSRF exemption the plan does not mention.** `pi-web-access` runs
-every fetch through `assertPublicAddress`, whose IPv4 blocklist includes
-`100.64.0.0/10` — the tailscale CGNAT range. A self-hosted SearXNG addressed by its
-tailnet name is therefore unreachable by construction, and the failure looks like a
-silent fallback to the paid chain rather than an error. `ssrf.allowRanges =
-[ "100.64.0.0/10" ]` in `web-search.json` fixes it; RFC1918 stays blocked.
+**D1 (self-hosted SearXNG) was dropped, and D2 was not what it looked like.** Two
+findings killed it.
+
+D2 as written — delete `provider = "exa"` and let `auto` take over — is a no-op.
+`auto` returns the *first available* provider from a fixed priority order, and
+`isExaAvailable()` is hardcoded `return true`, so with no API key set and no SearXNG
+URL, `auto` resolves to exa on every call. The pin was never what put us on exa.
+`"all"` is not the answer either: it fans out, but over a list that explicitly
+excludes `duckduckgo`, `anysearch` and `parallel-mcp`, so it also collapses to exa.
+
+D1 would have fixed that, but at a price the plan does not price in. `pi-web-access`
+runs every fetch through `assertPublicAddress`, whose IPv4 blocklist covers *all*
+private space — `100.64.0.0/10` (tailscale CGNAT) **and** `192.168.0.0/16`. So there
+is no address a self-hosted instance could live at that does not need an
+`ssrf.allowRanges` exemption, and `allowRanges` is global: `extract.ts`
+(`fetch_content`) reads the same config, so exempting a range also lets an
+attacker-controlled page redirect the agent into it. Add to that SearXNG's own
+suspension schedule — 180s on HTTP 429, 1 hour on a CAPTCHA, **15 days** on a
+Cloudflare CAPTCHA — against a workload that is precisely bursty automated querying
+from one IP, and self-hosting trades a metered dependency for an unmetered but
+markedly less reliable one, plus a scraper to maintain.
+
+What landed instead is the explicit list `["exa", "duckduckgo", "anysearch",
+"parallel-mcp"]` — every provider that works without a key, queried in parallel and
+merged with URL dedup. Failures are per-provider (they become a "Provider errors"
+note; only an all-provider failure throws), so a throttled exa thins the results
+rather than blocking research. Buying a key later is appending a name to that list.
+
+One residual worth recording: in the `auto` path pi-web-access *does* fail over
+between providers at query time, but a provider returning HTTP 200 with zero results
+counts as success and does not trigger fallthrough. Under the explicit list that
+matters less, since the merge already spans four providers.
 
 ### Landed
 
 E1, E2, C2 · A1, A2, A3, A5, C5 (read order, in `wp.md` and `defaultReads`) ·
-B1-B4 · B3 at 57,344 per §12 · D1, D2, D3 · the §13 decommission list, minus the
+B1-B4 · B3 at 57,344 per §12 · D3, and D2 as a multi-provider list rather than as
+an unpin · the §13 decommission list, minus the
 container-state items nix cannot do (G5) — G6's `.bak` sweep is now in the
 activation.
 
@@ -813,6 +840,10 @@ activation.
   change.
 - **A4, A6, A7.** These live in a project's ledger repo, not in nixcfg. The root
   dispatcher prompt is recorded in `modules/devbox/ENVIRONMENT.md` so it is not lost.
+- **D1 (self-hosted SearXNG).** Dropped on the evidence above: it cannot be reached
+  without widening the SSRF guard for every fetch, and its engine-suspension
+  penalties run to days against exactly this workload. Revisit if the keyless
+  providers throttle in practice; the cheaper next step is an API key.
 
 ### Step 4 is still the gate
 

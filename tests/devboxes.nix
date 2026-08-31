@@ -349,18 +349,36 @@ let
       ok = piData.subagentsConfig.maxSubagentDepth == 2;
     }
     {
-      # `auto` with a reachable self-hosted instance, not a metered pin.
-      # The CGNAT exemption is load-bearing: pi-web-access blocks
-      # 100.64.0.0/10 by default, so without it the tailnet-hosted searx is
-      # unreachable and search silently falls through to the paid chain.
-      name = "web search is unpinned and can actually reach the tailnet";
+      # A list, not "auto" or "all": both of those resolve to exa alone
+      # while no API key is set, which is the throttling being escaped.
+      # More than one provider is the property that matters - failures are
+      # per-provider, so a second entry is what turns a throttled exa into
+      # a thinner result set rather than a failed search.
+      name = "web search fans out across more than one keyless provider";
       ok =
         let
           w = piData.webSearch;
         in
-        !(w ? provider)
-        && lib.hasPrefix "http://llm." w.searxngBaseUrl
-        && w.ssrf.allowRanges == [ "100.64.0.0/10" ];
+        builtins.isList w.provider
+        && lib.length w.provider >= 2
+        && lib.elem "exa" w.provider
+        && lib.elem "duckduckgo" w.provider;
+    }
+    {
+      # The bundled researcher gets its web tools from its own frontmatter
+      # (web_search, fetch_content, get_search_content) and keeps ambient
+      # extensions because it declares no `extensions` field. There are
+      # exactly two ways to take that away from here: a defaultExtensions
+      # allowlist, or an override that narrows a role's tools or
+      # extensions. Neither belongs in this config.
+      name = "nothing here takes web access away from subagents";
+      ok =
+        let
+          s = piData.settings.subagents;
+        in
+        !(s ? defaultExtensions)
+        && s.agentOverrides ? researcher
+        && lib.all (r: !(r ? tools) && !(r ? extensions)) (lib.attrValues s.agentOverrides);
     }
   ];
 
