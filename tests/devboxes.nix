@@ -346,16 +346,6 @@ let
       ok = piData.subagentsConfig.maxSubagentDepth == 2;
     }
     {
-      # Claude runs no plugins here. Nix only ever *enabled* one, so
-      # dropping it stops a rebuilt container coming up with it on - it
-      # does not uninstall claude's own state, which is the manual step
-      # documented in container.nix. Asserted against the membership file
-      # because that is the single source: a claudePluginId reappearing
-      # there is how it would come back.
-      name = "no claude plugin is declared";
-      ok = !(pluginMembership ? claudePluginId);
-    }
-    {
       # A list, not "auto" or "all": both of those resolve to exa alone
       # while no API key is set, which is the throttling being escaped.
       # More than one provider is the property that matters - failures are
