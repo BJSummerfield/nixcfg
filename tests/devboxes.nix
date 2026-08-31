@@ -108,7 +108,7 @@ let
       name: [ name ] ++ builtins.attrNames (llmCatalog.models.${name}.aliases or { })
     ) llmCatalog.enabled
   );
-  roles = piData.settings.subagents.agentOverrides;
+  subagents = piData.settings.subagents;
   # writeShellScriptBin names its derivation after the binary, so the package
   # name is the command an agent session actually types.
   pkgNamed =
@@ -258,33 +258,30 @@ let
       # llama-swap serves one model at a time; a tier resolving to anything
       # but the served instance would evict the parent's loaded model
       # mid-session.
-      name = "every subagent role maps to a served model or alias";
-      ok = lib.all (r: lib.elem r.model servedIds) (lib.attrValues roles);
+      name = "the subagent default maps to a served model or alias";
+      ok = lib.elem subagents.defaultModel servedIds;
     }
     {
       # Fan-out children must take the smaller declared window so a
       # parallel wave compacts before it thrashes the KV pool.
-      name = "the build role uses the default model's budget alias";
+      name = "subagents default to the budget alias";
       ok =
         let
           aliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
         in
-        aliases == [ ] || roles.worker.model == "${llmCatalog.provider}/${builtins.head aliases}";
+        aliases == [ ] || subagents.defaultModel == "${llmCatalog.provider}/${builtins.head aliases}";
     }
     {
       # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor - both for the role overrides and for the
+      # medium is the floor - both for the subagent ceiling and for the
       # chat-template map every pi request goes through.
       name = "nothing requests low thinking";
       ok =
-        lib.all (
-          t:
-          lib.elem (t.thinking or "medium") [
-            "medium"
-            "high"
-            "xhigh"
-          ]
-        ) (lib.attrValues roles)
+        lib.elem subagents.maxThinking [
+          "medium"
+          "high"
+          "xhigh"
+        ]
         && lib.all (
           name:
           lib.all (

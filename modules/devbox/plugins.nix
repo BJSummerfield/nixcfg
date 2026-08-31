@@ -38,8 +38,10 @@
 # If a `pi remove` fails, the state is under ~/.pi/agent: npm packages in
 # npm/node_modules/<name> (scoped ones nest as @scope/name), git packages
 # in git/, and each extension's own config in extensions/<name>/. That
-# last one is not touched by `pi remove`; the `subagent` directory is
-# nix-managed (pi-coding-agent/home.nix), any other needs a manual rm.
+# last one is not touched by `pi remove` and needs a manual rm - including
+# extensions/subagent/, where pi-superagents left a config.json plus the
+# mode-444 config.json.bak-<timestamp> files its install migration wrote
+# on every start.
 {
   # pi's package specs, seeded into ~/.pi/agent/settings.json via
   # pi-coding-agent/settings.nix. Unpinned on purpose: pi resolves the

@@ -73,65 +73,29 @@ in
     # never undoes a live update.
     packages = plugins.piPackages;
 
-    # pi-subagents role tiering. This lives in pi's settings.json, not in
-    # the extension's own config.json - the extension reads
-    # `subagents.{defaultThinking,maxThinking,agentOverrides}` from the pi
-    # settings files and only its non-role keys from
-    # ~/.pi/agent/extensions/subagent/config.json (its
-    # docs/configuration.md is explicit about the split).
+    # Subagent model routing, and nothing else. Which role does what, and
+    # how hard it thinks, is a per-dispatch decision the prompting agent
+    # makes: `subagent { agent, model, thinking, task }` beats every
+    # setting here bar the ceiling. So nix sets a safe default and a guard
+    # rail, not a policy.
     #
-    # Three populations, not a tier vocabulary:
-    #   judgement (wp, reviewer)  full window, xhigh
-    #   build     (worker)        budget alias, medium
-    #   recon     (researcher, scout) budget alias, medium
-    # The budget alias is the same served instance with a smaller declared
-    # window, so a fan-out compacts before the wave can thrash the KV pool
-    # (sized in models.nix from the measured pool). Pointing any role at
-    # the *other* redtruck model would make llama-swap tear down the loaded
-    # vLLM instance mid-session, so every role gets the session model.
+    # defaultModel is the budget alias - the same served instance with a
+    # smaller declared window, so a child compacts before a wave can
+    # thrash the KV pool. It reaches all six bundled agents, none of which
+    # pin a model. Escalate per call when the work wants the full window.
+    # Both ids are the same instance on purpose: pointing a child at the
+    # other redtruck model would make llama-swap tear down the loaded one
+    # mid-session.
     #
-    # medium, not low: the Qwen3.8 model card warns that low effort on
-    # multi-turn agentic work trades per-turn speed for retries, and
-    # models.nix maps pi's low/minimal to medium at the chat template for
-    # the same reason.
-    #
-    # Overrides beat builtin frontmatter outright, which is the point here -
-    # bundled `worker` and `reviewer` declare `thinking: high` and `scout`
-    # declares `low`, and none of those are the level we want. For *custom*
-    # agents (wp) an override only fills fields the frontmatter leaves
-    # unset, which is why wp.md deliberately declares neither model nor
-    # thinking.
+    # maxThinking is a hard ceiling - a request above it fails before the
+    # child starts, covering frontmatter, per-run overrides and nested
+    # launches alike. No defaultThinking to go with it: it only fills
+    # agents that declare no level, and of the bundled six only `delegate`
+    # qualifies. models.nix maps pi's levels onto what the chat template
+    # accepts, and folds low to medium there.
     subagents = {
-      # A declared floor and a hard ceiling, so the silent high -> xhigh
-      # escalation cannot come back through a role we forget to list: pi's
-      # `high` maps to xhigh at the chat template (models.nix), so a role
-      # that inherits the session default would quietly run at max effort.
-      # maxThinking is a guard, not the authority - models.nix's
-      # thinkingLevels map stays the thing that decides what vLLM sees.
-      defaultThinking = "medium";
+      defaultModel = qualified budgetModel;
       maxThinking = "xhigh";
-      agentOverrides = {
-        wp = {
-          model = qualified llm.default;
-          thinking = "xhigh";
-        };
-        reviewer = {
-          model = qualified llm.default;
-          thinking = "xhigh";
-        };
-        worker = {
-          model = qualified budgetModel;
-          thinking = "medium";
-        };
-        researcher = {
-          model = qualified budgetModel;
-          thinking = "medium";
-        };
-        scout = {
-          model = qualified budgetModel;
-          thinking = "medium";
-        };
-      };
     };
   };
 
@@ -175,33 +139,6 @@ in
         models = redtruckModels;
       };
     };
-  };
-
-  # pi-subagents' *extension* config, seeded at
-  # ~/.pi/agent/extensions/subagent/config.json. Role tiering is not here -
-  # it is `settings.subagents` above; this file holds the extension's own
-  # non-role keys.
-  #
-  # maxSubagentDepth is stated rather than inherited because the whole
-  # nested design is a statement about depth, and upstream's default is
-  # neither documented in the field table nor stable across releases:
-  #
-  #   depth 0  root dispatcher   interviews, writes the ledger, then only
-  #                              dispatches - never reads a diff
-  #   depth 1  wp                fresh context per unit; researches,
-  #                              delegates, judges, writes the ledger, dies
-  #   depth 2  worker/reviewer/researcher   write code, review, fetch
-  #
-  # 2 is exactly that shape: a child at depth 2 is blocked from spawning,
-  # so the tree cannot run away. Note the trap this replaces - `1` here (or
-  # `maxSubagentDepth: 1` in wp's own frontmatter) does *not* mean "wp's
-  # children may not delegate"; it hands wp itself a ceiling equal to its
-  # own depth and blocks every dispatch it makes.
-  #
-  # home.nix copies this over the file on every activation, so a runtime
-  # edit survives only until the next rebuild - edit here instead.
-  subagentsConfig = {
-    maxSubagentDepth = 2;
   };
 
   webSearch = {
