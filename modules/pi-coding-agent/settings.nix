@@ -72,6 +72,67 @@ in
     # `pi update --extensions` - a rebuild re-seeds these same specs and
     # never undoes a live update.
     packages = plugins.piPackages;
+
+    # pi-subagents role tiering. This lives in pi's settings.json, not in
+    # the extension's own config.json - the extension reads
+    # `subagents.{defaultThinking,maxThinking,agentOverrides}` from the pi
+    # settings files and only its non-role keys from
+    # ~/.pi/agent/extensions/subagent/config.json (its
+    # docs/configuration.md is explicit about the split).
+    #
+    # Three populations, not a tier vocabulary:
+    #   judgement (wp, reviewer)  full window, xhigh
+    #   build     (worker)        budget alias, medium
+    #   recon     (researcher, scout) budget alias, medium
+    # The budget alias is the same served instance with a smaller declared
+    # window, so a fan-out compacts before the wave can thrash the KV pool
+    # (sized in models.nix from the measured pool). Pointing any role at
+    # the *other* redtruck model would make llama-swap tear down the loaded
+    # vLLM instance mid-session, so every role gets the session model.
+    #
+    # medium, not low: the Qwen3.8 model card warns that low effort on
+    # multi-turn agentic work trades per-turn speed for retries, and
+    # models.nix maps pi's low/minimal to medium at the chat template for
+    # the same reason.
+    #
+    # Overrides beat builtin frontmatter outright, which is the point here -
+    # bundled `worker` and `reviewer` declare `thinking: high` and `scout`
+    # declares `low`, and none of those are the level we want. For *custom*
+    # agents (wp) an override only fills fields the frontmatter leaves
+    # unset, which is why wp.md deliberately declares neither model nor
+    # thinking.
+    subagents = {
+      # A declared floor and a hard ceiling, so the silent high -> xhigh
+      # escalation cannot come back through a role we forget to list: pi's
+      # `high` maps to xhigh at the chat template (models.nix), so a role
+      # that inherits the session default would quietly run at max effort.
+      # maxThinking is a guard, not the authority - models.nix's
+      # thinkingLevels map stays the thing that decides what vLLM sees.
+      defaultThinking = "medium";
+      maxThinking = "xhigh";
+      agentOverrides = {
+        wp = {
+          model = qualified llm.default;
+          thinking = "xhigh";
+        };
+        reviewer = {
+          model = qualified llm.default;
+          thinking = "xhigh";
+        };
+        worker = {
+          model = qualified budgetModel;
+          thinking = "medium";
+        };
+        researcher = {
+          model = qualified budgetModel;
+          thinking = "medium";
+        };
+        scout = {
+          model = qualified budgetModel;
+          thinking = "medium";
+        };
+      };
+    };
   };
 
   models = {
@@ -116,52 +177,51 @@ in
     };
   };
 
-  # pi-superagents tier config, seeded at
-  # ~/.pi/agent/extensions/subagent/config.json. The bundled defaults point
-  # cheap/balanced/max at providers we don't have (opencode-go, openai), and
-  # an unpinned tier that resolved to the *other* redtruck model would make
-  # llama-swap tear down the loaded vllm instance mid-session - so every
-  # tier gets the session model.
-  # cheap (what sp-recon, sp-research and sp-implementer declare in their
-  # frontmatter) takes the -48k llama-swap alias: same instance, smaller
-  # declared window, so parallel subagents compact before the wave can
-  # thrash the KV pool (sized in models.nix from the measured pool).
-  # max (sp-review, sp-debug) runs one-at-a-time and keeps the full window.
-  # Thinking levels flow to vLLM via the chat-template compat block above.
-  # cheap is medium, not low: the Qwen3.8 model card warns low effort on
-  # multi-turn agentic tasks trades per-turn speed for retries - models.nix
-  # maps pi's low/minimal to medium for the same reason. max gets xhigh for
-  # review/debug depth. Each subagent session holds one constant level, so
-  # vLLM prefix caching is unaffected.
-  # 1.14 also reserves a "reasoning" tier name, but no bundled agent
-  # references it - configure it here only when something does.
-  # Note: home.nix copies this over the file on every activation, so a
-  # /sp-settings TUI edit survives only until the next rebuild - edit here
-  # instead. It is a copy and not a store symlink because the extension
-  # itself rewrites the file at startup; see the comment there.
-  superagents = {
-    superagents = {
-      modelTiers = {
-        cheap = {
-          model = qualified budgetModel;
-          thinking = "medium";
-        };
-        balanced = {
-          model = qualified llm.default;
-          thinking = "medium";
-        };
-        max = {
-          model = qualified llm.default;
-          thinking = "xhigh";
-        };
-      };
-    };
+  # pi-subagents' *extension* config, seeded at
+  # ~/.pi/agent/extensions/subagent/config.json. Role tiering is not here -
+  # it is `settings.subagents` above; this file holds the extension's own
+  # non-role keys.
+  #
+  # maxSubagentDepth is stated rather than inherited because the whole
+  # nested design is a statement about depth, and upstream's default is
+  # neither documented in the field table nor stable across releases:
+  #
+  #   depth 0  root dispatcher   interviews, writes the ledger, then only
+  #                              dispatches - never reads a diff
+  #   depth 1  wp                fresh context per unit; researches,
+  #                              delegates, judges, writes the ledger, dies
+  #   depth 2  worker/reviewer/researcher   write code, review, fetch
+  #
+  # 2 is exactly that shape: a child at depth 2 is blocked from spawning,
+  # so the tree cannot run away. Note the trap this replaces - `1` here (or
+  # `maxSubagentDepth: 1` in wp's own frontmatter) does *not* mean "wp's
+  # children may not delegate"; it hands wp itself a ceiling equal to its
+  # own depth and blocks every dispatch it makes.
+  #
+  # home.nix copies this over the file on every activation, so a runtime
+  # edit survives only until the next rebuild - edit here instead.
+  subagentsConfig = {
+    maxSubagentDepth = 2;
   };
 
   webSearch = {
     workflow = "auto-summary";
-    provider = "exa";
+    # No `provider` pin, which leaves the default `auto`: SearXNG is tried
+    # first and the rest of the chain stays as fallback. It was pinned to
+    # exa, whose free tier is the standing "web_search rate-limited"
+    # failure - and research is the one thing this stack does constantly.
     curatorTimeoutSeconds = 20;
+    # Self-hosted, in the local-llm container (one scraper for the box, not
+    # one per agent). Plain http over the tailnet, which is WireGuard the
+    # whole way. searx must serve `json` in search.formats or every request
+    # 403s - pi-web-access asks for format=json unconditionally.
+    searxngBaseUrl = "http://llm.mist-gamma.ts.net:8888";
+    # pi-web-access refuses to fetch anything that resolves into a private
+    # or reserved range, and the tailnet is 100.64.0.0/10 (CGNAT) - so
+    # without this the self-hosted instance above is unreachable by
+    # construction and search silently falls through to the paid chain.
+    # Scoped to the tailnet block only; RFC1918 stays blocked.
+    ssrf.allowRanges = [ "100.64.0.0/10" ];
     # pi-web-access otherwise picks its own default (claude-haiku / gpt-5.3
     # codex-spark) for the summary pass. Must stay the same provider/model as
     # settings.model above - see the swap note there.
