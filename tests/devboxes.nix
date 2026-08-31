@@ -108,7 +108,12 @@ let
       name: [ name ] ++ builtins.attrNames (llmCatalog.models.${name}.aliases or { })
     ) llmCatalog.enabled
   );
-  tiers = piData.superagents.superagents.modelTiers;
+  roles = piData.settings.subagents.agentOverrides;
+  budgetAliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
+  # The one custom agent. Asserted as text because what matters about it is
+  # mostly what it does *not* say - see the frontmatter check below.
+  wpAgent = builtins.readFile ../modules/pi-coding-agent/agents/wp.md;
+  wpFrontmatter = builtins.head (builtins.match "---\n(.*)\n---\n.*" wpAgent);
   # writeShellScriptBin names its derivation after the binary, so the package
   # name is the command an agent session actually types.
   pkgNamed =
@@ -255,36 +260,50 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      # llama-swap serves one model at a time; a tier resolving to anything
+      # llama-swap serves one model at a time; a role resolving to anything
       # but the served instance would evict the parent's loaded model
       # mid-session.
-      name = "every superagents tier maps to a served model or alias";
-      ok = lib.all (t: lib.elem t.model servedIds) (lib.attrValues tiers);
+      name = "every subagent role maps to a served model or alias";
+      ok = lib.all (r: lib.elem r.model servedIds) (lib.attrValues roles);
     }
     {
       # Fan-out children must take the smaller declared window so a
-      # parallel wave compacts before it thrashes the KV pool.
-      name = "the cheap tier uses the default model's budget alias";
+      # parallel wave compacts before it thrashes the KV pool; the two
+      # judgement roles keep the full one.
+      name = "fan-out roles take the budget alias, judgement roles the full window";
       ok =
-        let
-          aliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
-        in
-        aliases == [ ] || tiers.cheap.model == "${llmCatalog.provider}/${builtins.head aliases}";
+        budgetAliases == [ ]
+        ||
+          lib.all (n: roles.${n}.model == "${llmCatalog.provider}/${builtins.head budgetAliases}") [
+            "worker"
+            "researcher"
+            "scout"
+          ]
+          && lib.all (n: roles.${n}.model == "${llmCatalog.provider}/${llmCatalog.default}") [
+            "wp"
+            "reviewer"
+          ];
     }
     {
       # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor - both for superagents tiers and for the
-      # chat-template map every pi request goes through.
+      # medium is the floor - for the role overrides, for the default every
+      # unlisted agent inherits, and for the chat-template map every pi
+      # request goes through. maxThinking is the other half: it is what
+      # stops an agent nobody listed here inheriting the session's `high`,
+      # which the map escalates to xhigh.
       name = "nothing requests low thinking";
       ok =
-        lib.all (
-          t:
-          lib.elem (t.thinking or "medium") [
+        let
+          allowed = [
             "medium"
             "high"
             "xhigh"
-          ]
-        ) (lib.attrValues tiers)
+          ];
+          subagents = piData.settings.subagents;
+        in
+        lib.all (r: lib.elem (r.thinking or "medium") allowed) (lib.attrValues roles)
+        && lib.elem subagents.defaultThinking allowed
+        && lib.elem subagents.maxThinking allowed
         && lib.all (
           name:
           lib.all (
@@ -295,6 +314,53 @@ let
             ]
           ) (lib.attrValues (llmCatalog.models.${name}.thinkingLevels or { }))
         ) llmCatalog.enabled;
+    }
+    {
+      # The custom agent dir is a plain store link (pi only reads agent
+      # files), unlike settings.json and the extension config.
+      name = "the wp sub-orchestrator is seeded as a user agent";
+      ok = (homeFiles "devbox") ? ".pi/agent/agents";
+    }
+    {
+      # Three fields whose *presence* would break the design, each in a way
+      # that looks like a reasonable edit:
+      #   maxSubagentDepth - is a ceiling on the agent itself, so 1 on a
+      #     depth-1 sub-orchestrator blocks every dispatch it makes;
+      #   extensions - is a path allowlist whose presence disables every
+      #     other extension, so it would remove wp's web access;
+      #   model / thinking - an agentOverrides entry only fills fields a
+      #     *custom* agent leaves unset, so declaring them here takes wp's
+      #     tier out of settings.nix and silently ignores the override.
+      name = "wp declares nesting and nothing that would disable it";
+      ok =
+        lib.hasInfix "allowNestedSubagents: true" wpFrontmatter
+        && lib.hasInfix "defaultContext: fresh" wpFrontmatter
+        && !(lib.hasInfix "maxSubagentDepth" wpFrontmatter)
+        && !(lib.hasInfix "extensions" wpFrontmatter)
+        && !(lib.hasInfix "model:" wpFrontmatter)
+        && !(lib.hasInfix "thinking:" wpFrontmatter)
+        && roles ? wp;
+    }
+    {
+      # depth 0 root -> depth 1 wp -> depth 2 worker/reviewer/researcher,
+      # and a depth-2 child cannot spawn. Stated rather than inherited so
+      # the shape does not ride on an upstream default.
+      name = "the delegation tree is capped at depth 2";
+      ok = piData.subagentsConfig.maxSubagentDepth == 2;
+    }
+    {
+      # `auto` with a reachable self-hosted instance, not a metered pin.
+      # The CGNAT exemption is load-bearing: pi-web-access blocks
+      # 100.64.0.0/10 by default, so without it the tailnet-hosted searx is
+      # unreachable and search silently falls through to the paid chain.
+      name = "web search is unpinned and can actually reach the tailnet";
+      ok =
+        let
+          w = piData.webSearch;
+        in
+        !(w ? provider)
+        && lib.hasPrefix "http://llm." w.searxngBaseUrl
+        && w.ssrf.allowRanges == [ "100.64.0.0/10" ];
     }
   ];
 
