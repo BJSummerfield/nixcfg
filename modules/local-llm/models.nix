@@ -75,7 +75,14 @@
       vllm = {
         gpuMemoryUtilization = 0.94;
         maxNumSeqs = 3;
-        maxNumBatchedTokens = 2048;
+        # Prefill dominates these turns - 20-40k prompts arriving inside a
+        # single 10s window - and the 2048 default chunks one prompt into
+        # ~15 forward passes. 8192 also clears vLLM's
+        # `block_size <= max_num_batched_tokens` assert, which is what
+        # `--mamba-cache-mode align` needs if prefix caching is ever turned
+        # on for this hybrid-attention model. Watch the startup line
+        # "Setting attention block size to N tokens" and keep this >= N.
+        maxNumBatchedTokens = 8192;
         kvCacheDtype = "fp8";
         # recipes.vllm.ai suggests 3 for this model's MTP head
         speculativeTokens = 3;

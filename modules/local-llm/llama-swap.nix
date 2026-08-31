@@ -45,8 +45,9 @@ let
     "--enable-auto-tool-choice"
     "--tool-call-parser ${m.vllm.toolCallParser}"
     "--reasoning-parser ${m.vllm.reasoningParser}"
-    # the repo's generation_config ships 1.0; pi is a coding agent, so pin the
-    # precise-coding value instead
+    # Pins the served default to the catalog's sampling block, so the value a
+    # client omits is the one the model card documents rather than whatever
+    # the repo's generation_config happens to ship.
     "--override-generation-config '{\"temperature\": ${num m.sampling.temperature}}'"
     "--speculative-config '{\"method\": \"mtp\", \"num_speculative_tokens\": ${num m.vllm.speculativeTokens}}'"
   ];

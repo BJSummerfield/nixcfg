@@ -98,10 +98,18 @@ in
               omitWhenOff = true;
             };
           };
-          # Reasoning and the answer share max_tokens on vLLM, so pi caps
-          # thinking via thinking_token_budget (clamped to leave answer room —
-          # matters most for the -48k alias's 8192 maxTokens).
-          supportsThinkingTokenBudget = true;
+          # Off: vllm#44676 is open against our exact parser pair
+          # (qwen3_coder + qwen3). The budget holder counts tool-call
+          # *argument* tokens as thinking, and on exhaustion force-injects
+          # </think> into the middle of the JSON arguments — a corrupt tool
+          # call, not a truncated answer. The reporter's differential: small
+          # budget 3/4 runs corrupted, large budget 0/8, budget off 0/12.
+          # Thinking is controlled by reasoning_effort through the
+          # chat-template block above instead, which cannot corrupt a call.
+          # Reasoning and the answer still share max_tokens on vLLM; the
+          # exposure that bought is now covered by the effort level rather
+          # than a hard token cap.
+          supportsThinkingTokenBudget = false;
         };
         models = redtruckModels;
       };
