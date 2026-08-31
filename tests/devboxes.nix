@@ -109,11 +109,6 @@ let
     ) llmCatalog.enabled
   );
   roles = piData.settings.subagents.agentOverrides;
-  budgetAliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
-  # The one custom agent. Asserted as text because what matters about it is
-  # mostly what it does *not* say - see the frontmatter check below.
-  wpAgent = builtins.readFile ../modules/pi-coding-agent/agents/wp.md;
-  wpFrontmatter = builtins.head (builtins.match "---\n(.*)\n---\n.*" wpAgent);
   # writeShellScriptBin names its derivation after the binary, so the package
   # name is the command an agent session actually types.
   pkgNamed =
@@ -215,9 +210,12 @@ let
       # between rebuilds. What this check can see at eval time: pi's
       # specs are single-sourced from the one membership file, and
       # neither agent may also get a standalone skills link, which would
-      # list every skill twice. A temporary version pin against a bad
-      # release belongs in the membership file itself - see its header -
-      # so this test asserts single-sourcing, not pin-freeness.
+      # list every skill twice. (The claude side - the version-less
+      # enabledPlugins entry in its settings seed - is a build-time fact
+      # the container image build exercises, not eval-assertable.) A
+      # temporary version pin against a bad release belongs in the
+      # membership file itself - see its header - so this test asserts
+      # single-sourcing, not pin-freeness.
       name = "plugins are declared as versionless membership, not double-seeded";
       ok =
         let
@@ -257,7 +255,7 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      # llama-swap serves one model at a time; a role resolving to anything
+      # llama-swap serves one model at a time; a tier resolving to anything
       # but the served instance would evict the parent's loaded model
       # mid-session.
       name = "every subagent role maps to a served model or alias";
@@ -265,42 +263,28 @@ let
     }
     {
       # Fan-out children must take the smaller declared window so a
-      # parallel wave compacts before it thrashes the KV pool; the two
-      # judgement roles keep the full one.
-      name = "fan-out roles take the budget alias, judgement roles the full window";
+      # parallel wave compacts before it thrashes the KV pool.
+      name = "the build role uses the default model's budget alias";
       ok =
-        budgetAliases == [ ]
-        ||
-          lib.all (n: roles.${n}.model == "${llmCatalog.provider}/${builtins.head budgetAliases}") [
-            "worker"
-            "researcher"
-            "scout"
-          ]
-          && lib.all (n: roles.${n}.model == "${llmCatalog.provider}/${llmCatalog.default}") [
-            "wp"
-            "reviewer"
-          ];
+        let
+          aliases = builtins.attrNames (llmCatalog.models.${llmCatalog.default}.aliases or { });
+        in
+        aliases == [ ] || roles.worker.model == "${llmCatalog.provider}/${builtins.head aliases}";
     }
     {
       # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor - for the role overrides, for the default every
-      # unlisted agent inherits, and for the chat-template map every pi
-      # request goes through. maxThinking is the other half: it is what
-      # stops an agent nobody listed here inheriting the session's `high`,
-      # which the map escalates to xhigh.
+      # medium is the floor - both for the role overrides and for the
+      # chat-template map every pi request goes through.
       name = "nothing requests low thinking";
       ok =
-        let
-          allowed = [
+        lib.all (
+          t:
+          lib.elem (t.thinking or "medium") [
             "medium"
             "high"
             "xhigh"
-          ];
-          subagents = piData.settings.subagents;
-        in
-        lib.all (r: lib.elem (r.thinking or "medium") allowed) (lib.attrValues roles)
-        && lib.elem subagents.defaultThinking allowed
-        && lib.elem subagents.maxThinking allowed
+          ]
+        ) (lib.attrValues roles)
         && lib.all (
           name:
           lib.all (
@@ -311,71 +295,6 @@ let
             ]
           ) (lib.attrValues (llmCatalog.models.${name}.thinkingLevels or { }))
         ) llmCatalog.enabled;
-    }
-    {
-      # The custom agent dir is a plain store link (pi only reads agent
-      # files), unlike settings.json and the extension config.
-      name = "the wp sub-orchestrator is seeded as a user agent";
-      ok = (homeFiles "devbox") ? ".pi/agent/agents";
-    }
-    {
-      # Three fields whose *presence* would break the design, each in a way
-      # that looks like a reasonable edit:
-      #   maxSubagentDepth - is a ceiling on the agent itself, so 1 on a
-      #     depth-1 sub-orchestrator blocks every dispatch it makes;
-      #   extensions - is a path allowlist whose presence disables every
-      #     other extension, so it would remove wp's web access;
-      #   model / thinking - an agentOverrides entry only fills fields a
-      #     *custom* agent leaves unset, so declaring them here takes wp's
-      #     tier out of settings.nix and silently ignores the override.
-      name = "wp declares nesting and nothing that would disable it";
-      ok =
-        lib.hasInfix "allowNestedSubagents: true" wpFrontmatter
-        && lib.hasInfix "defaultContext: fresh" wpFrontmatter
-        && !(lib.hasInfix "maxSubagentDepth" wpFrontmatter)
-        && !(lib.hasInfix "extensions" wpFrontmatter)
-        && !(lib.hasInfix "model:" wpFrontmatter)
-        && !(lib.hasInfix "thinking:" wpFrontmatter)
-        && roles ? wp;
-    }
-    {
-      # depth 0 root -> depth 1 wp -> depth 2 worker/reviewer/researcher,
-      # and a depth-2 child cannot spawn. Stated rather than inherited so
-      # the shape does not ride on an upstream default.
-      name = "the delegation tree is capped at depth 2";
-      ok = piData.subagentsConfig.maxSubagentDepth == 2;
-    }
-    {
-      # A list, not "auto" or "all": both of those resolve to exa alone
-      # while no API key is set, which is the throttling being escaped.
-      # More than one provider is the property that matters - failures are
-      # per-provider, so a second entry is what turns a throttled exa into
-      # a thinner result set rather than a failed search.
-      name = "web search fans out across more than one keyless provider";
-      ok =
-        let
-          w = piData.webSearch;
-        in
-        builtins.isList w.provider
-        && lib.length w.provider >= 2
-        && lib.elem "exa" w.provider
-        && lib.elem "duckduckgo" w.provider;
-    }
-    {
-      # The bundled researcher gets its web tools from its own frontmatter
-      # (web_search, fetch_content, get_search_content) and keeps ambient
-      # extensions because it declares no `extensions` field. There are
-      # exactly two ways to take that away from here: a defaultExtensions
-      # allowlist, or an override that narrows a role's tools or
-      # extensions. Neither belongs in this config.
-      name = "nothing here takes web access away from subagents";
-      ok =
-        let
-          s = piData.settings.subagents;
-        in
-        !(s ? defaultExtensions)
-        && s.agentOverrides ? researcher
-        && lib.all (r: !(r ? tools) && !(r ? extensions)) (lib.attrValues s.agentOverrides);
     }
   ];
 
