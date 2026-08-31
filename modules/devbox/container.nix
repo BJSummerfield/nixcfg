@@ -50,25 +50,23 @@ let
     exec ${lib.getExe pkgs.gh} "$@"
   '';
 
-  # Plugin membership (which plugins, no versions) - the single source for
-  # both agents; see the file's header for the update commands and the
-  # escalation path.
-  plugins = import ./plugins.nix;
-
-  # Claude keeps plugins and preferences in one small file. Generated with
-  # the one declared plugin enabled - membership only, no version: the
-  # plugin id cannot go stale, and the plugin state itself (marketplace
-  # clone, cache, installed_plugins.json) is claude-owned, installed and
-  # updated by claude. A rebuild re-seeds this file only. Auth lives
-  # separately in .credentials.json and is untouched.
+  # Claude keeps preferences in one small file. No enabledPlugins entry:
+  # claude runs no plugins here. A rebuild re-seeds this file only; auth
+  # lives separately in .credentials.json and is untouched.
+  #
+  # Dropping the entry only stops nix *enabling* a plugin - it does not
+  # uninstall one. A container that ran the superpowers plugin still has
+  # claude's own state for it (marketplace clone, plugin cache,
+  # installed_plugins.json under $CLAUDE_CONFIG_DIR), which nix never
+  # wrote and will not clean:
+  #   claude plugin uninstall superpowers@claude-plugins-official
+  #   claude plugin marketplace remove claude-plugins-official
+  #   claude plugin list
   claudeSettings = pkgs.writeText "claude-settings.json" (
     builtins.toJSON {
       theme = "dark";
       inputNeededNotifEnabled = true;
       agentPushNotifEnabled = true;
-      enabledPlugins = {
-        "${plugins.claudePluginId}" = true;
-      };
     }
   );
 in
@@ -210,17 +208,15 @@ in
             "$HOME/.claude-state/settings.json"
         '';
 
-        # Superpowers plugin state for Claude is claude-owned, not seeded:
-        # the marketplace clone, the plugin cache and installed_plugins
-        # .json are installed and updated by claude itself (`claude plugin
-        # install` on a fresh container, `claude plugin update` for the
-        # current marketplace pin). Seeding any of it from the store would
-        # be read-only litter that claude's own rewrites die against - the
-        # same EROFS failure mode as the settings files above - and a
-        # pinned version would go stale between rebuilds. What nix owns
-        # for claude is the enabledPlugins entry in the settings seed
-        # (membership, no version) and this activation's copy-not-link
-        # mechanics.
+        # Nothing else of claude's is seeded. If a plugin is ever wanted
+        # again, its state - marketplace clone, plugin cache,
+        # installed_plugins.json - stays claude-owned and installed by
+        # claude: seeding it from the store would be read-only litter that
+        # claude's own rewrites die against, the same EROFS failure mode as
+        # the settings files above, and a pinned version would go stale
+        # between rebuilds. Nix would own only an enabledPlugins entry in
+        # the seed above (membership, no version) and this activation's
+        # copy-not-link mechanics.
       };
   };
 

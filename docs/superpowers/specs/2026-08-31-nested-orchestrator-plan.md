@@ -822,9 +822,20 @@ matters less, since the merge already spans four providers.
 
 E1, E2, C2 · A1, A2, A3, A5, C5 (read order, in `wp.md` and `defaultReads`) ·
 B1-B4 · B3 at 57,344 per §12 · D3, and D2 as a multi-provider list rather than as
-an unpin · the §13 decommission list, minus the
-container-state items nix cannot do (G5) — G6's `.bak` sweep is now in the
-activation.
+an unpin · the §13 decommission list, minus the container-state items nix cannot do
+(G5) — G6's `.bak` sweep is now in the activation.
+
+§13's open question is answered the other way: **the claude-side superpowers plugin
+goes too.** `claudePluginId` and the `enabledPlugins` entry are gone, so a rebuilt
+container comes up with no claude plugins at all. That only stops nix *enabling*
+it — claude's own state is untouched, and `claude plugin uninstall` /
+`marketplace remove` is a manual step, recorded in `container.nix` next to the seed
+it replaces. `docs/superpowers/specs/` keeps its name; it is just a directory now.
+
+The G5 cleanup runbook lives in `plugins.nix`'s header, next to the membership list
+whose editing is what creates the mess — including the ordering trap, since nix
+re-seeds `settings.json` on every activation and pi reinstalls anything missing, so
+deleting files before dropping the spec just invites the package back.
 
 ### Not landed, and why
 

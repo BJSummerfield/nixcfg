@@ -1,29 +1,45 @@
 # Agent plugin membership for the devbox containers - which plugins the
 # agents run, and nothing else. No versions, no refs, no hashes: nothing
 # version-shaped here can go stale while you rebuild something unrelated.
-# pi and claude both float to whatever their update commands reach, and a
-# rebuild re-seeds these specs but never pins a version - so a live update
-# persists across rebuilds instead of being undone by them.
+# pi floats to whatever its update command reaches, and a rebuild re-seeds
+# these specs but never pins a version - so a live update persists across
+# rebuilds instead of being undone by them.
 #
-# Update a running container (manual - see MAINTENANCE.md, which also
-# covers removing a plugin and cleaning up what it left behind):
-#   pi:      pi update --extensions       (latest npm packages)
-#   claude:  claude plugin update
-#             (follows the official marketplace's current pin)
+# Update a running container (manual):
+#   pi update --extensions      (latest npm packages)
 #
 # Escalation, if a bad release lands: pin it down for the interim by
-# adding a version to a pi spec below (e.g. "npm:pi-web-access@0.26.0")
-# and rebuild - pi reinstalls an npm package whose installed version
-# stops matching. The claude plugin id has no version slot - its version
-# is pinned by the official marketplace - so the claude-side lever is
-# temporarily removing the enabledPlugins entry from container.nix.
+# adding a version to a spec below (e.g. "npm:pi-web-access@0.26.0") and
+# rebuild - pi reinstalls an npm package whose installed version stops
+# matching.
 #
-# Removing a spec from this list changes what is *seeded*; it does not
-# uninstall. A container that ran an earlier plugin set needs one
-# `pi remove <spec>` per dropped package, or a rebuild from scratch -
-# check ~/.pi/agent/npm/node_modules afterwards. This matters most when
-# two packages register the same tool name, where the leftover is not
-# inert but a collision.
+# REMOVING ONE, AND CLEANING UP AFTER IT
+#
+# A rebuild re-asserts which plugins should be here. It never uninstalls:
+# dropping a spec changes what is *seeded*, and the files an earlier
+# install wrote stay on disk. Nothing prunes them later either - pi has no
+# pass that removes packages missing from settings, so `pi remove` is the
+# only path and it is manual.
+#
+# A leftover is usually inert. It is not inert when two packages register
+# the same tool name, which is what the pi-superagents -> pi-subagents
+# swap ran into: both provide `subagent`.
+#
+# Order matters, because nix rewrites ~/.pi/agent/settings.json on every
+# activation and pi installs anything missing at startup - delete the
+# files first and the next rebuild just invites the package back:
+#
+#   1. drop the spec below, and rebuild the host
+#   2. in the container:  pi remove npm:@teelicht/pi-superagents
+#                         pi remove git:github.com/obra/superpowers
+#   3. check:  ls ~/.pi/agent/npm/node_modules ~/.pi/agent/git && pi list
+#   4. restart pi
+#
+# If a `pi remove` fails, the state is under ~/.pi/agent: npm packages in
+# npm/node_modules/<name> (scoped ones nest as @scope/name), git packages
+# in git/, and each extension's own config in extensions/<name>/. That
+# last one is not touched by `pi remove`; the `subagent` directory is
+# nix-managed (pi-coding-agent/home.nix), any other needs a manual rm.
 {
   # pi's package specs, seeded into ~/.pi/agent/settings.json via
   # pi-coding-agent/settings.nix. Unpinned on purpose: pi resolves the
@@ -49,13 +65,4 @@
     "npm:pi-subagents"
     "npm:pi-web-access"
   ];
-
-  # claude's plugin, for settings.json's enabledPlugins (devbox/
-  # container.nix). Independent of the pi side above: dropping pi's
-  # superpowers does not touch claude's, which is a different plugin for
-  # a different agent. The id carries no version, so it cannot go stale.
-  # The plugin state itself - marketplace clone, plugin cache,
-  # installed_plugins.json - is claude-owned: installed and updated by
-  # claude, never fetched or seeded by nix.
-  claudePluginId = "superpowers@claude-plugins-official";
 }

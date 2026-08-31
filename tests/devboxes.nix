@@ -215,12 +215,9 @@ let
       # between rebuilds. What this check can see at eval time: pi's
       # specs are single-sourced from the one membership file, and
       # neither agent may also get a standalone skills link, which would
-      # list every skill twice. (The claude side - the version-less
-      # enabledPlugins entry in its settings seed - is a build-time fact
-      # the container image build exercises, not eval-assertable.) A
-      # temporary version pin against a bad release belongs in the
-      # membership file itself - see its header - so this test asserts
-      # single-sourcing, not pin-freeness.
+      # list every skill twice. A temporary version pin against a bad
+      # release belongs in the membership file itself - see its header -
+      # so this test asserts single-sourcing, not pin-freeness.
       name = "plugins are declared as versionless membership, not double-seeded";
       ok =
         let
@@ -347,6 +344,16 @@ let
       # the shape does not ride on an upstream default.
       name = "the delegation tree is capped at depth 2";
       ok = piData.subagentsConfig.maxSubagentDepth == 2;
+    }
+    {
+      # Claude runs no plugins here. Nix only ever *enabled* one, so
+      # dropping it stops a rebuilt container coming up with it on - it
+      # does not uninstall claude's own state, which is the manual step
+      # documented in container.nix. Asserted against the membership file
+      # because that is the single source: a claudePluginId reappearing
+      # there is how it would come back.
+      name = "no claude plugin is declared";
+      ok = !(pluginMembership ? claudePluginId);
     }
     {
       # A list, not "auto" or "all": both of those resolve to exa alone
