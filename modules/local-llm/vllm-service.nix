@@ -28,6 +28,32 @@ let
   # the name-charset assertion in nixos.nix is load-bearing.
   servedNames = lib.concatStringsSep " " ([ name ] ++ builtins.attrNames (m.aliases or { }));
 
+  # Multimodal admission, and the memory profile that goes with it.
+  #
+  # No `vision` block means every modality limit is 0 and vLLM logs "running in
+  # text-only mode" - the encoder is not loaded at all, so it costs nothing.
+  #
+  # With one, the width/height are *profiling hints*: upstream is explicit that
+  # they "affect memory profiling only. They shape the dummy inputs used to
+  # compute reserved activation sizes", and that "encoder cache size is
+  # determined by the actual inputs at runtime and is not limited by these
+  # hints". So this stops the startup OOM the old text-only comment recorded -
+  # profiling a worst-case image on this architecture means ViT attention over
+  # ~62k patches at 16MP - but it is NOT a runtime cap. A client that posts a
+  # 40MP photo is still a 40MP forward pass. Resize before sending.
+  #
+  # Measured on redtruck 2026-09-01, both runs on the good activation roll:
+  #   text-only  weights 21.11 GiB, activation 1.03 GiB, pool 185,122 (1.41x)
+  #   1x1280x800 weights 21.97 GiB, activation 1.05 GiB, pool 163,502 (1.25x)
+  # The tower costs 0.86 GiB of weights; the hints cost 0.02 GiB of activation.
+  # Net -21,620 tokens of KV pool, -11.7%. Video stays 0: it is many frames per
+  # item and would not fit.
+  mmLimit =
+    if m ? vision then
+      "'{\"image\": {\"count\": ${num m.vision.maxImages}, \"width\": ${num m.vision.width}, \"height\": ${num m.vision.height}}, \"video\": 0}'"
+    else
+      "'{\"image\":0,\"video\":0}'";
+
   # One flag per line, in vLLM's documented order.
   vllmArgs = [
     "--model /model"
@@ -35,9 +61,7 @@ let
     "--kv-cache-dtype ${m.vllm.kvCacheDtype}"
     "--max-model-len ${num m.maxModelLen}"
     "--gpu-memory-utilization ${num m.vllm.gpuMemoryUtilization}"
-    # served text-only: weights alone are ~22GiB of a 31GiB card, and the
-    # vision-encoder profiling buffers OOMed startup
-    "--limit-mm-per-prompt '{\"image\":0,\"video\":0}'"
+    "--limit-mm-per-prompt ${mmLimit}"
     "--max-num-batched-tokens ${num m.vllm.maxNumBatchedTokens}"
     "--max-num-seqs ${num m.vllm.maxNumSeqs}"
     "--enable-auto-tool-choice"
@@ -66,6 +90,13 @@ let
   podmanArgs = [
     "run --rm --replace --pull=never"
     "--name ${containerName}"
+    # systemd already captures this container's stdout as the unit's journal
+    # stream, because podman runs attached in the foreground. Podman's default
+    # driver on a systemd host is journald, so leaving it would store a second
+    # copy of every vLLM line under CONTAINER_NAME= - the journal was carrying
+    # each startup line twice. `none` keeps `journalctl -u vllm` and drops the
+    # duplicate; `podman logs` stops working, which is redundant here anyway.
+    "--log-driver=none"
     "--device nvidia.com/gpu=all"
     "--ipc=host"
     "-e HF_HUB_OFFLINE=1"
@@ -95,6 +126,16 @@ let
   waitHealthy = pkgs.writeShellScript "vllm-wait-healthy" ''
     set -u
     for _ in $(${lib.getExe' pkgs.coreutils "seq"} 1 900); do
+      # Bail the instant the engine is gone rather than polling a corpse. An
+      # earlier version looped the full 900s regardless, so a podman failure
+      # that took one second to happen took three minutes to report - and the
+      # unit sat in `activating` the whole time, which reads as progress. It
+      # also let Restart=on-failure overlap two engine startups, and a profile
+      # run that races another engine's teardown mis-sizes the KV pool.
+      ${lib.getExe' pkgs.coreutils "kill"} -0 "$MAINPID" 2>/dev/null || {
+        echo "vllm exited before becoming healthy" >&2
+        exit 1
+      }
       ${lib.getExe pkgs.curl} -sf --max-time 2 ${endpoint}/health >/dev/null && exit 0
       ${lib.getExe' pkgs.coreutils "sleep"} 1
     done
@@ -104,8 +145,22 @@ let
 in
 {
   description = "vLLM OpenAI server (${name})";
-  wantedBy = [ "multi-user.target" ];
+  # Tied to the nspawn container, not to multi-user.target. The bind address is
+  # the host end of that container's veth, so it does not exist until the
+  # container is up - and containers.local-llm.autoStart is false, so at boot it
+  # is not. Started against multi-user.target this failed every time with
+  # "bind: cannot assign requested address" and only recovered by accident, when
+  # Restart=on-failure happened to fire after the container was started by hand.
+  #
+  # Under llama-swap the constraint was satisfied implicitly: the launcher ran
+  # *inside* the container, so the container was necessarily up. Moving the
+  # launch to the host dropped that guarantee without replacing it. wantedBy
+  # starts vLLM with the container, partOf stops it with the container, after
+  # orders it - and manual-start stays manual, matching autoStart = false.
+  wantedBy = [ "container@local-llm.service" ];
+  partOf = [ "container@local-llm.service" ];
   after = [
+    "container@local-llm.service"
     "network-online.target"
     "vllm-image-pull.service"
   ];

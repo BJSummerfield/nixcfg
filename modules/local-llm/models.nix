@@ -76,6 +76,29 @@
       # retries cost more than the per-turn speedup buys, so medium is the
       # floor for every pi level. 3.6 has no effort support — no map there,
       # and the unused kwarg is harmless to its template.
+      # Vision. Unsloth did NOT strip the tower - config.json carries
+      # "language_model_only": false, an image_token_id, a qwen3_5_vision
+      # vision_config, and 110 model.visual.* entries in quantization_config's
+      # ignore list, so the encoder ships unquantized in bf16 alongside the
+      # NVFP4 language model. Omitting this block serves text-only and does not
+      # load it at all.
+      #
+      # 1280x800 is a browser viewport - this exists for UI verification
+      # screenshots, which is the use that motivated it. At patch_size 16 and
+      # spatial_merge_size 2 each token covers 1024 px, so that is ~1000 image
+      # tokens and ~4000 ViT patches. Raising it is quadratic in the encoder's
+      # attention: 16MP would be ~62,500 patches, which is what OOMed startup
+      # back when no limit was set.
+      #
+      # count 1, not 2: profiling activation scales with it, and a second
+      # concurrent screenshot is not a use we have. Measured cost of this block
+      # is in vllm-service.nix - 0.86 GiB of weights, 21,620 tokens of KV pool.
+      vision = {
+        maxImages = 1;
+        width = 1280;
+        height = 800;
+      };
+
       thinkingLevels = {
         minimal = "medium";
         low = "medium";
