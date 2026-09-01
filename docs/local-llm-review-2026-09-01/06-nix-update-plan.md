@@ -5,9 +5,9 @@ Derived from `05-change-and-keep.md`. Upstream status verified 2026-09-01 (see
 
 ## Sequencing rationale
 
-The three changes that matter touch different layers and are verified by different
-signals, so they go in separate PRs. Bundling them makes the result unreadable — and the
-whole point of the measurement work was to be able to attribute effects.
+The changes that matter touch different layers and are verified by different signals, so
+they go in separate PRs. Bundling them makes the result unreadable — and the whole point
+of the measurement work was to be able to attribute effects.
 
 The counters on `/upstream/<model>/metrics` are **cumulative since engine start** and reset
 on every model restart. That is convenient: each PR that restarts vLLM gives a clean
@@ -18,8 +18,12 @@ per-config counter set. `data-vllm-metrics-snapshot.txt` is the v0.26.0 baseline
 PR 1  engine bump + observability      -> restart, measure 1 day
 PR 2  scheduling (concurrency/window)  -> restart, measure 1 day
 PR 3  pi-side compaction               -> no server restart, measure 1 day
+PR 4  remove llama-swap                -> architecture; see 07-llama-swap-removal-plan.md
 then  C7 spec tokens, C9 thinking level, NInfer bench
 ```
+
+PR 3 is independent of the server entirely — pi-side only, no restart — so it can slot in
+anywhere without disturbing the sequence.
 
 ---
 
@@ -244,8 +248,17 @@ compactions per session as the counterweight (`jq 'select(.type=="compaction")'`
   outcome, because its `--request-log-jsonl` reports the cached-token counts vLLM has been
   unable to report reliably.
 
-## Not doing
+## PR 4 — remove llama-swap
 
-Removing llama-swap. It is the only route to `/upstream/<model>/metrics` and
-`/api/metrics/activity`, both of which every verification step above depends on — and it
-is the rollback path if PR 1 goes badly. Revisit after the NInfer bench, not before.
+An earlier revision of this document listed this under "not doing", on the grounds that
+llama-swap is the only route to vLLM's metrics and is the rollback path for PR 1. Both
+were wrong — the first circular, the second simply false. See
+[`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md).
+
+Sequenced last of the four because the concurrency change is worth more and its nicest
+verification (`/api/metrics/activity`) is the thing removal deletes. Do the measuring while
+the instrument still exists, then delete the plumbing.
+
+Note PR 4 deletes two things PR 1 adds — the `--log-driver=journald` pin and the `/running`
+guard on the scrape. Both exist only to work around llama-swap. Deliberate: PR 1 buys
+measurement today for ~20 throwaway lines.

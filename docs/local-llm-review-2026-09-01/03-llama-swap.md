@@ -1,5 +1,24 @@
 # llama-swap: keep or drop?
 
+> **SUPERSEDED — the verdict below is wrong. See
+> [`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md).**
+>
+> This document argues "keep", on the grounds that llama-swap is the only route to vLLM's
+> metrics. That is true but circular: metrics are unreachable *because* llama-swap assigns
+> the vLLM port dynamically via its `${PORT}` macro. Give vLLM a fixed port and `/metrics`
+> is directly scrapeable with no proxy at all.
+>
+> Two other claims below also failed on inspection. "It is the rollback path" — it is not;
+> with `ttl = null` and one model it never swaps, so rollback is `git revert` either way.
+> And the `/logs` + activity dashboard, cited here as a live capability, turned out to be
+> in use only for gathering data for *this review* — not a standing workflow.
+>
+> What survives: the per-request `/api/metrics/activity` log is a real capability with no
+> equivalent in vLLM, and losing it is a genuine cost. It is just not worth a bind-mounted
+> root-equivalent podman socket. The sections below on what llama-swap actually does, and
+> on the `/upstream` and `/api/metrics/activity` endpoints, remain accurate and are the
+> reason the review was possible.
+
 **Verdict: keep it — but for the opposite reason you have it.** It is no longer doing
 model swapping, and it never really was. It is currently your entire observability layer,
 and this review would not have been possible without it.

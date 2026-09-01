@@ -170,12 +170,18 @@ quality). Worth an explicit A/B: `defaultThinkingLevel = "medium"` with escalati
 
 ## KEEP
 
-### K1. llama-swap — but re-label what it is for
-Not a model swapper here (one model, `ttl = null`, no aliases since PR #148). It is your
-**only observability layer**: `/upstream/<model>/metrics` is the sole route to vLLM's
-Prometheus data, and `/api/metrics/activity` is a per-request token+duration history vLLM
-has no equivalent for. Both are load-bearing for this entire review. Also the rollback
-path if C1 goes badly. Full argument in `03-llama-swap.md`.
+### ~~K1. llama-swap~~ — REVERSED, now a change: remove it
+This entry argued "keep", because `/upstream/<model>/metrics` is the sole route to vLLM's
+Prometheus data. Circular: it is the sole route *because* llama-swap assigns the vLLM port
+dynamically. A fixed port makes `/metrics` directly scrapeable with no proxy, and removal
+additionally drops the bind-mounted root-equivalent podman socket that the module's own
+comments warn about three times.
+
+Still true, and the real cost of removal: `/api/metrics/activity` is a per-request
+token+duration history vLLM has no equivalent for. Not enough to justify the socket grant.
+
+Plan: [`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md). Sequenced after the
+concurrency change (C2/C3).
 
 ### K2. vLLM as the engine, for now
 Both things NInfer would buy — concurrency scaling and per-request observability — are
@@ -231,6 +237,9 @@ and for any engine A/B.
   was closed as completed 2026-07-14 ("confirmed working in 0.23–0.25.1"), while a direct
   probe of our v0.26.0 returns `"prompt_tokens_details": null`. Re-probe after C1 — it may
   come free with the bump. Until then `vllm:prompt_tokens_cached_total` is the only view.
-- **Don't remove llama-swap right before an engine bump that may need rolling back.**
+- **Don't remove llama-swap in the same change as the engine bump or the concurrency
+  tuning** — not because it is the rollback path (it is not; `git revert` is), but because
+  bundling an architecture change into a correctness experiment makes the result
+  unreadable. Removal is queued after C2/C3: [`07`](07-llama-swap-removal-plan.md).
 - **Don't migrate to NInfer yet** — but do build the one-day bench in `04-ninfer.md`.
 - **Don't tune the KV pool for speed.** It is not what is costing time.
