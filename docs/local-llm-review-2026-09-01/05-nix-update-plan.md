@@ -18,13 +18,14 @@ directly comparable.
 
 ```
 PR 1  engine bump + observability + llama-swap removal  -> restart, measure 1 day
-PR 2  scheduling (concurrency/window)  -> restart, measure 1 day
-PR 3  pi-side compaction               -> no server restart, measure 1 day
+      (scheduling folded into PR 1 too - vision and the window change pay for
+       each other, so they ship together)
+PR 2  pi-side compaction               -> no server restart, measure 1 day
       (removal folded into PR 1; see 06-llama-swap-removal.md)
 then  C7 spec tokens, C9 thinking level, NInfer bench
 ```
 
-PR 3 is independent of the server entirely — pi-side only, no restart — so it can slot in
+PR 2 is independent of the server entirely — pi-side only, no restart — so it can slot in
 anywhere without disturbing the sequence.
 
 ---
@@ -118,7 +119,15 @@ removal does not depend on the version.
 
 ---
 
-## PR 2 — `llm/concurrency-and-window`
+## ~~PR 2 — `llm/concurrency-and-window`~~ → folded into PR 1 (#152)
+
+Shipped together rather than staged, at the point vision made the two interact: vision
+costs 21,620 tokens of pool, and the `maxModelLen` reduction is what pays for it.
+**`maxNumSeqs` landed at 3, not 4** — the measured knee is the third in-flight request, 4
+was extrapolation, and the pool is now smaller. Raise to 4 only after watching
+`num_preemptions_total` per request (baseline ~1.0).
+
+Original reasoning follows.
 
 Goal: stop queueing behind a 2-lane cap. C2 and C3 must ship together — C3 is what makes
 room for C2.
@@ -203,7 +212,7 @@ knee to move from 3 to ~5. Watch:
 
 ---
 
-## PR 3 — `pi/compaction-reserve`
+## PR 2 — `pi/compaction-reserve`
 
 ### 3a. `modules/pi-coding-agent/settings.nix`
 
