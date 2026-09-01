@@ -85,9 +85,6 @@
         max = "xhigh";
       };
 
-      # null ttl: vLLM cold start is minutes
-      ttl = null;
-
       vllm = {
         # 0.95, not the 0.94 default and not the 0.97 tried before: the card
         # is dedicated to vLLM (no GUI/compositor co-tenants), and both
@@ -212,11 +209,11 @@
         min_p = 0.0;
       };
 
-      # null ttl: vLLM cold start is minutes
-      ttl = null;
-
       vllm = {
-        gpuMemoryUtilization = 0.94;
+        # 0.95 like the 3.8 entry: measured safe on this card, which is dedicated
+        # to vLLM with no compositor co-tenant. Parked entries, so this is
+        # consistency for a future re-enable rather than a live change.
+        gpuMemoryUtilization = 0.95;
         # 3 for parallel subagent concurrency without outgrowing the KV pool
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
@@ -270,10 +267,12 @@
         top_k = 20;
         min_p = 0.0;
       };
-      ttl = 3600;
 
       vllm = {
-        gpuMemoryUtilization = 0.94;
+        # 0.95 like the 3.8 entry: measured safe on this card, which is dedicated
+        # to vLLM with no compositor co-tenant. Parked entries, so this is
+        # consistency for a future re-enable rather than a live change.
+        gpuMemoryUtilization = 0.95;
         maxNumSeqs = 2;
         maxNumBatchedTokens = 2048;
         # fp8 kv caused incoherent output on this MoE — using default dtype.
