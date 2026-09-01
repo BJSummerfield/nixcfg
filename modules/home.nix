@@ -24,7 +24,6 @@
     ./steambox/home.nix
     ./swaybg/home.nix
     ./swayidle/home.nix
-    ./subtitleedit/home.nix
     ./swaylock/home.nix
     ./unfree/home.nix
   ];
