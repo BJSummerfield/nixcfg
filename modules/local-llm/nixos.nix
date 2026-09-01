@@ -80,20 +80,34 @@ let
       ;
   };
 
-  # llama-swap only starts a model on demand, and /upstream/<model>/metrics is a
-  # proxied route — scraping it blind would start a 22 GiB model just to read a
-  # gauge. Guard on /running so the timer observes the engine and never
-  # summons it.
+  # Snapshot vLLM's own metrics. Retention lives inside the script rather than
+  # in a tmpfiles rule so that the guard, the write and the prune are one
+  # readable ordering — see the comments there for why prune comes first.
   metricsScrape = pkgs.writeShellScript "vllm-metrics-scrape" ''
     set -uo pipefail
     base="http://${localAddress}:8081"
     dir=/var/lib/local-llm/metrics
     curl=${lib.getExe pkgs.curl}
+    find=${pkgs.findutils}/bin/find
 
+    mkdir -p "$dir"
+
+    # Prune first, ahead of the liveness guard below. Retention has to be
+    # unconditional: scrapes only accumulate while the engine is up, so a prune
+    # sitting after the guard would freeze the last 14 days on disk for however
+    # long the model stayed stopped, and only resume when it came back.
+    "$find" "$dir" -name '*.prom.gz' -mtime +14 -delete
+    # Separately, because a *.prom.gz pattern does not match *.prom.gz.tmp and
+    # would leave one orphan behind forever per scrape killed mid-write. A live
+    # scrape finishes in seconds, so an hour old means abandoned.
+    "$find" "$dir" -name '*.prom.gz.tmp' -mmin +60 -delete
+
+    # llama-swap starts a model on demand and /upstream/<model>/metrics is a
+    # proxied route, so scraping blind would start a 22 GiB model just to read a
+    # gauge. Guard on /running: the timer observes the engine, never summons it.
     "$curl" -sf --max-time 5 "$base/running" \
       | ${lib.getExe pkgs.gnugrep} -q '"state":"ready"' || exit 0
 
-    mkdir -p "$dir"
     out="$dir/$(date -u +%Y%m%dT%H%M%SZ).prom.gz"
     if "$curl" -sf --max-time 10 "$base/upstream/${catalog.default}/metrics" \
       | ${lib.getExe pkgs.gzip} -c > "$out.tmp"; then
@@ -101,7 +115,6 @@ let
     else
       rm -f "$out.tmp"
     fi
-    ${pkgs.findutils}/bin/find "$dir" -name '*.prom.gz' -mtime +14 -delete
   '';
 in
 {
@@ -222,8 +235,10 @@ in
     # restarts, which is convenient: each config change gets its own clean
     # counter run to compare against the last.
     #
-    # ~60 KiB of text per scrape, ~5 KiB gzipped, so 14 days at 5-minute
-    # resolution is ~20 MiB. Uncompressed it would be ~240 MiB.
+    # Measured, not estimated: 61,439 bytes per scrape and 6,596 gzipped. At
+    # 5-minute resolution with 14-day retention that is 4,032 files and ~25 MiB
+    # steady state, against ~236 MiB uncompressed. The prune that bounds it runs
+    # in the script, unconditionally, ahead of the liveness guard.
     systemd.services.vllm-metrics-scrape = lib.mkIf cudaEnabled {
       description = "snapshot vLLM's Prometheus metrics through llama-swap";
       # date/mkdir/mv/rm come from here rather than from systemd's default PATH,
