@@ -81,7 +81,7 @@ keeping because it will be tempting to add back:
 - It was not free: its retention logic shipped two bugs (prune stranded behind the liveness
   guard; `.tmp` orphans leaking forever) that had to be fixed inside this same PR.
 
-Before each config change in PR 2 and PR 3:
+Before each config change:
 
 ```bash
 curl -s http://192.168.100.24:5800/metrics > ~/vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
@@ -239,7 +239,7 @@ more often (47 compactions in the baseline run), and less live history per turn.
 consider `compaction.keepRecentTokens` (default 20000) if the summaries start losing
 too much.
 
-### Verification for PR 3
+### Verification for PR 2
 
 ```bash
 # should approach zero
