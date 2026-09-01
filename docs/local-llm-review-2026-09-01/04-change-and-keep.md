@@ -129,13 +129,22 @@ comment in `models.nix` instructs the reader to consult — "GPU KV cache size",
 attention block size to N tokens", the `max_num_scheduled_tokens` advisory — do not
 survive a restart and are not correlatable with agent sessions after the fact.
 
-### C6. Scrape `/upstream/Qwen3.8-27B-NVFP4/metrics`
-new, small
+### C6. Read the engine's metrics — no collector needed
+done
 
-This endpoint answered in one scrape three things `models.nix` has been guessing at:
-pool size, preemption rate, prefix-cache hit rate. A 60-second cron'd curl into a file is
-enough to turn future tuning arguments into diffs. Implemented in this PR; see
-`06-llama-swap-removal.md` for where the endpoint moved to.
+One request answered three things `models.nix` had been guessing at: pool size, preemption
+rate, prefix-cache hit rate. After the llama-swap removal it needs no proxy and no
+dynamically-assigned port:
+
+```bash
+curl -s http://192.168.100.24:5800/metrics
+```
+
+An earlier draft of this entry proposed a timer archiving scrapes to disk. Deliberately not
+done — nothing would consume the archive, the counters are cumulative so one snapshot
+answers any question about the current run, and the only case on-demand misses (a run that
+already ended) is covered by one manual snapshot before each config change. Reasoning in
+`05-nix-update-plan.md` §1c.
 
 ### C7. After C1 lands, A/B `speculativeTokens` 3 → 4
 `modules/local-llm/models.nix`

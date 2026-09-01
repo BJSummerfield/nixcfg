@@ -61,15 +61,30 @@ This subsumes what earlier drafts planned as separate work. vLLM's stdout now re
 journal because systemd captures the unit's output directly — no `--log-driver` pin, and
 `--rm` no longer destroys anything worth keeping.
 
-### 1c. Scrape the metrics — new, small
+### 1c. Metrics: on demand, no collector
 
-`http://192.168.100.24:5800/metrics`, straight at the engine. A full Prometheus is overkill
-for a single-user box; a systemd timer writing gzipped timestamped scrapes into
-`/var/lib/local-llm/metrics/` is enough to turn future tuning arguments into diffs.
+`curl -s http://192.168.100.24:5800/metrics` on redtruck. That is the whole mechanism.
 
-Retention is enforced in the script and runs unconditionally, ahead of the scrape — see the
-comments there. Measured cost: 61,439 bytes raw, 6,596 gzipped, so ~25 MiB steady state at
-5-minute resolution with 14-day retention.
+An earlier revision of this PR added a 5-minute systemd timer archiving gzipped scrapes
+into `/var/lib/local-llm/metrics/`. It was removed before merge, and the reasoning is worth
+keeping because it will be tempting to add back:
+
+- **Nothing consumed the archive.** It was write-only until a human went looking — the
+  classic sign of instrumentation built for a hypothetical.
+- **The counters are cumulative since engine start**, so one snapshot answers any question
+  about the *current* run. Sampling adds nothing unless you want rates, and if you want
+  rates during an active investigation you can curl twice.
+- **The only thing on-demand cannot do is recover a run that already ended.** But restarts
+  happen when *you* change config, so one manual snapshot before each change covers it
+  exactly — which is how `data-vllm-metrics-snapshot.txt` was captured in the first place.
+- It was not free: its retention logic shipped two bugs (prune stranded behind the liveness
+  guard; `.tmp` orphans leaking forever) that had to be fixed inside this same PR.
+
+Before each config change in PR 2 and PR 3:
+
+```bash
+curl -s http://192.168.100.24:5800/metrics > ~/vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
+```
 
 ### 1d. Re-probe `cached_tokens` after the switch
 

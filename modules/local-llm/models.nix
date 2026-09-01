@@ -210,7 +210,10 @@
       };
 
       vllm = {
-        gpuMemoryUtilization = 0.94;
+        # 0.95 like the 3.8 entry: measured safe on this card, which is dedicated
+        # to vLLM with no compositor co-tenant. Parked entries, so this is
+        # consistency for a future re-enable rather than a live change.
+        gpuMemoryUtilization = 0.95;
         # 3 for parallel subagent concurrency without outgrowing the KV pool
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
@@ -266,7 +269,10 @@
       };
 
       vllm = {
-        gpuMemoryUtilization = 0.94;
+        # 0.95 like the 3.8 entry: measured safe on this card, which is dedicated
+        # to vLLM with no compositor co-tenant. Parked entries, so this is
+        # consistency for a future re-enable rather than a live change.
+        gpuMemoryUtilization = 0.95;
         maxNumSeqs = 2;
         maxNumBatchedTokens = 2048;
         # fp8 kv caused incoherent output on this MoE — using default dtype.

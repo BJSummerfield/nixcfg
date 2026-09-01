@@ -9,6 +9,24 @@
 # lives on the node rather than in nix, so it does not follow a rebuild - after
 # switching away from llama-swap (which listened on 8081 in here) the 8443 rule
 # must be re-run once by hand, and re-run again if this is ever reverted.
+#
+# vLLM's engine metrics - KV pool size, preemption count, prefix-cache hit rate,
+# the queue/prefill/decode split, MTP acceptance per draft position - are what
+# every tuning number in models.nix rests on, and they are one command away on
+# redtruck:
+#
+#   curl -s http://192.168.100.24:5800/metrics
+#
+# There is deliberately no scraper collecting these on a timer. Nothing consumes
+# such an archive automatically, and the counters are cumulative since engine
+# start, so a single snapshot answers any question about the *current* run. The
+# one thing you cannot reconstruct later is a run that has already ended - and
+# since restarts happen when you change config, taking one snapshot by hand
+# before each change covers it:
+#
+#   curl -s http://192.168.100.24:5800/metrics > ~/vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
+#
+# docs/local-llm-review-2026-09-01/ holds the v0.26.0 baseline captured this way.
 
 {
   lib,
@@ -87,38 +105,6 @@ let
     port = vllmPort;
   };
 
-  # Snapshot vLLM's own metrics. Retention lives inside the script rather than
-  # in a tmpfiles rule so that the guard, the write and the prune are one
-  # readable ordering — see the comments there for why prune comes first.
-  metricsScrape = pkgs.writeShellScript "vllm-metrics-scrape" ''
-    set -uo pipefail
-    dir=/var/lib/local-llm/metrics
-    find=${pkgs.findutils}/bin/find
-
-    mkdir -p "$dir"
-
-    # Prune first, ahead of the scrape. Retention has to be unconditional:
-    # files only accumulate while the engine is up, so a prune that ran only on
-    # successful scrapes would freeze the last 14 days on disk for however long
-    # the engine stayed stopped, and only resume when it came back.
-    "$find" "$dir" -name '*.prom.gz' -mtime +14 -delete
-    # Separately, because a *.prom.gz pattern does not match *.prom.gz.tmp and
-    # would leave one orphan behind forever per scrape killed mid-write. A live
-    # scrape finishes in seconds, so an hour old means abandoned.
-    "$find" "$dir" -name '*.prom.gz.tmp' -mmin +60 -delete
-
-    # Straight at the engine. Under llama-swap this needed a /running guard
-    # first, because /upstream/<model>/metrics was a lazy-start proxy route and
-    # scraping it blind would boot a 22 GiB model just to read a gauge. With a
-    # plain systemd unit there is nothing to summon: -sf fails and we skip.
-    out="$dir/$(date -u +%Y%m%dT%H%M%SZ).prom.gz"
-    if ${lib.getExe pkgs.curl} -sf --max-time 10 "${vllmEndpoint}/metrics" \
-      | ${lib.getExe pkgs.gzip} -c > "$out.tmp"; then
-      mv "$out.tmp" "$out"
-    else
-      rm -f "$out.tmp"
-    fi
-  '';
 in
 {
   options.mine.system.local-llm = {
@@ -188,7 +174,7 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/vllm-cache /var/lib/local-llm/metrics
+      mkdir -p /var/lib/local-llm/vllm-cache
       chmod 755 /var/lib/local-llm
     '';
 
@@ -233,44 +219,6 @@ in
       serviceConfig = {
         Type = "exec";
         ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
-      };
-    };
-
-    # vLLM's engine metrics — KV pool size, preemption count, prefix-cache hit
-    # rate, the queue/prefill/decode split, MTP acceptance per draft position —
-    # are what every tuning number in models.nix actually rests on, and until
-    # recently nothing read them - they sat behind llama-swap's dynamically
-    # assigned port. On a fixed port they are simply there, one curl away, both
-    # from redtruck and (via `tailscale serve`) from the tailnet.
-    #
-    # A full scrape rather than a curated subset, because the expensive part is
-    # noticing later that you did not record the field you now need. The
-    # counters are cumulative since engine start and reset whenever the model
-    # restarts, which is convenient: each config change gets its own clean
-    # counter run to compare against the last.
-    #
-    # Measured, not estimated: 61,439 bytes per scrape and 6,596 gzipped. At
-    # 5-minute resolution with 14-day retention that is 4,032 files and ~25 MiB
-    # steady state, against ~236 MiB uncompressed. The prune that bounds it runs
-    # in the script, unconditionally, ahead of the scrape itself.
-    systemd.services.vllm-metrics-scrape = lib.mkIf cudaEnabled {
-      description = "snapshot vLLM's Prometheus metrics";
-      # date/mkdir/mv/rm come from here rather than from systemd's default PATH,
-      # so the script behaves the same run by hand as run by the timer.
-      path = [ pkgs.coreutils ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = metricsScrape;
-      };
-    };
-    systemd.timers.vllm-metrics-scrape = lib.mkIf cudaEnabled {
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "5min";
-        OnUnitActiveSec = "5min";
-        # Not Persistent: a scrape missed while the box was off describes an
-        # engine that was not running, so catching up on boot records nothing.
-        Persistent = false;
       };
     };
 

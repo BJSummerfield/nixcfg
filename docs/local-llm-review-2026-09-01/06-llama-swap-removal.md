@@ -117,7 +117,7 @@ with a matching 900 s ceiling.
 | --- | --- |
 | `llama-swap.nix` | deleted; `vllmArgs` moves to `vllm-service.nix` |
 | `container.nix` | drop `systemd.services.llama-swap`, `environment.etc."llama-swap.yaml"`, `pkgs.podman` from `systemPackages`; repoint `OPENAI_API_BASE_URL` to `http://192.168.100.24:5800/v1`; drop 8081 from the container firewall; rewrite the header comment's `tailscale serve` line |
-| `nixos.nix` | new `systemd.services.vllm`; drop the `/run/podman/podman.sock` bind mount, `podmanSock`/`podmanCli`, `systemd.sockets.podman` (note: this only stops us opting it into `sockets.target`; nixpkgs still activates `podman.socket` — the property that changes is the bind mount, not the listener); host `allowedTCPPorts` and NAT `forwardPorts` lose 8081; `ve-local-llm` range 5800–5999 → single 5800; simplify the metrics scrape (no `/running` guard, no `/upstream` path); revise the `cuda.enable` option description, which currently promises root-equivalent access it will no longer grant |
+| `nixos.nix` | new `systemd.services.vllm`; drop the `/run/podman/podman.sock` bind mount, `podmanSock`/`podmanCli`, `systemd.sockets.podman` (note: this only stops us opting it into `sockets.target`; nixpkgs still activates `podman.socket` — the property that changes is the bind mount, not the listener); host `allowedTCPPorts` and NAT `forwardPorts` lose 8081; `ve-local-llm` range 5800–5999 → single 5800; drop the metrics scrape entirely (see 05 §1c); revise the `cuda.enable` option description, which currently promises root-equivalent access it will no longer grant |
 | `models.nix` | drop `ttl` from every entry and from the schema comment |
 | `03-llama-swap.md` | deleted — its verdict was reversed and its supporting claims were wrong |
 
@@ -189,7 +189,8 @@ Doing it first also works; it just means verifying the concurrency change on his
 alone, which is sufficient.
 
 Note this PR deletes two things added in #149 — the `--log-driver=journald` pin and the
-`/running` guard on the scrape. Both exist only to work around llama-swap. That is
+`/running` guard on the metrics scrape. Both existed only to work around llama-swap - and
+the scrape itself was dropped too. That is
 deliberate: #149 buys measurement today at the cost of ~20 throwaway lines.
 
 ## What this does not change
