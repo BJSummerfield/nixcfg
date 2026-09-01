@@ -176,7 +176,6 @@
         obs-studio.enable = true;
         paseo-desktop.enable = true;
         polkit-kde.enable = true;
-        subtitleedit.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
       };
