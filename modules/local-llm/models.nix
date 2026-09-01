@@ -24,26 +24,37 @@
       };
 
       reasoning = true;
-      # Native context is 262144, and KV is cheap here (only 16 of 64
-      # layers are full attention; the rest are linear with constant
-      # state). 131072 is the conservative start on the 31GiB card —
-      # weights are ~21.8GiB. The pool depends on maxNumBatchedTokens (see
-      # below): measured 2026-08-15 via /metrics at 2048 batched tokens:
-      # kv_cache_size_tokens=203579; at 4096 the interpolation was ~170k, but
-      # that line was fitted before prefix caching and --mamba-cache-mode
-      # align, which page the linear-attention state out of the same pool —
-      # so it does not describe this config. 0.95 (down from 0.97) gives back
-      # a further ~0.63GiB ≈ ~17k tokens. Nothing here is sized off that
-      # estimate any more: read the "GPU KV cache size" startup line.
+      # Native context is 262144, and KV is cheap here (only 16 of 64 layers
+      # are full attention; the rest are linear with constant state).
       #
-      # There is no longer a "full wave must fit" invariant. It cannot hold
-      # at any window big enough to be useful (2 x (98304 + 32768) = 262144),
-      # and it was only ever satisfied by starving children — the alias it
-      # justified made a worker compact on nearly every turn. vLLM resolves
-      # overcommit by preempting and re-prefilling, which is latency; the old
-      # sizing paid for that in truncated reviews, which is correctness.
-      # maxNumSeqs is the actual pool guard now (see below).
-      maxModelLen = 131072;
+      # 102400, down from 131072, and it costs nothing. pi cannot structurally
+      # send more than `contextWindow - 4096`: clampMaxTokensToContext in
+      # @earendil-works/pi-ai caps max_tokens at
+      # `contextWindow - estimate - CONTEXT_SAFETY_TOKENS(4096)`, so with a
+      # 98304 window the largest request that can exist is 94,208 tokens. The
+      # 28,672 tokens this removes described requests pi could never make.
+      #
+      # What they cost was concurrency. vLLM reports
+      # `kv_cache_max_concurrency = kv_cache_size_tokens / max_model_len`, and
+      # sizes scheduling against it. Measured on redtruck 2026-09-01 with
+      # vision on (pool 163,502):
+      #   @131072 -> 1.25x   (below maxNumSeqs, i.e. structurally overcommitted)
+      #   @102400 -> 1.60x
+      # Text-only for reference was 185,122, so 1.41x and 1.81x.
+      #
+      # 102400 - 4096 headroom keeps contextWindow at exactly 98304, unchanged,
+      # so no pi behaviour moves. The three numbers must travel together:
+      # settings.nix derives contextWindow as maxModelLen - headroom, so
+      # editing either alone silently moves pi's window.
+      #
+      # There is no "full wave must fit" invariant. vLLM resolves overcommit by
+      # preempting and re-prefilling, which is latency; the old sizing paid for
+      # that in truncated reviews, which is correctness.
+      #
+      # Do not size anything off an interpolation. The pool is whatever the
+      # "GPU KV cache size" startup line says, and it is only trustworthy from
+      # a clean start - see the peak-activation note under maxNumSeqs.
+      maxModelLen = 102400;
       # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
       # only compacts above contextWindow - reserveTokens (16384 default,
       # dist/core/compaction/compaction.js). headroom must therefore be
@@ -51,15 +62,25 @@
       # a band (maxModelLen - maxTokens .. compaction threshold) where pi
       # sends a request vLLM must 400.
       #
-      # 32768, not the bare 16384 the rule requires: subagents run on this
-      # entry now, so the slack past the compaction threshold has to absorb a
-      # large tool result mid-turn, not just token-count drift. Window 98304,
-      # threshold 81920, and 81920 + 32768 = 114688 against the 131072 ceiling
-      # leaves 16384. Measured worker footprint is 64-68k input/turn
-      # (~/.pi/agent/sessions/*/subagent-artifacts/*_meta.json), so a worker
-      # clears the threshold without compacting at all; on the retired 44k
-      # alias it compacted on nearly every turn.
-      headroom = 32768;
+      # The rule above is wrong, and this is the correction. pi does not send
+      # `input + maxTokens` blindly: clampMaxTokensToContext shrinks max_tokens
+      # to `contextWindow - estimate - 4096` on every request, so the largest
+      # total it can ever emit is `contextWindow - 4096` regardless of what
+      # maxTokens says. headroom therefore has nothing to do with maxTokens.
+      #
+      # What headroom actually buys is drift margin between pi's token estimate
+      # and vLLM's count, on top of the 4096 pi already reserves internally.
+      # 4096 here means vLLM's ceiling is 102400 while pi's largest possible
+      # request is 94,208 - 8,192 tokens of slack, twice what the old 32768
+      # was really providing.
+      #
+      # 32768 was also sold as protecting the band between pi's compaction
+      # threshold and vLLM's ceiling. It cannot: that band is
+      # `reserveTokens - 4096` = 12,288 tokens wide and depends only on pi's
+      # settings.compaction.reserveTokens, which nothing in this repo sets.
+      # Raising headroom does not narrow it by a single token. Fixing that is
+      # a pi-side change, not one here.
+      headroom = 4096;
       maxTokens = 32768;
       # Model-card thinking-mode settings (temperature 1.0, unlike 3.6's 0.6).
       sampling = {
@@ -76,6 +97,29 @@
       # retries cost more than the per-turn speedup buys, so medium is the
       # floor for every pi level. 3.6 has no effort support — no map there,
       # and the unused kwarg is harmless to its template.
+      # Vision. Unsloth did NOT strip the tower - config.json carries
+      # "language_model_only": false, an image_token_id, a qwen3_5_vision
+      # vision_config, and 110 model.visual.* entries in quantization_config's
+      # ignore list, so the encoder ships unquantized in bf16 alongside the
+      # NVFP4 language model. Omitting this block serves text-only and does not
+      # load it at all.
+      #
+      # 1280x800 is a browser viewport - this exists for UI verification
+      # screenshots, which is the use that motivated it. At patch_size 16 and
+      # spatial_merge_size 2 each token covers 1024 px, so that is ~1000 image
+      # tokens and ~4000 ViT patches. Raising it is quadratic in the encoder's
+      # attention: 16MP would be ~62,500 patches, which is what OOMed startup
+      # back when no limit was set.
+      #
+      # count 1, not 2: profiling activation scales with it, and a second
+      # concurrent screenshot is not a use we have. Measured cost of this block
+      # is in vllm-service.nix - 0.86 GiB of weights, 21,620 tokens of KV pool.
+      vision = {
+        maxImages = 1;
+        width = 1280;
+        height = 800;
+      };
+
       thinkingLevels = {
         minimal = "medium";
         low = "medium";
@@ -97,15 +141,41 @@
         # across model/version changes; the relative form re-derives the pool
         # on every startup.
         gpuMemoryUtilization = 0.95;
-        # 2, not 3: the pool guard is here now that no client-side window
-        # pretends to be one. Measured worker footprint is 64-68k input/turn,
-        # so 2 concurrent lanes are ~136k against the pool and 3 are ~204k.
-        # 3 was also buying concurrency this workload does not use - the only
-        # real overlap in run-history.jsonl is two researchers (ts 1788216982
-        # +546s and 1788217087 +651s, ~441s of genuine 2-wide). The cap is
-        # server-wide, not per session, and queued requests hold no KV, so a
-        # third caller buys queueing latency rather than memory pressure.
-        maxNumSeqs = 2;
+        # 3, up from 2. The old note claimed this workload never runs wider
+        # than two, citing ~441s of 2-wide overlap in run-history.jsonl. That
+        # dataset predates the pi-subagents fan-out and no longer describes the
+        # traffic: measured server-side over 1000 consecutive requests,
+        # 55% arrive with >=3 already in flight, and the tail reaches 16.
+        #
+        # The cost curve has its knee at exactly the third request - the first
+        # one that has to queue behind a cap of 2 (seconds per 1k output
+        # tokens, from llama-swap's per-request log):
+        #   1 in flight   9.7      <- alone
+        #   2 in flight   9.8      <- batching the second lane is free
+        #   3 in flight  12.4      +27%
+        #   4 in flight  18.4      +89%
+        #   >=6          34.9      +260%, with queue waits to 480s
+        #
+        # 3, not the 4 an earlier plan proposed. The measured knee justifies
+        # letting the third request run; 4 was extrapolation, and vision has
+        # since taken the pool from 185,122 to 163,502 tokens, so there is less
+        # room to be wrong with. Raise to 4 only after watching
+        # vllm:num_preemptions_total per request - baseline is already ~1.0,
+        # i.e. preemption is not something the low cap was preventing.
+        #
+        # This is a scheduler cap, not a reservation: nothing is allocated by
+        # raising it, and vLLM preempts if the pool runs short. Whether 3 lanes
+        # fit depends on the marginal cost of a lane, not the mean request -
+        # 78% of prompt tokens are prefix-cache hits, so lanes share blocks and
+        # cost far less than 60k each.
+        #
+        # Read the pool from a clean start only. Peak-activation profiling
+        # measured 1.03 GiB and 3.12 GiB on identical configs minutes apart
+        # (free memory identical both times, 30.82/31.34 GiB), and the pool is
+        # sized as the remainder - so a startup that races another engine's
+        # teardown reports a pool 40% too small. vllm-service.nix's health
+        # poll now bails on a dead engine, which removes the cause we know of.
+        maxNumSeqs = 3;
         # 4096: chunk size trades directly against the KV pool - vLLM
         # profiles peak activation at this size and sizes the pool as the
         # remainder. Fixed budget 8.04 GiB = KV + peak activation, and the

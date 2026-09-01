@@ -7,6 +7,16 @@ let
   # Aliases inherit the parent's thinkingLevels: same instance, same template.
   thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
 
+  # pi gates image sending on this list, not on what the server can do:
+  # openai-completions.js only emits an image_url part when
+  # `model.input.includes("image")`, and provider-composer defaults `input` to
+  # [ "text" ]. So without this, serving vision costs KV pool and buys pi
+  # nothing - it would simply never send one. Derived from the catalog's
+  # `vision` block so the two cannot drift.
+  inputsOf = m: {
+    input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
+  };
+
   mkModel =
     id: m:
     {
@@ -16,7 +26,8 @@ let
       contextWindow = m.maxModelLen - m.headroom;
       maxTokens = m.maxTokens;
     }
-    // thinkingMapOf m;
+    // thinkingMapOf m
+    // inputsOf m;
 
   mkAlias =
     m: id: a:
@@ -27,7 +38,8 @@ let
       contextWindow = a.contextWindow;
       maxTokens = a.maxTokens;
     }
-    // thinkingMapOf m;
+    // thinkingMapOf m
+    // inputsOf m;
 
   entriesFor =
     name:
