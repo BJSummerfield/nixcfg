@@ -1,8 +1,8 @@
 # Change / Keep — the list
 
 Ranked by measured value against cost. Evidence for every claim is in
-`01-measurements.md`; reasoning in `02-vllm-and-model.md`, `03-llama-swap.md`,
-`04-ninfer.md`.
+`01-measurements.md`; reasoning in `02-vllm-and-model.md`, `03-ninfer.md` and
+`06-llama-swap-removal.md`.
 
 The framing that reorders everything: **this workload is 56:1 input:output, but 78% of
 input tokens are already served from prefix cache, so prefill is nearly free. Decode is
@@ -134,7 +134,8 @@ new, small
 
 This endpoint answered in one scrape three things `models.nix` has been guessing at:
 pool size, preemption rate, prefix-cache hit rate. A 60-second cron'd curl into a file is
-enough to turn future tuning arguments into diffs. See `03-llama-swap.md`.
+enough to turn future tuning arguments into diffs. Implemented in this PR; see
+`06-llama-swap-removal.md` for where the endpoint moved to.
 
 ### C7. After C1 lands, A/B `speculativeTokens` 3 → 4
 `modules/local-llm/models.nix`
@@ -180,13 +181,13 @@ comments warn about three times.
 Still true, and the real cost of removal: `/api/metrics/activity` is a per-request
 token+duration history vLLM has no equivalent for. Not enough to justify the socket grant.
 
-Plan: [`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md). Sequenced after the
+Plan: [`06-llama-swap-removal.md`](06-llama-swap-removal.md). Sequenced after the
 concurrency change (C2/C3).
 
 ### K2. vLLM as the engine, for now
 Both things NInfer would buy — concurrency scaling and per-request observability — are
 available on the current engine for near-zero cost (C2, C6). Spend those first. See
-`04-ninfer.md` for the bench plan that would revisit this honestly.
+`03-ninfer.md` for the bench plan that would revisit this honestly.
 
 ### K3. `--enable-prefix-caching` + `--mamba-cache-mode align`
 78% of prompt tokens served from cache; it is the single reason prefill is nearly free and
@@ -240,6 +241,6 @@ and for any engine A/B.
 - **Don't remove llama-swap in the same change as the engine bump or the concurrency
   tuning** — not because it is the rollback path (it is not; `git revert` is), but because
   bundling an architecture change into a correctness experiment makes the result
-  unreadable. Removal is queued after C2/C3: [`07`](07-llama-swap-removal-plan.md).
-- **Don't migrate to NInfer yet** — but do build the one-day bench in `04-ninfer.md`.
+  unreadable. Removal is queued after C2/C3: [`07`](06-llama-swap-removal.md).
+- **Don't migrate to NInfer yet** — but do build the one-day bench in `03-ninfer.md`.
 - **Don't tune the KV pool for speed.** It is not what is costing time.

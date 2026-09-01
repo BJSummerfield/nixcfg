@@ -1,5 +1,9 @@
 # The nspawn guest — everything here runs inside the container.
-{ llamaSwapConfig, cudaEnabled }:
+#
+# vLLM does not run here. It is a podman container on the HOST, managed by
+# systemd there; this guest is the tailnet front door and the Open WebUI host,
+# and reaches the engine over the veth at `vllmEndpoint`.
+{ vllmEndpoint }:
 {
   config,
   pkgs,
@@ -7,37 +11,14 @@
   ...
 }:
 {
-  # podman CLI for debugging the host socket; llama-swap uses the store path.
-  environment.systemPackages = lib.optionals cudaEnabled [ pkgs.podman ];
-  # also at /etc/llama-swap.yaml for reading the effective config.
-  environment.etc."llama-swap.yaml".source = llamaSwapConfig;
-
   services.tailscale.enable = true;
-  systemd.services.llama-swap = {
-    description = "llama-swap (model-swapping proxy for vLLM)";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    # podman client needs a homedir for config lookup
-    environment.HOME = "/var/lib/llama-swap";
-    serviceConfig = {
-      ExecStart = ''
-        ${pkgs.llama-swap}/bin/llama-swap \
-          --listen 0.0.0.0:8081 \
-          --config ${llamaSwapConfig}
-      '';
-      Restart = "on-failure";
-      RestartSec = 10;
-      # Container-root: podman socket is root-owned, unprivileged user gains nothing.
-      StateDirectory = "llama-swap";
-    };
-  };
 
   services.open-webui = {
     enable = true;
     host = "0.0.0.0";
     port = 8080;
     environment = {
-      OPENAI_API_BASE_URL = "http://127.0.0.1:8081/v1";
+      OPENAI_API_BASE_URL = "${vllmEndpoint}/v1";
       OPENAI_API_KEY = "sk-no-key-required";
       ENABLE_OLLAMA_API = "False";
       WEBUI_AUTH = "True";
@@ -53,10 +34,10 @@
     enableIPv6 = false;
     firewall = {
       enable = true;
-      allowedTCPPorts = [
-        8080
-        8081
-      ];
+      # 8081 was llama-swap. Nothing listens in this guest but Open WebUI now;
+      # the tailnet endpoint is served by `tailscale serve` proxying straight
+      # to the host, which needs no port open here.
+      allowedTCPPorts = [ 8080 ];
       trustedInterfaces = [ "tailscale0" ];
       allowedUDPPorts = [ config.services.tailscale.port ];
     };

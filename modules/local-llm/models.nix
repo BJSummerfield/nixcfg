@@ -85,9 +85,6 @@
         max = "xhigh";
       };
 
-      # null ttl: vLLM cold start is minutes
-      ttl = null;
-
       vllm = {
         # 0.95, not the 0.94 default and not the 0.97 tried before: the card
         # is dedicated to vLLM (no GUI/compositor co-tenants), and both
@@ -212,9 +209,6 @@
         min_p = 0.0;
       };
 
-      # null ttl: vLLM cold start is minutes
-      ttl = null;
-
       vllm = {
         gpuMemoryUtilization = 0.94;
         # 3 for parallel subagent concurrency without outgrowing the KV pool
@@ -270,7 +264,6 @@
         top_k = 20;
         min_p = 0.0;
       };
-      ttl = 3600;
 
       vllm = {
         gpuMemoryUtilization = 0.94;

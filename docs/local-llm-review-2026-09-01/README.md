@@ -4,17 +4,16 @@ Question asked: now that the fan-out alias is gone and context limits can be set
 config, is llama-swap still worth keeping, is NInfer worth moving to, and what should
 change in the vLLM / Qwen3.8 setup for local agentic coding?
 
-**Start with [`05-change-and-keep.md`](05-change-and-keep.md)** — that is the deliverable.
+**Start with [`04-change-and-keep.md`](04-change-and-keep.md)** — that is the deliverable.
 
 | File | What is in it |
 | --- | --- |
 | [`01-measurements.md`](01-measurements.md) | Everything measured, with the commands to re-run it. Read this before disagreeing with anything else. |
 | [`02-vllm-and-model.md`](02-vllm-and-model.md) | Current vLLM/model config, what holds up, what doesn't, and the upstream correctness bug in the running flag combination. |
-| [`03-llama-swap.md`](03-llama-swap.md) | Keep/drop analysis. **Superseded** — the "keep" argument was circular; see 07. |
-| [`04-ninfer.md`](04-ninfer.md) | NInfer evaluation. Verdict: don't migrate now, do build a bench. |
-| [`05-change-and-keep.md`](05-change-and-keep.md) | **The list.** 9 changes ranked by measured value, 10 keeps, 4 don'ts. |
-| [`06-nix-update-plan.md`](06-nix-update-plan.md) | **The plan.** 3 PRs, sequenced, with diffs and a verification signal for each. |
-| [`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md) | Removing llama-swap: why the keep verdict failed, what replaces it, what we lose. |
+| [`03-ninfer.md`](03-ninfer.md) | NInfer evaluation. Verdict: don't migrate now, do build a bench. |
+| [`04-change-and-keep.md`](04-change-and-keep.md) | **The list.** 9 changes ranked by measured value, 10 keeps, 4 don'ts. |
+| [`05-nix-update-plan.md`](05-nix-update-plan.md) | **The plan.** 3 PRs, sequenced, with diffs and a verification signal for each. |
+| [`06-llama-swap-removal.md`](06-llama-swap-removal.md) | Removing llama-swap: why the keep verdict failed, what replaces it, what we lose. |
 | `data-llamaswap-activity-1000req.tsv` | Raw: 1000 server-side requests (completion ts, duration ms, input, output, status). |
 | `data-vllm-metrics-snapshot.txt` | Raw: full `vllm:` Prometheus scrape, 2026-09-01 ~10:25 local. |
 

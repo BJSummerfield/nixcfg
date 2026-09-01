@@ -98,7 +98,7 @@ cheaper intermediate hop.
 of the prefix-cache × MTP interaction (#43559). The *tool-call leakage* report (#47194) is
 still open. So v0.28.0 is a well-founded change against a confirmed bug in the same code
 path — but treat the effect on our 120 malformed tool calls as a **measurable experiment,
-not a guaranteed fix**. Capture the baseline before switching (see `05-change-and-keep.md`
+not a guaranteed fix**. Capture the baseline before switching (see `04-change-and-keep.md`
 C1).
 
 `models.nix` already anticipated this: *"Watch for 3.6's failure signature… if it

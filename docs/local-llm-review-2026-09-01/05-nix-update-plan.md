@@ -1,6 +1,6 @@
 # Plan: updating the nix repo
 
-Derived from `05-change-and-keep.md`. Upstream status verified 2026-09-01 (see
+Derived from `04-change-and-keep.md`. Upstream status verified 2026-09-01 (see
 `02-vllm-and-model.md` §3).
 
 ## Sequencing rationale
@@ -9,16 +9,18 @@ The changes that matter touch different layers and are verified by different sig
 they go in separate PRs. Bundling them makes the result unreadable — and the whole point
 of the measurement work was to be able to attribute effects.
 
-The counters on `/upstream/<model>/metrics` are **cumulative since engine start** and reset
-on every model restart. That is convenient: each PR that restarts vLLM gives a clean
-per-config counter set. `data-vllm-metrics-snapshot.txt` is the v0.26.0 baseline
-(3,201 requests) and needs no re-capture.
+vLLM's counters are **cumulative since engine start** and reset on every restart. That is
+convenient: each PR that restarts vLLM gives a clean per-config counter set.
+`data-vllm-metrics-snapshot.txt` is the v0.26.0 baseline (3,201 requests) and needs no
+re-capture. It was taken through llama-swap's `/upstream/<model>/metrics`; after PR 1 the
+same families come straight off `http://192.168.100.24:5800/metrics`, so the two are
+directly comparable.
 
 ```
-PR 1  engine bump + observability      -> restart, measure 1 day
+PR 1  engine bump + observability + llama-swap removal  -> restart, measure 1 day
 PR 2  scheduling (concurrency/window)  -> restart, measure 1 day
 PR 3  pi-side compaction               -> no server restart, measure 1 day
-PR 4  remove llama-swap                -> architecture; see 07-llama-swap-removal-plan.md
+      (removal folded into PR 1; see 06-llama-swap-removal.md)
 then  C7 spec tokens, C9 thinking level, NInfer bench
 ```
 
@@ -27,7 +29,7 @@ anywhere without disturbing the sequence.
 
 ---
 
-## PR 1 — `llm/vllm-0.28-and-observability`
+## PR 1 — `llm/vllm-0.28-and-observability` (+ llama-swap removal)
 
 Goal: land the upstream correctness fix, and make the next two PRs measurable.
 
@@ -49,40 +51,25 @@ Also note in the comment: 0.28.0 turns prefix caching on by default for Mamba mo
 (#50991), so our explicit `--enable-prefix-caching` becomes redundant-but-harmless. Keep it
 explicit — it documents intent and survives a future default flip.
 
-### 1b. Persist vLLM's stdout — `modules/local-llm/llama-swap.nix`
+### 1b. Remove llama-swap — `vllm-service.nix`, `container.nix`, `nixos.nix`
 
-**Check this first, it may be free.** llama-swap runs as a systemd service inside the
-`local-llm` container, and it captures the upstream's output. If that already reaches the
-container journal, there is nothing to build:
+Design and topology in [`06-llama-swap-removal.md`](06-llama-swap-removal.md). Summary:
+vLLM becomes a host systemd unit on a fixed port 5800, `tailscale serve` points one hop
+earlier at the host, Open WebUI follows, and the bind-mounted podman socket goes away.
 
-```bash
-sudo journalctl -M local-llm -u llama-swap | grep -i 'GPU KV cache size'
-```
-
-If the startup lines are there, C5 collapses to a comment in `models.nix` pointing at that
-command, and the tuning notes stop telling readers to consult a log that `--rm` destroys.
-
-If they are not, add to the `vllmArgs` list right after the `--rm --replace --pull=never`
-line:
-
-```nix
-  "--log-driver=journald --log-opt tag=vllm-${lib.toLower name}"
-```
-
-**Risk to check on rollout:** llama-swap's `/logs` endpoint reads the upstream's attached
-stdout. `--log-driver` is a server-side storage option and should not affect the attach
-stream over the podman API socket, but verify `/logs` still shows vLLM output after the
-switch. If it goes blank, revert this hunk only — it is independent of 1a.
+This subsumes what earlier drafts planned as separate work. vLLM's stdout now reaches the
+journal because systemd captures the unit's output directly — no `--log-driver` pin, and
+`--rm` no longer destroys anything worth keeping.
 
 ### 1c. Scrape the metrics — new, small
 
-The endpoint is `http://192.168.100.25:8081/upstream/Qwen3.8-27B-NVFP4/metrics` from the
-host (or the tailnet URL from anywhere). A full Prometheus is overkill for a single-user
-box. A systemd timer writing timestamped scrapes into `/var/lib/local-llm/metrics/` is
-enough to turn future tuning arguments into diffs, and costs ~15 lines in
-`modules/local-llm/nixos.nix`.
+`http://192.168.100.24:5800/metrics`, straight at the engine. A full Prometheus is overkill
+for a single-user box; a systemd timer writing gzipped timestamped scrapes into
+`/var/lib/local-llm/metrics/` is enough to turn future tuning arguments into diffs.
 
-Model name is available at eval time (`catalog.default`), so the URL need not be hardcoded.
+Retention is enforced in the script and runs unconditionally, ahead of the scrape — see the
+comments there. Measured cost: 61,439 bytes raw, 6,596 gzipped, so ~25 MiB steady state at
+5-minute resolution with 14-day retention.
 
 ### 1d. Re-probe `cached_tokens` after the switch
 
@@ -95,7 +82,7 @@ jq -n --arg p "$P" '{model:"Qwen3.8-27B-NVFP4",messages:[{role:"user",content:$p
 
 On v0.26.0 this returns `"prompt_tokens_details": null`. If v0.28.0 populates it, pi's
 `cacheRead` starts reporting the ~78% hit rate per turn and the DON'T entry in
-`05-change-and-keep.md` gets deleted rather than softened.
+`04-change-and-keep.md` gets deleted rather than softened.
 
 ### Verification for PR 1 (after ~1 day of normal use)
 
@@ -107,7 +94,12 @@ On v0.26.0 this returns `"prompt_tokens_details": null`. If v0.28.0 populates it
 | MTP acceptance | 67.9%, 3.04 tok/step | `spec_decode_num_accepted_tokens_total / _draft_tokens_total` |
 | `prompt_tokens_details` | `null` | the probe in 1d |
 
-**Rollback:** revert 1a alone (one string). 1b/1c are independent and additive.
+**Rollback:** revert the PR. Note the one non-declarative piece — `tailscale serve` state
+lives on the node, so reverting the nix alone leaves 8443 pointed at a port nothing
+listens on. Re-run the serve command for whichever side you land on.
+
+If only the engine is suspect, `vllmImage` can be reverted to `v0.26.0` on its own; the
+removal does not depend on the version.
 
 ---
 
@@ -244,21 +236,27 @@ compactions per session as the counterweight (`jq 'select(.type=="compaction")'`
   output tokens are the only real cost, and every turn currently defaults to the most
   expensive effort the template accepts. Needs an A/B measuring
   `vllm:generation_tokens_total` per unit of work, not an opinion.
-- **NInfer bench** — the one-day scratch build in `04-ninfer.md`. Worth doing regardless of
+- **NInfer bench** — the one-day scratch build in `03-ninfer.md`. Worth doing regardless of
   outcome, because its `--request-log-jsonl` reports the cached-token counts vLLM has been
   unable to report reliably.
 
-## PR 4 — remove llama-swap
+## ~~PR 4 — remove llama-swap~~ → folded into PR 1
 
-An earlier revision of this document listed this under "not doing", on the grounds that
-llama-swap is the only route to vLLM's metrics and is the rollback path for PR 1. Both
-were wrong — the first circular, the second simply false. See
-[`07-llama-swap-removal-plan.md`](07-llama-swap-removal-plan.md).
+Two earlier revisions of this document got this wrong in opposite directions: first "not
+doing, llama-swap is the only route to vLLM's metrics and is the rollback path" (circular,
+and false, respectively), then "PR 4, sequenced last".
 
-Sequenced last of the four because the concurrency change is worth more and its nicest
-verification (`/api/metrics/activity`) is the thing removal deletes. Do the measuring while
-the instrument still exists, then delete the plumbing.
+It is now **part of PR 1**, by decision. Rationale and topology:
+[`06-llama-swap-removal.md`](06-llama-swap-removal.md).
 
-Note PR 4 deletes two things PR 1 adds — the `--log-driver=journald` pin and the `/running`
-guard on the scrape. Both exist only to work around llama-swap. Deliberate: PR 1 buys
-measurement today for ~20 throwaway lines.
+Bundling it costs the clean attribution this document otherwise argues for, and that
+tradeoff was made knowingly. It is defensible here because the two changes fail in
+distinguishable ways — a broken tailnet path or a dead Open WebUI is obviously the removal,
+while tool-call quality is measured from session logs and is obviously the engine. It also
+avoids writing ~20 lines of llama-swap workaround (`--log-driver=journald`, the `/running`
+guard) only to delete them a week later.
+
+**Operational consequence of bundling**, worth knowing before the switch: a fresh 10 GB
+image pull *and* no more cold-start request holding land together. Clients get
+connection-refused for the minutes vLLM takes to load, rather than a held request. Wait for
+`vllm-image-pull` to finish before cycling the engine.

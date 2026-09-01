@@ -1,8 +1,23 @@
-# Plan: removing llama-swap
+# Removing llama-swap — rationale and topology
 
-Supersedes the "keep it" verdict in [`03-llama-swap.md`](03-llama-swap.md). That
-conclusion rested on llama-swap being the only route to vLLM's metrics — which was true,
-but only because llama-swap assigns the vLLM port dynamically. The argument was circular.
+**Implemented**, alongside the v0.28.0 bump. This is the design record, not a pending plan.
+
+An earlier revision of this review contained a `03-llama-swap.md` arguing to *keep*
+llama-swap, on the grounds that its `/upstream/<model>/metrics` proxy was the only route to
+vLLM's Prometheus data. That was circular: it was the only route *because* llama-swap
+assigns the vLLM port dynamically via its `${PORT}` macro. A fixed port makes `/metrics`
+directly reachable with nothing in front of it. That document has been deleted rather than
+kept with a correction banner — its conclusion was wrong and its supporting claims were
+wrong, so there is nothing in it worth reading. Its accurate content, on what llama-swap
+actually did and which endpoints mattered, is preserved here and in
+[`01-measurements.md`](01-measurements.md).
+
+Two further claims in it also failed on inspection, recorded so they are not re-derived:
+
+- *"It is the rollback path if the engine bump goes badly."* It is not. With `ttl = null`
+  and one model it never swaps, so rollback is a revert either way.
+- *"The `/logs` and activity dashboard is a live capability."* It was being used to gather
+  data for this review, not as a standing workflow.
 
 ## Why
 
@@ -102,9 +117,9 @@ with a matching 900 s ceiling.
 | --- | --- |
 | `llama-swap.nix` | deleted; `vllmArgs` moves to `vllm-service.nix` |
 | `container.nix` | drop `systemd.services.llama-swap`, `environment.etc."llama-swap.yaml"`, `pkgs.podman` from `systemPackages`; repoint `OPENAI_API_BASE_URL` to `http://192.168.100.24:5800/v1`; drop 8081 from the container firewall; rewrite the header comment's `tailscale serve` line |
-| `nixos.nix` | new `systemd.services.vllm`; drop the `/run/podman/podman.sock` bind mount, `podmanSock`/`podmanCli`, `systemd.sockets.podman`; host `allowedTCPPorts` and NAT `forwardPorts` lose 8081; `ve-local-llm` range 5800–5999 → single 5800; simplify the metrics scrape (no `/running` guard, no `/upstream` path); revise the `cuda.enable` option description, which currently promises root-equivalent access it will no longer grant |
+| `nixos.nix` | new `systemd.services.vllm`; drop the `/run/podman/podman.sock` bind mount, `podmanSock`/`podmanCli`, `systemd.sockets.podman` (note: this only stops us opting it into `sockets.target`; nixpkgs still activates `podman.socket` — the property that changes is the bind mount, not the listener); host `allowedTCPPorts` and NAT `forwardPorts` lose 8081; `ve-local-llm` range 5800–5999 → single 5800; simplify the metrics scrape (no `/running` guard, no `/upstream` path); revise the `cuda.enable` option description, which currently promises root-equivalent access it will no longer grant |
 | `models.nix` | drop `ttl` from every entry and from the schema comment |
-| `03-llama-swap.md` | mark superseded, state why the argument failed |
+| `03-llama-swap.md` | deleted — its verdict was reversed and its supporting claims were wrong |
 
 ### Also worth checking, not asserting
 The nspawn container is granted the NVIDIA devices and `/run/opengl-driver`, gated on
