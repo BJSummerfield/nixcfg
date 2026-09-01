@@ -24,6 +24,19 @@ let
     [
       "${podmanCli} run --rm --replace --pull=never"
       "--name ${containerName name}"
+      # --rm means the container's own log store dies with it, and vLLM's
+      # startup lines are the ones every tuning comment in models.nix tells you
+      # to go read: "GPU KV cache size", "Setting attention block size to N
+      # tokens", the max_num_scheduled_tokens advisory. journald keeps them past
+      # the container, so `journalctl CONTAINER_NAME=vllm-<lowercased model>`
+      # still answers "what did it decide on the last start" after a replace.
+      #
+      # Pinned rather than changed: podman on a systemd host generally defaults
+      # here already via containers.conf. Same reasoning as --mamba-cache-mode
+      # align below — state the behaviour we depend on instead of inheriting it.
+      # This is a server-side storage option and does not touch the attach
+      # stream, so llama-swap's own /logs view is unaffected.
+      "--log-driver=journald"
       "--device nvidia.com/gpu=all"
       "--ipc=host"
       "-e HF_HUB_OFFLINE=1"

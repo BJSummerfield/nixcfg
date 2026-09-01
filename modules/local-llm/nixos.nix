@@ -18,10 +18,31 @@ let
   cudaEnabled = cfg.cuda.enable;
 
   # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
-  # v0.26.0: first release after Qwen3.8's day-0 support announcement; the
-  # 3.8 models are Qwen3.5-architecture (hybrid linear attention) and get
-  # their optimized kernels here.
-  vllmImage = "docker.io/vllm/vllm-openai:v0.26.0";
+  #
+  # v0.28.0, up from v0.26.0: the first tag containing PR #51113 ("Keep mamba
+  # align prefill chunks block-aligned past last_cache_position", merged
+  # 2026-08-06 as c56f169d9ae4). That is the merged half of the correctness fix
+  # for hybrid-Mamba prefix caching combined with MTP speculative decoding —
+  # exactly what we serve: Qwen3.5-architecture model, --enable-prefix-caching,
+  # --mamba-cache-mode align, --speculative-config mtp.
+  #
+  # The tag matters and was checked rather than assumed: #51113 merged four days
+  # before v0.27.0 shipped and is still not in it, because the 0.27 release
+  # branches were cut earlier (compare v0.27.1...c56f169d9ae4 -> diverged;
+  # compare v0.28.0...c56f169d9ae4 -> behind, ahead=0). There is no cheaper hop.
+  #
+  # What this does and does not buy. #51113 closed vllm#43559, the ~20% accuracy
+  # drop from prefix caching + MTP. vllm#47194 — the same interaction producing
+  # tool-call leakage and needle-recall failure — is still OPEN. Our own symptom
+  # is 120 malformed tool calls in 14.3h of agent work (46 with empty arguments),
+  # so treat this bump as a measurable experiment, not a settled fix; the
+  # baseline and the signals to compare are in
+  # docs/local-llm-review-2026-09-01/05-change-and-keep.md (C1).
+  #
+  # 0.28.0 also turns prefix caching on by default for Mamba models (#50991),
+  # which makes our --enable-prefix-caching redundant. It stays explicit: it
+  # documents intent and survives a future default flip in either direction.
+  vllmImage = "docker.io/vllm/vllm-openai:v0.28.0";
   podmanSock = "unix:///run/podman/podman.sock";
   # Drives HOST podman over the bind-mounted API socket; vLLM itself
   # is the upstream OCI image (vllmImage above), not a nix build.
@@ -34,6 +55,13 @@ let
     "/dev/nvidia-uvm-tools"
     "/dev/nvidia-modeset"
   ];
+
+  # The container's veth endpoints. Named once because three things have to
+  # agree on them: llama-swap's generated config (which publishes the vllm
+  # container's port on the host end), the nspawn container definition, and the
+  # metrics scrape below (which reaches llama-swap on the container end).
+  hostAddress = "192.168.100.24";
+  localAddress = "192.168.100.25";
 
   catalog = import ./models.nix;
   allAliasNames = builtins.concatMap (n: builtins.attrNames (catalog.models.${n}.aliases or { })) (
@@ -48,9 +76,33 @@ let
       weightsOf
       vllmImage
       podmanCli
+      hostAddress
       ;
-    hostAddress = "192.168.100.24";
   };
+
+  # llama-swap only starts a model on demand, and /upstream/<model>/metrics is a
+  # proxied route — scraping it blind would start a 22 GiB model just to read a
+  # gauge. Guard on /running so the timer observes the engine and never
+  # summons it.
+  metricsScrape = pkgs.writeShellScript "vllm-metrics-scrape" ''
+    set -uo pipefail
+    base="http://${localAddress}:8081"
+    dir=/var/lib/local-llm/metrics
+    curl=${lib.getExe pkgs.curl}
+
+    "$curl" -sf --max-time 5 "$base/running" \
+      | ${lib.getExe pkgs.gnugrep} -q '"state":"ready"' || exit 0
+
+    mkdir -p "$dir"
+    out="$dir/$(date -u +%Y%m%dT%H%M%SZ).prom.gz"
+    if "$curl" -sf --max-time 10 "$base/upstream/${catalog.default}/metrics" \
+      | ${lib.getExe pkgs.gzip} -c > "$out.tmp"; then
+      mv "$out.tmp" "$out"
+    else
+      rm -f "$out.tmp"
+    fi
+    ${pkgs.findutils}/bin/find "$dir" -name '*.prom.gz' -mtime +14 -delete
+  '';
 in
 {
   options.mine.system.local-llm = {
@@ -115,7 +167,7 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/vllm-cache
+      mkdir -p /var/lib/local-llm/vllm-cache /var/lib/local-llm/metrics
       chmod 755 /var/lib/local-llm
     '';
 
@@ -157,11 +209,46 @@ in
       };
     };
 
+    # vLLM's engine metrics — KV pool size, preemption count, prefix-cache hit
+    # rate, the queue/prefill/decode split, MTP acceptance per draft position —
+    # are what every tuning number in models.nix actually rests on, and until
+    # now nothing read them. They are reachable only through llama-swap's
+    # /upstream proxy: the vllm container publishes its port on the host end of
+    # the veth (192.168.100.24:58xx), not on the tailnet.
+    #
+    # A full scrape rather than a curated subset, because the expensive part is
+    # noticing later that you did not record the field you now need. The
+    # counters are cumulative since engine start and reset whenever the model
+    # restarts, which is convenient: each config change gets its own clean
+    # counter run to compare against the last.
+    #
+    # ~60 KiB of text per scrape, ~5 KiB gzipped, so 14 days at 5-minute
+    # resolution is ~20 MiB. Uncompressed it would be ~240 MiB.
+    systemd.services.vllm-metrics-scrape = lib.mkIf cudaEnabled {
+      description = "snapshot vLLM's Prometheus metrics through llama-swap";
+      # date/mkdir/mv/rm come from here rather than from systemd's default PATH,
+      # so the script behaves the same run by hand as run by the timer.
+      path = [ pkgs.coreutils ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = metricsScrape;
+      };
+    };
+    systemd.timers.vllm-metrics-scrape = lib.mkIf cudaEnabled {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "5min";
+        OnUnitActiveSec = "5min";
+        # Not Persistent: a scrape missed while the box was off describes an
+        # engine that was not running, so catching up on boot records nothing.
+        Persistent = false;
+      };
+    };
+
     containers.local-llm = {
       autoStart = false;
       privateNetwork = true;
-      hostAddress = "192.168.100.24";
-      localAddress = "192.168.100.25";
+      inherit hostAddress localAddress;
 
       allowedDevices = [
         {
