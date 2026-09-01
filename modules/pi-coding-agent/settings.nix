@@ -41,13 +41,6 @@ let
   redtruckModels = builtins.concatMap entriesFor llm.enabled;
 
   qualified = id: "${llm.provider}/${id}";
-  defaultEntry = llm.models.${llm.default};
-  defaultAliases = builtins.attrNames (defaultEntry.aliases or { });
-  # Assumes at most one alias: with two, `head` picks the lexicographically
-  # first, which is arbitrary - pick deliberately if a second is ever added.
-  # With none, the cheap tier falls back to the full default model: same
-  # served instance, so no swap - it only loses the smaller declared window.
-  budgetModel = if defaultAliases == [ ] then llm.default else builtins.head defaultAliases;
 in
 {
   settings = {
@@ -76,16 +69,24 @@ in
     # Subagent model routing, and nothing else. Which role does what, and
     # how hard it thinks, is a per-dispatch decision the prompting agent
     # makes: `subagent { agent, model, thinking, task }` beats every
-    # setting here bar the ceiling. So nix sets a safe default and a guard
-    # rail, not a policy.
+    # setting here bar the ceiling. So nix sets a guard rail and nothing
+    # else - no default to argue with, no policy.
     #
-    # defaultModel is the budget alias - the same served instance with a
-    # smaller declared window, so a child compacts before a wave can
-    # thrash the KV pool. It reaches all six bundled agents, none of which
-    # pin a model. Escalate per call when the work wants the full window.
-    # Both ids are the same instance on purpose: pointing a child at the
-    # other redtruck model would make llama-swap tear down the loaded one
-    # mid-session.
+    # No defaultModel. It reads like a floor and is not one: pi-subagents
+    # attaches it as the agent's own `model` (modelSource.type
+    # "subagents.defaultModel"), and resolveEffectiveSubagentModel takes
+    # `explicitModel ?? agentModel` - so it wins on every dispatch that omits
+    # `model`, for all six bundled agents, none of which pin one. Setting it
+    # is therefore a standing override of the prompting agent's judgement in
+    # exactly one direction, and the orchestrator can only escape it by
+    # passing `model:` on every single call.
+    #
+    # Unset, pi-subagents falls through to inheriting the parent session's
+    # in-memory model (provider/id, not the global settings default - that
+    # indirection is deliberate upstream, so another open pi session cannot
+    # contaminate this one's children). That is the wanted default: children
+    # get the same instance and the same full window as the parent, and the
+    # dispatch may still size *down* per call with a `:suffix`.
     #
     # maxThinking is a hard ceiling - a request above it fails before the
     # child starts, covering frontmatter, per-run overrides and nested
@@ -94,7 +95,6 @@ in
     # qualifies. models.nix maps pi's levels onto what the chat template
     # accepts, and folds low to medium there.
     subagents = {
-      defaultModel = qualified budgetModel;
       maxThinking = "xhigh";
     };
   };

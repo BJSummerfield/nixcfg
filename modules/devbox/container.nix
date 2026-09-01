@@ -15,6 +15,17 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
+  # Seeded for pi as ~/.pi/agent/APPEND_SYSTEM.md by the home.file below, and
+  # passed to claude on the command line in mkAgent.
+  #
+  # It does not reach every pi subagent. pi discovers the global file only when
+  # no --append-system-prompt was passed (resource-loader.js: `if (!appendSources)`),
+  # and pi-subagents spends that flag on the agent's own body whenever the agent
+  # sets `systemPromptMode: append` - the bundled `delegate`, and any custom
+  # agent written that way. Agents in `replace` mode (worker, reviewer,
+  # researcher, scout, oracle) take --system-prompt instead, leave the append
+  # slot free, and do get this file. Anything *all* children must see belongs in
+  # pi-coding-agent/AGENTS.md, which reaches them through project context.
   envContract = ./ENVIRONMENT.md;
 
   # Pi needs bun and node on PATH or plugins crash at startup.

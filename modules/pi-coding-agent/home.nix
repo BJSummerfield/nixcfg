@@ -24,6 +24,15 @@ in
     # instead of needing a manual first-run setup.
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
+    # pi's global context file: loadProjectContextFiles reads agentDir before
+    # it walks the cwd's ancestors, so this lands in <project_context> for the
+    # parent session and, unlike APPEND_SYSTEM.md, for every child too (the
+    # bundled agents all set inheritProjectContext: true). Dispatch policy goes
+    # here rather than in devbox/ENVIRONMENT.md, which is the environment
+    # contract and stays free of workflow. A store symlink is fine - pi only
+    # ever reads this one, unlike settings.json below.
+    home.file.".pi/agent/AGENTS.md".source = ./AGENTS.md;
+
     # ~/.pi/agent/settings.json - the seeded package membership and the
     # subagent model routing. Copied, not linked: pi's own package manager
     # rewrites this file

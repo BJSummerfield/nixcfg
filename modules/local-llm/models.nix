@@ -29,19 +29,20 @@
       # state). 131072 is the conservative start on the 31GiB card —
       # weights are ~21.8GiB. The pool depends on maxNumBatchedTokens (see
       # below): measured 2026-08-15 via /metrics at 2048 batched tokens:
-      # kv_cache_size_tokens=203579; at the current 4096 the estimate is
-      # ~170k — re-measure the "GPU KV cache size" startup line after a
-      # rebuild. Prefix caching is on (below), so recently-served preambles
-      # also sit in the pool — a same-role fan-out shares one cached copy —
-      # and maxNumSeqs caps concurrency at 3, so the binding case is still
-      # a full wave: 3 x (44k alias window + 8k output) ≈ 160k of the pool.
-      # That cap is
-      # server-wide, not per session — queued requests hold no KV, blocks
-      # are allocated when a sequence is scheduled — so extra pi sessions or
-      # a second project buy queueing latency, never memory pressure. A
-      # max-length main-session request overlapping two alias requests can
-      # transiently overcommit; vLLM resolves that by preempting one
-      # sequence, not sustained thrashing.
+      # kv_cache_size_tokens=203579; at 4096 the interpolation was ~170k, but
+      # that line was fitted before prefix caching and --mamba-cache-mode
+      # align, which page the linear-attention state out of the same pool —
+      # so it does not describe this config. 0.95 (down from 0.97) gives back
+      # a further ~0.63GiB ≈ ~17k tokens. Nothing here is sized off that
+      # estimate any more: read the "GPU KV cache size" startup line.
+      #
+      # There is no longer a "full wave must fit" invariant. It cannot hold
+      # at any window big enough to be useful (2 x (98304 + 32768) = 262144),
+      # and it was only ever satisfied by starving children — the alias it
+      # justified made a worker compact on nearly every turn. vLLM resolves
+      # overcommit by preempting and re-prefilling, which is latency; the old
+      # sizing paid for that in truncated reviews, which is correctness.
+      # maxNumSeqs is the actual pool guard now (see below).
       maxModelLen = 131072;
       # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
       # only compacts above contextWindow - reserveTokens (16384 default,
@@ -49,7 +50,16 @@
       # >= maxTokens - 16384 plus margin for token-count drift, or there is
       # a band (maxModelLen - maxTokens .. compaction threshold) where pi
       # sends a request vLLM must 400.
-      headroom = 20480;
+      #
+      # 32768, not the bare 16384 the rule requires: subagents run on this
+      # entry now, so the slack past the compaction threshold has to absorb a
+      # large tool result mid-turn, not just token-count drift. Window 98304,
+      # threshold 81920, and 81920 + 32768 = 114688 against the 131072 ceiling
+      # leaves 16384. Measured worker footprint is 64-68k input/turn
+      # (~/.pi/agent/sessions/*/subagent-artifacts/*_meta.json), so a worker
+      # clears the threshold without compacting at all; on the retired 44k
+      # alias it compacted on nearly every turn.
+      headroom = 32768;
       maxTokens = 32768;
       # Model-card thinking-mode settings (temperature 1.0, unlike 3.6's 0.6).
       sampling = {
@@ -79,32 +89,42 @@
       ttl = null;
 
       vllm = {
-        # 0.97, not the 0.94 default: the card is dedicated to vLLM (no
-        # GUI/compositor co-tenants), and both startup logs measure
-        # 30.82/31.34 GiB free at worker start - a ~0.5 GiB
-        # driver/context floor outside vLLM's accounting. 0.97 targets
-        # 30.40 GiB, leaving ~0.4 GiB slack (1.0 would OOM at startup;
-        # 0.98 leaves only ~0.1). The ~0.9 GiB reclaimed vs 0.94 is ~25k
-        # tokens of KV at 39.2 KiB/token. vLLM's --kv-cache-memory
-        # absolute knob (suggested in the startup log) is more precise
-        # but goes stale across model/version changes; the relative form
-        # re-derives the pool on every startup.
-        gpuMemoryUtilization = 0.97;
-        maxNumSeqs = 3;
+        # 0.95, not the 0.94 default and not the 0.97 tried before: the card
+        # is dedicated to vLLM (no GUI/compositor co-tenants), and both
+        # startup logs measure 30.82/31.34 GiB free at worker start - a
+        # ~0.5 GiB driver/context floor outside vLLM's accounting. 0.97
+        # targets 30.40 GiB and left only ~0.4 GiB slack; 0.95 targets
+        # ~29.77 GiB and buys back a real margin for ~0.63 GiB of pool
+        # (~17k tokens at 39.2 KiB/token). vLLM's --kv-cache-memory absolute
+        # knob (suggested in the startup log) is more precise but goes stale
+        # across model/version changes; the relative form re-derives the pool
+        # on every startup.
+        gpuMemoryUtilization = 0.95;
+        # 2, not 3: the pool guard is here now that no client-side window
+        # pretends to be one. Measured worker footprint is 64-68k input/turn,
+        # so 2 concurrent lanes are ~136k against the pool and 3 are ~204k.
+        # 3 was also buying concurrency this workload does not use - the only
+        # real overlap in run-history.jsonl is two researchers (ts 1788216982
+        # +546s and 1788217087 +651s, ~441s of genuine 2-wide). The cap is
+        # server-wide, not per session, and queued requests hold no KV, so a
+        # third caller buys queueing latency rather than memory pressure.
+        maxNumSeqs = 2;
         # 4096: chunk size trades directly against the KV pool - vLLM
         # profiles peak activation at this size and sizes the pool as the
         # remainder. Fixed budget 8.04 GiB = KV + peak activation, and the
         # pool cost is ~39.2 KiB/token (constant across both measurements).
         # Measured on this stack (v0.26.0, same model/flags): 2048 ->
         # 203,579 tokens (0.45 GiB activation), 8192 -> 135,255 (2.97 GiB).
-        # 4096 estimates ~170k from activation interpolated between the two
-        # endpoints - confirm the "GPU KV cache size" startup line after a
-        # rebuild before trusting the alias math below or bumping this
-        # again. Also clears the `block_size <= max_num_batched_tokens`
-        # assert that `--mamba-cache-mode align` needs (live attention block
-        # size is 1600), and gives the MTP scheduler more headroom than
-        # 2048 (which trips the vllm.py:1718 max_num_scheduled_tokens
-        # advisory).
+        # 4096 estimated ~170k from activation interpolated between the two
+        # endpoints, but both endpoints predate prefix caching + align, so
+        # read the "GPU KV cache size" startup line rather than the
+        # interpolation. Raising this shrinks the pool, so if a startup
+        # advisory asks for a bigger batch, prefer lowering maxNumSeqs -
+        # same constraint, opposite sign on the pool. Also clears the
+        # `block_size <= max_num_batched_tokens` assert that
+        # `--mamba-cache-mode align` needs (live attention block size is
+        # 1600), and gives the MTP scheduler more headroom than 2048 (which
+        # trips the vllm.py:1718 max_num_scheduled_tokens advisory).
         maxNumBatchedTokens = 4096;
         kvCacheDtype = "fp8";
         # recipes.vllm.ai suggests 3 for this model's MTP head
@@ -125,40 +145,28 @@
         # upstream since the align-mode re-enable (the old bug was draft
         # tokens corrupting the stored mamba state); we don't use async
         # scheduling. On because a same-role fan-out then shares one cached
-        # copy of the preamble instead of three - the biggest single win
-        # for the wave math below. Watch for 3.6's failure signature
-        # (incoherent rewrite loops on long sessions): if it reappears, the
-        # A/B is this flag first, then speculativeTokens second.
+        # copy of the preamble instead of one per lane. Watch for 3.6's
+        # failure signature (incoherent rewrite loops on long sessions): if
+        # it reappears, the A/B is this flag first, then speculativeTokens
+        # second.
         enablePrefixCaching = true;
       };
 
-      # Aliases share the running instance — no model swap. Sized against
-      # the pool above, not against the compaction win alone: pi compacts
-      # past contextWindow - 16384 reserve, so 45056 gives a fan-out
-      # subagent 28,672 tokens of working room.
+      # No alias. There was a 44k fan-out budget here; it was deleted rather
+      # than resized, because it never did what its name implied. llama-swap
+      # rewrites an alias back via useModelName, so the smaller contextWindow
+      # never reached vLLM at all - it was client-side self-restraint, not a
+      # pool guarantee, and it cost real work on every run to probabilistically
+      # relieve a pool nobody had measured since. Concretely, at 45056 pi
+      # compacted a child past 28,672 tokens while workers actually run
+      # 64-68k input/turn, and its 8192 maxTokens both truncated xhigh review
+      # verdicts at stopReason "length" and capped pi's own compaction summary
+      # (min(0.8 * 16384, maxTokens), shared with the summarizer's reasoning).
       #
-      # The binding case is a full-width wave rather than the average, and
-      # a lane can hold its declared window plus its output allowance:
-      # 3 x (45056 + 8192) = 159,744 against the estimated ~170,000-token
-      # pool at 4096 batched tokens (~94%, ~96% at the pessimistic end of
-      # the estimate - the same margin 196,608 had against the measured
-      # 203,579 pool at 2048). 57344 would be 196,608, a ~15% overcommit
-      # at 4096, which vLLM resolves by preempting a sequence and
-      # re-prefilling it later. If the measured pool lands under 166k, step
-      # down to 43008 (153,600 wave). Prefix caching is on, so a same-role
-      # fan-out shares one cached copy of the preamble instead of three;
-      # 44k stays the sizing that fits a full wave, and the fallbacks if
-      # the measurement or output quality says otherwise are 43008 and
-      # flipping the flag off.
-      #
-      # Rename rather than editing the number in place: llama-swap's
-      # aliases list and pi's model id have to move together, and a stale
-      # id then fails loudly instead of quietly serving the wrong window.
-      aliases."Qwen3.8-27B-NVFP4-44k" = {
-        displayName = "Qwen3.8 27B NVFP4 44k budget (redtruck)";
-        contextWindow = 45056;
-        maxTokens = 8192;
-      };
+      # If a genuine second budget is ever wanted, add it back as an alias and
+      # rename rather than editing a number in place: llama-swap's aliases list
+      # and pi's model id have to move together, and a stale id then fails
+      # loudly instead of quietly serving the wrong window.
     };
 
     "Qwen3.6-27B-NVFP4" = {
