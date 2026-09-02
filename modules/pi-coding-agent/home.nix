@@ -46,7 +46,15 @@ in
     # next reconfigure fails activation on checkLinkTargets - taking every other
     # home.file with it, models.json included. ENVIRONMENT.md tells agents to
     # keep durable instructions in the repo for that reason.
-    home.file.".pi/agent/AGENTS.md".source = ./AGENTS.md;
+    # Generated, not copied: @imageBudget@ comes from the same catalog block
+    # that builds --limit-mm-per-prompt, so the number the agent is told and
+    # the number the engine enforces cannot drift apart. replaceVars fails the
+    # build on an unsubstituted placeholder, which is the property worth having
+    # - a silently un-expanded "@imageBudget@" in a system prompt would be worse
+    # than no guidance at all.
+    home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
+      imageBudget = toString data.imageBudget;
+    };
 
     # ~/.pi/agent/settings.json - the seeded package membership and the
     # subagent model routing. Copied, not linked: pi's own package manager

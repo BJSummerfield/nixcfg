@@ -55,3 +55,28 @@ than splitting the work into more, smaller children.
 Workers run 64–68k input tokens per turn against a window that compacts at
 ~82k, so a worker has room for one substantial task, not three. Split by task,
 not to save context.
+
+## Images
+
+The engine admits **@imageBudget@ images per prompt**, and that budget is
+counted across the whole conversation, not per message — pi resends the
+history every turn, so it is cumulative for the session. Exceeding it is
+terminal for that context: the request fails with
+
+```
+400 BadRequestError: At most @imageBudget@ image(s) may be provided in one prompt.
+```
+
+and so does every request after it, including the next thing the user types
+and the compaction that would have evicted the images. Under the budget,
+compaction does drop them and hand it back; over the budget, nothing does.
+
+**Do not read images in this session.** Dispatch a child to look at one and
+report back in prose. The image lives in the child's context and only text
+returns, so your budget is untouched, and a child that overruns kills its own
+run rather than yours.
+
+That makes the overrun a recoverable failure. A child that dies with `At most
+N image(s)` has told you its result did not arrive, not that the work is
+impossible: re-dispatch with fewer images per child — one each if unsure —
+and the images are gone with the child's context either way.
