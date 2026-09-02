@@ -35,8 +35,16 @@ in
     # AGENTS.md is orchestrator-facing by construction, which suits dispatch
     # policy (the parent decides how to size a child; the child does not need
     # the table) but rules it out for anything a child must obey. That has to
-    # live in the repo's own AGENTS.md - the one channel children do inherit,
-    # since `systemPromptMode: replace` also denies them APPEND_SYSTEM.md.
+    # live in the repo's own AGENTS.md, the one channel every child inherits.
+    #
+    # APPEND_SYSTEM.md is a second channel and reaches most of them, contrary
+    # to what this comment said before: pi-args.ts:812 spends --system-prompt
+    # on a `replace` agent's body and --append-system-prompt on an `append`
+    # one, while resource-loader.js discovers the global append file only
+    # `if (!appendSources)`. So `replace` agents - eleven of the bundled twelve
+    # - leave the append slot free and do get devbox/ENVIRONMENT.md; only
+    # `delegate` spends the slot and misses it. See the fuller note at
+    # devbox/container.nix:19.
     #
     # Dispatch policy goes here rather than in devbox/ENVIRONMENT.md, which is
     # the environment contract and stays free of workflow.
