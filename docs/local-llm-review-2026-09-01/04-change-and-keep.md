@@ -173,8 +173,9 @@ Do this **after** the image bump, not before — MTP is half of the correctness 
 so tuning it on the old image measures the wrong thing.
 
 ### C8. Correct the stale numbers in `models.nix`
-- KV pool is **197,283 tokens**, not "~170k interpolated". Read
-  `vllm:cache_config_info{kv_cache_size_tokens}` rather than the startup line.
+- KV pool is not the "~170k interpolated" figure - but it is not a constant either:
+  197,283 text-only, 155,544 with vision + MTP, 211,911 with MTP off. Read
+  `vllm:cache_config_info{kv_cache_size_tokens}` live, from a clean start.
 - The `maxNumSeqs = 2` rationale cites a dataset that no longer describes the workload.
 - `headroom` is documented as protecting the compaction band. It does not; `reserveTokens`
   does.
