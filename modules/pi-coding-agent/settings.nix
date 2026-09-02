@@ -167,6 +167,17 @@ in
     };
   };
 
+  # The engine's per-prompt image budget, surfaced so AGENTS.md can state the
+  # real number instead of a copy that rots. `--limit-mm-per-prompt` is built
+  # from this same block in vllm-service.nix, so the prose and the launch flag
+  # cannot disagree. 0 means the served model has no vision block and images
+  # are refused outright.
+  imageBudget =
+    let
+      m = llm.models.${llm.default};
+    in
+    if m ? vision then m.vision.maxImages else 0;
+
   webSearch = {
     workflow = "auto-summary";
     # Every provider that needs no API key, queried in parallel and merged
