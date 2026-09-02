@@ -111,11 +111,35 @@
       # attention: 16MP would be ~62,500 patches, which is what OOMed startup
       # back when no limit was set.
       #
-      # count 1, not 2: profiling activation scales with it, and a second
-      # concurrent screenshot is not a use we have. Measured cost of this block
-      # is in vllm-service.nix - 0.86 GiB of weights, 21,620 tokens of KV pool.
+      # count is a per-PROMPT budget, not a per-message or per-turn one, and a
+      # chat client resends the whole conversation every turn. So this number is
+      # really "images one session may accumulate before it dies": the first
+      # request carrying count+1 of them fails
+      #
+      #   400 BadRequestError: At most N image(s) may be provided in one prompt.
+      #
+      # and every later request fails identically, because the history that
+      # tripped it is resent each turn. The user's next message 400s, and so
+      # does the compaction that would have evicted the images. There is no
+      # recovery from inside the session.
+      #
+      # It was 1, on the reasoning that "a second concurrent screenshot is not a
+      # use we have". Concurrency was the wrong axis - two `read` calls fourteen
+      # seconds apart, one image each, locked a session on 2026-09-01.
+      #
+      # 4 is cheap because the two costs scale differently. The vision tower is
+      # 0.86 GiB of weights, paid in full the moment this block exists at all
+      # and flat in count; only the profiling hint scales, and that measured
+      # 0.02 GiB for the first image (~500 tokens of pool at ~39.2 KiB/token).
+      # So 1 -> 4 is on the order of 1% of the pool, against a failure mode that
+      # ends the session. Confirm rather than trust the extrapolation: read the
+      # "GPU KV cache size" startup line, or vllm:cache_config_info's
+      # kv_cache_size_tokens, before and after.
+      #
+      # Runtime cost is separate and self-limiting: at 1280x800 each image is
+      # ~1000 context tokens, so 4 is ~4k of a 98,304 window.
       vision = {
-        maxImages = 1;
+        maxImages = 4;
         width = 1280;
         height = 800;
       };
