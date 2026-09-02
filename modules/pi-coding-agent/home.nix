@@ -26,11 +26,26 @@ in
 
     # pi's global context file: loadProjectContextFiles reads agentDir before
     # it walks the cwd's ancestors, so this lands in <project_context> for the
-    # parent session and, unlike APPEND_SYSTEM.md, for every child too (the
-    # bundled agents all set inheritProjectContext: true). Dispatch policy goes
-    # here rather than in devbox/ENVIRONMENT.md, which is the environment
-    # contract and stays free of workflow. A store symlink is fine - pi only
-    # ever reads this one, unlike settings.json below.
+    # dispatching session. It does NOT reach children, which is the opposite of
+    # what this comment used to claim. Two different flags are in play and only
+    # one is set: the bundled agents declare `inheritProjectContext: true`,
+    # which keeps *repository* context, while the operator's global file is
+    # gated on `inheritGlobalContext` - `?? false` in pi-subagents'
+    # runtime-agent-registry, and unset in all twelve bundled definitions. So
+    # AGENTS.md is orchestrator-facing by construction, which suits dispatch
+    # policy (the parent decides how to size a child; the child does not need
+    # the table) but rules it out for anything a child must obey. That has to
+    # live in the repo's own AGENTS.md - the one channel children do inherit,
+    # since `systemPromptMode: replace` also denies them APPEND_SYSTEM.md.
+    #
+    # Dispatch policy goes here rather than in devbox/ENVIRONMENT.md, which is
+    # the environment contract and stays free of workflow.
+    #
+    # A store symlink is fine only while pi *reads* this file. A harness told to
+    # evolve its own instructions will replace it with a real file, and then the
+    # next reconfigure fails activation on checkLinkTargets - taking every other
+    # home.file with it, models.json included. ENVIRONMENT.md tells agents to
+    # keep durable instructions in the repo for that reason.
     home.file.".pi/agent/AGENTS.md".source = ./AGENTS.md;
 
     # ~/.pi/agent/settings.json - the seeded package membership and the
