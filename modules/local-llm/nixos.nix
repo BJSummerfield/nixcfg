@@ -44,25 +44,18 @@ let
 
   # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
   #
-  # v0.28.0, up from v0.26.0: the first tag containing PR #51113 ("Keep mamba
-  # align prefill chunks block-aligned past last_cache_position", merged
-  # 2026-08-06 as c56f169d9ae4). That is the merged half of the correctness fix
-  # for hybrid-Mamba prefix caching combined with MTP speculative decoding —
-  # exactly what we serve: Qwen3.5-architecture model, --enable-prefix-caching,
-  # --mamba-cache-mode align, --speculative-config mtp.
+  # v0.28.0 was taken for PR #51113 ("Keep mamba align prefill chunks
+  # block-aligned past last_cache_position"), the first tag containing the
+  # merged half of the correctness fix for hybrid-Mamba prefix caching combined
+  # with MTP speculative decoding. It was not enough: corruption continued
+  # (mojibake mid-session, leaked tool-call XML) and MTP is now off in
+  # models.nix. The remaining half of that work — vllm#47194, and the CUDA and
+  # off-by-one issues split out of vllm#43559 — is still open upstream.
   #
-  # The tag matters and was checked rather than assumed: #51113 merged four days
-  # before v0.27.0 shipped and is still not in it, because the 0.27 release
-  # branches were cut earlier (compare v0.27.1...c56f169d9ae4 -> diverged;
-  # compare v0.28.0...c56f169d9ae4 -> behind, ahead=0). There is no cheaper hop.
-  #
-  # What this does and does not buy. #51113 closed vllm#43559, the ~20% accuracy
-  # drop from prefix caching + MTP. vllm#47194 — the same interaction producing
-  # tool-call leakage and needle-recall failure — is still OPEN. Our own symptom
-  # is 120 malformed tool calls in 14.3h of agent work (46 with empty arguments),
-  # so treat this bump as a measurable experiment, not a settled fix; the
-  # baseline and the signals to compare are in
-  # docs/local-llm-review-2026-09-01/04-change-and-keep.md (C1).
+  # MTP re-enable gate: a tag that closes those issues, then A/B it over a long
+  # agentic session rather than a one-shot benchmark. That is worth chasing —
+  # MTP was measured at 3.04 tokens per decode step on this stack, and the
+  # stack is decode-bound.
   #
   # 0.28.0 also turns prefix caching on by default for Mamba models (#50991),
   # which makes our --enable-prefix-caching redundant. It stays explicit: it

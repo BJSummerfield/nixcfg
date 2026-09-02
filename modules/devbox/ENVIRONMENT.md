@@ -23,6 +23,12 @@ your commands, so tools behave normally.
   which is versioned, reviewable, and the one context file that every
   spawned subagent inherits. Config that must change globally is a
   request to the user, not a local write.
+- Two paths under those directories are the exception, and exist to be
+  written: pi's `~/.pi/agent/LESSONS.md`, and claude's per-project
+  `memory/` directory under `CLAUDE_CONFIG_DIR`. Neither is overwritten
+  by a rebuild and both persist across sessions, so that is where a
+  harness keeps what it learns about itself until the lesson is durable
+  enough to promote into the repository.
 - Missing tools: prefer `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>`
   - the store is shared with the host, so anything it already has costs
   no download. npm/pip/cargo also work. There is no sudo and you will

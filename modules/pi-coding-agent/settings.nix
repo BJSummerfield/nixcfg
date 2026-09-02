@@ -149,17 +149,13 @@ in
               omitWhenOff = true;
             };
           };
-          # Off: vllm#44676 is open against our exact parser pair
-          # (qwen3_coder + qwen3). The budget holder counts tool-call
-          # *argument* tokens as thinking, and on exhaustion force-injects
-          # </think> into the middle of the JSON arguments — a corrupt tool
-          # call, not a truncated answer. The reporter's differential: small
-          # budget 3/4 runs corrupted, large budget 0/8, budget off 0/12.
-          # Thinking is controlled by reasoning_effort through the
-          # chat-template block above instead, which cannot corrupt a call.
-          # Reasoning and the answer still share max_tokens on vLLM; the
-          # exposure that bought is now covered by the effort level rather
-          # than a hard token cap.
+          # Off: vllm#44676. The budget holder counts tool-call *argument*
+          # tokens as thinking, and on exhaustion force-injects </think> into
+          # the middle of the JSON arguments - a corrupt tool call, not a
+          # truncated answer. Reported against qwen3_coder + qwen3; we now run
+          # qwen3_xml, and the fix is unverified there, so this stays off.
+          # Thinking is controlled by reasoning_effort through the chat-template
+          # block above instead, which cannot corrupt a call.
           supportsThinkingTokenBudget = false;
         };
         models = redtruckModels;
