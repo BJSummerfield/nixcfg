@@ -22,7 +22,7 @@ PR 1  engine bump + observability + llama-swap removal  -> restart, measure 1 da
        each other, so they ship together)
 PR 2  pi-side compaction               -> no server restart, measure 1 day
       (removal folded into PR 1; see 06-llama-swap-removal.md)
-then  C7 spec tokens, C9 thinking level, NInfer bench
+then  C9 thinking level, NInfer bench   (C7 dropped: MTP removed 2026-09-02)
 ```
 
 PR 2 is independent of the server entirely — pi-side only, no restart — so it can slot in
@@ -253,9 +253,10 @@ compactions per session as the counterweight (`jq 'select(.type=="compaction")'`
 
 ## After measurement
 
-- **C7 — `speculativeTokens` 3 → 4.** Only after PR 1, because MTP is half of the bug
-  0.28.0 addresses; tuning it on the old image measures the wrong thing. Justification:
-  per-position acceptance is 80.7 / 66.6 / **56.4%** — position 2 is not exhausted.
+- **~~C7 — `speculativeTokens` 3 → 4~~ — dropped 2026-09-02.** PR 1 landed and did
+  not clear the symptom; MTP is removed rather than tuned. See
+  `02-vllm-and-model.md` §7. The per-position acceptance numbers (80.7 / 66.6 /
+  **56.4%**) now price the removal instead of justifying a wider draft window.
 - **C9 — `defaultThinkingLevel`.** The largest untested lever: decode is 68.6% of latency,
   output tokens are the only real cost, and every turn currently defaults to the most
   expensive effort the template accepts. Needs an A/B measuring

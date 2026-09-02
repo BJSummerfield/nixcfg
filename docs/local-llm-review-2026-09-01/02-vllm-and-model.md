@@ -181,3 +181,96 @@ Until then, the hit rate is only observable via `vllm:prompt_tokens_cached_total
 - `headroom = 32768` as protection against the compaction band. `headroom` does not affect
   that band at all — the band is `reserveTokens − 4096`, and `reserveTokens` is a pi
   setting nothing in this repo sets.
+
+## 7. 2026-09-02 update — the experiment returned a verdict, MTP is off
+
+§3 framed the v0.28.0 bump as *an experiment for our tool-call symptom, not a guaranteed
+fix*. It did not fix it. The symptom got worse and more legible: four corruption incidents
+in the pi session logs on 2026-09-02, the day after the deploy, all the same shape — a
+handful of mojibake tokens inside a **thinking** block (`ةXæöåXåXåöîööÜX¥…`), then a clean
+`stopReason: "stop"` and a dead turn.
+
+What the incidents have in common:
+
+- Always deep in a session — 26k–74k input tokens, never early. That is the cache-hit path.
+- **Two independent orchestrator sessions corrupted 12 seconds apart** (13:09:00 and
+  13:09:12) while both had subagents in flight. Simultaneous failure across sessions means
+  shared *server-side* state, not a per-session problem.
+- No images in any corrupted session. Vision is exonerated.
+- Precursors track the deploys: `"Stream ended without finish_reason"` started ~2.5 h after
+  the prefix-caching commit on 08-31, and an `EngineCore encountered an issue` crash landed
+  early on 09-01.
+
+This is the failure mode PR #47861 describes, and the half of it that is still open. The
+mechanism is that MTP's peek-and-drop cache semantics cannot rewind a mamba recurrent
+snapshot, so a rejected draft can poison a cached prefix and every later request that hits
+it inherits the damage — which is exactly why two unrelated sessions die at the same second.
+
+**Changes made:** `speculativeTokens` deleted from the catalog and `--speculative-config`
+removed from `vllm-service.nix`; `toolCallParser` `qwen3_coder` → `qwen3_xml`. The parser
+change is independent — `qwen3_coder` does not stream arguments (reads as a hang) and emits
+unbounded garbage on long inputs containing a tool call.
+
+**Contingency:** if corruption outlives the MTP removal, `enablePrefixCaching = false` is
+next; `--mamba-cache-mode align` goes with it automatically.
+
+**Cost:** MTP was measured at 3.04 tokens emitted per decode step (67.9% acceptance) on a
+decode-bound stack, so this is a real throughput regression. Capture `/metrics` before and
+after; the re-enable gate is recorded on the image pin in `nixos.nix`.
+
+### Measurements moved out of the nix comments
+
+These lived as prose in `vllm-service.nix` and `models.nix` and were pruned from there.
+
+Multimodal admission — `width`/`height` in `--limit-mm-per-prompt` are **memory-profiling
+hints only**. They shape the dummy inputs used to reserve activation; the encoder cache is
+sized from actual runtime inputs. A client that posts a 40MP photo is still a 40MP forward
+pass. Measured on redtruck 2026-09-01, both on the good activation roll:
+
+| config | weights | peak activation | KV pool | concurrency |
+| --- | --- | --- | --- | --- |
+| text-only | 21.11 GiB | 1.03 GiB | 185,122 | 1.41× |
+| 1×1280×800 | 21.97 GiB | 1.05 GiB | 163,502 | 1.25× |
+
+The tower costs 0.86 GiB of weights, flat in `count`; the hints cost 0.02 GiB of
+activation. Net −21,620 tokens of pool, −11.7%.
+
+`maxNumBatchedTokens` against the pool, measured on v0.26.0 with the same model and flags:
+2048 → 203,579 tokens (0.45 GiB activation), 8192 → 135,255 (2.97 GiB), i.e. ~39.2 KiB per
+token. Both endpoints predate prefix caching + `align`, so 4096 must be read from the
+startup line rather than interpolated between them.
+
+Concurrency knee, seconds per 1k output tokens from llama-swap's per-request log: 1 in
+flight 9.7, 2 in flight 9.8, 3 in flight 12.4 (+27%), 4 in flight 18.4 (+89%), ≥6 in flight
+34.9 (+260%, with queue waits to 480 s).
+
+**Pool caveat.** §6 corrects the old "~170k" interpolation to 197,283 — that was measured
+text-only. With vision enabled the same config profiles 163,502. Neither number is a
+constant to design against: read `vllm:cache_config_info{kv_cache_size_tokens}` or the
+"GPU KV cache size" startup line, and only from a clean start, since a startup that races
+another engine's teardown reports a pool up to 40% too small.
+
+### Verification probe
+
+Run against `~/.pi/agent/sessions` before and after the change. Pass is zero mojibake and
+zero stream-ended, with malformed tool calls materially down.
+
+```bash
+cd ~/.pi/agent/sessions
+# corrupted generations: long mixed-script runs, which is what the mojibake looks like
+rg -l -P '(?:[\x{00A1}-\x{024F}\x{0370}-\x{04FF}]{2,}[\x00-\x7F]{0,3}){4,}' --glob '*.jsonl'
+rg -o 'Stream ended' --glob '*.jsonl' | wc -l
+rg -o 'Validation failed for tool' --glob '*.jsonl' | wc -l
+```
+
+Whole-history baseline taken 2026-09-02, immediately before the change (these are
+cumulative over every session on disk, so compare growth rate, not absolute counts):
+mojibake 2 files, `Stream ended` 19 hits across 9 files, `Validation failed for tool`
+197 hits across 59 files.
+
+Server side, before and after a restart:
+
+```bash
+curl -s http://192.168.100.24:5800/metrics > vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
+# decode throughput, and vllm:request_success_total{finished_reason="length"}
+```

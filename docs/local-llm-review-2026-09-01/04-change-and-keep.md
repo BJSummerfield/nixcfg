@@ -12,9 +12,20 @@ performance-neutral. Concurrency and output tokens are the levers.
 
 ---
 
+> **Status 2026-09-02.** C1 landed and did not clear the symptom; MTP is now
+> removed and the tool-call parser switched. C7 is obsolete and K4 is reversed
+> as a result — see `02-vllm-and-model.md` §7 for the evidence and the
+> contingency if corruption outlives the change.
+
 ## CHANGE
 
-### C1. Bump `vllmImage` v0.26.0 → v0.28.0 — correctness, do this first
+### C1. Bump `vllmImage` v0.26.0 → v0.28.0 — DONE, verdict: not sufficient
+
+**Resolved 2026-09-02.** The bump landed and the corruption continued, in a more
+legible form: mojibake inside thinking blocks, always on the cache-hit path, twice
+in two independent sessions within 12 seconds. MTP is the half of the interaction
+that had to go. Kept on v0.28.0; the re-enable gate lives on the pin in `nixos.nix`.
+
 `modules/local-llm/nixos.nix`
 
 Running config is Qwen3.x hybrid + `--enable-prefix-caching` + `--mamba-cache-mode align`
@@ -146,7 +157,12 @@ answers any question about the current run, and the only case on-demand misses (
 already ended) is covered by one manual snapshot before each config change. Reasoning in
 `05-nix-update-plan.md` §1c.
 
-### C7. After C1 lands, A/B `speculativeTokens` 3 → 4
+### ~~C7. After C1 lands, A/B `speculativeTokens` 3 → 4~~ — OBSOLETE (2026-09-02)
+
+MTP is removed, so there is no draft window to tune. The acceptance numbers below
+are kept because they price what the removal costs, and are the argument for
+revisiting it on a fixed upstream release.
+
 `modules/local-llm/models.nix`
 
 Per-position MTP acceptance: pos0 80.7%, pos1 66.6%, **pos2 56.4%** — position 2 is not
@@ -206,7 +222,19 @@ MTP × prefix-cache *interaction* and was fixed on the scheduler side; bump the 
 (C1) and re-measure the malformed-tool-call rate before touching a flag that is buying
 you this much.
 
-### K4. MTP speculative decoding
+**2026-09-02:** still kept, and the advice above held — the image bump came first
+and MTP went second. But this flag is now the last suspect standing. If corruption
+outlives the MTP removal, turn it off; note also that vllm#45238 / #40696 report
+`align` mode silently dropping to near-zero hit rates in many request shapes, so
+the 78% may be worth re-measuring rather than assumed.
+
+### ~~K4. MTP speculative decoding~~ — REVERSED (2026-09-02): removed
+
+Correct on throughput, wrong on correctness. 67.9% acceptance and 3.04 tokens per
+decode step is real value, but it is the half of the MTP × prefix-cache interaction
+that upstream has not finished fixing, and it was corrupting long agentic sessions.
+Removed rather than tuned. Re-enable only on a release that closes vllm#47194 and
+the issues split out of vllm#43559.
 67.9% acceptance, 3.04 tokens per decode step. Working well — better acceptance than
 NInfer publishes for the same model. Tune it (C7), do not remove it.
 

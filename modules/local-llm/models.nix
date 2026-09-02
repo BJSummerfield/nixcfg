@@ -13,7 +13,8 @@
         "config.json" = "sha256-Gzxxho0SmeUt9vyQfesgLVEyse8Pcqrg720VGF3VOlw=";
         "generation_config.json" = "sha256-0NDtLjfN+v70pQZ9XqJAewX0+1BSbkfACKWyNdUCQPs=";
         "model.safetensors" = "sha256-xHNRLHDqzgfiJW/p/XZZasA+MpW+59VM+3JnZBavzAU=";
-        # MTP head — required by llama-swap's speculative-config mtp flag
+        # MTP head. Unused while speculative decoding is off (see the vllm
+        # block); fetched anyway so re-enabling needs no re-download.
         "model_mtp.safetensors" = "sha256-HYJoqoWs4JOlYePntjudOQ2sHNVakM1VtexQnDydqf4=";
         "model.safetensors.index.json" = "sha256-QpQw4bnmWyy5jv+M0QoG5woJzuicSEh6ORRoSutt9X8=";
         "preprocessor_config.json" = "sha256-JyJUUKycZSmHLuGST8sJYv9WNINPgXBA9EQRgRb05RY=";
@@ -24,62 +25,23 @@
       };
 
       reasoning = true;
-      # Native context is 262144, and KV is cheap here (only 16 of 64 layers
-      # are full attention; the rest are linear with constant state).
+      # Native context is 262144; this is sized for concurrency, not reach.
+      # vLLM reports kv_cache_max_concurrency = pool / maxModelLen and schedules
+      # against it, so a larger window structurally overcommits the lanes.
       #
-      # 102400, down from 131072, and it costs nothing. pi cannot structurally
-      # send more than `contextWindow - 4096`: clampMaxTokensToContext in
-      # @earendil-works/pi-ai caps max_tokens at
-      # `contextWindow - estimate - CONTEXT_SAFETY_TOKENS(4096)`, so with a
-      # 98304 window the largest request that can exist is 94,208 tokens. The
-      # 28,672 tokens this removes described requests pi could never make.
-      #
-      # What they cost was concurrency. vLLM reports
-      # `kv_cache_max_concurrency = kv_cache_size_tokens / max_model_len`, and
-      # sizes scheduling against it. Measured on redtruck 2026-09-01 with
-      # vision on (pool 163,502):
-      #   @131072 -> 1.25x   (below maxNumSeqs, i.e. structurally overcommitted)
-      #   @102400 -> 1.60x
-      # Text-only for reference was 185,122, so 1.41x and 1.81x.
-      #
-      # 102400 - 4096 headroom keeps contextWindow at exactly 98304, unchanged,
-      # so no pi behaviour moves. The three numbers must travel together:
-      # settings.nix derives contextWindow as maxModelLen - headroom, so
-      # editing either alone silently moves pi's window.
-      #
-      # There is no "full wave must fit" invariant. vLLM resolves overcommit by
-      # preempting and re-prefilling, which is latency; the old sizing paid for
-      # that in truncated reviews, which is correctness.
-      #
-      # Do not size anything off an interpolation. The pool is whatever the
-      # "GPU KV cache size" startup line says, and it is only trustworthy from
-      # a clean start - see the peak-activation note under maxNumSeqs.
+      # maxModelLen and headroom travel together: settings.nix derives pi's
+      # contextWindow as maxModelLen - headroom, so editing either alone
+      # silently moves pi's window. Sizing rationale and the measured pool
+      # numbers are in docs/local-llm-review-2026-09-01/.
       maxModelLen = 102400;
-      # vLLM enforces input + maxTokens <= maxModelLen per request, but pi
-      # only compacts above contextWindow - reserveTokens (16384 default,
-      # dist/core/compaction/compaction.js). headroom must therefore be
-      # >= maxTokens - 16384 plus margin for token-count drift, or there is
-      # a band (maxModelLen - maxTokens .. compaction threshold) where pi
-      # sends a request vLLM must 400.
-      #
-      # The rule above is wrong, and this is the correction. pi does not send
-      # `input + maxTokens` blindly: clampMaxTokensToContext shrinks max_tokens
-      # to `contextWindow - estimate - 4096` on every request, so the largest
-      # total it can ever emit is `contextWindow - 4096` regardless of what
-      # maxTokens says. headroom therefore has nothing to do with maxTokens.
-      #
-      # What headroom actually buys is drift margin between pi's token estimate
-      # and vLLM's count, on top of the 4096 pi already reserves internally.
-      # 4096 here means vLLM's ceiling is 102400 while pi's largest possible
-      # request is 94,208 - 8,192 tokens of slack, twice what the old 32768
-      # was really providing.
-      #
-      # 32768 was also sold as protecting the band between pi's compaction
-      # threshold and vLLM's ceiling. It cannot: that band is
-      # `reserveTokens - 4096` = 12,288 tokens wide and depends only on pi's
-      # settings.compaction.reserveTokens, which nothing in this repo sets.
-      # Raising headroom does not narrow it by a single token. Fixing that is
-      # a pi-side change, not one here.
+      # Drift margin between pi's token estimate and vLLM's count, and nothing
+      # else. pi's clampMaxTokensToContext already shrinks max_tokens to
+      # `contextWindow - estimate - 4096` on every request, so the largest total
+      # it can emit is `contextWindow - 4096` whatever maxTokens says - headroom
+      # is unrelated to maxTokens. It also cannot protect the band between pi's
+      # compaction threshold and vLLM's ceiling: that band is
+      # `reserveTokens - 4096` wide and moves only with pi's
+      # settings.compaction.reserveTokens.
       headroom = 4096;
       maxTokens = 32768;
       # Model-card thinking-mode settings (temperature 1.0, unlike 3.6's 0.6).
@@ -89,64 +51,11 @@
         top_k = 20;
         min_p = 0.0;
       };
-      # pi thinking levels → chat-template reasoning_effort values. The 3.8
-      # template accepts only xhigh/medium/low and raises on anything else
-      # (it maps high → xhigh itself; we map eagerly so every pi level lands
-      # on an accepted value). low is deliberately never sent: on this NVFP4
-      # build, low effort degrades multi-turn agentic work enough that the
-      # retries cost more than the per-turn speedup buys, so medium is the
-      # floor for every pi level. 3.6 has no effort support — no map there,
-      # and the unused kwarg is harmless to its template.
-      # Vision. Unsloth did NOT strip the tower - config.json carries
-      # "language_model_only": false, an image_token_id, a qwen3_5_vision
-      # vision_config, and 110 model.visual.* entries in quantization_config's
-      # ignore list, so the encoder ships unquantized in bf16 alongside the
-      # NVFP4 language model. Omitting this block serves text-only and does not
-      # load it at all.
-      #
-      # 1280x800 is a browser viewport - this exists for UI verification
-      # screenshots, which is the use that motivated it. At patch_size 16 and
-      # spatial_merge_size 2 each token covers 1024 px, so that is ~1000 image
-      # tokens and ~4000 ViT patches. Raising it is quadratic in the encoder's
-      # attention: 16MP would be ~62,500 patches, which is what OOMed startup
-      # back when no limit was set.
-      #
-      # count is a per-PROMPT budget, not a per-message or per-turn one, and a
-      # chat client resends the whole conversation every turn. So this number is
-      # really "images one session may accumulate before it dies": the first
-      # request carrying count+1 of them fails
-      #
-      #   400 BadRequestError: At most N image(s) may be provided in one prompt.
-      #
-      # and every later request fails identically, because the history that
-      # tripped it is resent each turn. The user's next message 400s, and so
-      # does the compaction that would have evicted the images - which is the
-      # deadlock: under the budget a successful compaction does drop images and
-      # hand it back (verified against a session log: the image entry sat below
-      # the next compaction's firstKeptEntryId), but clearing the budget needs
-      # a request to succeed, and none can. Nothing recovers from inside.
-      #
-      # It was 1, on the reasoning that "a second concurrent screenshot is not a
-      # use we have". Concurrency was the wrong axis - two `read` calls fourteen
-      # seconds apart, one image each, locked a session on 2026-09-01.
-      #
-      # 8 is cheap because the two costs scale differently. The vision tower is
-      # 0.86 GiB of weights, paid in full the moment this block exists at all
-      # and flat in count; only the profiling hint scales, and that measured
-      # 0.02 GiB for the first image (~500 tokens of pool at ~39.2 KiB/token).
-      # So 1 -> 8 is on the order of 2% of the pool, against a failure mode that
-      # ends the session. Confirm rather than trust the extrapolation: read the
-      # "GPU KV cache size" startup line, or vllm:cache_config_info's
-      # kv_cache_size_tokens, before and after.
-      #
-      # Runtime cost is separate and self-limiting: at 1280x800 each image is
-      # ~1000 context tokens, so 8 is ~8k of a 98,304 window.
-      vision = {
-        maxImages = 8;
-        width = 1280;
-        height = 800;
-      };
-
+      # pi thinking levels → chat-template reasoning_effort. The 3.8 template
+      # accepts only xhigh/medium/low and raises on anything else. low is
+      # deliberately never sent: on this NVFP4 build it degrades multi-turn
+      # agentic work enough that the retries cost more than the speedup buys,
+      # so medium is the floor for every level.
       thinkingLevels = {
         minimal = "medium";
         low = "medium";
@@ -155,111 +64,75 @@
         xhigh = "xhigh";
         max = "xhigh";
       };
+      # Unsloth ships the vision tower unquantized in bf16 alongside the NVFP4
+      # language model; omitting this block serves text-only and never loads it.
+      # width/height are memory-profiling hints and scale quadratically in the
+      # encoder's attention - 16MP OOMed startup when no limit was set.
+      #
+      # count is a per-PROMPT budget, not per-message, and a chat client resends
+      # the whole conversation every turn - so it is really "images one session
+      # may accumulate before it dies". The first request carrying count+1 fails
+      # with `400 At most N image(s) may be provided in one prompt`, and so does
+      # every request after it, including the compaction that would have evicted
+      # them. Nothing recovers from inside; under the budget compaction does
+      # drop them. It was 1, and two `read` calls fourteen seconds apart locked
+      # a session on 2026-09-01. AGENTS.md is generated from this number.
+      vision = {
+        maxImages = 8;
+        width = 1280;
+        height = 800;
+      };
 
       vllm = {
-        # 0.95, not the 0.94 default and not the 0.97 tried before: the card
-        # is dedicated to vLLM (no GUI/compositor co-tenants), and both
-        # startup logs measure 30.82/31.34 GiB free at worker start - a
-        # ~0.5 GiB driver/context floor outside vLLM's accounting. 0.97
-        # targets 30.40 GiB and left only ~0.4 GiB slack; 0.95 targets
-        # ~29.77 GiB and buys back a real margin for ~0.63 GiB of pool
-        # (~17k tokens at 39.2 KiB/token). vLLM's --kv-cache-memory absolute
-        # knob (suggested in the startup log) is more precise but goes stale
-        # across model/version changes; the relative form re-derives the pool
-        # on every startup.
+        # The card is dedicated to vLLM, but ~0.5 GiB of driver/context sits
+        # outside vLLM's accounting: 0.97 left only ~0.4 GiB of slack.
         gpuMemoryUtilization = 0.95;
-        # 3, up from 2. The old note claimed this workload never runs wider
-        # than two, citing ~441s of 2-wide overlap in run-history.jsonl. That
-        # dataset predates the pi-subagents fan-out and no longer describes the
-        # traffic: measured server-side over 1000 consecutive requests,
-        # 55% arrive with >=3 already in flight, and the tail reaches 16.
-        #
-        # The cost curve has its knee at exactly the third request - the first
-        # one that has to queue behind a cap of 2 (seconds per 1k output
-        # tokens, from llama-swap's per-request log):
-        #   1 in flight   9.7      <- alone
-        #   2 in flight   9.8      <- batching the second lane is free
-        #   3 in flight  12.4      +27%
-        #   4 in flight  18.4      +89%
-        #   >=6          34.9      +260%, with queue waits to 480s
-        #
-        # 3, not the 4 an earlier plan proposed. The measured knee justifies
-        # letting the third request run; 4 was extrapolation, and vision has
-        # since taken the pool from 185,122 to 163,502 tokens, so there is less
-        # room to be wrong with. Raise to 4 only after watching
-        # vllm:num_preemptions_total per request - baseline is already ~1.0,
-        # i.e. preemption is not something the low cap was preventing.
-        #
-        # This is a scheduler cap, not a reservation: nothing is allocated by
-        # raising it, and vLLM preempts if the pool runs short. Whether 3 lanes
-        # fit depends on the marginal cost of a lane, not the mean request -
-        # 78% of prompt tokens are prefix-cache hits, so lanes share blocks and
-        # cost far less than 60k each.
-        #
-        # Read the pool from a clean start only. Peak-activation profiling
-        # measured 1.03 GiB and 3.12 GiB on identical configs minutes apart
-        # (free memory identical both times, 30.82/31.34 GiB), and the pool is
-        # sized as the remainder - so a startup that races another engine's
-        # teardown reports a pool 40% too small. vllm-service.nix's health
-        # poll now bails on a dead engine, which removes the cause we know of.
+        # The measured knee: seconds per 1k output tokens is flat from 1 to 2
+        # in flight and climbs from the third. A scheduler cap, not a
+        # reservation - nothing is allocated by raising it, and vLLM preempts
+        # if the pool runs short. Raise to 4 only after watching
+        # vllm:num_preemptions_total.
         maxNumSeqs = 3;
-        # 4096: chunk size trades directly against the KV pool - vLLM
-        # profiles peak activation at this size and sizes the pool as the
-        # remainder. Fixed budget 8.04 GiB = KV + peak activation, and the
-        # pool cost is ~39.2 KiB/token (constant across both measurements).
-        # Measured on this stack (v0.26.0, same model/flags): 2048 ->
-        # 203,579 tokens (0.45 GiB activation), 8192 -> 135,255 (2.97 GiB).
-        # 4096 estimated ~170k from activation interpolated between the two
-        # endpoints, but both endpoints predate prefix caching + align, so
-        # read the "GPU KV cache size" startup line rather than the
-        # interpolation. Raising this shrinks the pool, so if a startup
-        # advisory asks for a bigger batch, prefer lowering maxNumSeqs -
-        # same constraint, opposite sign on the pool. Also clears the
-        # `block_size <= max_num_batched_tokens` assert that
-        # `--mamba-cache-mode align` needs (live attention block size is
-        # 1600), and gives the MTP scheduler more headroom than 2048 (which
-        # trips the vllm.py:1718 max_num_scheduled_tokens advisory).
+        # Trades directly against the KV pool: vLLM profiles peak activation at
+        # this chunk size and sizes the pool as the remainder, so raising it
+        # shrinks the pool. If a startup advisory asks for a bigger batch,
+        # prefer lowering maxNumSeqs - same constraint, opposite sign. Must
+        # also stay >= the "Setting attention block size to N tokens" startup
+        # line to clear the assert `--mamba-cache-mode align` makes.
+        #
+        # Read the pool from the startup line or vllm:cache_config_info, never
+        # from an interpolation, and only from a clean start: peak-activation
+        # profiling measured 1.03 and 3.12 GiB on identical configs minutes
+        # apart, so a startup racing another engine's teardown reports a pool
+        # 40% too small.
         maxNumBatchedTokens = 4096;
+        # Never pair with --calculate-kv-scales: that combination, not fp8
+        # itself, is what the upstream corruption reports have in common.
         kvCacheDtype = "fp8";
-        # recipes.vllm.ai suggests 3 for this model's MTP head
-        speculativeTokens = 3;
-        # 3.8 moved to the qwen3_coder tool-call format (3.6 was qwen3_xml)
-        toolCallParser = "qwen3_coder";
+        # qwen3_xml, not the qwen3_coder format 3.8 nominally moved to:
+        # qwen3_coder does not stream arguments (reads as a hang) and emits
+        # unbounded garbage on long inputs containing a tool call.
+        toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
-        # Prefix caching is auto-disabled by vLLM for this hybrid-attention
-        # architecture; opting in needs the explicit flag plus
-        # `--mamba-cache-mode align` (wired in llama-swap.nix): the
-        # linear-attention state is checkpointed at the same block
-        # boundaries as the attention KV, so a shared prefix's state is
-        # cached once instead of re-run per lane. `align` is vLLM's default
-        # mode when prefix caching is on for mamba hybrids; we pass it
-        # explicitly to pin the behavior. `align` also asserts
-        # block_size <= max_num_batched_tokens (live block size 1600) -
-        # 4096 clears it with headroom. MTP spec decoding is compatible
-        # upstream since the align-mode re-enable (the old bug was draft
-        # tokens corrupting the stored mamba state); we don't use async
-        # scheduling. On because a same-role fan-out then shares one cached
-        # copy of the preamble instead of one per lane. Watch for 3.6's
-        # failure signature (incoherent rewrite loops on long sessions): if
-        # it reappears, the A/B is this flag first, then speculativeTokens
-        # second.
+        # No speculativeTokens: MTP is off. Draft-token rollback cannot restore
+        # a mamba recurrent snapshot, so MTP combined with prefix caching
+        # poisons cached state on this hybrid architecture and corrupts every
+        # later request that hits the poisoned prefix - mojibake mid-session,
+        # leaked tool-call XML, degeneration in long agentic runs. The
+        # re-enable gate is on the image pin in nixos.nix.
+        #
+        # Prefix caching is kept and is auto-disabled by vLLM for this
+        # architecture, hence the explicit opt-in. If corruption outlives the
+        # MTP removal, this flag is the next thing off.
         enablePrefixCaching = true;
       };
 
-      # No alias. There was a 44k fan-out budget here; it was deleted rather
-      # than resized, because it never did what its name implied. llama-swap
-      # rewrites an alias back via useModelName, so the smaller contextWindow
-      # never reached vLLM at all - it was client-side self-restraint, not a
-      # pool guarantee, and it cost real work on every run to probabilistically
-      # relieve a pool nobody had measured since. Concretely, at 45056 pi
-      # compacted a child past 28,672 tokens while workers actually run
-      # 64-68k input/turn, and its 8192 maxTokens both truncated xhigh review
-      # verdicts at stopReason "length" and capped pi's own compaction summary
-      # (min(0.8 * 16384, maxTokens), shared with the summarizer's reasoning).
-      #
-      # If a genuine second budget is ever wanted, add it back as an alias and
-      # rename rather than editing a number in place: llama-swap's aliases list
-      # and pi's model id have to move together, and a stale id then fails
+      # No alias. A 44k fan-out budget lived here and was deleted rather than
+      # resized: it compacted children at 28,672 tokens while workers run
+      # 64-68k input per turn, and its 8192 maxTokens truncated review verdicts
+      # at stopReason "length". If a second budget is ever wanted, add it as an
+      # alias and rename rather than editing a number in place - the alias list
+      # and pi's model id have to move together, so a stale id then fails
       # loudly instead of quietly serving the wrong window.
     };
 
@@ -315,7 +188,6 @@
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
-        speculativeTokens = 2;
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
       };
@@ -374,7 +246,6 @@
         maxNumBatchedTokens = 2048;
         # fp8 kv caused incoherent output on this MoE — using default dtype.
         kvCacheDtype = "auto";
-        speculativeTokens = 2;
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
       };
