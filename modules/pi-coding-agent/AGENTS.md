@@ -71,6 +71,36 @@ whose parent process is replaced mid-run finishes into nowhere: the result is
 written and never read. `bg_wait` pulls it and survives that; the notification
 does not. Use it for anything you cannot afford to redo.
 
+
+
+## Workflow returns
+
+A `workflowScript`'s `return` value lands in your context verbatim. Returning
+the child result objects — `return { research, index, codebase }` — returns
+every word all three of them wrote. Three ordinary reports do not fit: one
+fan-out returned 145k tokens into a 98k window and forced a compaction four
+entries into the session, and every later summary inherited the wreckage.
+
+The children were already saving their work. `researcher` writes `research.md`
+and `scout` writes `context.md`, each under its own run directory, so nothing
+was lost and nothing collided — the cost was returning the text as well as
+saving it.
+
+Two ways to stop that, and the first is usually enough:
+
+- **`outputMode: "file-only"`** on any child whose output may be large. Its
+  returned text becomes a pointer — `Output saved to: /abs/report.md (48.2 KB,
+  2847 lines)` — so even returning the whole result object stays small. Failed
+  runs still return inline output, so debugging is unaffected.
+- **Return references, not results** — `artifactPaths`, `outputReference`, or
+  `outputPathMapping`. A literal path string written by hand in the script is
+  not rewritten to anything real, so use the returned fields.
+
+Set an explicit `output` path only when a later step needs a predictable
+filename; the defaults are already per-run and do not clash. Return `.output`
+inline for a single child whose result is genuinely short, and
+`structuredOutput` when you need named fields.
+
 ## Images
 
 The engine admits **@imageBudget@ images per prompt**, and that budget is
