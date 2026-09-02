@@ -7,12 +7,26 @@ let
   # Aliases inherit the parent's thinkingLevels: same instance, same template.
   thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
 
-  # pi gates image sending on this list, not on what the server can do:
-  # openai-completions.js only emits an image_url part when
-  # `model.input.includes("image")`, and provider-composer defaults `input` to
-  # [ "text" ]. So without this, serving vision costs KV pool and buys pi
-  # nothing - it would simply never send one. Derived from the catalog's
-  # `vision` block so the two cannot drift.
+  # What this gates is narrower than it looks, and the difference is the whole
+  # reason it is easy to conclude vision works when it half does.
+  #
+  # `model.input` is referenced exactly once in openai-completions.js, at the
+  # tool-result branch (:1021, `if (hasImages && model.input.includes("image"))`).
+  # The user-message branch has no check at all - an attached image becomes an
+  # image_url part unconditionally. So:
+  #
+  #   attach an image yourself   -> works with `input` absent entirely
+  #   a tool returns an image    -> silently dropped unless "image" is listed,
+  #                                 and the model receives the literal text
+  #                                 "(see attached image)" instead
+  #
+  # Subagents live on the second path: a child reads a screenshot with a tool,
+  # so without this it gets that placeholder string and reports it cannot see
+  # anything - while the parent session, where a human attaches the file, looks
+  # perfectly fine. That asymmetry is the only signal that this list is stale,
+  # since provider-composer defaults it to [ "text" ] (:70).
+  #
+  # Derived from the catalog's `vision` block so the two cannot drift.
   inputsOf = m: {
     input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
   };
