@@ -274,3 +274,39 @@ Server side, before and after a restart:
 curl -s http://192.168.100.24:5800/metrics > vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
 # decode throughput, and vllm:request_success_total{finished_reason="length"}
 ```
+
+### First post-deploy reading (2026-09-02, ~90 min after restart)
+
+MTP-off config live; the `vllm:spec_decode_*` family is gone from `/metrics`, which is the
+cheapest confirmation that the flag actually dropped. 142 requests, 6.39M prompt tokens,
+138.5k generation tokens.
+
+| | with MTP | without MTP |
+| --- | --- | --- |
+| KV pool (`kv_cache_size_tokens`) | 155,544 | **211,911** |
+| `kv_cache_max_concurrency` @102400 | 1.52× | **2.07×** |
+| prefix cache hit rate | 78% | **91.4%** (5,836,096 / 6,386,448) |
+| decode throughput | 97.9 tok/s aggregate | ~64.6 tok/s (138,531 tok / 2,145 s decode) |
+
+Two of those are better than expected and one is the price:
+
+- **The pool grew 36%.** Dropping MTP frees the draft head and its state. `block_size` also
+  moved 1600 → 1568; still far under `maxNumBatchedTokens`, so the `align` assert is clear.
+  This is a third distinct pool figure (197,283 text-only, 155,544 with MTP + vision,
+  211,911 now) and the reason nothing should be sized off a remembered number.
+- **Cache hits went 78% → 91.4%**, which lands inside the 90–98% that vllm#47194's reporter
+  measured on the no-MTP path against 83.9% with it. The interaction was costing hit rate,
+  not just correctness.
+- **Decode is ~34% slower, not ~3× slower.** 3.04 tokens per decode step never meant 3×
+  throughput: drafting and verification cost real time per step and acceptance was 67.9%.
+  This materially lowers the value of chasing an MTP re-enable.
+
+Also: 142/142 finished `stop` — zero `length`, `abort`, `error` or `repetition`. Queue time
+totals 1.7 ms across all 142 requests and preemptions are 0, so this window is nearly all
+single-lane and the decode comparison is not like-for-like against the 1000-request sample
+in `01-measurements.md`. Treat it as directionally right, not settled.
+
+Correctness probe over the same window: **unchanged from the pre-change baseline** — still
+2 mojibake files, 19 `Stream ended` hits, 197 `Validation failed for tool` hits, across 11
+sessions touched in two hours. No new hits of any kind. Encouraging at 90 minutes; the
+2-day soak still decides it.
