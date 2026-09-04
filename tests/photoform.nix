@@ -210,10 +210,10 @@ let
       # The fallback sent every unclaimed connection into Stalwart from the
       # veth gateway, which got that address auto-banned and 502'd webmail.
       # A bare `route {` with no matcher is what its return would look like.
-      # To probe this by hand, `openssl s_client -connect` alone sets SNI
-      # from the -connect host, so an unclaimed hostname still matches
-      # @mail and appears to pass — add -noservername to actually test
-      # rejection.
+      # To probe by hand: `openssl s_client` sets SNI from the -connect host by
+      # default, so `-connect mx1...:443` sends mx1 as the servername, matches
+      # @mail and returns Stalwart's certificate — that is not a no-SNI test.
+      # Pass -noservername to actually send none.
       name = "no unmatched route block: unclaimed connections are closed, not forwarded";
       ok = !(lib.hasInfix "route {" gc);
     }

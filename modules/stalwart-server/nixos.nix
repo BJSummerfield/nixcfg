@@ -103,7 +103,9 @@ in
     # The edge passes mx1 through untouched rather than terminating it.
     # Stalwart's certificate also serves 25/465/993, which bypass caddy
     # entirely, and TLS-ALPN-01 is the only challenge it can use — DNS-01
-    # supports Cloudflare/TSIG/SIG0 only and this domain is at Namecheap.
+    # supports Cloudflare/TSIG/SIG0 only and this domain is at Namecheap, whose
+    # DNS API is gated behind account minimums - so DNS-01 is not available
+    # here at all, not merely inconvenient.
     # That challenge needs the raw ClientHello on :443 to answer, which is
     # exactly what a tcp route preserves.
     mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {

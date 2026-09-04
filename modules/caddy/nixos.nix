@@ -111,7 +111,10 @@ in
 
     # The ACME account key and issued certificates. Restoring them beats
     # re-issuing into Let's Encrypt's duplicate-certificate limit after a
-    # rebuild. No container to stop: caddy writes JSON files, not a database.
+    # rebuild - 5 per 7 days, keyed on the exact set of names on the cert and
+    # counted across ACME accounts, which is what makes caddy issuing `booking`
+    # and Stalwart issuing `mx1` separately safe rather than two bites at one
+    # budget. No container to stop: caddy writes JSON files, not a database.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "/var/lib/caddy" ];
     };
