@@ -69,8 +69,20 @@ B8. Host files declare *policy* — which options, which values. Implementation,
 ## C. Structure is discoverable without reading it all
 C1. A root README: what this is, which hosts exist, how to build, deploy, add a
     host, rotate a secret.
-C2. One naming convention for directories and files. No mixed
-    `_1password` / `polkit_kde` / `encode_queue` / `dns-server`.
+C2. One naming convention for directories and files — kebab-case — **except
+    where the name is inherited from upstream.** A directory named after a
+    nixpkgs attribute or an upstream project keeps that spelling; renaming it
+    makes it *less* predictable, not more. Decided 2026-09-04 after checking
+    each case:
+    - `polkit_kde` **is** a defect and T4 renames it: its own option is already
+      `mine.user.polkit-kde`, its unit is `polkit-kde-agent`, its package is
+      `polkit-kde-agent-1`. The directory is the only underscore in sight.
+    - `_1password` **stays**: it mirrors `pkgs._1password-cli` /
+      `pkgs._1password-gui`, which nixpkgs spells that way because a Nix
+      identifier cannot begin with a digit.
+    - `encode_queue` **stays**: it is the upstream project's own name
+      (`github.com/BJSummerfield/encode_queue`), and is also the `pname`,
+      `mainProgram`, flake package attribute and `pkg-encode_queue` check name.
 C3. Import aggregators consistently ordered, ideally derived rather than
     hand-maintained, so adding a module cannot be half-done.
 C4. The option namespace is coherent: a reader can predict whether a knob is
