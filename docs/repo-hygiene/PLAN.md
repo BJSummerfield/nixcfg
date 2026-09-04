@@ -126,7 +126,13 @@ T7 or T9 touches anything.
   goes in the PR body.
 
 ## Order
-T1, TW, T2, T3, T4, T10, T5, T6, T13, T8, GATE 2, T7, T9, T12.
+
+**Amended 2026-09-04: T9 promoted from last to second, at user request.** The
+check block is self-contained - it depends on neither the ledger nor the
+comment diets - so the "restructure on a clean base" argument does not apply to
+it, and every intervening task would otherwise pile onto a file that is already
+45% machinery.
+T1, T9, TW, T2, T3, T4, T10, T5, T6, T13, T8, GATE 2, T7, T12.
 
 ## Ordering rationale
 T1 first so every later task is machine-verified. TW second because it is

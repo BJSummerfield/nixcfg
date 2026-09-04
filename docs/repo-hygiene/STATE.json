@@ -6,14 +6,14 @@
   "gate": "approved_2026-09-04",
   "drvpath_baseline": null,
   "research": {"R1": "pending", "R2": "cut", "R3": "folded into T9", "R4": "pending"},
-  "order": ["T1","TW","T2","T3","T4","T10","T5","T6","T13","T8","GATE2","T7","T9","T12"],
+  "order": ["T1","T9","TW","T2","T3","T4","T10","T5","T6","T13","T8","GATE2","T7","T12"],
   "tasks": {
-    "T1": "pending", "TW": "pending", "T2": "pending", "T3": "pending",
+    "T1": "done (PR #160)", "T9": "done", "TW": "pending", "T2": "pending", "T3": "pending",
     "T4": "pending", "T10": "pending", "T5": "pending", "T6": "pending",
     "T13": "pending", "T8": "pending", "T11": "folded into TW + GATE2",
-    "T7": "pending", "T9": "pending", "T12": "pending"
+    "T7": "pending", "T9": "done (PR #161)", "T12": "pending"
   },
-  "current": null,
+  "current": "TW",
   "artifacts": {"ledger": "docs/repo-hygiene/LEDGER.md (written by TW)"},
   "notes": [
     "2026-09-04 decision: T3 deletes docs/superpowers/ and docs/local-llm-review-2026-09-01/ outright; git history is the archive.",
@@ -21,6 +21,7 @@
     "2026-09-04 decision: add rubric G (idiom currency) + R4 research + TW (repo-wide read-only walk producing LEDGER.md) + T13 (idiom convergence). Internal drift outranks external; note-do-not-chase bar in G3.",
     "2026-09-04 decision: GATE 2 after T8 - T7/T9 need user approval of the ledger's responsibility verdicts before starting.",
     "2026-09-04 review: R2 cut (rubric A is the policy), R3 folded into T9's own research step. T11 folded into TW (namespace column) + GATE 2 decision. Mechanical drvPath tasks (T2/T4/T10) get sonnet checklist review, not opus. Invariant loop extended to darwinConfigurations and packages. T1 reformat commit added to .git-blame-ignore-revs.",
+    "2026-09-04 T9 note for the naming task (T4/C2): checks/ now sits beside tests/ with no stated boundary, and packages/ is a directory of wiring while the derivations stay in modules/*/package.nix. Reviewer called it a mild C2 smell - decide the boundary there, not by reworking T9.",
     "2026-09-04 harness: invariant loop dry-run on 1b12ba9 evaluates clean - all 5 nixos hosts, darwinConfigurations=[mac] (evaluates on linux, no darwin builder needed), packages defined on all THREE systems (aarch64-darwin, aarch64-linux, x86_64-linux) x [caddy-l4, encode_queue, photoform]. PROCESS loop was hardcoded to x86_64-linux and missed two thirds of the package outputs; fixed to iterate builtins.attrNames of .#packages.",
     "2026-09-04 T4 trap: packages.<system>.encode_queue is a flake OUTPUT ATTRIBUTE name, and the derivation is named encode_queue-unstable. T4 renames the DIRECTORY only. Renaming the package attr or the derivation pname changes the drvPath and would fail T4s own invariant - so either keep the attr/pname and rename only the dir, or reclassify that part of T4 as invariant:none with an explicit note. Decide in T4s task file, do not let the implementer discover it.",
     "2026-09-04 R1 result: nixfmt already clean repo-wide (0/129 changed). statix 41 findings/24 files (15 real inherit fixes, 25 repeated-keys largely noise on generated hardware-configuration.nix), deadnix 19/15 (4 on the same generated files). Recommends flake checks.<system>.* runCommand derivations over a separate CI step, ~0.3-0.5s. See tasks/R1.md.",
