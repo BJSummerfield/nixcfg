@@ -1,4 +1,4 @@
-# nixcfg
+Steam Big Picture and a Jellyfin TV session, autologin via greetd (`mine.system.steambox` and `jellybox` each drive a gamescope session). |# nixcfg
 
 A NixOS/nix-darwin flake configuring five Linux hosts and one Mac: laptops,
 a GPU desktop that also hosts coding-agent containers, a home server, a VPS,
@@ -8,7 +8,7 @@ and a Mac.
 
 | Host | Platform | Role |
 | --- | --- | --- |
-| `elitebook` | NixOS | Gamescope kiosk appliance — Steam Big Picture and a Jellyfin TV session, autologin via greetd. Not headless: `mine.system.steambox`/`jellybox` both drive a gamescope session. |
+| `elitebook` | NixOS | Gamescope kiosk appliance — Steam Big Picture and a Jellyfin TV session, autologin via greetd (`mine.system.steambox` and `jellybox` each drive a gamescope session). |
 | `redtruck` | NixOS | GPU desktop (niri) that also hosts two coding-agent containers (`devbox`, `workbox`) and the local LLM stack. |
 | `t495` | NixOS | Laptop, niri desktop, `_1password`, printing, Steam. |
 | `paynefield` | NixOS | Home server: DNS, Jellyfin, Immich, a Terraria server, Vikunja, and backups. |
@@ -70,8 +70,9 @@ key, and each dev machine additionally holds a user age key at
 `~/.config/sops/age/keys.txt`. Hosts that need machine-scoped secrets keep
 them one file per host at `secrets/hosts/<host>.yaml` (not every host has
 one), plus shared files under `secrets/services/` and `secrets/users/` for
-anything not scoped to a single machine. A host's `default.nix` wires each
-secret in with `sops.secrets.<name>.sopsFile = ...`.
+anything not scoped to a single machine. Secrets are wired in with
+`sops.secrets.<name>.sopsFile = ...`, usually in the host's `default.nix` but
+also directly in a module that owns one.
 
 To rotate a key or re-encrypt after adding a recipient, you must already
 hold one of the user keys currently on each file (your
@@ -98,8 +99,9 @@ user's key afterward — is in [`docs/new-host.md`](docs/new-host.md).
 
 `nix flake check` runs a host/package eval for every `nixosConfigurations`
 and `darwinConfigurations` entry and every flake package, plus `statix`,
-`deadnix`, a formatting check, and the heavier `tests/devboxes.nix` and
-`tests/photoform.nix` checks (`checks/default.nix`). Format the tree with:
+`deadnix`, a formatting check, a Caddyfile adapt check per caddy host, and the
+heavier `tests/devboxes.nix` and `tests/photoform.nix` checks
+(`checks/default.nix`). Format the tree with:
 
 ```
 nix fmt

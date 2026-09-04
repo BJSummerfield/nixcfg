@@ -119,8 +119,8 @@ stays the same so `creation_rules` don't need to change.
 
 ## 4. Re-encrypt secrets
 
-Rewrite each file's recipient list per the updated `.sops.yaml` rules (see
-README for what `updatekeys` does generally):
+Rewrite each file's recipient list per the updated `.sops.yaml` rules. You must
+hold a key that is already on these files - see the README's Secrets section:
 
 ```fish
 sops updatekeys ./secrets/**.yaml
