@@ -48,8 +48,40 @@ let
     # whatever the repo's generation_config ships.
     "--override-generation-config '{\"temperature\": ${num m.sampling.temperature}}'"
   ]
-  # vLLM auto-disables prefix caching for this architecture, so the opt-in is
-  # explicit. `align` caches the linear-attention (mamba) state at the same
+  # MTP. The two extra fields are not tuning, they are the two mechanisms we
+  # cannot fix and must route around, and they only make sense together with
+  # the draft-token count - hence one clause, so deleting speculativeTokens
+  # from models.nix removes all three and is a complete rollback.
+  #
+  # disable_eagle_block_drop turns off the trailing prefix-cache block drop
+  # (#53388, merged 2026-09-01). The drop is where the unfixed M2 hole lives -
+  # the mamba branch of the read path ignores its own drop_eagle_block
+  # argument - and on this model it also has no group annotated as the draft
+  # group, so the coordinator conservatively flags every group including the
+  # mamba one - the case upstream's own _warn_if_unannotated_eagle_mamba says
+  # costs cross-request reuse. Treat that as a reason, not a measurement: the
+  # 09-01 capture ran MTP with this same fallback active and still measured
+  # 78.0% hits, so "drops to zero" is not what happens here. The soak settles
+  # it - watch the hit rate, not the warning. Off, the path is never entered
+  # either way. Upstream states the trade: it can
+  # change which draft tokens are proposed, but accepted tokens are still
+  # verified by the target model. The one field measurement of it on a
+  # sibling model measured acceptance UP (53-56% -> 57-60%), hit tokens up
+  # 4800 -> 6400, and warm turns 26% faster.
+  #
+  # --no-async-scheduling is mandatory. Async scheduling defaults ON, and MTP
+  # keeps it on: the auto-disable branch skips any method in EagleModelTypes,
+  # and `mtp` is in it. M4 (#51571, open) is statically gated on that flag -
+  # reporter measured 16/288 corrupt with it, 0/288 without. The cost is real
+  # (async scheduling exists to close GPU gaps between steps) and is accepted.
+  # #53919 is the fix, still open; it is the thing to watch, because merged and
+  # shipped is what lets this flag come back off.
+  ++ lib.optionals (m.vllm ? speculativeTokens) [
+    "--speculative-config '{\"method\": \"mtp\", \"num_speculative_tokens\": ${num m.vllm.speculativeTokens}, \"disable_eagle_block_drop\": true}'"
+    "--no-async-scheduling"
+  ]
+  # On by default for mamba models since #50991; passed explicitly to pin it
+  # against a default flip. `align` caches the linear-attention (mamba) state at the same
   # block granularity as the attention KV, and asserts
   # block_size <= max_num_batched_tokens - so maxNumBatchedTokens must stay >=
   # the "Setting attention block size to N tokens" startup line.
