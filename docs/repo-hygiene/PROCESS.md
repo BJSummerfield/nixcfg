@@ -3,13 +3,15 @@
 State lives in docs/repo-hygiene/: RUBRIC.md, FINDINGS.md,
 PLAN.md, STATE.json, tasks/T##.md, tasks/T##-review-N.md.
 Resume by reading STATE.json and continuing at the first task not `done`.
+All task work lands on the long-lived `hygiene` branch; `main` sees one merge
+at the end (T12).
 
 ## Per-task loop
 For task T##:
 1. **Research** (sonnet, read-only) — only if the task's `research` field is
    non-empty and the shared research bundle does not already answer it.
    Output: <=30 lines of recommendation into tasks/T##-research.md.
-2. **Implement** (sonnet, own git worktree off `main`, branch `hygiene/T##`)
+2. **Implement** (sonnet, own git worktree off `hygiene`, branch `hygiene-T##`)
    — reads tasks/T##.md and RUBRIC.md, edits only files listed in `scope`.
    Must leave `nix flake check` green and, for cleanup tasks, prove the
    drvPath invariant (below). Output: <=20 lines: what changed, invariant
@@ -29,8 +31,15 @@ For task T##:
 4. **Fix** (sonnet, same worktree) then **re-review** (same tier as step 3,
    fresh). Cap at 2 fix rounds. If round 2 still FAILs, stop and surface to
    the user.
-5. Orchestrator opens one PR per task, merges, then the next task's worktree
-   branches off the new main. Sequential — no two tasks in flight.
+5. Orchestrator opens one PR per task **into the long-lived `hygiene` branch**,
+   merges, then the next task branches off the new `hygiene`. Sequential — no
+   two tasks in flight. `main` sees none of this until the whole effort lands
+   as a single merge at T12, so a half-finished hygiene pass never sits on main
+   and the baseline cannot drift under the tasks.
+   Task branches are named `hygiene-T##`, flat: git cannot hold a branch named
+   `hygiene` and a branch named `hygiene/T##` at the same time.
+   CI still runs on every task PR — `.github/workflows/check.yml` triggers on
+   `pull_request:` with no branch filter, so `nix flake check` gates each one.
 
 ## The invariant that makes review cheap
 Comments, renames, file splits, and doc deletions must not change what gets
