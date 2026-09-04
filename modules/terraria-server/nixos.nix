@@ -79,9 +79,7 @@ in
 
         services.terraria = {
           enable = true;
-          inherit (cfg) port;
-          inherit (cfg) maxPlayers;
-          inherit (cfg) password;
+          inherit (cfg) port maxPlayers password;
           openFirewall = false;
           autoCreatedWorldSize = "large";
           worldPath = "/var/lib/terraria/worlds/beefcake.wld";

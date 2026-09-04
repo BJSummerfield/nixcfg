@@ -15,4 +15,8 @@
 # whole-lint disable — so this is the narrower of the two available tools.
 # See docs/repo-hygiene/tasks/T1.md and R1.md for the two sites this
 # generalizes from.
+# statix's -c defaults to "." with no upward search, so this file only takes
+# effect when statix is run from the repo root (as the flake check does).
+# Running `statix check` from inside a subdirectory (e.g. modules/) will not
+# find this config and will show all the repeated_keys warnings again.
 disabled = [ "repeated_keys" ]

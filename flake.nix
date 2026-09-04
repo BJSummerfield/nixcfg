@@ -115,7 +115,9 @@
           lintSrc = pkgs.lib.cleanSource ./.;
           # hosts/*/hardware-configuration.nix is nixos-generate-config
           # output ("Do not modify this file!" is its first line) — excluded
-          # from both linters rather than hand-edited to appease them.
+          # from deadnix rather than hand-edited to appease it. statix needs
+          # no such exclusion: repeated_keys (the only finding these files
+          # would trip) is disabled repo-wide, see statix.toml.
           hwConfigGlob = "hosts/*/hardware-configuration.nix";
         in
         evalAll "nixos" inputs.self.nixosConfigurations
@@ -134,10 +136,20 @@
           fmt-check =
             pkgs.runCommand "fmt-check"
               {
-                nativeBuildInputs = [ inputs.self.formatter.x86_64-linux ];
+                nativeBuildInputs = [
+                  inputs.self.formatter.x86_64-linux
+                  pkgs.git
+                ];
               }
               ''
-                cd ${lintSrc}
+                cp -r --no-preserve=mode ${lintSrc} src
+                cd src
+                # treefmt needs a VCS (or config-file-adjacent) root to bound
+                # its walk; without one it walks up past this copy to the
+                # filesystem root. A throwaway git repo gives it that
+                # boundary without touching the real one.
+                git init -q
+                git add -A
                 treefmt --fail-on-change --no-cache
                 touch $out
               '';
@@ -148,7 +160,7 @@
               }
               ''
                 cd ${lintSrc}
-                statix check -i '${hwConfigGlob}' .
+                statix check .
                 touch $out
               '';
           deadnix-check =
