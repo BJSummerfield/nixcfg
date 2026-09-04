@@ -69,6 +69,12 @@ own research step; T10's aggregator question does not need a bundle).
   `polkit_kde` -> `polkit-kde`, `encode_queue` -> `encode-queue`. Rename dirs,
   update every import and any option path echoing the old spelling, add the
   commit to .git-blame-ignore-revs if it lands as a bulk move.
+  Plus the option rename **`mine.users.*` -> `mine.accounts.*`** (user decision
+  2026-09-04): the system account registry, one keystroke from the unrelated
+  `mine.user.*` home-manager namespace, where a typo silently defines an option
+  nobody reads. 6 files, see STATE.json. Note the encode_queue trap: it is also
+  a package attribute and a derivation pname, so renaming those would move a
+  drvPath this task must hold fixed.
   `invariant: drvPath`.
 - **T10 — Aggregator derivation.** Make modules/{nixos,home,darwin,
   home-darwin}.nix consistently ordered, or derived from the filesystem
