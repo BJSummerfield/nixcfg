@@ -2,6 +2,7 @@
   "created": "2026-09-04",
   "repo": "/home/agent/projects/nixcfg",
   "plan_dir": "docs/repo-hygiene (tracked; deleted by T12)",
+  "integration_branch": "hygiene (created 2026-09-04 at ff825ef == main; task branches are hygiene-T## and PR into it; main gets one merge at T12)",
   "baseline_commit": "1b12ba9",
   "gate": "approved_2026-09-04",
   "drvpath_baseline": null,
