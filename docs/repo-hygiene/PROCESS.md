@@ -44,8 +44,10 @@ package files sail through unverified. Before and after:
     for h in $(nix eval --json '.#darwinConfigurations' --apply builtins.attrNames | jq -r '.[]'); do
       nix eval --raw ".#darwinConfigurations.$h.config.system.build.toplevel.drvPath"; echo
     done
-    for p in $(nix eval --json '.#packages.x86_64-linux' --apply builtins.attrNames | jq -r '.[]'); do
-      nix eval --raw ".#packages.x86_64-linux.$p.drvPath"; echo
+    for s in $(nix eval --json '.#packages' --apply builtins.attrNames | jq -r '.[]'); do
+      for p in $(nix eval --json ".#packages.$s" --apply builtins.attrNames | jq -r '.[]'); do
+        nix eval --raw ".#packages.$s.$p.drvPath"; echo
+      done
     done
 
 Every task marked `invariant: drvPath` must produce byte-identical output.
