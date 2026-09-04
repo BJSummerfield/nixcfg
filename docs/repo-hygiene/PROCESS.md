@@ -42,7 +42,9 @@ package files sail through unverified. Before and after:
       nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath"; echo
     done
     for h in $(nix eval --json '.#darwinConfigurations' --apply builtins.attrNames | jq -r '.[]'); do
-      nix eval --raw ".#darwinConfigurations.$h.config.system.build.toplevel.drvPath"; echo
+      nix eval --raw ".#darwinConfigurations.$h.extendModules" --apply \
+        'f: (f { modules = [ ({ lib, ... }: { system.configurationRevision = lib.mkForce null; }) ]; }).config.system.build.toplevel.drvPath'
+      echo
     done
     for s in $(nix eval --json '.#packages' --apply builtins.attrNames | jq -r '.[]'); do
       for p in $(nix eval --json ".#packages.$s" --apply builtins.attrNames | jq -r '.[]'); do
@@ -68,3 +70,13 @@ A task that legitimately changes the build (T1 CI, T9 flake split) is marked
 - Research is bundled by theme up front (see PLAN.md "Research bundles"), so
   most tasks skip step 1 entirely.
 - Each task file states its scope so no subagent has to survey the repo again.
+
+### Why the darwin leg forces `system.configurationRevision`
+`modules/system/darwin.nix:5` sets it from `inputs.self.rev`, so the darwin
+toplevel drvPath is a function of the commit hash and changes on *every*
+commit regardless of content. Compared naively it can never be byte-identical
+across a task, which is worse than not checking it: the reviewer learns to wave
+the darwin diff away, and a real darwin regression gets waved away with it.
+Forcing the revision to null removes the commit hash and leaves the leg
+sensitive to exactly what it is supposed to catch. No nixos host sets this
+option, so the nixos leg needs no such treatment.
