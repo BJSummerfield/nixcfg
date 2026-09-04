@@ -44,23 +44,55 @@ let
 
   # Use upstream OCI image — nix build OOMs on 32GB and nixpkgs lags upstream.
   #
-  # v0.28.0 was taken for PR #51113 ("Keep mamba align prefill chunks
-  # block-aligned past last_cache_position"), the first tag containing the
-  # merged half of the correctness fix for hybrid-Mamba prefix caching combined
-  # with MTP speculative decoding. It was not enough: corruption continued
-  # (mojibake mid-session, leaked tool-call XML) and MTP is now off in
-  # models.nix. The remaining half of that work — vllm#47194, and the CUDA and
-  # off-by-one issues split out of vllm#43559 — is still open upstream.
+  # A nightly pinned to a SHA, not a release tag, because the two fixes this
+  # stack needs merged after v0.28.0 and there is no v0.28.1: GitHub releases
+  # stop at v0.28.0 (2026-08-26) and Docker Hub has no v0.28.1 image. A nightly
+  # tag names one commit, so it reads like a release pin; it is not one. Docker
+  # tags are mutable by construction, so this is only as good as upstream not
+  # re-pushing it. The amd64 manifest at time of pinning was
+  # sha256:c9337b064af164bef487f276ba9b64636f2c0554f48357fa1dc2e001165dc1eb
+  # (8,680,402,627 bytes) - compare against that if a pull ever surprises you.
+  # What the SHA does not buy is any promise this build was tested beyond CI.
+  # Bumping it re-runs vllm-image-pull below on the next switch.
   #
-  # MTP re-enable gate: a tag that closes those issues, then A/B it over a long
-  # agentic session rather than a one-shot benchmark. That is worth chasing —
-  # MTP was measured at 3.04 tokens per decode step on this stack, and the
-  # stack is decode-bound.
+  # What this SHA has that v0.28.0 does not:
+  #   #50729 "Fix overlapping state copy race" (merged 2026-08-17) — the mamba
+  #     conv-state copy that overlapped its own destination. This is the best
+  #     available explanation for the mojibake that took MTP out in #156, and
+  #     it is why the bump to v0.28.0 did not help: the fix missed the branch
+  #     point. Calibrate the confidence: the upstream 12/5000 -> 0/5000 and
+  #     16/288 -> 0/288 counts are 0.27.1-vs-nightly comparisons carrying
+  #     hundreds of other commits, not controlled single-PR measurements.
+  #   #53388 "Support disabling trailing prefix-cache block dropping" (merged
+  #     2026-09-01) — adds disable_eagle_block_drop, used in models.nix.
+  # v0.28.0 already carried #51113 (write-path chunk alignment) and #46384
+  # (partial prefix-cache hit for hybrid models); both are still here.
+  #
+  # What no image has yet: M2, the read-path hole where MambaManager ignores
+  # its own drop_eagle_block argument (#43650 / #48375, both open; nine
+  # competing PRs, five of them pushing the opposite way, none merged). We do
+  # not patch it and we do not wait for it — disable_eagle_block_drop, set
+  # alongside speculativeTokens in models.nix, means that branch never runs.
   #
   # 0.28.0 also turns prefix caching on by default for Mamba models (#50991),
   # which makes our --enable-prefix-caching redundant. It stays explicit: it
   # documents intent and survives a future default flip in either direction.
-  vllmImage = "docker.io/vllm/vllm-openai:v0.28.0";
+  #
+  # Move back to a release tag the moment one ships with #50729 and #53388 in
+  # it. Until then, re-pinning to a newer nightly is a decision, not hygiene:
+  # every bump is an untested engine under an agentic workload, and §7 of
+  # docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md is the soak that
+  # earns it. Rolling back is two edits, in this order: drop speculativeTokens
+  # from models.nix, then put :v0.28.0 here. That order is not style - v0.28.0
+  # has no disable_eagle_block_drop field, and arg_utils does
+  # SpeculativeConfig(**speculative_config), so the old image with the new
+  # clause is a TypeError at startup. It fails loudly, which is the good
+  # outcome, but it is still a failed boot. Dropping speculativeTokens alone is
+  # the better first move anyway: this nightly with MTP off is a strict
+  # superset of v0.28.0's fixes, so reverting both at once loses which one
+  # mattered. The v0.28.0 image is still in podman's local storage either way,
+  # so no network is needed.
+  vllmImage = "docker.io/vllm/vllm-openai:nightly-8a728663c1c3eeace834a95f5654fa653cc1998c";
   # CUDA talks to these directly instead of /dev/dri
   nvidiaDevices = [
     "/dev/nvidia0"

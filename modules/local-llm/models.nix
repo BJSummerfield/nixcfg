@@ -13,8 +13,10 @@
         "config.json" = "sha256-Gzxxho0SmeUt9vyQfesgLVEyse8Pcqrg720VGF3VOlw=";
         "generation_config.json" = "sha256-0NDtLjfN+v70pQZ9XqJAewX0+1BSbkfACKWyNdUCQPs=";
         "model.safetensors" = "sha256-xHNRLHDqzgfiJW/p/XZZasA+MpW+59VM+3JnZBavzAU=";
-        # MTP head. Unused while speculative decoding is off (see the vllm
-        # block); fetched anyway so re-enabling needs no re-download.
+        # MTP head, loaded by --speculative-config (see the vllm block). vLLM
+        # resolves the draft model to the target's own directory when the
+        # speculative config omits `model`, so this file is found at /model
+        # alongside the target weights and needs no separate mount or fetch.
         "model_mtp.safetensors" = "sha256-HYJoqoWs4JOlYePntjudOQ2sHNVakM1VtexQnDydqf4=";
         "model.safetensors.index.json" = "sha256-QpQw4bnmWyy5jv+M0QoG5woJzuicSEh6ORRoSutt9X8=";
         "preprocessor_config.json" = "sha256-JyJUUKycZSmHLuGST8sJYv9WNINPgXBA9EQRgRb05RY=";
@@ -98,7 +100,10 @@
         # shrinks the pool. If a startup advisory asks for a bigger batch,
         # prefer lowering maxNumSeqs - same constraint, opposite sign. Must
         # also stay >= the "Setting attention block size to N tokens" startup
-        # line to clear the assert `--mamba-cache-mode align` makes.
+        # line to clear the assert `--mamba-cache-mode align` makes. That line
+        # tracks speculative depth - measured 1568 at K=0 and 1600 at K=3 on
+        # this model - so 4096 clears it either way, but re-read it after any
+        # speculativeTokens change rather than assuming.
         #
         # Read the pool from the startup line or vllm:cache_config_info, never
         # from an interpolation, and only from a clean start: peak-activation
@@ -109,21 +114,41 @@
         # Never pair with --calculate-kv-scales: that combination, not fp8
         # itself, is what the upstream corruption reports have in common.
         kvCacheDtype = "fp8";
+        # MTP, back on after #156 took it off. 3 is what recipes.vllm.ai
+        # suggests for this model's MTP head, and it measured 3.04 accepted
+        # tokens per decode step here - on a stack that is 93% decode-bound,
+        # which is why removing it doubled TPOT from 9.98 ms to 18.72 ms.
+        #
+        # "Draft-token rollback cannot restore a mamba recurrent snapshot" was
+        # the reason given for the removal and it is wrong about vLLM. The real
+        # exposure is four distinct upstream defects, all of them gated on
+        # speculative decoding being on - prefix caching alone is not exposed
+        # to any of them, which is why it stays on unconditionally below and is
+        # NOT the next thing to try if corruption returns:
+        #   M1 #51113 write-path chunk alignment - merged, in v0.28.0.
+        #   M2 the drop_eagle_block read-path hole - NO fix merged; nine
+        #      competing open PRs, five of which push the opposite way. We do
+        #      not patch it, we route around it: disable_eagle_block_drop in
+        #      vllm-service.nix means that code path never executes.
+        #   M3 #50729 overlapping conv-state copy - merged after v0.28.0,
+        #      present in the pinned nightly. Most likely cause of what we saw.
+        #   M4 #51571 async accepted-count race - open. Statically gated on
+        #      async scheduling, which MTP switches on by default, which is why
+        #      vllm-service.nix passes --no-async-scheduling alongside this.
+        # Mechanism detail in docs/ninfer-vs-vllm-2026-09-03/03; field evidence
+        # for each patch in 05; the deploy and rollback runbook in 06.
+        speculativeTokens = 3;
         # qwen3_xml, not the qwen3_coder format 3.8 nominally moved to:
         # qwen3_coder does not stream arguments (reads as a hang) and emits
         # unbounded garbage on long inputs containing a tool call.
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
-        # No speculativeTokens: MTP is off. Draft-token rollback cannot restore
-        # a mamba recurrent snapshot, so MTP combined with prefix caching
-        # poisons cached state on this hybrid architecture and corrupts every
-        # later request that hits the poisoned prefix - mojibake mid-session,
-        # leaked tool-call XML, degeneration in long agentic runs. The
-        # re-enable gate is on the image pin in nixos.nix.
-        #
-        # Prefix caching is kept and is auto-disabled by vLLM for this
-        # architecture, hence the explicit opt-in. If corruption outlives the
-        # MTP removal, this flag is the next thing off.
+        # Redundant since #50991 turned prefix caching on by default for mamba
+        # models in 0.28.0, and kept explicit anyway: it documents intent and
+        # survives a default flip in either direction. It is the reason prefill
+        # is nearly free here - 82.2% of prompt tokens are cache hits - and no
+        # upstream mechanism makes it a corruption suspect on its own. If
+        # corruption returns, speculativeTokens comes out first and this stays.
         enablePrefixCaching = true;
       };
 
