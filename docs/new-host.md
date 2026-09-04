@@ -1,5 +1,10 @@
 # Setting up a new host
 
+Status: accurate as of 2026-09-04, verified against this repo's current
+sops-nix/disko/nixos-anywhere setup. See [`README.md`](../README.md) for how
+secrets and the option namespace work generally; this doc only covers the
+new-host-specific procedure.
+
 This walks through provisioning a new NixOS machine with `nixos-anywhere`,
 generating a fresh host SSH key, registering it in sops, re-encrypting
 secrets so the new host can decrypt what it needs on first boot, and
@@ -89,8 +94,8 @@ ssh-keygen -lf $workdir/etc/ssh/ssh_host_ed25519_key.pub
 
 ## 2. Derive the age public key
 
-sops-nix uses the host's ed25519 key as an age identity. Convert the
-public key to its age form:
+Convert the host key to its age form (sops-nix uses it as the host's age
+identity):
 
 ```fish
 nix shell nixpkgs#ssh-to-age -c sh -c \
@@ -114,9 +119,8 @@ stays the same so `creation_rules` don't need to change.
 
 ## 4. Re-encrypt secrets
 
-`sops updatekeys` rewrites the recipient list of each file in place
-based on the rules in `.sops.yaml`. You must already hold one of the
-user keys currently on each file (your `~/.config/sops/age/keys.txt`).
+Rewrite each file's recipient list per the updated `.sops.yaml` rules. You must
+hold a key that is already on these files - see the README's Secrets section:
 
 ```fish
 sops updatekeys ./secrets/**.yaml
@@ -296,12 +300,8 @@ i.e. it doesn't have (and shouldn't have) a `waktu_<host>` anchor in
 `.sops.yaml`. Servers, appliances, and single-purpose hosts fall in
 this category.
 
-For a dev machine (anywhere you'll run `sops` to edit secrets in the
-flake), the user needs their own age identity separate from the host
-key. It lives at `~/.config/sops/age/keys.txt` and is what `sops` picks
-up when the user (not the system) decrypts files.
-
-On the target, as waktu:
+For a dev machine, the user needs their own age identity separate from the
+host key (see README's Secrets section). On the target, as waktu:
 
 ```bash
 mkdir -p ~/.config/sops/age
