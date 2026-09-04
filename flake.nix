@@ -109,9 +109,8 @@
               in
               nixpkgs.lib.nameValuePair checkName (evalOnly checkName cfg.config.system.build.toplevel.drvPath)
             );
-          # Shared by the three lint checks below: the repo minus .git (and
-          # the usual VCS/editor cruft cleanSource already strips), so none
-          # of them rebuild just because an unrelated file in .git changed.
+          # Shared by the three lint checks below: the repo minus the usual
+          # VCS/editor cruft cleanSource strips.
           lintSrc = pkgs.lib.cleanSource ./.;
           # hosts/*/hardware-configuration.nix is nixos-generate-config
           # output ("Do not modify this file!" is its first line) — excluded
@@ -149,7 +148,10 @@
                 # filesystem root. A throwaway git repo gives it that
                 # boundary without touching the real one.
                 git init -q
-                git add -A
+                # -f so a tracked-but-gitignored file still reaches treefmt.
+                # Without it, git add skips such files, treefmt never walks
+                # them, and the check passes on an unformatted file.
+                git add -Af
                 treefmt --fail-on-change --no-cache
                 touch $out
               '';
