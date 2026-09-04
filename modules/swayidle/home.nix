@@ -49,7 +49,7 @@ in
       events = {
         before-sleep = lock;
         after-resume = "${display "on"}; ${brightness_restore}";
-        lock = lock;
+        inherit lock;
       };
     };
   };

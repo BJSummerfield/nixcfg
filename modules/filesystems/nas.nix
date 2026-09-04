@@ -108,7 +108,7 @@ in
     );
 
     users.users = lib.mapAttrs (
-      username: user:
+      _username: user:
       let
         access = user.nasAccess;
         groups = lib.concatLists (
@@ -137,7 +137,7 @@ in
       lib.concatLists (
         mapAttrsToList (
           username: user:
-          mapAttrsToList (shareName: level: {
+          mapAttrsToList (shareName: _level: {
             assertion = !(cfg.shares ? ${shareName}) || cfg.shares.${shareName}.enable;
             message = "User ${username} has nasAccess for '${shareName}' but that share is not enabled in mine.system.nas.shares";
           }) user.nasAccess

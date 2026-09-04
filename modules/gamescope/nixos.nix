@@ -13,7 +13,7 @@ in
     programs.gamescope.enable = true;
     programs.steam.remotePlay.openFirewall = true;
     nixpkgs.overlays = mkIf cfg.overlay [
-      (self: super: {
+      (_self: super: {
         gamescope = super.gamescope.overrideAttrs {
           version = "3.16.15";
           src = super.fetchFromGitHub {

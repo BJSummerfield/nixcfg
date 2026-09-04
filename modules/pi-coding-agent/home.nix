@@ -91,7 +91,7 @@ in
       # cleanly). pi needs that file writable - the piSettings activation
       # above seeds it from this same data.settings.
       settings = { };
-      models = data.models;
+      inherit (data) models;
     };
   };
 }

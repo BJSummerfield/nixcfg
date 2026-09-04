@@ -36,9 +36,9 @@ let
     {
       inherit id;
       name = m.displayName;
-      reasoning = m.reasoning;
+      inherit (m) reasoning;
       contextWindow = m.maxModelLen - m.headroom;
-      maxTokens = m.maxTokens;
+      inherit (m) maxTokens;
     }
     // thinkingMapOf m
     // inputsOf m;
@@ -48,9 +48,9 @@ let
     {
       inherit id;
       name = a.displayName;
-      reasoning = m.reasoning;
-      contextWindow = a.contextWindow;
-      maxTokens = a.maxTokens;
+      inherit (m) reasoning;
+      inherit (a) contextWindow;
+      inherit (a) maxTokens;
     }
     // thinkingMapOf m
     // inputsOf m;
@@ -74,7 +74,7 @@ in
     # All models point to the same instance — llama-swap serves one model at a
     # time, so a different model evicts and stalls for minutes.
     model = {
-      provider = llm.provider;
+      inherit (llm) provider;
       model = llm.default;
     };
     defaultProvider = llm.provider;
@@ -128,7 +128,7 @@ in
   models = {
     providers = {
       ${llm.provider} = {
-        baseUrl = llm.baseUrl;
+        inherit (llm) baseUrl;
         api = "openai-completions";
         apiKey = "dummy";
         compat = {

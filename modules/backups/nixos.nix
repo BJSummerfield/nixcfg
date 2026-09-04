@@ -91,10 +91,10 @@ in
 
     services.restic.backups.host = {
       initialize = true;
-      repository = cfg.repository;
+      inherit (cfg) repository;
       passwordFile = cfg.repoPasswordFile;
       environmentFile = cfg.b2EnvFile;
-      paths = cfg.paths;
+      inherit (cfg) paths;
       timerConfig = {
         OnCalendar = cfg.schedule;
         Persistent = true;

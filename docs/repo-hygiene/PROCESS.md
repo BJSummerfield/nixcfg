@@ -38,17 +38,28 @@ built. This must cover *every* build output the flake defines — nixos, darwin,
 and packages — or edits under modules/darwin*, modules/home-darwin*, or the
 package files sail through unverified. Before and after:
 
+    echo "## nixosConfigurations"
     for h in elitebook redtruck t495 paynefield vps; do
-      nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath"; echo
+      echo "$h $(nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath")"
     done
+    echo
+    echo "## darwinConfigurations"
     for h in $(nix eval --json '.#darwinConfigurations' --apply builtins.attrNames | jq -r '.[]'); do
-      nix eval --raw ".#darwinConfigurations.$h.config.system.build.toplevel.drvPath"; echo
+      echo "$h $(nix eval --raw ".#darwinConfigurations.$h.extendModules" --apply \
+        'f: (f { modules = [ ({ lib, ... }: { system.configurationRevision = lib.mkForce null; }) ]; }).config.system.build.toplevel.drvPath')"
     done
+    echo
+    echo "## packages"
     for s in $(nix eval --json '.#packages' --apply builtins.attrNames | jq -r '.[]'); do
       for p in $(nix eval --json ".#packages.$s" --apply builtins.attrNames | jq -r '.[]'); do
-        nix eval --raw ".#packages.$s.$p.drvPath"; echo
+        echo "$s.$p $(nix eval --raw ".#packages.$s.$p.drvPath")"
       done
     done
+
+The output prints `<name> <drvPath>` per line under `##`-prefixed section
+headers, matching `docs/repo-hygiene/DRVPATH-BASELINE.txt` body exactly (that
+file's first few lines are a hand-written comment header, not loop output —
+compare with `diff <(loop) <(tail -n +5 docs/repo-hygiene/DRVPATH-BASELINE.txt)`).
 
 Every task marked `invariant: drvPath` must produce byte-identical output.
 A task that legitimately changes the build (T1 CI, T9 flake split) is marked
@@ -68,3 +79,13 @@ A task that legitimately changes the build (T1 CI, T9 flake split) is marked
 - Research is bundled by theme up front (see PLAN.md "Research bundles"), so
   most tasks skip step 1 entirely.
 - Each task file states its scope so no subagent has to survey the repo again.
+
+### Why the darwin leg forces `system.configurationRevision`
+`modules/system/darwin.nix:5` sets it from `inputs.self.rev`, so the darwin
+toplevel drvPath is a function of the commit hash and changes on *every*
+commit regardless of content. Compared naively it can never be byte-identical
+across a task, which is worse than not checking it: the reviewer learns to wave
+the darwin diff away, and a real darwin regression gets waved away with it.
+Forcing the revision to null removes the commit hash and leaves the leg
+sensitive to exactly what it is supposed to catch. No nixos host sets this
+option, so the nixos leg needs no such treatment.

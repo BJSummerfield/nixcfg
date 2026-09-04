@@ -127,7 +127,6 @@ in
       config =
         {
           config,
-          pkgs,
           lib,
           ...
         }:

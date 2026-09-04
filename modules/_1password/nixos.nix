@@ -11,7 +11,7 @@ let
   # allowedUsers is the names of all users that have 1password enabled
   hmUsers = config.home-manager.users;
   usersWith1Pass = lib.filterAttrs (
-    name: userConfig: userConfig.mine.user._1password.enable or false
+    _name: userConfig: userConfig.mine.user._1password.enable or false
   ) hmUsers;
   allowedUsers = lib.attrNames usersWith1Pass;
 in
@@ -44,8 +44,8 @@ in
     };
 
     nixpkgs.overlays = lib.optionals cfg.overlay.enable [
-      (self: super: {
-        _1password-gui = super._1password-gui.overrideAttrs (old: {
+      (_self: super: {
+        _1password-gui = super._1password-gui.overrideAttrs (_old: {
           src = super.fetchurl {
             url = cfg.overlay.url;
             hash = cfg.overlay.hash;
