@@ -75,6 +75,9 @@ evalAll "nixos" inputs.self.nixosConfigurations
 }
 # `nix flake check` skips a check whose output a substituter already has, so
 # an unchanged package costs nothing here once CI reads from the cache.
+# Only flake `packages` are covered: a derivation defined inside a module
+# (a callPackage that never becomes a flake output) is structurally outside
+# this set and stays unchecked.
 // nixpkgs.lib.mapAttrs' (
   name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
 ) inputs.self.packages.x86_64-linux

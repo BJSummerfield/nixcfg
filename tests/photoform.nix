@@ -69,7 +69,7 @@ let
   # mail route on vps is `tcp` mode, so a regression there (or an
   # outright deletion of the route) would leave every other check in this
   # file green. Guard against that by reading vps's own config, since it
-  # is a fixed point already realized elsewhere in flake.nix (evalAll,
+  # is a fixed point already realized elsewhere in checks/ (evalAll,
   # caddyfile-<host>) and does not depend on this check's output.
   vps = inputs.self.nixosConfigurations.vps.config;
 
