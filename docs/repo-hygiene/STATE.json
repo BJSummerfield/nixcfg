@@ -11,7 +11,7 @@
     "T1": "done (PR #160)", "T9": "done", "TW": "pending", "T2": "pending", "T3": "pending",
     "T4": "pending", "T10": "pending", "T5": "pending", "T6": "pending",
     "T13": "pending", "T8": "pending", "T11": "folded into TW + GATE2",
-    "T7": "pending", "T9": "pending", "T12": "pending"
+    "T7": "pending", "T9": "done (PR #161)", "T12": "pending"
   },
   "current": "TW",
   "artifacts": {"ledger": "docs/repo-hygiene/LEDGER.md (written by TW)"},
