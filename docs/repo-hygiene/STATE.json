@@ -6,14 +6,14 @@
   "gate": "approved_2026-09-04",
   "drvpath_baseline": null,
   "research": {"R1": "pending", "R2": "cut", "R3": "folded into T9", "R4": "pending"},
-  "order": ["T1","TW","T2","T3","T4","T10","T5","T6","T13","T8","GATE2","T7","T9","T12"],
+  "order": ["T1","T9","TW","T2","T3","T4","T10","T5","T6","T13","T8","GATE2","T7","T12"],
   "tasks": {
-    "T1": "pending", "TW": "pending", "T2": "pending", "T3": "pending",
+    "T1": "done (PR #160)", "T9": "in_progress", "TW": "pending", "T2": "pending", "T3": "pending",
     "T4": "pending", "T10": "pending", "T5": "pending", "T6": "pending",
     "T13": "pending", "T8": "pending", "T11": "folded into TW + GATE2",
     "T7": "pending", "T9": "pending", "T12": "pending"
   },
-  "current": null,
+  "current": "T9",
   "artifacts": {"ledger": "docs/repo-hygiene/LEDGER.md (written by TW)"},
   "notes": [
     "2026-09-04 decision: T3 deletes docs/superpowers/ and docs/local-llm-review-2026-09-01/ outright; git history is the archive.",
