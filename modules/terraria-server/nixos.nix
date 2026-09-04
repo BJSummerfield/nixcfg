@@ -6,7 +6,6 @@
 {
   lib,
   config,
-  pkgs,
   ...
 }:
 let
@@ -80,9 +79,9 @@ in
 
         services.terraria = {
           enable = true;
-          port = cfg.port;
-          maxPlayers = cfg.maxPlayers;
-          password = cfg.password;
+          inherit (cfg) port;
+          inherit (cfg) maxPlayers;
+          inherit (cfg) password;
           openFirewall = false;
           autoCreatedWorldSize = "large";
           worldPath = "/var/lib/terraria/worlds/beefcake.wld";

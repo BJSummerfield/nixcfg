@@ -6,7 +6,6 @@
 { vllmEndpoint }:
 {
   config,
-  pkgs,
   lib,
   ...
 }:

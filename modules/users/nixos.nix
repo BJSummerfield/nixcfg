@@ -7,7 +7,7 @@
 let
   inherit (lib) mkOption types;
   cfg = config.mine.users;
-  adminUsernames = lib.attrNames (lib.filterAttrs (n: u: u.isSuperUser) cfg);
+  adminUsernames = lib.attrNames (lib.filterAttrs (_n: u: u.isSuperUser) cfg);
 in
 {
   imports = [
@@ -95,7 +95,7 @@ in
       ) cfg
     );
 
-    users.users = lib.mapAttrs (name: user: {
+    users.users = lib.mapAttrs (_name: user: {
       isNormalUser = true;
       inherit (user)
         description
@@ -112,7 +112,7 @@ in
     # home-manager.useGlobalPkgs = true forbids HM modules from writing
     # nixpkgs.config directly.
     mine.allowedUnfree = lib.concatLists (
-      lib.mapAttrsToList (userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
+      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );
 
     home-manager = {

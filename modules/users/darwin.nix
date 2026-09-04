@@ -14,7 +14,7 @@
     # same as users/nixos.nix. Required because useGlobalPkgs forbids HM
     # modules from writing nixpkgs.config directly.
     mine.allowedUnfree = lib.concatLists (
-      lib.mapAttrsToList (userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
+      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );
 
     home-manager = {

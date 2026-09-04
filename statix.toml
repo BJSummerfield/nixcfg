@@ -1,0 +1,18 @@
+# W20 (repeated_keys) is disabled repo-wide, not just for the two sites R1
+# sampled. After fixing every other statix finding, 21 of the 25 original
+# W20 hits remain, spread across 14 files (modules/devbox/container.nix,
+# modules/niri/home.nix, modules/theme/home.nix, modules/vikunja-server,
+# modules/immich-server, modules/jellybox, modules/dns-server,
+# modules/system, modules/users, modules/local-llm, modules/jellyfin-server,
+# modules/pi-coding-agent, hosts/vps, hosts/paynefield). Inspecting a sample
+# from that list (not just R1's two) shows the same idiom every time:
+# option assignments grouped near the comment/context that explains them
+# (sops.secrets blocks, xdg.configFile pairs, networking.firewall next to
+# the port comment, etc.) rather than merged into one attrset far from its
+# rationale. statix's suggested merge is mechanically safe but fights a
+# consistent, repo-wide readability choice, not two isolated exceptions.
+# statix has no inline suppression comment, only whole-file ignore or a
+# whole-lint disable — so this is the narrower of the two available tools.
+# See docs/repo-hygiene/tasks/T1.md and R1.md for the two sites this
+# generalizes from.
+disabled = [ "repeated_keys" ]

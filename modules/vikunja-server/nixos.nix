@@ -7,7 +7,6 @@
 {
   lib,
   config,
-  pkgs,
   ...
 }:
 let
@@ -92,7 +91,6 @@ in
       config =
         {
           config,
-          pkgs,
           lib,
           ...
         }:

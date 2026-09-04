@@ -25,7 +25,7 @@ in
 
     hardware.nvidia = {
       modesetting.enable = true;
-      open = cfg.open;
+      inherit (cfg) open;
       powerManagement.enable = true;
     };
 

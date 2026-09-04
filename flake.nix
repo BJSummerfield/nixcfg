@@ -63,6 +63,8 @@
             packages = with pkgs; [
               nixfmt
               sops
+              statix
+              deadnix
             ];
           };
         }
@@ -107,6 +109,14 @@
               in
               nixpkgs.lib.nameValuePair checkName (evalOnly checkName cfg.config.system.build.toplevel.drvPath)
             );
+          # Shared by the three lint checks below: the repo minus .git (and
+          # the usual VCS/editor cruft cleanSource already strips), so none
+          # of them rebuild just because an unrelated file in .git changed.
+          lintSrc = pkgs.lib.cleanSource ./.;
+          # hosts/*/hardware-configuration.nix is nixos-generate-config
+          # output ("Do not modify this file!" is its first line) — excluded
+          # from both linters rather than hand-edited to appease them.
+          hwConfigGlob = "hosts/*/hardware-configuration.nix";
         in
         evalAll "nixos" inputs.self.nixosConfigurations
         // evalAll "darwin" inputs.self.darwinConfigurations
@@ -119,6 +129,38 @@
             inherit nixpkgs inputs;
             system = "x86_64-linux";
           };
+          # Same formatter `nix fmt` runs (nixfmt-tree/treefmt), so a file
+          # that's clean locally is clean in CI and vice versa.
+          fmt-check =
+            pkgs.runCommand "fmt-check"
+              {
+                nativeBuildInputs = [ inputs.self.formatter.x86_64-linux ];
+              }
+              ''
+                cd ${lintSrc}
+                treefmt --fail-on-change --no-cache
+                touch $out
+              '';
+          statix-check =
+            pkgs.runCommand "statix-check"
+              {
+                nativeBuildInputs = [ pkgs.statix ];
+              }
+              ''
+                cd ${lintSrc}
+                statix check -i '${hwConfigGlob}' .
+                touch $out
+              '';
+          deadnix-check =
+            pkgs.runCommand "deadnix-check"
+              {
+                nativeBuildInputs = [ pkgs.deadnix ];
+              }
+              ''
+                cd ${lintSrc}
+                deadnix --fail . --exclude ${hwConfigGlob}
+                touch $out
+              '';
         }
         # Unlike the eval-only checks above, these are real builds — though
         # `nix flake check` skips any check whose output a substituter already
