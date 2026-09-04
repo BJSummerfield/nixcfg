@@ -58,8 +58,7 @@
   # (allowNestedSubagents) and ships scout/researcher/worker/reviewer/
   # oracle/delegate as builtins. Not @gotgenes/pi-subagents: that one
   # strips the delegation tools from every child unconditionally, which
-  # forbids the exact shape we build on (see
-  # docs/superpowers/specs/2026-08-31-nested-orchestrator-plan.md).
+  # forbids the exact shape we build on.
   #
   # Same author as pi-web-access, which is why the bundled `researcher`
   # is already written around its web_search / fetch_content tools.

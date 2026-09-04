@@ -33,8 +33,7 @@
       #
       # maxModelLen and headroom travel together: settings.nix derives pi's
       # contextWindow as maxModelLen - headroom, so editing either alone
-      # silently moves pi's window. Sizing rationale and the measured pool
-      # numbers are in docs/local-llm-review-2026-09-01/.
+      # silently moves pi's window.
       maxModelLen = 102400;
       # Drift margin between pi's token estimate and vLLM's count, and nothing
       # else. pi's clampMaxTokensToContext already shrinks max_tokens to

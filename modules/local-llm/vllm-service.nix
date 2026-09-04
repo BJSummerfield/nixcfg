@@ -24,8 +24,7 @@ let
   # No `vision` block means every modality limit is 0 and the encoder is never
   # loaded. With one, width/height are memory-profiling hints, NOT a runtime cap
   # - a client that posts a 40MP photo is still a 40MP forward pass. Video stays
-  # 0: many frames per item, would not fit. Measurements in
-  # docs/local-llm-review-2026-09-01/02-vllm-and-model.md.
+  # 0: many frames per item, would not fit.
   mmLimit =
     if m ? vision then
       "'{\"image\": {\"count\": ${num m.vision.maxImages}, \"width\": ${num m.vision.width}, \"height\": ${num m.vision.height}}, \"video\": 0}'"

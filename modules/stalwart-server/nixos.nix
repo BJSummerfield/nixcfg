@@ -114,6 +114,9 @@ in
       };
     };
 
+    # Clearing a BlockedIp entry (set via Stalwart's own admin UI/API, not
+    # here) does not take effect until the container is restarted:
+    # `systemctl restart container@stalwart`.
     containers.stalwart = {
       autoStart = true;
       privateNetwork = true;
