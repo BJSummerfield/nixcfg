@@ -43,11 +43,8 @@ Hosts without `autoUpgrade` (`redtruck`, `t495`) are deployed by hand:
 sudo nixos-rebuild switch --flake .#<host>
 ```
 
-This is the same command `docs/new-host.md` uses when rebuilding hosts after
-a key rotation.
-
 There is no in-repo wrapper for `mac`; nix-darwin's own switch command
-applies there, unverified against anything in this repo.
+applies there.
 
 ## The option namespace
 
@@ -62,8 +59,7 @@ Three tiers, and a knob's tier is not guessable from its name alone:
   (In the code today this is still `mine.users.*`; a pending rename lands the
   `mine.accounts.*` spelling used here.)
 - **`mine.user.*`** — per-user home-manager config, set inside
-  `home-manager.users.<name>` in a host file. Roughly 45 modules declare into
-  this tier.
+  `home-manager.users.<name>` in a host file.
 
 ## Secrets
 
@@ -71,14 +67,18 @@ Secrets are encrypted with [sops-nix](https://github.com/Mic92/sops-nix).
 Recipients (which age keys can decrypt which files) are declared in
 `.sops.yaml`; each host has its own age identity derived from its SSH host
 key, and each dev machine additionally holds a user age key at
-`~/.config/sops/age/keys.txt`. Secret files live one per host at
-`secrets/hosts/<host>.yaml`, plus shared files under `secrets/services/` and
-`secrets/users/` for anything not scoped to a single machine. A host's
-`default.nix` wires each secret in with `sops.secrets.<name>.sopsFile = ...`.
+`~/.config/sops/age/keys.txt`. Hosts that need machine-scoped secrets keep
+them one file per host at `secrets/hosts/<host>.yaml` (not every host has
+one), plus shared files under `secrets/services/` and `secrets/users/` for
+anything not scoped to a single machine. A host's `default.nix` wires each
+secret in with `sops.secrets.<name>.sopsFile = ...`.
 
-To rotate a key or re-encrypt after adding a recipient:
+To rotate a key or re-encrypt after adding a recipient, you must already
+hold one of the user keys currently on each file (your
+`~/.config/sops/age/keys.txt`) — sops needs to decrypt with an existing
+recipient's key before it can re-encrypt for the new list:
 
-```
+```fish
 sops updatekeys ./secrets/**.yaml
 ```
 
@@ -98,13 +98,9 @@ user's key afterward — is in [`docs/new-host.md`](docs/new-host.md).
 
 `nix flake check` runs a host/package eval for every `nixosConfigurations`
 and `darwinConfigurations` entry and every flake package, plus `statix`,
-`deadnix`, and a formatting check (`checks/default.nix`). Format the tree
-with:
+`deadnix`, a formatting check, and the heavier `tests/devboxes.nix` and
+`tests/photoform.nix` checks (`checks/default.nix`). Format the tree with:
 
 ```
 nix fmt
 ```
-
-`nix fmt` only touches `*.nix` files here (`flake.nix`'s `formatter` output
-is `nixfmt-tree`, configured to format nix only); it does not reformat this
-file or `docs/new-host.md`.
