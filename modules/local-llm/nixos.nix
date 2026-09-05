@@ -216,7 +216,7 @@ in
       # fails fast until the image lands.
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
+        ExecStart = "${lib.getExe pkgs.podman} pull ${vllmImage}";
       };
     };
 
