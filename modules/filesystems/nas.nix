@@ -14,7 +14,7 @@ let
   cfg = config.mine.system.nas;
   enabledShares = filterAttrs (_: s: s.enable) cfg.shares;
   hasEnabledShares = enabledShares != { };
-  usersCfg = config.mine.accounts;
+  accountsCfg = config.mine.accounts;
 in
 {
   options.mine.system.nas = {
@@ -131,7 +131,7 @@ in
       optionalAttrs (groups != [ ]) {
         extraGroups = groups;
       }
-    ) usersCfg;
+    ) accountsCfg;
 
     assertions =
       lib.concatLists (
@@ -141,7 +141,7 @@ in
             assertion = !(cfg.shares ? ${shareName}) || cfg.shares.${shareName}.enable;
             message = "User ${username} has nasAccess for '${shareName}' but that share is not enabled in mine.system.nas.shares";
           }) user.nasAccess
-        ) usersCfg
+        ) accountsCfg
       )
       ++ lib.concatLists (
         mapAttrsToList (
@@ -162,7 +162,7 @@ in
               message = "User ${username} has nasAccess.${shareName} = \"${level}\" but that share has no ${level}Gid defined";
             }
           ) user.nasAccess
-        ) usersCfg
+        ) accountsCfg
       );
 
     fileSystems = mapAttrs' (_: share: {
