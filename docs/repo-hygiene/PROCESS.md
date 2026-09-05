@@ -68,7 +68,7 @@ package files sail through unverified. Before and after:
 The output prints `<name> <drvPath>` per line under `##`-prefixed section
 headers, matching `docs/repo-hygiene/DRVPATH-BASELINE.txt` body exactly (that
 file's first few lines are a hand-written comment header, not loop output —
-compare with `diff <(loop) <(tail -n +5 docs/repo-hygiene/DRVPATH-BASELINE.txt)`).
+compare with `diff <(loop) <(grep -v '^# ' docs/repo-hygiene/DRVPATH-BASELINE.txt)`).
 
 Every task marked `invariant: drvPath` must produce byte-identical output.
 A task that legitimately changes the build (T1 CI, T9 flake split) is marked
