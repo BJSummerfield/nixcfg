@@ -212,9 +212,10 @@ Replace lines 45-63 (the comment block starting `# Use upstream OCI image` throu
   # A nightly pinned to a SHA, not a release tag, because the two fixes this
   # stack needs merged after v0.28.0 and there is no v0.28.1: GitHub releases
   # stop at v0.28.0 (2026-08-26) and Docker Hub has no v0.28.1 image. A nightly
-  # tag is immutable once pushed, so a SHA pin is as reproducible as a release
-  # tag; what it costs is that nothing upstream promises this build was tested
-  # beyond CI. Bumping it re-runs vllm-image-pull below on the next switch.
+  # tag names one commit, so it reads like a release pin; it is not one. Docker
+  # tags are mutable by construction, so this is only as good as upstream not
+  # re-pushing it, and nothing upstream promises this build was tested beyond
+  # CI. Bumping it re-runs vllm-image-pull below on the next switch.
   #
   # What this SHA has that v0.28.0 does not:
   #   #50729 "Fix overlapping state copy race" (merged 2026-08-17) — the mamba
