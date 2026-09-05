@@ -37,7 +37,16 @@ let
     "--served-model-name ${servedNames}"
     "--kv-cache-dtype ${m.vllm.kvCacheDtype}"
     "--max-model-len ${num m.maxModelLen}"
-    "--gpu-memory-utilization ${num m.vllm.gpuMemoryUtilization}"
+    # Either/or, never both: --kv-cache-memory skips memory profiling outright
+    # and vLLM logs "This does not respect the gpu_memory_utilization config",
+    # so emitting the pair would leave a number in the command line that does
+    # nothing. kvCacheMemory wins where a model sets it.
+    (
+      if m.vllm ? kvCacheMemory then
+        "--kv-cache-memory ${num m.vllm.kvCacheMemory}"
+      else
+        "--gpu-memory-utilization ${num m.vllm.gpuMemoryUtilization}"
+    )
     "--limit-mm-per-prompt ${mmLimit}"
     "--max-num-batched-tokens ${num m.vllm.maxNumBatchedTokens}"
     "--max-num-seqs ${num m.vllm.maxNumSeqs}"
