@@ -64,9 +64,9 @@ in
     defaultModel = llm.default;
     defaultThinkingLevel = "high";
     # What pi installs its `packages` with; bun is on PATH via
-    # extra-packages.nix. Chosen because node refused
-    # --experimental-strip-types in the pi-superagents fork we no longer run,
-    # so the original reason is gone and node has not been retried since.
+    # extra-packages.nix. Bun loads the extensions far faster than npm, which
+    # mattered when each container installed them for itself. They share state
+    # and load once now, so the margin is smaller than it was.
     npmCommand = [ "bun" ];
     # Membership, not pins - see ../devbox/plugins.nix for why, and for the
     # update commands. A rebuild re-seeds these specs and never undoes a live
