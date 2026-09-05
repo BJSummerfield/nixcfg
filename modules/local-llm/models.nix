@@ -100,36 +100,69 @@
         # 64k request - "disable the autotune" would move the failure from boot
         # into production, which is the wrong direction.
         #
-        # There is ~1.35 GiB still on the table: the profiler reserved 0.63 GiB
-        # for CUDA graphs and used 0.17, and vLLM prints its own fix -
-        # `--kv-cache-memory=5995147264` (5.58 GiB vs the 4.23 we get now),
-        # worth ~138k tokens instead of 104,992. Deliberately not taken here:
-        # that number is vLLM's "fully utilize gpu memory" suggestion, which is
-        # the same edge 0.95 fell off, and nothing has booted with it yet. Test
-        # it by hand against the §6 command in
-        # docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md before it
-        # lands here.
+        # So the pool is set in bytes instead, below, and this fraction is only
+        # the fallback: vllm-service.nix emits one flag or the other, never
+        # both, because --kv-cache-memory skips profiling outright and vLLM
+        # says so - "This does not respect the gpu_memory_utilization config."
+        # Drop kvCacheMemory and 0.93 takes over, which is also the rollback.
         gpuMemoryUtilization = 0.93;
+        # Bytes of KV pool, taken verbatim from vLLM's own advice, and the
+        # reason a fraction is not good enough here: the profiler reserved
+        # 0.63 GiB for CUDA graphs and used 0.17, so a fraction spends ~0.46
+        # GiB on an estimate wrong by 263%. vLLM prints the corrected figure at
+        # startup; taking it gives 5.58 GiB and 138,693 tokens - measured
+        # 2026-09-04 on redtruck, engine up and serving, +32% on the same
+        # config at 0.93 alone.
+        #
+        # It also stops the pool moving when profiling noise moves: 1.03 and
+        # 3.12 GiB on identical configs minutes apart is already on record
+        # above. The number in this file becomes the number in the log.
+        #
+        # What it costs is that it is machine-specific and does not travel.
+        # vLLM's note: "If OOM'ed, check the difference of initial free memory
+        # between the current run and the previous run where
+        # kv_cache_memory_bytes is suggested." Derived at 30.82 GiB free.
+        # Re-derive after an image bump, a driver change, or anything else that
+        # takes memory on the card: boot once on gpuMemoryUtilization alone and
+        # read the "--kv-cache-memory=N to fully utilize gpu memory" line back
+        # out.
+        #
+        # One fragility worth knowing: the boot that verified this loaded 39
+        # cached FlashInfer autotune configs from the bind-mounted
+        # /var/lib/local-llm/vllm-cache. Every tactic still OOMed and fell back
+        # to default - softly, where 0.95 died hard. A cold autotune at 5.58
+        # GiB is untested, so anything that invalidates that cache is a boot
+        # risk and not just a slow start.
+        kvCacheMemory = 5995147264;
         # A scheduler cap, not a reservation - nothing is allocated by raising
         # it. What it decides is what happens to the request that does not fit:
         # admitted and preempted, or queued. Both wait; only one of them
         # discards a half-built request first.
         #
-        # 3 was right against a 211,911-token pool. MTP took that to 104,992
-        # (measured 2026-09-04), and at the 64-68k our turns actually run that
-        # is ~1.6 concurrent, not 3. A cap of 3 there does not buy a third lane
-        # - it admits one the pool cannot feed, then preempts it. 2 makes the
-        # queue honest.
+        # The number that matters is pool per lane against a real turn, not the
+        # lane count on its own:
+        #   211,911 / 3 = 70,637  - the pre-MTP config, turns fit
+        #   138,693 / 3 = 46,231  - a 64-68k turn does not fit in that
+        #   138,693 / 2 = 69,346  - within 1.8% of what a lane had before
+        # So this is not a downgraded lane, it is the same lane and one fewer
+        # of them, bought with ~2x decode. 3 here would not add a third lane,
+        # it would admit a request the pool cannot hold and then preempt
+        # something to make room. Operator report from the 3-lane era, which
+        # agrees: rarely actually at 3, and it thrashed when it got there.
         #
-        # Do NOT read `Maximum concurrency ... 1.03x` from the startup line as
+        # Do NOT read `Maximum concurrency ... 1.35x` from the startup line as
         # the lane count: that is pool / maxModelLen, and maxModelLen is a
         # per-request ceiling nothing reaches. Divide by the real turn size.
         #
-        # Going back to 3 is defensible once the pool is - the
-        # --kv-cache-memory route in the gpuMemoryUtilization note is worth
-        # ~138k, or ~2.1 real turns. Watch
-        # vllm:num_preemptions_total / vllm:request_success_total: 0.34% now,
-        # 99.4% on the last MTP-on soak.
+        # The arithmetic above is naive in one direction: prefix caching dedups
+        # blocks ACROSS concurrent requests, so subagents sharing a system
+        # prompt and repo context do not each pay for it, and true residency
+        # can sit under 2 x 64k. That is unmeasured, and it is the only thing
+        # that would make 3 viable. Evidence for trying it would be
+        # vllm:num_preemptions_total / vllm:request_success_total staying near
+        # zero (0.34% now, 99.4% on the last MTP-on soak) while queue time
+        # climbs - and it earns its own commit with its own before/after, not a
+        # bump in passing.
         maxNumSeqs = 2;
         # Trades directly against the KV pool: vLLM profiles peak activation at
         # this chunk size and sizes the pool as the remainder, so raising it
