@@ -88,13 +88,49 @@
       vllm = {
         # The card is dedicated to vLLM, but ~0.5 GiB of driver/context sits
         # outside vLLM's accounting: 0.97 left only ~0.4 GiB of slack.
-        gpuMemoryUtilization = 0.95;
-        # The measured knee: seconds per 1k output tokens is flat from 1 to 2
-        # in flight and climbs from the third. A scheduler cap, not a
-        # reservation - nothing is allocated by raising it, and vLLM preempts
-        # if the pool runs short. Raise to 4 only after watching
-        # vllm:num_preemptions_total.
-        maxNumSeqs = 3;
+        #
+        # 0.95 was right until MTP came back and does not fit any more. With
+        # speculativeTokens set it OOMs at startup - not in KV allocation,
+        # which succeeds, but afterwards in FlashInfer's autotune dummy run,
+        # which wants 272 MiB and finds 73 MiB. 0.93 boots: measured 2026-09-04
+        # on redtruck, engine up, /health serving.
+        #
+        # This is headroom for a warmup pass, not slack. The autotuner runs a
+        # max-size forward pass, so an OOM there is the shape of the first real
+        # 64k request - "disable the autotune" would move the failure from boot
+        # into production, which is the wrong direction.
+        #
+        # There is ~1.35 GiB still on the table: the profiler reserved 0.63 GiB
+        # for CUDA graphs and used 0.17, and vLLM prints its own fix -
+        # `--kv-cache-memory=5995147264` (5.58 GiB vs the 4.23 we get now),
+        # worth ~138k tokens instead of 104,992. Deliberately not taken here:
+        # that number is vLLM's "fully utilize gpu memory" suggestion, which is
+        # the same edge 0.95 fell off, and nothing has booted with it yet. Test
+        # it by hand against the §6 command in
+        # docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md before it
+        # lands here.
+        gpuMemoryUtilization = 0.93;
+        # A scheduler cap, not a reservation - nothing is allocated by raising
+        # it. What it decides is what happens to the request that does not fit:
+        # admitted and preempted, or queued. Both wait; only one of them
+        # discards a half-built request first.
+        #
+        # 3 was right against a 211,911-token pool. MTP took that to 104,992
+        # (measured 2026-09-04), and at the 64-68k our turns actually run that
+        # is ~1.6 concurrent, not 3. A cap of 3 there does not buy a third lane
+        # - it admits one the pool cannot feed, then preempts it. 2 makes the
+        # queue honest.
+        #
+        # Do NOT read `Maximum concurrency ... 1.03x` from the startup line as
+        # the lane count: that is pool / maxModelLen, and maxModelLen is a
+        # per-request ceiling nothing reaches. Divide by the real turn size.
+        #
+        # Going back to 3 is defensible once the pool is - the
+        # --kv-cache-memory route in the gpuMemoryUtilization note is worth
+        # ~138k, or ~2.1 real turns. Watch
+        # vllm:num_preemptions_total / vllm:request_success_total: 0.34% now,
+        # 99.4% on the last MTP-on soak.
+        maxNumSeqs = 2;
         # Trades directly against the KV pool: vLLM profiles peak activation at
         # this chunk size and sizes the pool as the remainder, so raising it
         # shrinks the pool. If a startup advisory asks for a bigger batch,
@@ -135,6 +171,22 @@
         #   M4 #51571 async accepted-count race - open. Statically gated on
         #      async scheduling, which MTP switches on by default, which is why
         #      vllm-service.nix passes --no-async-scheduling alongside this.
+        # What it costs, measured on the first boot that survived: the pool
+        # goes 211,911 -> 120,546 tokens at an unchanged 0.95, i.e. -43%. Not
+        # the draft head, which is nearly free (weights 21.97 -> 22.01 GiB) -
+        # it is the mamba state, 2+P pages per request becoming 5+P across
+        # three groups, because num_speculative_blocks == speculativeTokens.
+        # So this number is a KV lever as much as a speed one, and 3 -> 2 gives
+        # a page per request per group back.
+        #
+        # Whether that trade is worth taking is an open measurement, not a
+        # guess: the first probe reported per-position acceptance of 0.667,
+        # 0.333, 0.333, which would make positions 2 and 3 nearly free to give
+        # up - but that was 6 drafts. Read
+        # vllm:spec_decode_num_accepted_tokens_total / _num_draft_tokens_total
+        # over real traffic against the 67.9% this stack measured pre-#156
+        # before touching it.
+        #
         # Mechanism detail in docs/ninfer-vs-vllm-2026-09-03/03; field evidence
         # for each patch in 05; the deploy and rollback runbook in 06.
         speculativeTokens = 3;
@@ -149,6 +201,16 @@
         # is nearly free here - 82.2% of prompt tokens are cache hits - and no
         # upstream mechanism makes it a corruption suspect on its own. If
         # corruption returns, speculativeTokens comes out first and this stays.
+        #
+        # It survives MTP, which was the open question this whole change rested
+        # on. Startup logs a warning that "prefix-cache reuse across requests
+        # will be disabled" because no KV group can be annotated as the draft
+        # group; it fires on use_eagle() regardless of disable_eagle_block_drop
+        # and, for us, it is wrong. Measured 2026-09-04, MTP on, two identical
+        # 30,058-token requests: the second served 28,800 tokens from cache,
+        # 95.8%, the miss being exactly the trailing partial block
+        # (30,058 = 18 x 1600 + 1,258). Trust that number over the warning, and
+        # re-run the probe rather than the warning after any engine bump.
         enablePrefixCaching = true;
       };
 
