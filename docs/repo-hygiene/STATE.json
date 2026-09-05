@@ -11,10 +11,10 @@
   "tasks": {
     "T1": "done (PR #160)", "T9": "done", "TW": "done (PR pending)", "T2": "pending", "T3": "done (PR #164)",
     "T4": "done (PR #167)", "T10": "done (PR #168)", "T5": "done (PR #169)", "T6": "done (PR #171)", "T6": "pending",
-    "T13": "pending", "T8": "pending", "T11": "folded into TW + GATE2",
+    "T13": "done (PR #172)", "T8": "pending", "T11": "folded into TW + GATE2",
     "T7": "pending", "T9": "done (PR #161)", "T12": "pending"
   },
-  "current": "T13",
+  "current": "T8",
   "artifacts": {"ledger": "docs/repo-hygiene/LEDGER.md (written by TW)"},
   "notes": [
     "2026-09-04 decision: T3 deletes docs/superpowers/ and docs/local-llm-review-2026-09-01/ outright; git history is the archive.",
