@@ -218,16 +218,6 @@ in
           run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
             "$HOME/.claude-state/settings.json"
         '';
-
-        # Nothing else of claude's is seeded. If a plugin is ever wanted
-        # again, its state - marketplace clone, plugin cache,
-        # installed_plugins.json - stays claude-owned and installed by
-        # claude: seeding it from the store would be read-only litter that
-        # claude's own rewrites die against, the same EROFS failure mode as
-        # the settings files above, and a pinned version would go stale
-        # between rebuilds. Nix would own only an enabledPlugins entry in
-        # the seed above (membership, no version) and this activation's
-        # copy-not-link mechanics.
       };
   };
 
@@ -309,8 +299,6 @@ in
   # tailscale (firewall only - join and serve are manual, see nixos.nix)
   ##########################################################################
 
-  # Declarative join and serve are flaky on nspawn containers.
-  # Manual one-time ritual is used instead — see nixos.nix header.
   services.tailscale.enable = true;
 
   networking = {
