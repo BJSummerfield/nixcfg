@@ -57,7 +57,7 @@ and packages — or edits under modules/darwin*, modules/home-darwin*, or the
 package files sail through unverified. Before and after:
 
     echo "## nixosConfigurations"
-    for h in elitebook redtruck t495 paynefield vps; do
+    for h in $(nix eval --json '.#nixosConfigurations' --apply builtins.attrNames | jq -r '.[]'); do
       echo "$h $(nix eval --raw ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath")"
     done
     echo

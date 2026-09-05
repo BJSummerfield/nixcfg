@@ -11,12 +11,10 @@ let
   bootCfg = cfg.boot;
 in
 {
-  # Ten modules append to networking.nat.internalInterfaces, so the merged list
-  # inherited the order modules/nixos.nix imports them in, and with it the order
-  # of the generated iptables rules and every derivation downstream. Sorting on
-  # read makes the import order irrelevant. The rules match disjoint interfaces
-  # and take the same action, so their sequence never mattered behaviourally —
-  # tests/devboxes.nix already had to sort this list to assert against it.
+  # Sorted on read: ten modules append to this list, so without it the merged
+  # order - and every derivation downstream of the generated iptables rules -
+  # depends on modules/nixos.nix's import order. The rules match disjoint
+  # interfaces and take the same action, so the sequence is not load-bearing.
   options.networking.nat.internalInterfaces = lib.mkOption {
     apply = lib.sort lib.lessThan;
   };
