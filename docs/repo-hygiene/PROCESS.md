@@ -37,6 +37,13 @@ For task T##:
    Sequential — no two tasks in flight; the next task branches off the new
    `hygiene`.
 
+   **Confirm CI is green before merging** — `gh pr view <n> --json
+   statusCheckRollup`. On 2026-09-05 the orchestrator merged PR #172 whose
+   `check` run had failed, trusting the implementer's "flake check green" claim
+   over the PR's own status, and put two unformatted files on the branch. The
+   gate T1 built worked; the orchestrator walked past it. A subagent's report is
+   a claim, not evidence.
+
    **Keep the per-task PR even though the orchestrator merges it.** Committing
    straight to `hygiene` would run no CI at all: `.github/workflows/check.yml`
    triggers on `pull_request:` and on pushes to `main` only, so the PR is what
