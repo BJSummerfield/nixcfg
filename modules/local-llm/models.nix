@@ -71,9 +71,9 @@
       };
 
       vllm = {
-        # 0.95 (the plain default) OOMs with MTP on: FlashInfer autotune wants
-        # 272 MiB after KV allocation succeeds and finds 73 MiB. 0.955 works
-        # paired with maxNumBatchedTokens 2048 below - the pair moves together,
+        # 0.95, what the other two models in this catalog use, OOMs with MTP on:
+        # FlashInfer autotune wants 272 MiB after KV allocation succeeds and
+        # finds 73 MiB. 0.955 works paired with maxNumBatchedTokens 2048 below - the pair moves together,
         # raising the batch without lowering this reintroduces the OOM. Fuller
         # derivation, and the --kv-cache-memory byte-pin alternative (verified
         # 138,693 tokens, not used because it doesn't survive an image/driver

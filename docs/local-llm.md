@@ -90,7 +90,7 @@ wait; only one of them discards a half-built request first.
 The number that matters is pool per lane against a real turn, not the lane count on its
 own. Turns measured here run 64-68k, and pi cannot exceed 81,920 because that is where it
 compacts (`contextWindow` minus its own `reserveTokens`), so 81,920 is the ceiling a lane
-must cover, not `maxModelLen`. Measured pools, all MTP-on:
+must cover, not `maxModelLen`. Measured pools (the last row is the pre-MTP baseline, for comparison):
 
 | config | pool |
 |---|---:|
@@ -187,8 +187,17 @@ bump.
 
 Full rationale (why a nightly SHA and not a release tag, which upstream fixes it carries,
 what M2 remains unpatched, the rollback order and why it matters) is in
-`docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md` §1.3, §3.1 and §7.3. `nixos.nix`
+`docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md` §3.1 and §7.3. `nixos.nix`
 keeps a short version and a pointer here; this doc does not duplicate it further.
+
+**Two caveats that live only here.** First, the image is not really pinned: the
+SHA is part of a Docker *tag*, and tags are mutable, so this is only as good as
+upstream not re-pushing it. Nothing pins by digest. Second, calibrate the
+confidence in #50729: the upstream 12/5000 -> 0/5000 and 16/288 -> 0/288 counts
+are 0.27.1-vs-nightly comparisons carrying hundreds of other commits, not
+controlled single-PR measurements (see `05-patch-efficacy.md` rows E2/E3, rated
+"Moderate"). `06` §3.1 states the 12/5000 result flatly and, before this was
+corrected, asserted that a nightly tag is immutable.
 
 ## `vllm-service.nix` — the MTP flag pair
 

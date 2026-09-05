@@ -45,14 +45,18 @@ let
   # A nightly pinned to a SHA, not a release tag: this stack needs two fixes
   # merged after v0.28.0 (#50729, the mamba conv-state race behind the #156
   # mojibake; #53388, disable_eagle_block_drop, used in models.nix) and there
-  # is no v0.28.1. A nightly *tag* is mutable, so the SHA is what makes this a
-  # real pin - the amd64 manifest at time of pinning was
+  # is no v0.28.1. This is NOT a real pin: the SHA is part of a Docker *tag*,
+  # and tags are mutable by construction, so it is only as good as upstream not
+  # re-pushing it. Nothing here pins by digest. The amd64 manifest at time of
+  # pinning was
   # sha256:c9337b064af164bef487f276ba9b64636f2c0554f48357fa1dc2e001165dc1eb
   # (8,680,402,627 bytes); compare against that if a pull ever surprises you.
   # Move back to a release tag the moment one ships with both fixes.
   #
-  # Rollback is two edits, in this exact order: drop speculativeTokens from
-  # models.nix, THEN put :v0.28.0 here. Reversed, the old image gets a
+  # Rollback is one edit: drop speculativeTokens from models.nix. This nightly
+  # with MTP off is a superset of v0.28.0, so reverting the image is not part
+  # of it. If you do want v0.28.0 back as well, that order is forced - drop
+  # speculativeTokens FIRST, then change the tag. Reversed, the old image gets a
   # disable_eagle_block_drop field it doesn't understand and TypeErrors at
   # startup (arg_utils does SpeculativeConfig(**speculative_config)) - loud,
   # but still a failed boot. The v0.28.0 image stays in podman's local
