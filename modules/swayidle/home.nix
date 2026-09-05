@@ -6,11 +6,13 @@
 }:
 
 let
-  inherit (lib) mkEnableOption mkIf;
+  inherit (lib) mkEnableOption mkIf getExe getExe';
   cfg = config.mine.user.swayidle;
-  brightnessctl = "${pkgs.brightnessctl}/bin/brightnessctl";
-  niri = "${pkgs.niri}/bin/niri";
-  swaylock = "${pkgs.swaylock-effects}/bin/swaylock";
+  brightnessctl = getExe pkgs.brightnessctl;
+  niri = getExe pkgs.niri;
+  # swaylock-effects' mainProgram is "swaylock", diverging from the attr name;
+  # getExe' makes the divergence explicit instead of relying on getExe's guess.
+  swaylock = getExe' pkgs.swaylock-effects "swaylock";
   lock = "${swaylock} --ignore-empty-password --daemonize";
   display = status: "${niri} msg action power-${status}-monitors";
 

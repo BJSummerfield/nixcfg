@@ -50,7 +50,9 @@ let
     })
     (mkAgent {
       name = "pi";
-      real = "${piWrapped}/bin/pi";
+      # piWrapped is a symlinkJoin (name "pi-wrapped") with no meta.mainProgram,
+      # so a naive lib.getExe would resolve to the wrong binary name.
+      real = lib.getExe' piWrapped "pi";
     })
   ];
 

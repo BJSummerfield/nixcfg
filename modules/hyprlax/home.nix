@@ -11,6 +11,7 @@ let
     mkMerge
     mkOption
     types
+    getExe
     ;
   cfg = config.mine.user.hyprlax;
   niriCfg = config.mine.user.niri;
@@ -36,7 +37,7 @@ in
         Service = {
           Type = "simple";
           ExecStart = ''
-            ${pkgs.hyprlax}/bin/hyprlax --config "${config.home.homeDirectory}/.config/hyprlax/parallax.toml"
+            ${getExe pkgs.hyprlax} --config "${config.home.homeDirectory}/.config/hyprlax/parallax.toml"
           '';
           Restart = "on-failure";
           RestartSec = "1s";

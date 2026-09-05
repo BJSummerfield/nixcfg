@@ -38,16 +38,17 @@
     helix
   ];
 
+  sops.defaultSopsFile = ../../secrets/hosts/vps.yaml;
   sops.secrets.stalwart-admin-pw = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
+  # Lives in the shared restic-b2 service file, not this host's own —
+  # genuinely elsewhere, so it keeps its explicit sopsFile.
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
   };
   sops.secrets.restic-repo-password = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
 
@@ -87,7 +88,7 @@
       # RAM cannot compile it.
       photoform = {
         enable = true;
-        sopsFile = ../../secrets/hosts/vps.yaml;
+        sopsFile = config.sops.defaultSopsFile;
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {

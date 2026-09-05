@@ -13,16 +13,17 @@
     intel-gpu-tools
   ];
 
+  sops.defaultSopsFile = ../../secrets/hosts/paynefield.yaml;
   sops.secrets.vikunja-jwt-secret = {
-    sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
+  # Lives in the shared restic-b2 service file, not this host's own —
+  # genuinely elsewhere, so it keeps its explicit sopsFile.
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
   };
   sops.secrets.restic-repo-password = {
-    sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
 

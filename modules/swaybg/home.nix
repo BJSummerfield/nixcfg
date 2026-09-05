@@ -5,7 +5,7 @@
   ...
 }:
 let
-  inherit (lib) mkEnableOption mkIf mkMerge;
+  inherit (lib) mkEnableOption mkIf mkMerge getExe;
   cfg = config.mine.user.swaybg;
   niriCfg = config.mine.user.niri;
   wallpaper = "mountain.jpg";
@@ -28,7 +28,7 @@ in
         Service = {
           Type = "simple";
           ExecStart = ''
-            ${pkgs.swaybg}/bin/swaybg -m fill -i "${config.home.homeDirectory}/.config/swaybg/${wallpaper}"
+            ${getExe pkgs.swaybg} -m fill -i "${config.home.homeDirectory}/.config/swaybg/${wallpaper}"
           '';
           Restart = "on-failure";
           RestartSec = "1s";

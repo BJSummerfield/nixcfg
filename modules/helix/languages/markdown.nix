@@ -5,7 +5,7 @@
   ...
 }:
 let
-  inherit (lib) mkEnableOption mkIf;
+  inherit (lib) mkEnableOption mkIf getExe;
   cfg = config.mine.user.helix.lsp.markdown;
 in
 {
@@ -15,7 +15,7 @@ in
       languages = {
         language-server = {
           mpls = {
-            command = "${pkgs.mpls}/bin/mpls";
+            command = getExe pkgs.mpls;
             args = [
               "--theme"
               "dark"

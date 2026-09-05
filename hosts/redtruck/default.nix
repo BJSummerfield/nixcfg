@@ -47,26 +47,23 @@
   #
   # Rotating any of them needs `systemctl restart container@<name>` - the
   # bind mount resolved to the old file when the container started.
+  sops.defaultSopsFile = ../../secrets/hosts/redtruck.yaml;
   sops.secrets = {
     devbox-github-token = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0440";
       group = "users";
     };
-    devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+    devbox-paseo-password = { };
     devbox-signing-key = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
       uid = 1500;
     };
     workbox-github-token = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0440";
       group = "users";
     };
-    workbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+    workbox-paseo-password = { };
     workbox-signing-key = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
       uid = 1500;
     };
