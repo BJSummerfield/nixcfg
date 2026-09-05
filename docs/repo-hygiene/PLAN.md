@@ -116,7 +116,10 @@ overloaded and what should move out of each — plus the namespace summary
 T7 or T9 touches anything.
 
 ### Tier 5 — responsibility work (highest risk; last, on a clean base)
-- **T7 — Make the overloaded files do less.** Act only on files the ledger
+- **T7 — Make the overloaded files do less.** Plus the **container address
+  registry** (user decision 2026-09-04, see tasks/T7-ip-registry.md): eleven
+  modules hardcode a 192.168.100.x pair with no registry and a uniqueness check
+  that covers only devbox instances. Act only on files the ledger
   marked *overloaded*, and only by moving the foreign responsibility to where
   it belongs — never by cutting a coherent file at a line number.
   `invariant: drvPath`.
