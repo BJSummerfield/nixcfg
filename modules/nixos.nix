@@ -5,22 +5,22 @@
     ./avahi/nixos.nix
     ./backups/nixos.nix
     ./caddy/nixos.nix
+    ./devbox/nixos.nix
     ./dns-server/nixos.nix
     ./docker/nixos.nix
     ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
     ./immich-server/nixos.nix
-    ./jellyfin-server/nixos.nix
     ./jellybox/nixos.nix
+    ./jellyfin-server/nixos.nix
     ./local-llm/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
     ./nvidia/nixos.nix
     ./openssh/nixos.nix
-    ./devbox/nixos.nix
-    ./pipewire/nixos.nix
     ./photoform/nixos.nix
+    ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix

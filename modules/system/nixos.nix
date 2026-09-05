@@ -11,6 +11,14 @@ let
   bootCfg = cfg.boot;
 in
 {
+  # Sorted on read: ten modules append to this list, so without it the merged
+  # order - and every derivation downstream of the generated iptables rules -
+  # depends on modules/nixos.nix's import order. The rules match disjoint
+  # interfaces and take the same action, so the sequence is not load-bearing.
+  options.networking.nat.internalInterfaces = lib.mkOption {
+    apply = lib.sort lib.lessThan;
+  };
+
   options.mine.system = {
     hostName = mkOption {
       type = types.str;
