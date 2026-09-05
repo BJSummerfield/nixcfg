@@ -1,5 +1,8 @@
 # Persistent coding-agent containers. Security boundary: ssh/sops/signing keys
-# stay on the host. Repos live in the container filesystem — GitHub holds the code.
+# stay on the host and are bind-mounted read-only onto the same three paths
+# inside every container (/run/secrets/{github-token,paseo-password,signing-key});
+# no secret ever enters a container's filesystem or the nix store. Repos live
+# in the container filesystem — GitHub holds the code.
 #
 # Each attribute of mine.system.devboxes is one container. Once an instance is
 # running, join the tailnet and publish paseo once, substituting its attribute
@@ -41,6 +44,10 @@ in
       Coding-agent containers, keyed by container name. Presence in this
       attrset is what enables a container - there is no separate enable
       flag, matching how `containers.*` itself reads.
+
+      Multiple instances typically exist to hold different credentials rather
+      than different code - e.g. two containers distinguished only by which
+      GitHub token each one decrypts.
     '';
     example = lib.literalExpression ''
       {
@@ -129,6 +136,10 @@ in
               null leaves this instance unable to sign, and commit.gpgSign off
               with it: git refuses to commit at all when signing is on and the
               key is absent, so the key and the flag are set as one unit.
+
+              Each instance normally gets its own signing key rather than
+              sharing one, so a commit's signature identifies which container
+              produced it.
             '';
             example = "/run/secrets/devbox-signing-key";
           };
@@ -245,6 +256,10 @@ in
         # Destination paths carry no instance name: they live in this
         # container's own mount namespace, so every instance can use the
         # same two, and container.nix stays free of instance identity.
+        #
+        # Rotating any of the three secret files needs `systemctl restart
+        # container@<name>`: the bind mount resolves to the underlying file
+        # once, at container start, and does not track later changes to it.
         "/run/secrets/github-token" = {
           hostPath = box.githubTokenFile;
           isReadOnly = true;

@@ -73,13 +73,12 @@
         # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      # SNI edge on 443: a layer4 listener routes by ClientHello SNI.
-      # booking.summerfieldphotography.com terminates at caddy;
-      # mx1.brianjs.com passes through untouched, so Stalwart terminates
-      # and renews its own certificate — the one that also serves
-      # 25/465/993. Both routes are registered by their service modules.
-      # Every unclaimed connection is closed at the edge, and the
-      # brianjs.com apex is unclaimed by design (no A record).
+      # Route registration for booking.summerfieldphotography.com (caddy-
+      # terminated) and mx1.brianjs.com (passthrough to Stalwart, which
+      # keeps its own cert) lives in those services' own modules, not here.
+      # The brianjs.com apex has no A record, so it stays unclaimed by
+      # design under the edge's close-everything-unclaimed default (see
+      # modules/caddy/nixos.nix).
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
