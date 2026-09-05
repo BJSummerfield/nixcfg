@@ -190,9 +190,10 @@ what M2 remains unpatched, the rollback order and why it matters) is in
 `docs/ninfer-vs-vllm-2026-09-03/06-mtp-reenable-spec.md` §3.1 and §7.3. `nixos.nix`
 keeps a short version and a pointer here; this doc does not duplicate it further.
 
-**Two caveats that live only here.** First, the image is not really pinned: the
-SHA is part of a Docker *tag*, and tags are mutable, so this is only as good as
-upstream not re-pushing it. Nothing pins by digest. Second, calibrate the
+**Two caveats that live only here.** First, the image is pinned by tag, not by
+digest, so it is only as good as upstream not re-pushing that nightly tag. That
+is a deliberate stopgap until v0.29 ships, not an oversight - the manifest
+digest is recorded in the module comment for manual comparison. Second, calibrate the
 confidence in #50729: the upstream 12/5000 -> 0/5000 and 16/288 -> 0/288 counts
 are 0.27.1-vs-nightly comparisons carrying hundreds of other commits, not
 controlled single-PR measurements (see `05-patch-efficacy.md` rows E2/E3, rated
