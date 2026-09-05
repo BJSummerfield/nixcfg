@@ -5,7 +5,12 @@
   ...
 }:
 let
-  inherit (lib) mkEnableOption mkIf mkMerge getExe;
+  inherit (lib)
+    mkEnableOption
+    mkIf
+    mkMerge
+    getExe
+    ;
   cfg = config.mine.user.swaybg;
   niriCfg = config.mine.user.niri;
   wallpaper = "mountain.jpg";
