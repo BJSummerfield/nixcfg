@@ -61,7 +61,7 @@
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
-    users.waktu.authorizedKeys = [
+    accounts.waktu.authorizedKeys = [
       "onepassword"
       "redtruck"
       "t495"

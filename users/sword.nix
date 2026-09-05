@@ -7,7 +7,7 @@
       neededForUsers = true;
     };
 
-    mine.users.sword = {
+    mine.accounts.sword = {
       description = "Martin";
       uid = 1002;
       hashedPasswordFile = config.sops.secrets."sword/password_hash".path;

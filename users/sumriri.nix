@@ -7,7 +7,7 @@
       neededForUsers = true;
     };
 
-    mine.users.sumriri = {
+    mine.accounts.sumriri = {
       description = "Ryker";
       uid = 1001;
       hashedPasswordFile = config.sops.secrets."sumriri/password_hash".path;
