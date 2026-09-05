@@ -1,19 +1,11 @@
 # Printing to the house printer, a Brother HL-L3220CDW on the LAN.
 #
-# There is deliberately no queue declared here. The printer is driverless -
-# it reports image/urf and image/pwg-raster in document-format-supported and
-# advertises itself over mDNS as _ipp._tcp plus the _universal AirPrint
-# subtype - so CUPS discovers it and builds a temporary queue at print time,
-# which is the moment the network is guaranteed to be up.
+# No queue is declared here: the printer is driverless (advertises
+# image/urf and image/pwg-raster in document-format-supported, plus
+# _ipp._tcp and _universal over mDNS), so CUPS discovers it and builds a
+# temporary queue at print time - the moment the network is guaranteed to
+# be up.
 #
-# An earlier version declared the queue with hardware.printers.ensurePrinters
-# instead. That runs `lpadmin` during boot, which is the one moment WiFi has
-# not associated yet, so it failed on every boot and the queue never existed.
-# Setup has to happen when the printer is reachable, and only printing knows
-# when that is.
-#
-# A local cupsd is not optional either way: every GTK/Qt print dialog spools
-# through one.
 { lib, config, ... }:
 let
   cfg = config.mine.system.printing;
