@@ -79,8 +79,17 @@
       # them. Nothing recovers from inside; under the budget compaction does
       # drop them. It was 1, and two `read` calls fourteen seconds apart locked
       # a session on 2026-09-01. AGENTS.md is generated from this number.
+      #
+      # 8 -> 3 to give MTP room. Note what this does and does not buy: the
+      # startup line reads "profiled with 1 image items of the maximum feature
+      # size", so peak activation is set by width/height and not by count, and
+      # the encoder cache budget is its own 16384 tokens either way. The saving
+      # is therefore small and the cost is concrete - 3 is the number of images
+      # a session may accumulate before every subsequent request 400s, which is
+      # what made 1 unusable. If a session ever locks that way again, this is
+      # the first number to put back, not the last.
       vision = {
-        maxImages = 8;
+        maxImages = 3;
         width = 1280;
         height = 800;
       };
@@ -90,67 +99,51 @@
         # outside vLLM's accounting: 0.97 left only ~0.4 GiB of slack.
         #
         # 0.95 was right until MTP came back and does not fit any more. With
-        # speculativeTokens set it OOMs at startup - not in KV allocation,
-        # which succeeds, but afterwards in FlashInfer's autotune dummy run,
-        # which wants 272 MiB and finds 73 MiB. 0.93 boots: measured 2026-09-04
-        # on redtruck, engine up, /health serving.
+        # speculativeTokens set and maxNumBatchedTokens at 4096 it OOMs at
+        # startup - not in KV allocation, which succeeds, but afterwards in
+        # FlashInfer autotune, which wants 272 MiB and finds 73 MiB.
         #
-        # This is headroom for a warmup pass, not slack. The autotuner runs a
-        # max-size forward pass, so an OOM there is the shape of the first real
-        # 64k request - "disable the autotune" would move the failure from boot
-        # into production, which is the wrong direction.
+        # That is headroom for a warmup pass, not slack. The autotuner runs a
+        # max-size forward, so an OOM there is the shape of the first real 64k
+        # request - disabling the autotune would move the failure out of boot
+        # and into production, which is the wrong direction.
         #
-        # So the pool is set in bytes instead, below, and this fraction is only
-        # the fallback: vllm-service.nix emits one flag or the other, never
-        # both, because --kv-cache-memory skips profiling outright and vLLM
-        # says so - "This does not respect the gpu_memory_utilization config."
-        # Drop kvCacheMemory and 0.93 takes over, which is also the rollback.
-        gpuMemoryUtilization = 0.93;
-        # Bytes of KV pool, taken verbatim from vLLM's own advice, and the
-        # reason a fraction is not good enough here: the profiler reserved
-        # 0.63 GiB for CUDA graphs and used 0.17, so a fraction spends ~0.46
-        # GiB on an estimate wrong by 263%. vLLM prints the corrected figure at
-        # startup; taking it gives 5.58 GiB and 138,693 tokens - measured
-        # 2026-09-04 on redtruck, engine up and serving, +32% on the same
-        # config at 0.93 alone.
+        # 0.955 works because maxNumBatchedTokens came down to 2048 with it:
+        # peak activation is 0.97 GiB at 2048 against 1.25 at 4096, and that
+        # 0.28 GiB is what buys back the fraction. The pair moves together -
+        # raising the batch without lowering this reintroduces the OOM.
         #
-        # It also stops the pool moving when profiling noise moves: 1.03 and
-        # 3.12 GiB on identical configs minutes apart is already on record
-        # above. The number in this file becomes the number in the log.
-        #
-        # What it costs is that it is machine-specific and does not travel.
-        # vLLM's note: "If OOM'ed, check the difference of initial free memory
-        # between the current run and the previous run where
-        # kv_cache_memory_bytes is suggested." Derived at 30.82 GiB free.
-        # Re-derive after an image bump, a driver change, or anything else that
-        # takes memory on the card: boot once on gpuMemoryUtilization alone and
-        # read the "--kv-cache-memory=N to fully utilize gpu memory" line back
-        # out.
-        #
-        # One fragility worth knowing: the boot that verified this loaded 39
-        # cached FlashInfer autotune configs from the bind-mounted
-        # /var/lib/local-llm/vllm-cache. Every tactic still OOMed and fell back
-        # to default - softly, where 0.95 died hard. A cold autotune at 5.58
-        # GiB is untested, so anything that invalidates that cache is a boot
-        # risk and not just a slow start.
-        kvCacheMemory = 5995147264;
+        # Deliberately a fraction and not --kv-cache-memory, though the byte
+        # form is measurably better and vllm-service.nix still emits it when a
+        # model sets kvCacheMemory. 5995147264 was verified here (5.58 GiB,
+        # 138,693 tokens, +32%) and it is the thing to reach for if the pool
+        # gets tight. It is not the default because the byte count does not
+        # travel: vLLM derives it from free memory at boot, so an image bump,
+        # a driver change, or anything else resident on the card silently
+        # invalidates it, and the failure mode is a box that will not start.
+        # A fraction re-derives itself every boot.
+        gpuMemoryUtilization = 0.955;
         # A scheduler cap, not a reservation - nothing is allocated by raising
         # it. What it decides is what happens to the request that does not fit:
         # admitted and preempted, or queued. Both wait; only one of them
         # discards a half-built request first.
         #
         # The number that matters is pool per lane against a real turn, not the
-        # lane count on its own:
-        #   211,911 / 3 = 70,637  - the pre-MTP config, turns fit
-        #   138,693 / 3 = 46,231  - a 64-68k turn does not fit in that
-        #   138,693 / 2 = 69,346  - within 1.8% of what a lane had before
-        # So this is not a downgraded lane, it is the same lane and one fewer
-        # of them, bought with ~2x decode. 3 here would not add a third lane,
-        # it would admit a request the pool cannot hold and then preempt
-        # something to make room. Operator report from the 3-lane era, which
-        # agrees: rarely actually at 3, and it thrashed when it got there.
+        # lane count on its own. Turns measured here run 64-68k, and pi cannot
+        # exceed 81,920 because that is where it compacts (contextWindow minus
+        # its own reserveTokens), so 81,920 is the ceiling a lane must cover,
+        # not maxModelLen. Measured pools, all MTP-on:
+        #   104,992 at 0.93 / 4096
+        #   112,769 at 0.93 / 2048
+        #   138,693 with the byte pin
+        # against 211,911 pre-MTP, where 3 lanes gave 70,637 each. Two lanes
+        # need ~136k to cover a 68k turn and ~164k to cover the 81,920 ceiling.
+        # So 2 is what the pool supports and 3 is not close: a third lane would
+        # admit a request the pool cannot hold and preempt something to make
+        # room. Operator report from the 3-lane era agrees - rarely actually at
+        # 3, and it thrashed when it got there.
         #
-        # Do NOT read `Maximum concurrency ... 1.35x` from the startup line as
+        # Do NOT read `Maximum concurrency ... N.NNx` from the startup line as
         # the lane count: that is pool / maxModelLen, and maxModelLen is a
         # per-request ceiling nothing reaches. Divide by the real turn size.
         #
@@ -166,20 +159,32 @@
         maxNumSeqs = 2;
         # Trades directly against the KV pool: vLLM profiles peak activation at
         # this chunk size and sizes the pool as the remainder, so raising it
-        # shrinks the pool. If a startup advisory asks for a bigger batch,
-        # prefer lowering maxNumSeqs - same constraint, opposite sign. Must
-        # also stay >= the "Setting attention block size to N tokens" startup
+        # shrinks the pool. Measured on this model, same flags otherwise:
+        # 4096 -> 1.25 GiB peak activation and 104,992 tokens at 0.93;
+        # 2048 -> 0.97 GiB and 112,769. The 0.28 GiB is what pays for
+        # gpuMemoryUtilization 0.955 above, and the two must move together.
+        #
+        # 2048 is not free. vLLM prints "max_num_scheduled_tokens is set to
+        # 2048 based on the speculative decoding settings ... consider
+        # increasing max_num_batched_tokens" on every start, because each
+        # sequence now needs speculativeTokens+1 decode slots per step rather
+        # than one. A cold 64k prefill is also 32 scheduler steps instead of
+        # 16. We take that to keep the pool, and the warning is expected rather
+        # than actionable.
+        #
+        # Must stay >= the "Setting attention block size to N tokens" startup
         # line to clear the assert `--mamba-cache-mode align` makes. That line
         # tracks speculative depth - measured 1568 at K=0 and 1600 at K=3 on
-        # this model - so 4096 clears it either way, but re-read it after any
-        # speculativeTokens change rather than assuming.
+        # this model - so 2048 clears 1600 by 448 tokens, which is thinner
+        # margin than 4096 had. Re-read it after any speculativeTokens change
+        # rather than assuming.
         #
         # Read the pool from the startup line or vllm:cache_config_info, never
         # from an interpolation, and only from a clean start: peak-activation
         # profiling measured 1.03 and 3.12 GiB on identical configs minutes
         # apart, so a startup racing another engine's teardown reports a pool
         # 40% too small.
-        maxNumBatchedTokens = 4096;
+        maxNumBatchedTokens = 2048;
         # Never pair with --calculate-kv-scales: that combination, not fp8
         # itself, is what the upstream corruption reports have in common.
         kvCacheDtype = "fp8";
