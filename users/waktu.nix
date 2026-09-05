@@ -7,7 +7,7 @@
       neededForUsers = true;
     };
 
-    mine.users.waktu = {
+    mine.accounts.waktu = {
       description = "Brian Summerfield";
       isSuperUser = true;
       uid = 1000;

@@ -43,7 +43,7 @@
         ssh = true;
       };
     };
-    users.waktu.authorizedKeys = [
+    accounts.waktu.authorizedKeys = [
       "onepassword"
       "redtruck"
       "t495"

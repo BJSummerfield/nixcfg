@@ -6,7 +6,7 @@
 }:
 let
   inherit (lib) mkOption types;
-  cfg = config.mine.users;
+  cfg = config.mine.accounts;
   adminUsernames = lib.attrNames (lib.filterAttrs (_n: u: u.isSuperUser) cfg);
 in
 {
@@ -14,7 +14,7 @@ in
     inputs.home-manager.nixosModules.home-manager
   ];
 
-  options.mine.users = mkOption {
+  options.mine.accounts = mkOption {
     type = types.attrsOf (
       types.submodule {
         options = {

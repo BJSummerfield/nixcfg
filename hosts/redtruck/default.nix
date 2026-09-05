@@ -129,7 +129,7 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [
+    accounts.waktu.authorizedKeys = [
       "onepassword"
       "t495"
       "mac"

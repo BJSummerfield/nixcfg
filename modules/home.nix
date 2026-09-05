@@ -20,7 +20,7 @@
     ./niri/home.nix
     ./obs-studio/home.nix
     ./paseo-desktop/home.nix
-    ./polkit_kde/home.nix
+    ./polkit-kde/home.nix
     ./steambox/home.nix
     ./swaybg/home.nix
     ./swayidle/home.nix

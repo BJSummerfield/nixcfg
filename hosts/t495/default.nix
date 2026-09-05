@@ -46,7 +46,7 @@
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [
+    accounts.waktu.authorizedKeys = [
       "onepassword"
       "redtruck"
       "mac"

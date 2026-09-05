@@ -14,7 +14,7 @@ let
   cfg = config.mine.system.nas;
   enabledShares = filterAttrs (_: s: s.enable) cfg.shares;
   hasEnabledShares = enabledShares != { };
-  usersCfg = config.mine.users;
+  usersCfg = config.mine.accounts;
 in
 {
   options.mine.system.nas = {
@@ -74,7 +74,7 @@ in
     };
   };
 
-  options.mine.users = mkOption {
+  options.mine.accounts = mkOption {
     type = types.attrsOf (
       types.submodule {
         options.nasAccess = mkOption {

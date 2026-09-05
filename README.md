@@ -56,8 +56,6 @@ Three tiers, and a knob's tier is not guessable from its name alone:
 - **`mine.accounts.*`** — the account registry: uid, password hash, SSH keys,
   NAS access. Declared in `modules/users/nixos.nix`, populated per-user by
   `users/*.nix`, and opted into by any host that imports one of those files.
-  (In the code today this is still `mine.users.*`; a pending rename lands the
-  `mine.accounts.*` spelling used here.)
 - **`mine.user.*`** — per-user home-manager config, set inside
   `home-manager.users.<name>` in a host file.
 
