@@ -6,8 +6,6 @@
 # temporary queue at print time - the moment the network is guaranteed to
 # be up.
 #
-# A local cupsd is not optional either way: every GTK/Qt print dialog spools
-# through one.
 { lib, config, ... }:
 let
   cfg = config.mine.system.printing;

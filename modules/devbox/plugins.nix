@@ -28,6 +28,10 @@
   # oracle/delegate as builtins. Not @gotgenes/pi-subagents: that one
   # strips the delegation tools from every child unconditionally, which
   # forbids the exact shape we build on.
+  #
+  # pi-web-access is load-bearing beyond itself: the bundled `researcher`
+  # agent is written around its web_search/fetch_content tools, so dropping it
+  # breaks that agent rather than just removing a capability.
   piPackages = [
     "npm:pi-subagents"
     "npm:pi-web-access"

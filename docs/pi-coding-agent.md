@@ -7,7 +7,9 @@ Status: accurate as of 2026-09-05, describes `modules/pi-coding-agent/settings.n
 adjacent facts; this doc carries the three design essays that were too long
 to sit next to a single line of config.
 
-## Vision gating (`inputsOf`)
+## Vision gating
+
+Option: `inputsOf`.
 
 What `inputsOf` gates is narrower than it looks, and the difference is the
 whole reason it is easy to conclude vision works when it half does.
@@ -31,7 +33,9 @@ since provider-composer defaults it to `[ "text" ]` (`:70`).
 prompt (this list) and the enforcement (the engine's actual vision support)
 cannot drift apart.
 
-## Subagent model routing (`subagents.maxThinking`)
+## Subagent model routing
+
+Option: `subagents.maxThinking`.
 
 The `subagents` block sets subagent model routing, and nothing else. Which
 role does what, and how hard it thinks, is a per-dispatch decision the
@@ -62,7 +66,9 @@ level, and of the bundled six only `delegate` qualifies. `models.nix` maps
 pi's levels onto what the chat template accepts, and folds low to medium
 there.
 
-## Web search provider list (`webSearch.provider`)
+## Web search provider list
+
+Option: `webSearch.provider`.
 
 The list is every provider that needs no API key, queried in parallel and
 merged (deduplicated by result URL). This was pinned to exa alone, whose

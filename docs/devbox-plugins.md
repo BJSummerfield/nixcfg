@@ -24,7 +24,8 @@ Order matters, because nix rewrites `~/.pi/agent/settings.json` on every
 activation and pi installs anything missing at startup — delete the files
 first and the next rebuild just invites the package back:
 
-1. drop the spec below, and rebuild the host
+1. drop the spec from `piPackages` in `modules/devbox/plugins.nix`, and rebuild
+   the host
 2. in the container:
    ```
    pi remove npm:@teelicht/pi-superagents

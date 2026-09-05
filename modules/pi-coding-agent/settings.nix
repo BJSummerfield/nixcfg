@@ -64,15 +64,13 @@ in
     defaultModel = llm.default;
     defaultThinkingLevel = "high";
     # What pi installs its `packages` with; bun is on PATH via
-    # extra-packages.nix. Bun, not node: node refuses
-    # --experimental-strip-types in pi-superagents' postinstall.
+    # extra-packages.nix. Chosen because node refused
+    # --experimental-strip-types in the pi-superagents fork we no longer run,
+    # so the original reason is gone and node has not been retried since.
     npmCommand = [ "bun" ];
-    # Membership, not pins: the specs come from ../devbox/plugins.nix and
-    # carry no versions or refs, so nothing here can go stale between
-    # rebuilds. pi installs a missing package at startup (latest, for an
-    # unpinned spec); floating an installed one to latest is the manual
-    # `pi update --extensions` - a rebuild re-seeds these same specs and
-    # never undoes a live update.
+    # Membership, not pins - see ../devbox/plugins.nix for why, and for the
+    # update commands. A rebuild re-seeds these specs and never undoes a live
+    # `pi update --extensions`.
     packages = plugins.piPackages;
 
     # Subagent model routing, and nothing else - no defaultModel, no
