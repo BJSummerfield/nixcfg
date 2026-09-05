@@ -31,15 +31,24 @@ For task T##:
 4. **Fix** (sonnet, same worktree) then **re-review** (same tier as step 3,
    fresh). Cap at 2 fix rounds. If round 2 still FAILs, stop and surface to
    the user.
-5. Orchestrator opens one PR per task **into the long-lived `hygiene` branch**,
-   merges, then the next task branches off the new `hygiene`. Sequential — no
-   two tasks in flight. `main` sees none of this until the whole effort lands
-   as a single merge at T12, so a half-finished hygiene pass never sits on main
-   and the baseline cannot drift under the tasks.
-   Task branches are named `hygiene-T##`, flat: git cannot hold a branch named
-   `hygiene` and a branch named `hygiene/T##` at the same time.
-   CI still runs on every task PR — `.github/workflows/check.yml` triggers on
-   `pull_request:` with no branch filter, so `nix flake check` gates each one.
+5. Orchestrator opens one PR per task into the long-lived `hygiene` branch
+   **and merges it itself** — the user is not in the per-task loop. They review
+   one PR at the end: `hygiene` -> `main`, carrying the whole effort.
+   Sequential — no two tasks in flight; the next task branches off the new
+   `hygiene`.
+
+   **Keep the per-task PR even though the orchestrator merges it.** Committing
+   straight to `hygiene` would run no CI at all: `.github/workflows/check.yml`
+   triggers on `pull_request:` and on pushes to `main` only, so the PR is what
+   puts `nix flake check` in front of each task. It also leaves a per-task
+   record worth having later.
+
+   Task branches are `hygiene-T##`, flat: git cannot hold a branch named
+   `hygiene` alongside `hygiene/T##`.
+
+   Escalate to the user only for: a planned GATE, a decision that changes what
+   gets built, a review that FAILs twice, or a finding that is a real defect
+   rather than hygiene. Not for routine merges.
 
 ## The invariant that makes review cheap
 Comments, renames, file splits, and doc deletions must not change what gets
