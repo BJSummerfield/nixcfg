@@ -6,7 +6,12 @@
 }:
 
 let
-  inherit (lib) mkEnableOption mkIf getExe getExe';
+  inherit (lib)
+    mkEnableOption
+    mkIf
+    getExe
+    getExe'
+    ;
   cfg = config.mine.user.swayidle;
   brightnessctl = getExe pkgs.brightnessctl;
   niri = getExe pkgs.niri;
