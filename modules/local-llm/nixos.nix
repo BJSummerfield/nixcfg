@@ -25,8 +25,6 @@
 # before each change covers it:
 #
 #   curl -s http://192.168.100.24:5800/metrics > ~/vllm-$(date -u +%Y%m%dT%H%M%SZ).prom
-#
-# docs/local-llm-review-2026-09-01/ holds the v0.26.0 baseline captured this way.
 
 {
   lib,
@@ -109,7 +107,7 @@ let
   localAddress = "192.168.100.25";
   # Fixed, where llama-swap assigned one dynamically from 5800 upward. That
   # dynamic port was the whole reason vLLM's /metrics was unreachable without
-  # a proxy in front of it - see docs/local-llm-review-2026-09-01/06.
+  # a proxy in front of it.
   vllmPort = 5800;
   vllmEndpoint = "http://${hostAddress}:${toString vllmPort}";
 
