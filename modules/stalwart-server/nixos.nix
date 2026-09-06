@@ -27,6 +27,7 @@
   ...
 }:
 let
+  addr = (import ../containers/addresses.nix).stalwart-server;
   cfg = config.mine.system.stalwart-server;
   hostStateDir = "/var/lib/stalwart-data";
 in
@@ -70,24 +71,24 @@ in
       forwardPorts = [
         {
           sourcePort = 25;
-          destination = "192.168.100.41:25";
+          destination = "${addr.local}:25";
           proto = "tcp";
         }
         {
           sourcePort = 465;
-          destination = "192.168.100.41:465";
+          destination = "${addr.local}:465";
           proto = "tcp";
         }
         {
           sourcePort = 993;
-          destination = "192.168.100.41:993";
+          destination = "${addr.local}:993";
           proto = "tcp";
         }
       ]
       ++ lib.optionals (!config.mine.system.caddy.enable) [
         {
           sourcePort = 443;
-          destination = "192.168.100.41:443";
+          destination = "${addr.local}:443";
           proto = "tcp";
         }
       ];
@@ -112,7 +113,7 @@ in
       routes.mail = {
         hostnames = [ "mx1.brianjs.com" ];
         mode = "tcp";
-        target = "192.168.100.41:443";
+        target = "${addr.local}:443";
       };
     };
 
@@ -122,8 +123,8 @@ in
     containers.stalwart = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = "192.168.100.40";
-      localAddress = "192.168.100.41";
+      hostAddress = addr.host;
+      localAddress = addr.local;
 
       allowedDevices = [
         {
@@ -220,7 +221,7 @@ in
                   };
                   https = {
                     protocol = "http";
-                    bind = "192.168.100.41:443";
+                    bind = "${addr.local}:443";
                     tls.implicit = true;
                   };
                   # Admin UI on localhost only; reached via Tailscale serve :8443.
