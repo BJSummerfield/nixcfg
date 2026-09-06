@@ -13,75 +13,13 @@
   ...
 }:
 let
-  inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
-
-  # Seeded for pi as ~/.pi/agent/APPEND_SYSTEM.md by the home.file below, and
-  # passed to claude on the command line in mkAgent.
-  #
-  # It does not reach every pi subagent. pi discovers the global file only when
-  # no --append-system-prompt was passed (resource-loader.js: `if (!appendSources)`),
-  # and pi-subagents spends that flag on the agent's own body whenever the agent
-  # sets `systemPromptMode: append` - the bundled `delegate`, and any custom
-  # agent written that way. Agents in `replace` mode (worker, reviewer,
-  # researcher, scout, oracle) take --system-prompt instead, leave the append
-  # slot free, and do get this file. Anything *all* children must see belongs in
-  # pi-coding-agent/AGENTS.md, which reaches them through project context.
-  envContract = ./ENVIRONMENT.md;
-
-  # Pi needs bun and node on PATH or plugins crash at startup.
-  # Wrapped here because the upstream module is disabled below.
-  piWrapped = pkgs.symlinkJoin {
-    name = "pi-wrapped";
-    paths = [ pkgs.pi-coding-agent ];
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}
-    '';
-  };
-
-  agentPkgs = [
-    (mkAgent {
-      name = "claude";
-      real = lib.getExe pkgs.claude-code;
-      # Claude has no equivalent of pi's environment-contract file below, and
-      # the appendSystemPromptFile settings key is inert on 2.1.234 - the CLI
-      # flag is the only mechanism that works.
-      args = ''--append-system-prompt "$(cat ${envContract})"'';
-    })
-    (mkAgent {
-      name = "pi";
-      # piWrapped is a symlinkJoin (name "pi-wrapped") with no meta.mainProgram,
-      # so a naive lib.getExe would resolve to the wrong binary name.
-      real = lib.getExe' piWrapped "pi";
-    })
-  ];
-
-  # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
-  # Replaces bare pkgs.gh — pkgs.buildEnv fails on duplicate names.
-  ghWrapped = pkgs.writeShellScriptBin "gh" ''
-    export GH_TOKEN=$(cat /run/secrets/github-token)
-    exec ${lib.getExe pkgs.gh} "$@"
-  '';
-
-  # Claude keeps preferences in one small file. No enabledPlugins entry:
-  # claude runs no plugins here. A rebuild re-seeds this file only; auth
-  # lives separately in .credentials.json and is untouched.
-  #
-  # Dropping the entry only stops nix *enabling* a plugin - it does not
-  # uninstall one. A container that ran the superpowers plugin still has
-  # claude's own state for it (marketplace clone, plugin cache,
-  # installed_plugins.json under $CLAUDE_CONFIG_DIR), which nix never
-  # wrote and will not clean:
-  #   claude plugin uninstall superpowers@claude-plugins-official
-  #   claude plugin marketplace remove claude-plugins-official
-  #   claude plugin list
-  claudeSettings = pkgs.writeText "claude-settings.json" (
-    builtins.toJSON {
-      theme = "dark";
-      inputNeededNotifEnabled = true;
-      agentPushNotifEnabled = true;
-    }
-  );
+  inherit (import ./agents.nix { inherit pkgs lib; })
+    envContract
+    piWrapped
+    agentPkgs
+    ghWrapped
+    claudeSettings
+    ;
 in
 {
   imports = [
@@ -140,87 +78,15 @@ in
   home-manager = {
     useGlobalPkgs = true;
     useUserPackages = true;
-    users.agent =
-      { lib, ... }:
-      {
-        imports = [
-          ../direnv/home.nix
-          ../pi-coding-agent/home.nix
-        ];
-        home.stateVersion = "26.05";
-
-        mine.user = {
-          direnv.enable = true;
-          pi-coding-agent.enable = true;
-        };
-
-        # Suppresses the upstream module's own bin/pi - otherwise it
-        # collides with the mkAgent wrapper of the same name in this same
-        # home-manager profile (pkgs.buildEnv fails hard on same-name
-        # paths of equal priority). Settings/config generation from the
-        # module is untouched; only the package is disabled.
-        programs.pi-coding-agent.package = null;
-
-        # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
-        # can never cover them. Whitelisting both trees — agent runs arbitrary
-        # code by design, and the container is the boundary.
-        programs.direnv.config.whitelist.prefix = [
-          "/home/agent/projects"
-          "/var/lib/paseo/worktrees"
-        ];
-
-        home.packages = agentPkgs;
-        home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
-
-        # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
-        # agent — so these settings are the whole mechanism. All three are
-        # gated on signCommits as one unit: gpgSign left on without a key
-        # present makes git refuse to commit at all, which is worse than an
-        # instance that simply does not sign.
-        programs.git = {
-          enable = true;
-          settings = {
-            user = {
-              inherit (gitIdentity) name email;
-            }
-            // lib.optionalAttrs signCommits {
-              signingkey = "/run/secrets/signing-key";
-            };
-            # Reads the token at use time so it never lands in a config file
-            # or the nix store. The token bounds which repos are reachable;
-            # a GitHub ruleset is what stops a push to a protected branch.
-            credential."https://github.com".helper =
-              "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
-          }
-          // lib.optionalAttrs signCommits {
-            gpg.format = "ssh";
-            commit.gpgSign = true;
-          };
-        };
-
-        # Copied, not linked: Claude rewrites settings.json (theme changes,
-        # plugin toggles), and a store symlink would make that write fail
-        # with EROFS. `rm` before `install` because install(1) follows an
-        # existing symlink to its read-only target - and because the file
-        # already exists unmanaged in every running container.
-        #
-        # This also means anything Claude itself writes to settings.json is
-        # reset on the next activation: a theme change, a plugin toggle, and
-        # - the one that actually changes behaviour - any user-scope
-        # `permissions` rules, which live in this same file and are silently
-        # discarded with it. An allow/deny rule added mid-session survives
-        # only until the next rebuild; put anything durable in a project's
-        # own .claude/settings.json instead.
-        # That is deliberate, not a gap to close: a container must never
-        # come up with a plugin enabled - or a permission granted - that
-        # this config did not ask for.
-        home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-          run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
-          run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
-          run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
-            "$HOME/.claude-state/settings.json"
-        '';
-      };
+    users.agent = import ./home.nix {
+      inherit
+        gitIdentity
+        signCommits
+        agentPkgs
+        claudeSettings
+        envContract
+        ;
+    };
   };
 
   ##########################################################################
