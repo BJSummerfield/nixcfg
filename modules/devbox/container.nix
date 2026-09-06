@@ -15,7 +15,6 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; })
     envContract
-    piWrapped
     agentPkgs
     ghWrapped
     claudeSettings
