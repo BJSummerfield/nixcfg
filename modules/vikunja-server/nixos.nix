@@ -10,6 +10,7 @@
   ...
 }:
 let
+  addr = (import ../containers/addresses.nix).vikunja-server;
   cfg = config.mine.system.vikunja-server;
 in
 {
@@ -53,8 +54,8 @@ in
     containers.vikunja = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = "192.168.100.22";
-      localAddress = "192.168.100.23";
+      hostAddress = addr.host;
+      localAddress = addr.local;
 
       # tun is needed for tailscale network
       allowedDevices = [

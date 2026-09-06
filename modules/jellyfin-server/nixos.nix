@@ -11,6 +11,7 @@
   ...
 }:
 let
+  addr = (import ../containers/addresses.nix).jellyfin-server;
   cfg = config.mine.system.jellyfin-server;
   nasCfg = config.mine.system.nas;
   renderGid = config.mine.system.renderGroupGid;
@@ -56,7 +57,7 @@ in
     networking.nat.forwardPorts = [
       {
         sourcePort = 8096;
-        destination = "192.168.100.11:8096";
+        destination = "${addr.local}:8096";
         proto = "tcp";
       }
     ];
@@ -85,8 +86,8 @@ in
 
       autoStart = true;
       privateNetwork = true;
-      hostAddress = "192.168.100.10";
-      localAddress = "192.168.100.11";
+      hostAddress = addr.host;
+      localAddress = addr.local;
 
       # tun is needed for tailscale network
       # renderD128 for hardware acceleration

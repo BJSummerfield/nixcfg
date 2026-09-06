@@ -30,12 +30,21 @@ let
     mapAttrs
     mapAttrsToList
     mkIf
+    mkMerge
     mkOption
     types
     ;
   cfg = config.mine.system.devboxes;
-  addresses =
-    mapAttrsToList (_: box: box.hostAddress) cfg ++ mapAttrsToList (_: box: box.localAddress) cfg;
+  # Every container on this host, not just devboxes: containers.<name> is the
+  # same builtin option every container-backed module (jellyfin-server,
+  # stalwart-server, photoform, this one, ...) writes hostAddress/localAddress
+  # into, so reading it back here catches a collision regardless of which
+  # module introduced it.
+  allContainerAddresses = lib.concatMap (
+    c:
+    (lib.optional (c.hostAddress or null != null) c.hostAddress)
+    ++ (lib.optional (c.localAddress or null != null) c.localAddress)
+  ) (lib.attrValues config.containers);
 in
 {
   options.mine.system.devboxes = mkOption {
@@ -180,107 +189,114 @@ in
     );
   };
 
-  config = mkIf (cfg != { }) {
-    assertions =
-      mapAttrsToList (name: box: {
-        # Must be FQDN to match paseo Host-header allowlist.
-        assertion = lib.hasInfix "." box.tailnetHostname;
-        message = ''
-          mine.system.devboxes.${name}.tailnetHostname
-          ("${box.tailnetHostname}") must be a fully-qualified tailnet
-          hostname (e.g. "devbox.mist-gamma.ts.net"), not a bare node name.
-        '';
-      }) cfg
-      ++ mapAttrsToList (name: _: {
-        # ve-<name> is a network interface name, and Linux caps those at 15
-        # characters. An over-long name fails when the container starts, not
-        # when it is evaluated.
-        assertion = builtins.stringLength name <= 12;
-        message = ''
-          mine.system.devboxes.${name}: instance names may be at most 12
-          characters, because the veth interface "ve-${name}" must fit
-          Linux's 15-character interface name limit.
-        '';
-      }) cfg
-      ++ [
+  config = mkMerge [
+    {
+      # Unconditional: this must catch a collision between, say,
+      # jellyfin-server and stalwart-server even on a host with no devbox at
+      # all, so it cannot live inside the `cfg != {}` gate below.
+      assertions = [
         {
           # A duplicate address produces a container that starts cleanly and
           # then cannot route, which reads as a NAT problem rather than a
           # config one.
-          assertion = lib.length (lib.unique addresses) == lib.length addresses;
+          assertion = lib.length (lib.unique allContainerAddresses) == lib.length allContainerAddresses;
           message = ''
-            mine.system.devboxes: hostAddress and localAddress must be unique
-            across every instance. Got: ${lib.concatStringsSep ", " addresses}
+            hostAddress and localAddress must be unique across every
+            container on this host. Got: ${lib.concatStringsSep ", " allContainerAddresses}
           '';
         }
       ];
+    }
+    (mkIf (cfg != { }) {
+      assertions =
+        mapAttrsToList (name: box: {
+          # Must be FQDN to match paseo Host-header allowlist.
+          assertion = lib.hasInfix "." box.tailnetHostname;
+          message = ''
+            mine.system.devboxes.${name}.tailnetHostname
+            ("${box.tailnetHostname}") must be a fully-qualified tailnet
+            hostname (e.g. "devbox.mist-gamma.ts.net"), not a bare node name.
+          '';
+        }) cfg
+        ++ mapAttrsToList (name: _: {
+          # ve-<name> is a network interface name, and Linux caps those at 15
+          # characters. An over-long name fails when the container starts, not
+          # when it is evaluated.
+          assertion = builtins.stringLength name <= 12;
+          message = ''
+            mine.system.devboxes.${name}: instance names may be at most 12
+            characters, because the veth interface "ve-${name}" must fit
+            Linux's 15-character interface name limit.
+          '';
+        }) cfg;
 
-    networking.nat = {
-      enable = true;
-      internalInterfaces = mapAttrsToList (name: _: "ve-${name}") cfg;
-      externalInterface = config.mine.system.externalInterface;
-    };
+      networking.nat = {
+        enable = true;
+        internalInterfaces = mapAttrsToList (name: _: "ve-${name}") cfg;
+        externalInterface = config.mine.system.externalInterface;
+      };
 
-    # Persist each container's tailscale node identity across rebuilds.
-    systemd.tmpfiles.rules = mapAttrsToList (
-      name: _: "d /var/lib/tailscale-${name} 0700 root root -"
-    ) cfg;
+      # Persist each container's tailscale node identity across rebuilds.
+      systemd.tmpfiles.rules = mapAttrsToList (
+        name: _: "d /var/lib/tailscale-${name} 0700 root root -"
+      ) cfg;
 
-    containers = mapAttrs (name: box: {
-      autoStart = true;
-      privateNetwork = true;
-      inherit (box) hostAddress localAddress;
+      containers = mapAttrs (name: box: {
+        autoStart = true;
+        privateNetwork = true;
+        inherit (box) hostAddress localAddress;
 
-      allowedDevices = [
-        {
-          modifier = "rwm";
-          node = "/dev/net/tun";
+        allowedDevices = [
+          {
+            modifier = "rwm";
+            node = "/dev/net/tun";
+          }
+        ];
+
+        bindMounts = {
+          # needed for tailscale network
+          "/dev/net/tun" = {
+            hostPath = "/dev/net/tun";
+            isReadOnly = false;
+          };
+          # Persists the tailscale node identity across container restarts
+          # and rebuilds. This is what makes the manual `tailscale up` in the
+          # header comment a genuinely one-time cost rather than a
+          # per-rebuild ritual: wipe this host directory and you re-auth,
+          # otherwise you never touch it again.
+          "/var/lib/tailscale" = {
+            hostPath = "/var/lib/tailscale-${name}";
+            isReadOnly = false;
+          };
+          # Destination paths carry no instance name: they live in this
+          # container's own mount namespace, so every instance can use the
+          # same two, and container.nix stays free of instance identity.
+          #
+          # Rotating any of the three secret files needs `systemctl restart
+          # container@<name>`: the bind mount resolves to the underlying file
+          # once, at container start, and does not track later changes to it.
+          "/run/secrets/github-token" = {
+            hostPath = box.githubTokenFile;
+            isReadOnly = true;
+          };
+          "/run/secrets/paseo-password" = {
+            hostPath = box.paseoPasswordFile;
+            isReadOnly = true;
+          };
         }
-      ];
+        // lib.optionalAttrs (box.signingKeyFile != null) {
+          "/run/secrets/signing-key" = {
+            hostPath = box.signingKeyFile;
+            isReadOnly = true;
+          };
+        };
 
-      bindMounts = {
-        # needed for tailscale network
-        "/dev/net/tun" = {
-          hostPath = "/dev/net/tun";
-          isReadOnly = false;
+        config = import ./container.nix {
+          inherit inputs;
+          inherit (box) tailnetHostname gitIdentity;
+          signCommits = box.signingKeyFile != null;
         };
-        # Persists the tailscale node identity across container restarts
-        # and rebuilds. This is what makes the manual `tailscale up` in the
-        # header comment a genuinely one-time cost rather than a
-        # per-rebuild ritual: wipe this host directory and you re-auth,
-        # otherwise you never touch it again.
-        "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-${name}";
-          isReadOnly = false;
-        };
-        # Destination paths carry no instance name: they live in this
-        # container's own mount namespace, so every instance can use the
-        # same two, and container.nix stays free of instance identity.
-        #
-        # Rotating any of the three secret files needs `systemctl restart
-        # container@<name>`: the bind mount resolves to the underlying file
-        # once, at container start, and does not track later changes to it.
-        "/run/secrets/github-token" = {
-          hostPath = box.githubTokenFile;
-          isReadOnly = true;
-        };
-        "/run/secrets/paseo-password" = {
-          hostPath = box.paseoPasswordFile;
-          isReadOnly = true;
-        };
-      }
-      // lib.optionalAttrs (box.signingKeyFile != null) {
-        "/run/secrets/signing-key" = {
-          hostPath = box.signingKeyFile;
-          isReadOnly = true;
-        };
-      };
-
-      config = import ./container.nix {
-        inherit inputs;
-        inherit (box) tailnetHostname gitIdentity;
-        signCommits = box.signingKeyFile != null;
-      };
-    }) cfg;
-  };
+      }) cfg;
+    })
+  ];
 }

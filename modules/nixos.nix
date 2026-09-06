@@ -32,6 +32,7 @@
     ./terraria-server/nixos.nix
     ./theme/nixos.nix
     ./unfree/nixos.nix
+    ./users/home-manager.nix
     ./users/nixos.nix
     ./vikunja-server/nixos.nix
   ];

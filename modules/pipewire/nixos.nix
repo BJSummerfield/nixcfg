@@ -12,6 +12,7 @@ in
   options.mine.system.pipewire = {
     enable = mkEnableOption "PipeWire audio stack (PipeWire + WirePlumber + ALSA/Pulse compat)";
     sample-switch.enable = mkEnableOption "pipewire sample-rate config";
+    default-volume.enable = mkEnableOption "pipewire default sink/source volume override (0.8)";
   };
 
   config = mkMerge [
@@ -41,6 +42,15 @@ in
           ];
         };
       };
+    })
+
+    (mkIf cfg.default-volume.enable {
+      environment.etc."wireplumber/wireplumber.conf.d/51-default-volume.conf".text = ''
+        wireplumber.settings = {
+          device.routes.default-sink-volume = 0.8
+          device.routes.default-source-volume = 0.8
+        }
+      '';
     })
   ];
 }
