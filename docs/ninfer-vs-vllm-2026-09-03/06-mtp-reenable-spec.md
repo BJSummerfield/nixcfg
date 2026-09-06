@@ -48,7 +48,7 @@ git -C /var/lib/paseo/worktrees/39wgb8ft/peaceful-eel rebase origin/main   # ff 
 
 ### 1.1 What moved on main, and whether it touches us
 
-The four new commits are `2b90b49` (#159 repo-hygiene plan), `69de814` (#160 lint/format
+The four new commits are `2b90b49` (#159 hygiene-effort plan), `69de814` (#160 lint/format
 gate), `500ff35` (#161 flake.nix declares hosts), `ff825ef` (#162 LEDGER walk).
 
 Only one of them touches `modules/local-llm/` at all:
@@ -104,7 +104,7 @@ The one thing that *will* trip `fmt-check` if written carelessly: the
 literal, so it passes as written — but do **not** hand-wrap it, and do **not** let an editor
 reflow it.
 
-### 1.3 `docs/repo-hygiene/LEDGER.md` — do not update, but know that it goes stale
+### 1.3 The hygiene-effort LEDGER (now deleted) — did not need updating, and is gone
 
 Checked explicitly. LEDGER is a read-only survey snapshot and this change does not update it.
 Two entries are falsified by this work and the implementer should be aware rather than
@@ -172,7 +172,7 @@ one line.
 
 ## 3. The edits
 
-Three files. Nothing else. Do not touch `modules/pi-coding-agent/`, `docs/repo-hygiene/`, or
+Three files. Nothing else. Do not touch `modules/pi-coding-agent/` or
 `AGENTS.md`.
 
 ### 3.1 `modules/local-llm/nixos.nix` — image pin and the comment above it

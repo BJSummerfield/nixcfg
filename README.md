@@ -1,4 +1,4 @@
-Steam Big Picture and a Jellyfin TV session, autologin via greetd (`mine.system.steambox` and `jellybox` each drive a gamescope session). |# nixcfg
+# nixcfg
 
 A NixOS/nix-darwin flake configuring five Linux hosts and one Mac: laptops,
 a GPU desktop that also hosts coding-agent containers, a home server, a VPS,

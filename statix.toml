@@ -13,6 +13,4 @@
 # consistent, repo-wide readability choice, not two isolated exceptions.
 # statix has no inline suppression comment, only whole-file ignore or a
 # whole-lint disable — so this is the narrower of the two available tools.
-# See docs/repo-hygiene/tasks/T1.md and R1.md for the two sites this
-# generalizes from.
 disabled = [ "repeated_keys" ]
