@@ -1,7 +1,6 @@
 {
   lib,
   config,
-  inputs,
   ...
 }:
 let
@@ -10,10 +9,6 @@ let
   adminUsernames = lib.attrNames (lib.filterAttrs (_n: u: u.isSuperUser) cfg);
 in
 {
-  imports = [
-    inputs.home-manager.nixosModules.home-manager
-  ];
-
   options.mine.accounts = mkOption {
     type = types.attrsOf (
       types.submodule {
@@ -106,31 +101,5 @@ in
       extraGroups = [ "networkmanager" ] ++ lib.optional user.isSuperUser "wheel";
       openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
     }) cfg;
-
-    # Bridge: propagate per-user mine.allowedUnfree up to system scope
-    # so the system-level allowUnfreePredicate sees them. Required because
-    # home-manager.useGlobalPkgs = true forbids HM modules from writing
-    # nixpkgs.config directly.
-    mine.allowedUnfree = lib.concatLists (
-      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
-    );
-
-    home-manager = {
-      useGlobalPkgs = true;
-      useUserPackages = true;
-      extraSpecialArgs = {
-        inherit inputs;
-        systemCfg = config.mine.system;
-      };
-      users = lib.mapAttrs (name: user: {
-        imports = user.home-modules ++ [
-          {
-            home.username = name;
-            home.homeDirectory = "/home/${name}";
-            home.stateVersion = "26.05";
-          }
-        ];
-      }) cfg;
-    };
   };
 }
