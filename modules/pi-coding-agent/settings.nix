@@ -120,8 +120,57 @@ in
     # agents that declare no level, and of the bundled six only `delegate`
     # qualifies. models.nix maps pi's levels onto what the chat template
     # accepts, and folds low to medium there.
+    #
+    # agentOverrides is the exception to "no policy here", and only because
+    # the alternative is worse. `outputMode: "file-only"` makes a child's
+    # tool result a one-line pointer to the saved report instead of the whole
+    # body (single-output.ts:293 returns just outputReference.message; the
+    # default inline branch at :296 returns the body *and* appends the same
+    # pointer). It is settable per dispatch, per agent frontmatter, or here -
+    # but there is no global switch, so every report-producing agent has to be
+    # named individually. Per-dispatch would be the purest place for it, which
+    # is exactly why it needs a default: it is a per-call flag that must be set
+    # on every single call to have any effect, and one forgotten call is a full
+    # report pasted into the orchestrator.
+    #
+    # The bundled agents make this actively negative today rather than merely
+    # missed. `scout` (agents/scout.md:9) and `researcher` (:9) already declare
+    # `output:` but no `outputMode:`, so they take the inline branch: the full
+    # report inlined, plus a pointer to a file holding a byte-identical copy.
+    # Those two currently cost *more* context than an agent with no output file
+    # at all. Setting the mode is what makes the file they already write a
+    # substitute for the inline body instead of a duplicate of it.
+    #
+    # `reviewer` and `oracle` declare no `output:`, so they need the path too -
+    # file-only requires one. Relative names take pi's managed artifact routing
+    # (per-run, under the session's subagent-artifacts/), which is what we want:
+    # no cross-run collisions, and it survives the /tmp tmpfs that wipes on
+    # reboot. The orchestrator reads the pointer and range-reads the file only
+    # if it needs more than the child's closing summary.
+    #
+    # Not `worker`. Its deliverable is the repo, not a report; its final message
+    # is already short, and a pointer to a file duplicating a diff that is
+    # already on disk buys nothing while costing a read to find out.
     subagents = {
       maxThinking = "xhigh";
+      agentOverrides = {
+        scout = {
+          output = "context.md";
+          outputMode = "file-only";
+        };
+        researcher = {
+          output = "research.md";
+          outputMode = "file-only";
+        };
+        reviewer = {
+          output = "review.md";
+          outputMode = "file-only";
+        };
+        oracle = {
+          output = "oracle.md";
+          outputMode = "file-only";
+        };
+      };
     };
   };
 
@@ -148,6 +197,46 @@ in
               "$var" = "thinking.effort";
               omitWhenOff = true;
             };
+            # The single largest context saving available to this deployment,
+            # and it is the model's switch, not pi's.
+            #
+            # pi re-serializes every prior thinking block into the outgoing
+            # `assistant.reasoning_content` unconditionally
+            # (openai-completions.ts:1316-1317, byte-identical on main at
+            # v0.85.1). Qwen3.8's template then renders each one back into the
+            # prompt verbatim inside <think></think>, so a session re-pays for
+            # turn 3's reasoning on every turn after it. Measured on redtruck:
+            # 28,000 chars of prior reasoning = +6001 prompt tokens, per prior
+            # assistant turn, cumulative.
+            #
+            # chat_template.jinja:119 gates that render on `preserve_thinking`,
+            # which is *undefined by default and therefore true*. Setting it
+            # false is what Qwen's own model card says to do: historical turns
+            # carry the final answer only, never the thinking.
+            #
+            # It is not a blanket strip, which is the reason it is safe. The
+            # same conditional keeps any reasoning after `ns.last_query_index`
+            # - i.e. inside the tool loop still being executed - so the
+            # multi-step tool calls that pi-mono#3325 fixed by preserving
+            # thinking keep their arguments instead of degrading to `{}`.
+            # Verified live, historical vs in-loop: 6091 -> 86 tokens dropped,
+            # 6085 -> 6085 kept.
+            #
+            # A literal, not a `$var`: this is a standing property of the
+            # deployment, not something a per-request thinking level should
+            # move. pi forwards non-object kwarg values untouched
+            # (resolveChatTemplateKwargValue), so a bare `false` arrives as a
+            # JSON boolean. Note pi's built-in `qwen-chat-template` thinking
+            # format hardcodes this to true - we are on `chat-template` above,
+            # so nothing overrides this.
+            #
+            # `enable_thinking = false` does NOT do this. That controls the
+            # generation prefix only, and leaves history rendering untouched -
+            # measured, same 6001-token delta either way.
+            #
+            # Upstream may yet stop the resend client-side, at which point this
+            # line becomes redundant - but harmless, so it stays either way.
+            preserve_thinking = false;
           };
           # Off: vllm#44676. The budget holder counts tool-call *argument*
           # tokens as thinking, and on exhaustion force-injects </think> into

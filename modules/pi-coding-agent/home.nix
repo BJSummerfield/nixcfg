@@ -14,13 +14,28 @@ let
   # the programs block and the piSettings activation for why.
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
 
-  # Seed only. The live file is whatever the harness has appended since.
+  # Seed only. The live file is whatever the harness has written since - this
+  # text is what a fresh container starts from, so it has to carry the file's
+  # contract rather than just name it. The contract is an inbox with a hard
+  # cap, not a log: the file is loaded every session, so an append-only one
+  # spends exactly the context it exists to save. Its two exits are promotion
+  # into version control (this module, or the repo's own AGENTS.md) or
+  # deletion, and hitting the cap is what forces one of them to happen.
   lessonsSeed = pkgs.writeText "pi-lessons.md" ''
-    # Lessons
+    # Lessons — an inbox, not a log
 
-    Durable, falsifiable things a later session would act on differently.
-    Append when you finish a task; prune when this file starts costing more
-    context than it saves.
+    **Hard cap: ~100 lines.** This is a staging area, and it has exactly two
+    exits: **promoted** into version-controlled config (the repo's own
+    `AGENTS.md`, or the nix that generates `~/.pi/agent/AGENTS.md` and
+    `settings.json`), or **deleted**. Nothing lives here permanently. It is
+    loaded into context every session, so an append-only file spends the
+    context it was written to save.
+
+    Before appending, check the cap. If the file is at it, promote or delete
+    something first — that is the work, not overhead on it. Entries are durable
+    and universal: a falsifiable claim plus what it applies to. Anything naming
+    a specific task, branch or campaign is narrative and belongs in the
+    transcript.
   '';
 in
 {

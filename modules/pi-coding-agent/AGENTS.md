@@ -20,9 +20,13 @@ bare ids resolve only when unique, and agent names are not model ids.
 
 ## Thinking
 
-Thinking is a suffix on the model string — `provider/id:medium`. It overrides
-the agent's frontmatter default. The `thinking` field is **ignored** on
-dispatch (it only applies to `action: "watchdog.configure"`).
+Thinking is a suffix on the **model string**, so the whole `provider/id:level`
+goes in the `model:` field — e.g. `model: "redtruck/Qwen3.8-27B-NVFP4:medium"`.
+The level cannot travel on its own: a bare suffix (`model: ":medium"`) is
+rejected at launch with `Unknown subagent model`. Get the exact `provider/id`
+from `{action: "models"}` and append the level to it. The suffix overrides the
+agent's frontmatter default. `thinking` is not a dispatch field at all and is
+**ignored** there (it only applies to `action: "watchdog.configure"`).
 
 Reasoning and the answer share one `max_tokens` on this server, and no separate
 thinking budget caps the reasoning half. So a long deliverable at a high level
@@ -34,10 +38,11 @@ all declare `thinking: high`, and this model maps `high` to the server's
 `xhigh`. An unqualified `worker` dispatch is therefore already at maximum
 effort. Pass the suffix rather than relying on the default:
 
-- **Workers: `:medium`.** Code deliverables are long; the `high` default risks
-  an empty `length` stop mid-file.
-- **Researchers: `:medium`.** Reports are long.
-- **Reviewers: `:high`** when the verdict is the deliverable and depth pays.
+- **Workers: `provider/id:medium`.** Code deliverables are long; the `high`
+  default risks an empty `length` stop mid-file.
+- **Researchers: `provider/id:medium`.** Reports are long.
+- **Reviewers: `provider/id:high`** when the verdict is the deliverable and
+  depth pays.
   Keep it verdict-first and bounded (verdict line, then findings with
   file:line, then evidence) so a truncation loses tail evidence, never the
   verdict.
@@ -48,14 +53,19 @@ Reserve `xhigh`/`max` for one-off short answers to hard questions.
 
 ## Concurrency
 
-The server admits 3 sequences at once (`maxNumSeqs`). A fourth dispatch queues
-— it costs latency, not memory — so fan out 3 wide and let the rest wait rather
-than splitting the work into more, smaller children.
+The engine admits a fixed number of sequences at once, and that number is
+deliberately not written here. A dispatch over the cap **queues** — it does not
+fail, and it evicts nothing — so overshooting costs latency and nothing else. A
+number in this prose would be a standing copy of `maxNumSeqs` with no mechanism
+keeping it honest, and the only decision it could inform is one that should not
+be made on it anyway.
+
+Split by task. Two children because there are two separable tasks, one child
+because there is one — never a task chopped smaller to fill a free slot, and
+never two tasks folded into one child to dodge the queue.
 
 Workers run 64–68k input tokens per turn against a window that compacts at
-~82k, so a worker has room for one substantial task, not three. Split by task,
-not to save context.
-
+~82k, so a worker has room for one substantial task, not three.
 
 ## Async dispatch
 
@@ -64,6 +74,18 @@ context — the TUI knows it is alive, you do not. After dispatching async, eith
 `bg_wait` or poll `subagent {action: "status"}` before concluding anything.
 Silence is not evidence that a child is still working, and it is not evidence
 that the dispatch never happened.
+
+Idleness is not death. A child flagged `needs attention (no observed activity)`
+with **0 turns, 0 tokens and 0 tools** has usually not started: it is queued
+behind the sequence cap, or it is compacting. Both are indistinguishable from
+dead out here. Read `status` before acting on the flag — if it says `running`,
+leave it alone; the run typically finishes minutes later. Steering is for a
+child with turns and tools already on the record that has visibly stalled.
+
+And a steer is a turn. A steer phrased as "respond with a short status" is
+answered and the run **ends** — the child treats the checkpoint as the task and
+completes with the real work half done. Any steer must say to continue the task
+after responding.
 
 Completion notices are best-effort. Delivery is gated on an id that is fresh per
 pi process, and the replay record expires after about ten minutes — so a child
@@ -107,10 +129,10 @@ Append only what a later session would **act on differently**: a specific,
 falsifiable claim and the thing it applies to. Not a summary of what you did —
 that is for the human, and the transcript already has it.
 
-Prune it. A lessons file that only grows becomes noise that displaces the
-context it was meant to save, so pruning is a task to schedule rather than
-something that happens on its own.
-
-A lesson that keeps proving true belongs in version control instead: promote it
-into the repository's own `AGENTS.md`, or into the nix config that generates
-this file, as a change the user can review.
+It is an **inbox with a hard cap (~100 lines)**, not an append-only log, and it
+has exactly two exits: promotion or deletion. Promotion means moving the lesson
+into version control — the repository's own `AGENTS.md`, or the nix config that
+generates this file and `settings.json` — as a change the user can review.
+Deletion is the other half and is used more often. A file that only grows
+displaces the context it was meant to save, so when it is at the cap, promoting
+or deleting is the price of appending, not a chore to schedule later.
