@@ -1,202 +1,148 @@
 # Subagent dispatch
 
-Loaded as pi's global context file (`~/.pi/agent/AGENTS.md`), so it survives
-compaction — unlike anything said once at the top of a session. It reaches the
-dispatching session only: `inheritGlobalContext` defaults to false and none of
-the bundled agents set it, so a child never sees this file. Policy a child must
-follow goes in the repository's own `AGENTS.md`, which every bundled agent does
-inherit (`inheritProjectContext: true`).
+pi's global context file (`~/.pi/agent/AGENTS.md`): survives compaction, read by
+the dispatching session only. Children inherit only the repository's `AGENTS.md`
+(`inheritGlobalContext` is false) — policy a child must follow goes there.
 
-## Model
+## Model and thinking
 
-One model is served at a time. Every id in the registry is that same running
-instance; naming a *different* model tears the loaded one down and stalls for
-minutes. Do not do it mid-session.
+One model is served at a time; every registry id is that same instance. Naming a
+*different* model evicts it and stalls for minutes. Never do it mid-session.
 
-A child inherits the parent's model when the dispatch omits `model:`. That is
-the right default — the full window. Pass `model:` only to size a child
-deliberately, and get the exact `provider/id` from `{action: "models"}` first;
-bare ids resolve only when unique, and agent names are not model ids.
+Omitting `model:` inherits the parent's model with the full window. To set a
+thinking level, pass the full string from `{action: "models"}`:
 
-## Thinking
+```
+model: "redtruck/Qwen3.8-27B-NVFP4:medium"
+```
 
-Thinking is a suffix on the **model string**, so the whole `provider/id:level`
-goes in the `model:` field — e.g. `model: "redtruck/Qwen3.8-27B-NVFP4:medium"`.
-The level cannot travel on its own: a bare suffix (`model: ":medium"`) is
-rejected at launch with `Unknown subagent model`. Get the exact `provider/id`
-from `{action: "models"}` and append the level to it. The suffix overrides the
-agent's frontmatter default. `thinking` is not a dispatch field at all and is
-**ignored** there (it only applies to `action: "watchdog.configure"`).
+A bare `model: ":medium"` fails with `Unknown subagent model`; agent names are
+not model ids; `thinking` is **not** a dispatch field and is ignored. The suffix
+overrides the frontmatter default.
 
-Reasoning and the answer share one `max_tokens` on this server, and no separate
-thinking budget caps the reasoning half. So a long deliverable at a high level
-can spend its whole allowance thinking and return `stopReason: "length"` with
-nothing written.
+Reasoning and answer share one `max_tokens`, so a long deliverable at a high
+level can spend it all thinking and return `stopReason: "length"` with nothing
+written. `worker`, `reviewer` and `oracle` default to `thinking: high` (= the
+server's `xhigh`), so always pass the suffix:
 
-The frontmatter defaults run hot into that: `worker`, `reviewer` and `oracle`
-all declare `thinking: high`, and this model maps `high` to the server's
-`xhigh`. An unqualified `worker` dispatch is therefore already at maximum
-effort. Pass the suffix rather than relying on the default:
+| Role | Level | Note |
+|---|---|---|
+| worker | `:medium` | code deliverables are long |
+| researcher | `:medium` | reports are long |
+| reviewer | `:high` | brief it verdict-first (verdict, findings with file:line, then evidence) so truncation loses only tail evidence |
+| orchestrator | on the session | children inherit the model, not the level |
 
-- **Workers: `provider/id:medium`.** Code deliverables are long; the `high`
-  default risks an empty `length` stop mid-file.
-- **Researchers: `provider/id:medium`.** Reports are long.
-- **Reviewers: `provider/id:high`** when the verdict is the deliverable and
-  depth pays.
-  Keep it verdict-first and bounded (verdict line, then findings with
-  file:line, then evidence) so a truncation loses tail evidence, never the
-  verdict.
-- **Orchestrator:** set on the session, not per dispatch. Children inherit the
-  model, not the level.
-
-Reserve `xhigh`/`max` for one-off short answers to hard questions.
+Reserve `xhigh`/`max` for one-off short answers.
 
 ## Context limits
 
-`clampMaxTokensToContext` caps the largest total a turn may emit at
-`contextWindow - 4096` — 94,208 tokens here — and that, not the provider's
-separate `maxModelLen`, is the mechanism behind those `length` deaths. A session
-that reaches it cannot recover on its own: auto-compaction's own summary call
-overflows identically. Resume from a fork.
+`clampMaxTokensToContext` caps a turn at `contextWindow - 4096` = **94,208
+tokens**; that (not `maxModelLen`) is what produces `length` deaths. A session
+that reaches it cannot self-recover — auto-compaction's summary call overflows
+identically. Resume from a fork.
 
-Fork only a child that genuinely needs your working context. When the brief is
-self-contained, dispatch fresh — a fork of a large parent spends its budget in
-the inherited compaction window before its first useful turn.
-
-Long text goes to disk, never interpolated into a task string: a few kilobytes
-of spec passed inline arrives truncated mid-sentence. Have the first stage write
-it verbatim under `/var/tmp` and let later stages read it from there.
+- Fork only a child that needs your working context; dispatch self-contained
+  briefs fresh. A fork of a large parent burns its budget in the inherited
+  compaction window before its first useful turn.
+- Long text goes to disk, never inline in a task string (a few KB inline
+  arrives truncated). First stage writes it under `/var/tmp`; later stages read.
 
 ## Concurrency
 
-The engine admits a fixed number of sequences at once, and that number is
-deliberately not written here. A dispatch over the cap **queues** — it does not
-fail, and it evicts nothing — so overshooting costs latency and nothing else. A
-number in this prose would be a standing copy of `maxNumSeqs` with no mechanism
-keeping it honest, and the only decision it could inform is one that should not
-be made on it anyway.
+The engine admits a fixed number of sequences; the number is deliberately not
+written here — do not infer one. Over the cap a dispatch **queues** (no failure,
+no eviction, latency only).
 
-Split by task. Two children because there are two separable tasks, one child
-because there is one — never a task chopped smaller to fill a free slot, and
-never two tasks folded into one child to dodge the queue.
-
-A worker has room for one substantial task, not three. The turn sizes and the
-compaction threshold that would say so numerically are deliberately absent for
-the same reason as the sequence cap: the window derives from `maxModelLen` and
-`headroom`, the threshold subtracts pi's own `reserveTokens` default, and prose
-here tracks none of them. Size a child by the work, and let it compact.
+Split by task: two children for two separable tasks, one for one. Never chop a
+task to fill a free slot or fold two into one child to dodge the queue. A worker
+has room for one substantial task; turn sizes and compaction threshold are
+likewise deliberately absent. Size by the work and let it compact.
 
 ## Async dispatch
 
-Between launch and completion, nothing pushes a child's running state into your
-context — the TUI knows it is alive, you do not. After dispatching async, either
-`bg_wait` or poll `subagent {action: "status"}` before concluding anything.
-Silence is not evidence that a child is still working, and it is not evidence
-that the dispatch never happened.
+Nothing pushes a running child's state into your context. After an async
+dispatch, `bg_wait` or poll `subagent {action: "status"}` before concluding
+anything; silence proves nothing.
 
-Idleness is not death. A child flagged `needs attention (no observed activity)`
-with **0 turns, 0 tokens and 0 tools** has usually not started: it is queued
-behind the sequence cap, or it is compacting. Both are indistinguishable from
-dead out here. Read `status` before acting on the flag — if it says `running`,
-leave it alone; the run typically finishes minutes later. Steering is for a
-child with turns and tools already on the record that has visibly stalled.
-
-And a steer is a turn. A steer phrased as "respond with a short status" is
-answered and the run **ends** — the child treats the checkpoint as the task and
-completes with the real work half done. Any steer must say to continue the task
-after responding.
-
-Completion notices are best-effort. Delivery is gated on an id that is fresh per
-pi process, and the replay record expires after about ten minutes — so a child
-whose parent process is replaced mid-run finishes into nowhere: the result is
-written and never read. `bg_wait` pulls it and survives that; the notification
-does not. Use it for anything you cannot afford to redo.
+- `needs attention (no observed activity)` with **0 turns, 0 tokens, 0 tools**
+  means queued or compacting, not dead. If `status` says `running`, leave it.
+  Steer only a child with turns and tools on the record that has visibly
+  stalled.
+- A steer is a turn. "Respond with a short status" is answered and the run
+  **ends** half done. Every steer must say to continue the task afterwards.
+- Completion notices are best-effort: gated on an id fresh per pi process, and
+  the replay record expires after ~10 minutes, so a child whose parent process
+  was replaced finishes into nowhere. `bg_wait` survives that; use it for
+  anything you cannot afford to redo.
 
 ## Dispatch API
 
-Shell access is per agent and the agent's frontmatter `tools:` is the source of
-truth: `worker`, `delegate`, `scout` and `oracle` have `bash`; `reviewer` has
-`read/grep/find/ls`; `researcher` has `read/write` plus the web tools. Routing a
-shell step through yourself by reflex serializes work a `worker` could have
-done. A child that genuinely lacks a tool escalates mid-run through
-`subagent_supervisor` (list/send/ask/reply/pending/status — the plain `subagent`
-tool has no `pending`), and its disk state survives the exchange.
+Tool access (frontmatter `tools:` is the source of truth):
+
+| Agent | Tools |
+|---|---|
+| worker, delegate, scout, oracle | `bash` |
+| reviewer | `read/grep/find/ls` |
+| researcher | `read/write` + web tools |
+
+Give shell steps to a `worker` rather than running them yourself. A child
+lacking a tool escalates mid-run via `subagent_supervisor`
+(list/send/ask/reply/pending/status — plain `subagent` has no `pending`).
 
 A task classifier runs **before launch** and kills a read-only agent whose task
 text sounds like implementation — including negated and meta uses ("do not
 rewrite the docs"). Keep reviewer, oracle and researcher briefs in pure
-review/analysis vocabulary. The child never ran: reword and re-dispatch.
+review/analysis vocabulary; the child never ran, so reword and re-dispatch.
 
-The rest fail at launch or, worse, silently:
+`workflowScript` traps (fail at launch or silently):
 
-- `runs.all()` takes spec objects `{key, agent, task, model}`, not the handles
-  `runs.run()` returns — passing handles kills the workflow.
+- `runs.all()` takes specs `{key, agent, task, model}`, not the handles
+  `runs.run()` returns.
 - `resume` and `agent` are mutually exclusive in `runs.run`; a resumed run
-  inherits the original's agent and model.
-- Results carry `.ok` (plus `.output`/`.outputReference`), not
-  `.status`/`.summary`. A guard on `.status` tests an empty string and skips
-  every later stage.
-- Top-level `workflowScript` requests reject `model`, `timeoutMs`,
-  `globalConcurrencyLimit` and `action` — per-child model goes in the spec — and
-  a top-level `lane.key` must equal a child key or nothing launches at all. Lane
-  metadata is display-only; omit it.
-- A workflow's declared `output` under `/tmp` is deleted when the workflow
-  completes, while the session's `subagent-artifacts/` copies persist. A child's
-  `write` may be rerouted to that managed artifact path even when the task gives
-  an absolute one, so check the reported path and copy to a stable location
-  before launching a dependent stage.
-- Run status `failed` ≠ work failed: a child can finish everything and die
-  emitting its final report. Read the on-disk result before re-dispatching.
-- Workflow scripts are JavaScript: no implicit adjacent-string concatenation,
-  and a literal backtick inside a template literal (a markdown code span in task
-  text) fails at parse, so nothing launches. Build task text by joining quoted
-  lines, and run `subagent {action: "validate", workflowScript}` before any long
-  async launch.
+  keeps the original's agent and model.
+- Results carry `.ok` (+ `.output`/`.outputReference`), not
+  `.status`/`.summary`; a guard on `.status` skips every later stage.
+- Top-level requests reject `model`, `timeoutMs`, `globalConcurrencyLimit`,
+  `action` (per-child model goes in the spec). A top-level `lane.key` must equal
+  a child key or nothing launches; lane metadata is display-only — omit it.
+- A declared `output` under `/tmp` is deleted on completion; the session's
+  `subagent-artifacts/` copies persist. A child's `write` may be rerouted to
+  that managed path even when given an absolute one: check the reported path
+  and copy to a stable location before a dependent stage.
+- Run status `failed` ≠ work failed: a child can finish and die emitting its
+  report. Read the on-disk result before re-dispatching.
+- Scripts are JavaScript: no adjacent-string concatenation; a literal backtick
+  inside a template literal fails at parse. Join quoted lines, and run
+  `subagent {action: "validate", workflowScript}` before any long launch.
 
 ## Images
 
-The engine admits **@imageBudget@ images per prompt**, and that budget is
-counted across the whole conversation, not per message — pi resends the
-history every turn, so it is cumulative for the session. Exceeding it is
-terminal for that context: the request fails with
+The engine admits **@imageBudget@ images per prompt**, counted across the whole
+conversation (history is resent every turn). Exceeding it is terminal: every
+later request fails with
 
 ```
 400 BadRequestError: At most @imageBudget@ image(s) may be provided in one prompt.
 ```
 
-and so does every request after it, including the next thing the user types
-and the compaction that would have evicted the images. Under the budget,
-compaction does drop them and hand it back; over the budget, nothing does.
+including the compaction that would have evicted them.
 
-**Do not read images in this session.** Dispatch a child to look at one and
-report back in prose. The image lives in the child's context and only text
-returns, so your budget is untouched, and a child that overruns kills its own
-run rather than yours.
+**Do not read images in this session.** Dispatch a child to look and report in
+prose; a child that overruns kills only its own run. `At most N image(s)` means
+the result was lost, not that the work is impossible: re-dispatch with fewer
+images per child (one each if unsure), and recover its disk work rather than
+reviving it. Brief the child:
 
-That makes the overrun a recoverable failure. A child that dies with `At most
-N image(s)` has told you its result did not arrive, not that the work is
-impossible: re-dispatch with fewer images per child — one each if unsure —
-and the images are gone with the child's context either way.
-
-Brief the child accordingly. Re-reading the same image costs a fresh slot, so it
-writes its notes as it reads and never looks twice; an illegible detail is
-recorded as a caveat with the path, not re-opened. A vision re-review after a
-fix round goes to a **fresh** child rather than a resume, which would carry the
-earlier run's images into the new budget. A child that only captures or verifies
-should work from DOM or text evidence and not read screenshots back at all. And
-one that died on the cap has usually left its disk work intact: recover from
-disk instead of reviving it.
+- Re-reading an image costs a fresh slot: take notes while reading, never look
+  twice; record an illegible detail as a caveat with the path.
+- A re-review after a fix round goes to a **fresh** child, not a resume (a
+  resume carries the earlier images into the new budget).
+- A child that only captures or verifies works from DOM/text and does not read
+  screenshots back.
 
 ## Durable knowledge
 
-There is no local scratch file. This file is generated by nix and replaced on
-every rebuild, and the writable `LESSONS.md` that used to sit beside it is gone:
-its only declared exits were promotion into a repository's `AGENTS.md` or into
-the nix config, and neither is reachable from a session working in some other
-repository — so it could only grow, or quietly lose what it held.
-
-Promote directly instead. Something true of the repository you are in goes into
-that repository's own `AGENTS.md`, in the same change as the work that taught it
-to you. Something true of pi or of this container is universal and goes to the
-nix config as a PR the user reviews. Both are versioned and both are read by
-someone; a private file was neither.
+No local scratch file; this file is generated by nix. Something true of the
+repository you are in goes into that repository's `AGENTS.md`, in the same
+change as the work that taught it. Something true of pi or this container goes
+to the nix config as a PR.
