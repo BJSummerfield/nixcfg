@@ -14,29 +14,6 @@ let
   # the programs block and the piSettings activation for why.
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
 
-  # Seed only. The live file is whatever the harness has written since - this
-  # text is what a fresh container starts from, so it has to carry the file's
-  # contract rather than just name it. The contract is an inbox with a hard
-  # cap, not a log: the file is loaded every session, so an append-only one
-  # spends exactly the context it exists to save. Its two exits are promotion
-  # into version control (this module, or the repo's own AGENTS.md) or
-  # deletion, and hitting the cap is what forces one of them to happen.
-  lessonsSeed = pkgs.writeText "pi-lessons.md" ''
-    # Lessons — an inbox, not a log
-
-    **Hard cap: ~100 lines.** This is a staging area, and it has exactly two
-    exits: **promoted** into version-controlled config (the repo's own
-    `AGENTS.md`, or the nix that generates `~/.pi/agent/AGENTS.md` and
-    `settings.json`), or **deleted**. Nothing lives here permanently. It is
-    loaded into context every session, so an append-only file spends the
-    context it was written to save.
-
-    Before appending, check the cap. If the file is at it, promote or delete
-    something first — that is the work, not overhead on it. Entries are durable
-    and universal: a falsifiable claim plus what it applies to. Anything naming
-    a specific task, branch or campaign is narrative and belongs in the
-    transcript.
-  '';
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -60,8 +37,9 @@ in
     # A store symlink is fine only while pi *reads* this file: a harness that
     # edited it would replace the link, and the next reconfigure would fail
     # activation on checkLinkTargets, taking every other home.file with it -
-    # models.json included. That is why what the harness learns goes to the
-    # seeded LESSONS.md below instead.
+    # models.json included. Read-only is the whole point here, so what a session
+    # learns is promoted into version control instead - see the note below where
+    # the writable LESSONS.md used to be seeded.
     #
     # Generated, not copied: @imageBudget@ comes from the same catalog block that
     # builds --limit-mm-per-prompt, so the number the agent is told and the
@@ -71,16 +49,16 @@ in
       imageBudget = toString data.imageBudget;
     };
 
-    # The writable half of the context split: AGENTS.md is policy nix owns,
-    # LESSONS.md is what the harness learns and must be able to append to.
-    # Seeded once and never overwritten - a rebuild must not discard it, and it
-    # cannot be a home.file for the checkLinkTargets reason above.
-    home.activation.piLessons = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-      run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"
-      if [ ! -e "$HOME/.pi/agent/LESSONS.md" ]; then
-        run install $VERBOSE_ARG -m 0644 ${lessonsSeed} "$HOME/.pi/agent/LESSONS.md"
-      fi
-    '';
+    # There is deliberately no writable lessons file here any more. A seeded
+    # ~/.pi/agent/LESSONS.md used to be the writable half of the context split,
+    # with two declared exits - promote into the repo's own AGENTS.md, or into
+    # this module. Neither exit exists for a session working in some *other*
+    # repository, which is most of them: the promotion path was unreachable, so
+    # the file could only grow (it is read every session, in every repo, and it
+    # had drifted to majority narrative about one unrelated project) or lose
+    # what it held. Durable knowledge now goes straight to version control -
+    # repo-specific into that repo's AGENTS.md, universal into this module as a
+    # reviewable PR - and AGENTS.md above says so. Do not re-add it.
 
     # ~/.pi/agent/settings.json - seeded package membership and subagent model
     # routing. Copied, not linked: pi rewrites this file on `pi install` /
