@@ -8,7 +8,6 @@
 
 { lib, config, ... }:
 let
-  addr = (import ../containers/addresses.nix).teamspeak-server;
   cfg = config.mine.system.teamspeak-server;
 in
 {
@@ -46,8 +45,8 @@ in
     containers.teamspeak = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = addr.host;
-      localAddress = addr.local;
+      hostAddress = "192.168.100.12";
+      localAddress = "192.168.100.13";
 
       forwardPorts = lib.mkIf cfg.publicAccess [
         {

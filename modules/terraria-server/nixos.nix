@@ -9,7 +9,6 @@
   ...
 }:
 let
-  addr = (import ../containers/addresses.nix).terraria-server;
   cfg = config.mine.system.terraria-server;
 in
 {
@@ -50,8 +49,8 @@ in
     containers.terraria = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = addr.host;
-      localAddress = addr.local;
+      hostAddress = "192.168.100.30";
+      localAddress = "192.168.100.31";
 
       allowedDevices = [
         {

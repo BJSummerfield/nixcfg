@@ -78,9 +78,8 @@ let
   # The container's veth endpoints, named once because three things have to
   # agree: where vLLM publishes on the host, how the guest reaches it (Open
   # WebUI and `tailscale serve`), and the metrics scrape below.
-  addr = (import ../containers/addresses.nix).local-llm;
-  hostAddress = addr.host;
-  localAddress = addr.local;
+  hostAddress = "192.168.100.24";
+  localAddress = "192.168.100.25";
   # Fixed, where llama-swap assigned one dynamically from 5800 upward. That
   # dynamic port was the whole reason vLLM's /metrics was unreachable without
   # a proxy in front of it.

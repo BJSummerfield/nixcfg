@@ -1,7 +1,4 @@
 { config, pkgs, ... }:
-let
-  addresses = import ../../modules/containers/addresses.nix;
-in
 {
   imports = [
     ./hardware-configuration.nix
@@ -70,16 +67,16 @@ in
           paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.devbox-signing-key.path;
           tailnetHostname = "devbox.mist-gamma.ts.net";
-          hostAddress = addresses.devbox.host;
-          localAddress = addresses.devbox.local;
+          hostAddress = "192.168.100.26";
+          localAddress = "192.168.100.27";
         };
         workbox = {
           githubTokenFile = config.sops.secrets.workbox-github-token.path;
           paseoPasswordFile = config.sops.secrets.workbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.workbox-signing-key.path;
           tailnetHostname = "workbox.mist-gamma.ts.net";
-          hostAddress = addresses.workbox.host;
-          localAddress = addresses.workbox.local;
+          hostAddress = "192.168.100.28";
+          localAddress = "192.168.100.29";
         };
       };
       pipewire.sample-switch.enable = true;
