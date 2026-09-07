@@ -156,9 +156,12 @@ in
           hostAddress = mkOption {
             type = types.str;
             description = ''
-              Host side of this container's veth pair. Required rather than
-              derived: stating it puts every instance's addresses side by side
-              in the host config, where a collision is visible.
+              Host side of this container's veth pair. Stated, not derived:
+              deriving from the attrset would renumber every later instance
+              when one is added or renamed, because Nix orders keys
+              alphabetically rather than by insertion. A collision with any
+              container on the host - not just another devbox - is an eval
+              error, see the assertion below.
             '';
             example = "192.168.100.26";
           };

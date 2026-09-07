@@ -11,7 +11,6 @@
   ...
 }:
 let
-  addr = (import ../containers/addresses.nix).photoform;
   cfg = config.mine.system.photoform;
   hostStateDir = "/var/lib/photoform-data";
   photoform = pkgs.callPackage ./package.nix { };
@@ -64,7 +63,7 @@ in
       routes.photoform = {
         hostnames = [ "booking.summerfieldphotography.com" ];
         mode = "tls";
-        target = "${addr.local}:8080";
+        target = "192.168.100.51:8080";
       };
     };
 
@@ -78,8 +77,8 @@ in
     containers.photoform = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = addr.host;
-      localAddress = addr.local;
+      hostAddress = "192.168.100.50";
+      localAddress = "192.168.100.51";
 
       bindMounts = {
         "/var/lib/photoform" = {

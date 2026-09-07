@@ -15,7 +15,6 @@
   ...
 }:
 let
-  addr = (import ../containers/addresses.nix).dns-server;
   cfg = config.mine.system.dns-server;
 in
 {
@@ -49,17 +48,17 @@ in
       forwardPorts = [
         {
           sourcePort = cfg.lanPort;
-          destination = "${addr.local}:${toString cfg.lanPort}";
+          destination = "192.168.100.15:${toString cfg.lanPort}";
           proto = "tcp";
         }
         {
           sourcePort = cfg.lanPort;
-          destination = "${addr.local}:${toString cfg.lanPort}";
+          destination = "192.168.100.15:${toString cfg.lanPort}";
           proto = "udp";
         }
         {
           sourcePort = cfg.webPort;
-          destination = "${addr.local}:${toString cfg.webPort}";
+          destination = "192.168.100.15:${toString cfg.webPort}";
           proto = "tcp";
         }
       ];
@@ -83,8 +82,8 @@ in
     containers.dns = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = addr.host;
-      localAddress = addr.local;
+      hostAddress = "192.168.100.14";
+      localAddress = "192.168.100.15";
 
       allowedDevices = [
         {

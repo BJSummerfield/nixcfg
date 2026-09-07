@@ -11,7 +11,6 @@
   ...
 }:
 let
-  addr = (import ../containers/addresses.nix).immich-server;
   cfg = config.mine.system.immich-server;
   nasCfg = config.mine.system.nas;
   renderGid = config.mine.system.renderGroupGid;
@@ -87,8 +86,8 @@ in
     containers.immich = {
       autoStart = true;
       privateNetwork = true;
-      hostAddress = addr.host;
-      localAddress = addr.local;
+      hostAddress = "192.168.100.20";
+      localAddress = "192.168.100.21";
 
       # tun is needed for tailscale network
       # renderD128 for hardware acceleration
