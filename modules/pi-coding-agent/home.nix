@@ -37,9 +37,8 @@ in
     # A store symlink is fine only while pi *reads* this file: a harness that
     # edited it would replace the link, and the next reconfigure would fail
     # activation on checkLinkTargets, taking every other home.file with it -
-    # models.json included. Read-only is the whole point here, so what a session
-    # learns is promoted into version control instead - see the note below where
-    # the writable LESSONS.md used to be seeded.
+    # models.json included. Read-only is the point: what a session learns is
+    # promoted into version control, never written back here.
     #
     # Generated, not copied: @imageBudget@ comes from the same catalog block that
     # builds --limit-mm-per-prompt, so the number the agent is told and the
@@ -48,17 +47,6 @@ in
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;
     };
-
-    # There is deliberately no writable lessons file here any more. A seeded
-    # ~/.pi/agent/LESSONS.md used to be the writable half of the context split,
-    # with two declared exits - promote into the repo's own AGENTS.md, or into
-    # this module. Neither exit exists for a session working in some *other*
-    # repository, which is most of them: the promotion path was unreachable, so
-    # the file could only grow (it is read every session, in every repo, and it
-    # had drifted to majority narrative about one unrelated project) or lose
-    # what it held. Durable knowledge now goes straight to version control -
-    # repo-specific into that repo's AGENTS.md, universal into this module as a
-    # reviewable PR - and AGENTS.md above says so. Do not re-add it.
 
     # ~/.pi/agent/settings.json - seeded package membership and subagent model
     # routing. Copied, not linked: pi rewrites this file on `pi install` /
