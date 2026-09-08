@@ -7,7 +7,6 @@
 let
   inherit (lib) mkIf mkEnableOption;
   inherit (themeConstants) colors;
-  # Firefox font prefs are px; theme sizes are pt (px = pt * 4/3)
   ptToPx = pt: builtins.floor (pt * 4.0 / 3.0);
 in
 {
@@ -31,15 +30,13 @@ in
           "reader.custom_colors.unvisited-links" = "#${colors.base0D}";
           "reader.custom_colors.visited-links" = "#${colors.base0E}";
 
-          # These prefixes are rejected by the Preferences policy allowlist,
-          # so they live in user.js (unlocked) instead.
           "app.normandy.enabled" = false;
           "app.normandy.api_url" = "";
           "geo.provider.use_geoclue" = false;
         };
       };
       policies = {
-        DisableTelemetry = true; # also covers datareporting.* and the FF136+ usage ping
+        DisableTelemetry = true;
         DisableFirefoxStudies = true;
         DisableFirefoxAccounts = true;
         SearchSuggestEnabled = false;
@@ -52,9 +49,6 @@ in
         EnableTrackingProtection = {
           Value = true;
           Locked = true;
-          # Strict drives ETP + Total Cookie Protection + fingerprinting
-          # protection (FPP) authoritatively; individual privacy.* prefs are
-          # both redundant with it and rejected by the Preferences allowlist.
           Category = "strict";
           EmailTracking = true;
         };
@@ -64,7 +58,6 @@ in
           ImproveSuggest = false;
           Locked = true;
         };
-        # External password manager (1Password) handles credentials
         OfferToSaveLogins = false;
         PasswordManagerEnabled = false;
         AutofillAddressEnabled = false;
@@ -151,7 +144,6 @@ in
             Status = "locked";
           };
 
-          # No speculative connections to sites that were never clicked
           "network.prefetch-next" = {
             Value = false;
             Status = "locked";
@@ -181,12 +173,10 @@ in
             Status = "locked";
           };
 
-          # PPA ad measurement (default-on since FF128)
           "dom.private-attribution.submission.enabled" = {
             Value = false;
             Status = "locked";
           };
-          # Keep Safe Browsing, drop the per-download metadata ping to Google
           "browser.safebrowsing.downloads.remote.enabled" = {
             Value = false;
             Status = "locked";

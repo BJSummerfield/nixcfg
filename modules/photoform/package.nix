@@ -4,8 +4,6 @@
   ...
 }:
 let
-  # The module names this file through BOOKING_CONFIG; keeping the path in
-  # one place makes the two unable to drift.
   configPath = "share/photoform/production.toml";
 in
 rustPlatform.buildRustPackage {
@@ -16,20 +14,13 @@ rustPlatform.buildRustPackage {
     repo = "Sheet-Automation-FF";
     rev = "ad78a762f106e7c2e07284a8e5f9371991894a8f";
     sha256 = "sha256-qAI0XDmyDh63keyzwgQBOTbT1CXCp4PtvO445JPh7nw=";
-    # Routes the fetch through api.github.com with a netrc built from
-    # NIX_GITHUB_PRIVATE_USERNAME/PASSWORD in the nix-daemon environment.
     private = true;
   };
-  # cargoHash, never cargoLock.lockFile: reading the lock file out of src is
-  # import-from-derivation, so evaluation would fetch the private source and
-  # every evaluator would need the GitHub credential.
   cargoHash = "sha256-o+gXWxaFNaJE27NmBxifngkJ2SPdIvYjlHtVvCJOCoU=";
-  # cargo installs the binary and nothing else.
   postInstall = ''
     install -Dm444 config/production.toml $out/${configPath}
   '';
   passthru = {
-    # Opt in to the binary cache: vps has 1 GB of RAM and cannot compile this.
     cache = true;
     inherit configPath;
   };

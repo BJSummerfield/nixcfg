@@ -1,7 +1,3 @@
-# Pure-evaluation checks binding the photoform module to the app's shipped
-# contract. Every value here is a name the app reads at startup, so a
-# mismatch is a service that will not start — and the whole set is visible
-# at eval time, which makes a VM test unnecessary.
 {
   nixpkgs,
   inputs,
@@ -35,10 +31,6 @@ let
               caddy = {
                 enable = true;
                 acmeEmail = "test@example.com";
-                # A synthetic passthrough, standing in for the mail route.
-                # The mail route itself is registered by the stalwart
-                # module, which this test host does not import — but the
-                # behaviour under test belongs to the caddy module.
                 routes.passthrough = {
                   hostnames = [ "mx1.example.com" ];
                   mode = "tcp";
@@ -63,14 +55,6 @@ let
 
   gc = host.services.caddy.globalConfig;
 
-  # Binds the real vps configuration, not a synthetic stand-in. The
-  # passthrough behaviour above is exercised only via the test host's
-  # synthetic `routes.passthrough`; nothing else asserts that the actual
-  # mail route on vps is `tcp` mode, so a regression there (or an
-  # outright deletion of the route) would leave every other check in this
-  # file green. Guard against that by reading vps's own config, since it
-  # is a fixed point already realized elsewhere in checks/ (evalAll,
-  # caddyfile-<host>) and does not depend on this check's output.
   vps = inputs.self.nixosConfigurations.vps.config;
 
   container = host.containers.photoform.config;
@@ -80,9 +64,6 @@ let
 
   checks = [
     {
-      # The app reads BOOKING_*, and reads the config path from
-      # BOOKING_CONFIG. There is no --config flag. `or null` turns a renamed
-      # variable into a reported FAIL rather than an eval crash.
       name = "every secret is named by its _FILE variable, pointing at a credential";
       ok =
         (env.BOOKING_PAYPAL_CLIENT_SECRET_FILE or null)
@@ -93,8 +74,6 @@ let
           (env.BOOKING_SHEETS_SERVICE_ACCOUNT_FILE or null) == "/run/credentials/photoform.service/sheets-sa";
     }
     {
-      # A plain BOOKING_X would put the value in /proc/<pid>/environ; the
-      # app supports that form for local development only.
       name = "no secret value is carried in the environment itself";
       ok =
         !(env ? BOOKING_PAYPAL_CLIENT_SECRET)
@@ -103,17 +82,12 @@ let
         && !(env ? BOOKING_SHEETS_SERVICE_ACCOUNT);
     }
     {
-      # Compares against the package's own configPath rather than a literal,
-      # so a postInstall path change fails this instead of only production.
       name = "the config is named out of the package, not passed as a flag";
       ok =
         (env.BOOKING_CONFIG or null) == "${photoform}/${photoform.configPath}"
         && !(lib.hasInfix "--config" unit.serviceConfig.ExecStart);
     }
     {
-      # BOOKING_CONFIG is only as trustworthy as configPath is honest about
-      # where postInstall actually writes the file; this reads postInstall's
-      # own source rather than the built output, so it needs no realization.
       name = "postInstall installs to the path configPath advertises";
       ok = lib.hasInfix photoform.configPath photoform.postInstall;
     }
@@ -138,8 +112,6 @@ let
           == host.sops.secrets.photoform-sheets-sa.path;
     }
     {
-      # LoadCredential is what makes a 0400 root-owned sops file readable by
-      # the unprivileged in-container user; a bind mount alone would not.
       name = "all four secrets are loaded as credentials from their bind mounts";
       ok =
         lib.sort lib.lessThan creds == [
@@ -161,7 +133,6 @@ let
         ];
     }
     {
-      # The PayPal client ID is public and lives in the config file.
       name = "the PayPal client ID is not treated as a secret";
       ok = !(host.sops.secrets ? photoform-paypal-client-id) && !(host.sops.templates ? "photoform.env");
     }
@@ -175,58 +146,34 @@ let
         && host.mine.system.caddy.routes.photoform.target == "192.168.100.51:8080";
     }
     {
-      # The layer4 app is an out-of-tree plugin, so the edge must run
-      # exactly the module's own caddy-l4 build, not stock nixpkgs caddy.
-      # pkg-caddy-l4 is the CI gate on the vendor hash; this is the gate
-      # on the module actually using that build.
       name = "the edge runs exactly the module's caddy-l4 build";
       ok = host.services.caddy.package == pkgs.callPackage ../modules/caddy/package.nix { };
     }
     {
-      # The matcher and its target are asserted as one contiguous block,
-      # not two independent infixes — otherwise this would still pass if
-      # the tls/tcp proxy targets were swapped, since the tcp route's
-      # target could satisfy the bare "proxy 127.0.0.1:8443" infix.
       name = "a tls route is matched by SNI and handed to caddy's own HTTPS server";
       ok = lib.hasInfix "@photoform tls sni booking.summerfieldphotography.com\nroute @photoform {\n  proxy 127.0.0.1:8443" gc;
     }
     {
-      # The defining property of the mail path: layer4 hands the raw
-      # connection to the backend, so the backend can answer TLS-ALPN-01
-      # itself. Terminating here is what broke Stalwart's renewal.
       name = "a tcp route is proxied raw to its target";
       ok = lib.hasInfix "@passthrough tls sni mx1.example.com\nroute @passthrough {\n  proxy 192.168.100.41:443" gc;
     }
     {
-      # If caddy rendered a vhost for a passthrough hostname it would try
-      # to obtain that certificate itself, racing the backend for the same
-      # name and consuming its duplicate-certificate budget.
       name = "a tcp route gets no vhost, so caddy never issues for it";
       ok =
         host.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"
         && !(host.services.caddy.virtualHosts ? "mx1.example.com");
     }
     {
-      # The fallback sent every unclaimed connection into Stalwart from the
-      # veth gateway, which got that address auto-banned and 502'd webmail.
-      # A bare `route {` with no matcher is what its return would look like.
       name = "no unmatched route block: unclaimed connections are closed, not forwarded";
       ok = !(lib.hasInfix "route {" gc);
     }
     {
-      # restic reads the host side of the bind mount, with the container
-      # stopped so the WAL-mode database is consistent.
       name = "the state directory is registered for backup with a container stop";
       ok =
         lib.elem "/var/lib/photoform-data" host.mine.backups.paths
         && lib.elem "photoform" host.mine.backups.stopContainers;
     }
     {
-      # Flipping vps's real mail route to "tls", or deleting it outright,
-      # would silently reinstate the exact mail-TLS-renewal outage this
-      # branch exists to undo, while every check above (which only
-      # exercises the synthetic `routes.passthrough`) stays green. This
-      # binds the assertion to the real host.
       name = "vps's real mail route is registered as tcp passthrough to stalwart";
       ok =
         vps.mine.system.caddy.routes ? mail
@@ -235,9 +182,6 @@ let
         && vps.mine.system.caddy.routes.mail.target == "192.168.100.41:443";
     }
     {
-      # A "tls" mail route (or a route rename that stops rendering it)
-      # would make caddy issue and terminate mx1's certificate itself,
-      # exactly the arrangement that broke Stalwart's TLS-ALPN-01 renewal.
       name = "vps's caddy never gets a vhost for the mail hostname, but does for booking";
       ok =
         vps.services.caddy.virtualHosts ? "booking.summerfieldphotography.com"

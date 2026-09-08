@@ -1,4 +1,3 @@
-# Jellyfin media server container.
 # Bring-up:
 #   sudo nixos-container root-login jellyfin
 #   tailscale up --hostname=jellyfin --advertise-tags=tag:solo-node
@@ -34,7 +33,6 @@ in
       }
     ];
 
-    # Enable the NAS media share as persistent
     mine.system.nas.shares.media = {
       enable = true;
       persistent = true;
@@ -48,10 +46,8 @@ in
       ];
     };
 
-    # for hardware acceleration
     users.groups.render.gid = renderGid;
 
-    # Expose app to lan - not needed if only being accessed through tailnet
     networking.firewall.allowedTCPPorts = [ 8096 ];
     networking.nat.forwardPorts = [
       {
@@ -67,10 +63,6 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Jellyfin runs DynamicUser with StateDirectory=jellyfin, so its sqlite
-    # library (users, watch state) lives in the container rootfs with no
-    # host bind. Backed up raw with the container stopped — sqlite copied
-    # live can be torn, and minutes of downtime at 04:00 are free.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "/var/lib/nixos-containers/jellyfin/var/lib/private/jellyfin" ];
       stopContainers = [ "jellyfin" ];
@@ -88,8 +80,6 @@ in
       hostAddress = "192.168.100.10";
       localAddress = "192.168.100.11";
 
-      # tun is needed for tailscale network
-      # renderD128 for hardware acceleration
       allowedDevices = [
         {
           modifier = "rwm";
@@ -113,12 +103,10 @@ in
           hostPath = "/dev/dri";
           isReadOnly = false;
         };
-        # GPU drivers from host - avoids duplicating hardware.graphics in container
         "/run/opengl-driver" = {
           hostPath = "/run/opengl-driver";
           isReadOnly = true;
         };
-        # persists the tailscale node
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-jellyfin";
           isReadOnly = false;
@@ -131,26 +119,21 @@ in
           ...
         }:
         {
-          # container level gid for the media group and nfs mount
           users.groups.media-ro.gid = mediaRoGid;
 
-          # for hardware acceleration
           users.groups.render.gid = renderGid;
 
           services.tailscale.enable = true;
 
           services.jellyfin.enable = true;
           networking = {
-            # needed to get the dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # Lan access
               allowedTCPPorts = [ 8096 ];
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

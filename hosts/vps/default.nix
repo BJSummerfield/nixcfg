@@ -14,15 +14,8 @@
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
-  # BIOS boot VM — GRUB instead of the default systemd-boot.
   mine.system.boot.mode = "grub-bios";
 
-  # The disko layout has no swap partition, so a memory spike in Stalwart would
-  # go straight to the OOM killer. Compressed RAM instead of a disk partition -
-  # a VPS root disk is small and the write amplification isn't worth it.
-  #
-  # 25% not redtruck's 50%: this box has ~1G, and the zram device costs real
-  # RAM as it fills. 256M of swap for roughly 100M resident at zstd ratios.
   zramSwap = {
     enable = true;
     memoryPercent = 25;
@@ -55,8 +48,6 @@
     system = {
       hostName = "vps";
       autoUpgrade.enable = true;
-      # 1 GB of RAM cannot compile caddy-with-l4 or photoform: both carry
-      # passthru.cache = true and must arrive as substituted closures.
       privateCache.enable = true;
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
@@ -67,24 +58,12 @@
       };
       stalwart-server = {
         enable = true;
-        # hostname, domains, ACME, and all mail config are set in the web UI
-        # (database-managed). Only the box + break-glass admin here; backup
-        # is the shared host job (mine.backups, below).
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      # SNI edge on 443: a layer4 listener routes by ClientHello SNI.
-      # booking.summerfieldphotography.com terminates at caddy;
-      # mx1.brianjs.com passes through untouched, so Stalwart terminates
-      # and renews its own certificate — the one that also serves
-      # 25/465/993. Both routes are registered by their service modules.
-      # Every unclaimed connection is closed at the edge, and the
-      # brianjs.com apex is unclaimed by design (no A record).
       caddy = {
         enable = true;
         acmeEmail = "brianjsummerfield@gmail.com";
       };
-      # Booking site behind the edge, substituted from the cache: 1 GB of
-      # RAM cannot compile it.
       photoform = {
         enable = true;
         sopsFile = ../../secrets/hosts/vps.yaml;

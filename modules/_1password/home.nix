@@ -27,7 +27,6 @@ in
           private_browsing = true;
         };
       };
-      # makes a systemd service that runs 1password --silent on execution.
       systemd.user.services."1password-silent" = mkIf cfg.silentStart.enable {
         Unit = {
           Description = "Start 1Password in the background";

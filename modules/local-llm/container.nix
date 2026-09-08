@@ -1,8 +1,3 @@
-# The nspawn guest — everything here runs inside the container.
-#
-# vLLM does not run here. It is a podman container on the HOST, managed by
-# systemd there; this guest is the tailnet front door and the Open WebUI host,
-# and reaches the engine over the veth at `vllmEndpoint`.
 { vllmEndpoint }:
 {
   config,
@@ -33,9 +28,6 @@
     enableIPv6 = false;
     firewall = {
       enable = true;
-      # 8081 was llama-swap. Nothing listens in this guest but Open WebUI now;
-      # the tailnet endpoint is served by `tailscale serve` proxying straight
-      # to the host, which needs no port open here.
       allowedTCPPorts = [ 8080 ];
       trustedInterfaces = [ "tailscale0" ];
       allowedUDPPorts = [ config.services.tailscale.port ];

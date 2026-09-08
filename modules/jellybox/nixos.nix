@@ -23,11 +23,6 @@ in
           command = "${jellyfinKiosk}";
           user = "jellyuser";
         };
-        # Quit Jellyfin -> the appliance comes straight back (no prompt).
-        # During bring-up you may prefer a recoverable prompt instead; swap the
-        # block below for:
-        #   default_session.command =
-        #     "${pkgs.greetd.greetd}/bin/agreety --cmd ${pkgs.fish}/bin/fish";
         default_session = {
           command = "${jellyfinKiosk}";
           user = "jellyuser";
@@ -35,7 +30,6 @@ in
       };
     };
 
-    # closing the lid shouldn't kill playback when docked / on AC.
     services.logind.settings.Login.HandleLidSwitch = lib.mkDefault "suspend";
     services.logind.settings.Login.HandleLidSwitchDocked = lib.mkDefault "ignore";
     services.logind.settings.Login.HandleLidSwitchExternalPower = lib.mkDefault "ignore";

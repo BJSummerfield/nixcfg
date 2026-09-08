@@ -40,10 +40,6 @@ in
           PermitRootLogin = "no";
           PasswordAuthentication = false;
           KbdInteractiveAuthentication = false;
-          # TERM crosses in the pty request, COLORTERM does not, so without
-          # this a truecolor client is silently downgraded to 256 colours on
-          # the far end - and anything that quantizes lands on the darkest
-          # slots of the colour cube.
           AcceptEnv = [ "COLORTERM" ];
         };
       };

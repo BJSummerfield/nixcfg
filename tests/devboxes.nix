@@ -1,9 +1,3 @@
-# Pure-evaluation checks for the multi-instance devbox module. No VM here on
-# purpose: everything this refactor can break is a value derived from an
-# instance's attribute name, and all of those are visible at eval time. The
-# parts a VM could uniquely prove — that the tailnet join works, that
-# `tailscale serve` publishes — are the manual steps the module deliberately
-# keeps out of Nix.
 {
   nixpkgs,
   inputs,
@@ -13,15 +7,10 @@ let
   inherit (nixpkgs) lib;
   pkgs = nixpkgs.legacyPackages.${system};
 
-  # Only the two modules under test, plus the minimum NixOS needs to evaluate.
-  # Deliberately not modules/nixos.nix: importing the whole module set would
-  # make this check slow and couple it to modules it is not testing.
   host =
     (lib.nixosSystem {
       specialArgs = { inherit inputs; };
       modules = [
-        # modules/system/nixos.nix sets sops.age.sshKeyPaths, so its option
-        # tree has to be present even though nothing here decrypts anything.
         inputs.sops-nix.nixosModules.sops
         ../modules/system/nixos.nix
         ../modules/devbox/nixos.nix
@@ -37,8 +26,6 @@ let
             externalInterface = "eth0";
 
             devboxes = {
-              # Left at the default gitIdentity, to prove the default reaches
-              # the container.
               devbox = {
                 githubTokenFile = "/run/secrets/devbox-github-token";
                 paseoPasswordFile = "/run/secrets/devbox-paseo-password";
@@ -47,8 +34,6 @@ let
                 hostAddress = "192.168.100.26";
                 localAddress = "192.168.100.27";
               };
-              # Overrides gitIdentity, to prove the override reaches the
-              # container and does not leak into the other instance.
               workbox = {
                 githubTokenFile = "/run/secrets/workbox-github-token";
                 paseoPasswordFile = "/run/secrets/workbox-paseo-password";
@@ -61,10 +46,6 @@ let
                   email = "other@example.com";
                 };
               };
-              # No signing key. Exists only to pin the other branch of the
-              # signing gate: getting that branch wrong produces a container
-              # whose git refuses to commit at all, which is worse than one
-              # that simply does not sign.
               nokey = {
                 githubTokenFile = "/run/secrets/nokey-github-token";
                 paseoPasswordFile = "/run/secrets/nokey-paseo-password";
@@ -94,17 +75,9 @@ let
   homeFiles = name: (container name).config.home-manager.users.agent.home.file;
   homeActivation = name: (container name).config.home-manager.users.agent.home.activation;
 
-  # Pure data imported directly: the pi plugin and tier config is what keeps
-  # a model or plugin bump honest, and every property below is visible at
-  # eval time.
   piData = import ../modules/pi-coding-agent/settings.nix;
-  # Plugin membership is the whole declarative surface for plugins now -
-  # a pure data file with no versions, so it imports directly and asserts
-  # against it without building anything.
   pluginMembership = import ../modules/devbox/plugins.nix;
   llmCatalog = import ../modules/local-llm/models.nix;
-  # writeShellScriptBin names its derivation after the binary, so the package
-  # name is the command an agent session actually types.
   pkgNamed =
     name: pkgName:
     lib.findFirst (p: (p.name or "") == pkgName) null
@@ -180,8 +153,6 @@ let
           == "/run/secrets/workbox-signing-key";
     }
     {
-      # gpgSign left on without a key makes git refuse to commit outright,
-      # so all three settings have to disappear together with the mount.
       name = "an unkeyed instance mounts no key and leaves signing off";
       ok =
         !((container "nokey").bindMounts ? "/run/secrets/signing-key")
@@ -195,21 +166,7 @@ let
         (container "devbox").config.services.paseo.hostnames == [ "devbox.example.ts.net" ]
         && (container "workbox").config.services.paseo.hostnames == [ "workbox.example.ts.net" ];
     }
-    # The six below take no per-instance argument - every container gets
-    # them from the same container.nix - so one instance pins them rather
-    # than repeating each assertion three times.
     {
-      # Nix declares plugin membership only - which plugins, no versions,
-      # no refs, no hashes - so nothing version-shaped can go stale
-      # between rebuilds. What this check can see at eval time: pi's
-      # specs are single-sourced from the one membership file, and
-      # neither agent may also get a standalone skills link, which would
-      # list every skill twice. (The claude side - the version-less
-      # enabledPlugins entry in its settings seed - is a build-time fact
-      # the container image build exercises, not eval-assertable.) A
-      # temporary version pin against a bad release belongs in the
-      # membership file itself - see its header - so this test asserts
-      # single-sourcing, not pin-freeness.
       name = "plugins are declared as versionless membership, not double-seeded";
       ok =
         let
@@ -221,11 +178,6 @@ let
         && !(files ? ".pi/agent/skills");
     }
     {
-      # pi's settings.json must be a seeded writable copy - the home-
-      # manager module's store-symlink write skipped via settings = {},
-      # and the activation an install (0644), not a link - or pi's own
-      # `pi install` / `pi remove` / `pi update` commands fail silently
-      # against it and live updates stop working.
       name = "pi settings.json is seeded as a writable copy, not a store link";
       ok =
         let
@@ -238,9 +190,6 @@ let
         && (lib.hasInfix "-m 0644" activations.piSettings.data);
     }
     {
-      # Claude has no APPEND_SYSTEM.md equivalent and its
-      # appendSystemPromptFile settings key is inert on 2.1.234, so losing
-      # this flag means the environment contract silently never reaches it.
       name = "the claude launcher injects the environment contract";
       ok =
         let
@@ -249,9 +198,6 @@ let
         claude != null && lib.hasInfix "--append-system-prompt" claude.text;
     }
     {
-      # Low effort on the NVFP4 build trades per-turn speed for retries, so
-      # medium is the floor in the chat-template map every pi request goes
-      # through. Hand-written per model, so nothing else derives it.
       name = "nothing requests low thinking";
       ok = lib.all (
         name:

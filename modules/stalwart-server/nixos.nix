@@ -1,22 +1,13 @@
-# Stalwart mail server container.
-# Minimal local config — only boot-critical keys. Everything else is
-# database-managed via web UI (certs, domains, accounts, DKIM, spam).
-#
-# Bring-up:
 #   sudo nixos-container root-login stalwart
 #   tailscale up --hostname=stalwart --advertise-tags=tag:solo-node --accept-dns=false
 #   tailscale serve --bg --https=8443 8080
-#     (serve listens on 443 by default and collides with Stalwart's public
-#      https/JMAP/CalDAV listener -- use 8443. Admin UI:
-#      https://stalwart.mist-gamma.ts.net:8443)
+#     (use 8443 -- Admin UI: https://stalwart.mist-gamma.ts.net:8443)
 #
-# First login + config (all in the web UI):
 #   1. Log in: admin / the inline fallback password below. CHANGE it in the UI.
 #   2. Settings -> TLS/ACME: configure Let's Encrypt (directory, contact,
-#      domains = brianjs.com + mx1.brianjs.com). The cert won't issue until DNS
-#      points at the box.
+#      domains = brianjs.com + mx1.brianjs.com).
 #   3. Settings -> Server/Hostname: set hostname to mx1.brianjs.com.
-#   4. Settings -> Authentication: set must-match-sender = true (multi-user safe).
+#   4. Settings -> Authentication: set must-match-sender = true.
 #   5. Domains: create brianjs.com -> read the generated DNS records (DKIM etc.)
 #      and add them at Namecheap.
 #   6. Accounts: create your real mailbox + aliases.
@@ -63,10 +54,6 @@ in
       enable = true;
       internalInterfaces = [ "ve-stalwart" ];
       externalInterface = config.mine.system.externalInterface;
-      # When the caddy edge owns host 443, its mx1 route is the only path
-      # to Stalwart's public listener — a raw passthrough, so Stalwart
-      # still terminates its own TLS; the mail-port forwards stay
-      # unconditional.
       forwardPorts = [
         {
           sourcePort = 25;
@@ -93,19 +80,11 @@ in
       ];
     };
 
-    # This backup carries ALL your DB-managed config (ACME, domains, accounts,
-    # aliases) -- it is the source of truth for everything not in this file.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ hostStateDir ];
       stopContainers = [ "stalwart" ];
     };
 
-    # The edge passes mx1 through untouched rather than terminating it.
-    # Stalwart's certificate also serves 25/465/993, which bypass caddy
-    # entirely, and TLS-ALPN-01 is the only challenge it can use — DNS-01
-    # supports Cloudflare/TSIG/SIG0 only and this domain is at Namecheap.
-    # That challenge needs the raw ClientHello on :443 to answer, which is
-    # exactly what a tcp route preserves.
     mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
       routes.mail = {
         hostnames = [ "mx1.brianjs.com" ];
@@ -124,12 +103,10 @@ in
         {
           modifier = "rwm";
           node = "/dev/net/tun";
-        } # tun for Tailscale
+        }
       ];
 
       bindMounts = {
-        # Persistent state -- MUST be /var/lib/stalwart-mail to match the
-        # module's StateDirectory (where its built-in 'db' store lives).
         "/var/lib/stalwart-mail" = {
           hostPath = hostStateDir;
           isReadOnly = false;
@@ -168,13 +145,6 @@ in
             openFirewall = false;
             stateVersion = "24.11";
             settings = {
-              # ---- MINIMAL LOCAL CONFIG ----
-              # Only boot-critical keys are pinned local (read-only file). These
-              # are the stable settings the server needs BEFORE it can read the
-              # database: where the store is, what to listen on, and how to log in.
-              # Everything else is DB-managed in the web UI. Narrow patterns only;
-              # we deliberately avoid broad pins (no acme.*, no resolver.*) so a
-              # future upgrade adding sub-keys there won't fight us.
               config.local-keys = [
                 "store.*"
                 "storage.data"
@@ -190,9 +160,6 @@ in
               ];
 
               server = {
-                # A bootstrap hostname so the server can start before you set the
-                # real one in the UI. Set the production hostname (mx1.brianjs.com)
-                # in the web UI; it then lives in the DB.
                 hostname = "mx1.brianjs.com";
                 tls = {
                   enable = true;
@@ -218,7 +185,6 @@ in
                     bind = "192.168.100.41:443";
                     tls.implicit = true;
                   };
-                  # Admin UI on localhost only; reached via Tailscale serve :8443.
                   management = {
                     protocol = "http";
                     bind = [ "127.0.0.1:8080" ];
@@ -226,9 +192,6 @@ in
                 };
               };
 
-              # Store: use the module's built-in 'db' RocksDB store at
-              # /var/lib/stalwart-mail/db. These role assignments are boot-critical
-              # (the server must know its store before reading DB config).
               storage = {
                 data = "db";
                 blob = "db";
@@ -241,18 +204,10 @@ in
                 store = "db";
               };
 
-              # Break-glass admin. Secret read from the bind-mounted sops file,
-              # owned by stalwartUid (= the stalwart-mail service UID), mode 0400.
-              # Store an argon2 hash in the sops secret; log in with the plaintext.
-              # Local key (immutable via UI by design) -- change via sops + rebuild.
               authentication.fallback-admin = {
                 user = "admin";
                 secret = "%{file:/run/credentials/stalwart.service/admin-pw}%";
               };
-
-              # NOTE: ACME/TLS, must-match-sender, spam, domains, accounts, and
-              # aliases are intentionally NOT set here -- configure them in the web
-              # UI so they live in the (writable, backed-up) database.
             };
           };
 

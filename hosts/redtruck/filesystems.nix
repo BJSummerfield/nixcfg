@@ -34,7 +34,6 @@ in
     };
   };
 
-  # Steam writes to this directory
   systemd.tmpfiles.rules = [
     "d /mnt/games 2770 root users -"
   ];
