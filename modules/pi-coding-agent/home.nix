@@ -14,14 +14,6 @@ let
   # the programs block and the piSettings activation for why.
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
 
-  # Seed only. The live file is whatever the harness has appended since.
-  lessonsSeed = pkgs.writeText "pi-lessons.md" ''
-    # Lessons
-
-    Durable, falsifiable things a later session would act on differently.
-    Append when you finish a task; prune when this file starts costing more
-    context than it saves.
-  '';
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -45,8 +37,8 @@ in
     # A store symlink is fine only while pi *reads* this file: a harness that
     # edited it would replace the link, and the next reconfigure would fail
     # activation on checkLinkTargets, taking every other home.file with it -
-    # models.json included. That is why what the harness learns goes to the
-    # seeded LESSONS.md below instead.
+    # models.json included. Read-only is the point: what a session learns is
+    # promoted into version control, never written back here.
     #
     # Generated, not copied: @imageBudget@ comes from the same catalog block that
     # builds --limit-mm-per-prompt, so the number the agent is told and the
@@ -55,17 +47,6 @@ in
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;
     };
-
-    # The writable half of the context split: AGENTS.md is policy nix owns,
-    # LESSONS.md is what the harness learns and must be able to append to.
-    # Seeded once and never overwritten - a rebuild must not discard it, and it
-    # cannot be a home.file for the checkLinkTargets reason above.
-    home.activation.piLessons = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-      run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"
-      if [ ! -e "$HOME/.pi/agent/LESSONS.md" ]; then
-        run install $VERBOSE_ARG -m 0644 ${lessonsSeed} "$HOME/.pi/agent/LESSONS.md"
-      fi
-    '';
 
     # ~/.pi/agent/settings.json - seeded package membership and subagent model
     # routing. Copied, not linked: pi rewrites this file on `pi install` /
