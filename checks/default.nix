@@ -24,6 +24,10 @@ evalAll "nixos" inputs.self.nixosConfigurations
     inherit nixpkgs inputs;
     system = "x86_64-linux";
   };
+  valheim = import ../tests/valheim.nix {
+    inherit nixpkgs inputs;
+    system = "x86_64-linux";
+  };
   photoform = import ../tests/photoform.nix {
     inherit nixpkgs inputs;
     system = "x86_64-linux";
