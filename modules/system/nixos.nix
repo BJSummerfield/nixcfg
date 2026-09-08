@@ -62,8 +62,6 @@ in
 
   config = mkMerge [
     {
-      # No assertion needed — the enum guarantees only one bootloader.
-
       boot.consoleLogLevel = 3;
 
       system.stateVersion = "26.05";
@@ -91,8 +89,6 @@ in
     (mkIf cfg.autoUpgrade.enable {
       system.autoUpgrade = {
         enable = true;
-        # Not main: CI fast-forwards this ref only when nix flake check is
-        # green, so a broken push leaves the hosts on their last good build.
         flake = "github:BJSummerfield/nixcfg/verified";
         dates = "04:00";
         allowReboot = true;
@@ -115,10 +111,6 @@ in
         };
       };
 
-      # Root's nix client writes the store directly and never consults the
-      # daemon, so credentials must exist in every context that substitutes:
-      # the daemon (non-root clients), the autoUpgrade unit, and root's AWS
-      # profile file for interactive nixos-rebuild.
       sops.templates = {
         "nix-cache-b2.env" = {
           content = ''
@@ -150,10 +142,6 @@ in
         serviceConfig.EnvironmentFile = config.sops.templates."nix-cache-b2.env".path;
       };
 
-      # AWS's chain falls back to the profile file, which covers direct-store
-      # root builds that no EnvironmentFile can reach. Replaces any existing
-      # root AWS profile: privateCache hosts must not also hold other root
-      # AWS credentials.
       systemd.tmpfiles.rules = [
         "d /root/.aws 0700 root root -"
         "L+ /root/.aws/credentials - - - - ${config.sops.templates."nix-cache-b2.ini".path}"

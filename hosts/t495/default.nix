@@ -32,7 +32,6 @@
       steambox.enable = true;
       theme = {
         enable = true;
-        # Smaller fonts for the t495's higher-DPI screen.
         fontSizes = {
           applications = 10;
           terminal = 11;

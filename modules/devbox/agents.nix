@@ -1,17 +1,9 @@
-# Agent launchers for the devbox container.
-# Paseo spawns agents as child processes, not login shells, so direnv never fires.
-# Use `direnv exec .` to load the project devShell before running the agent.
-# Fails open if .envrc is blocked (untrusted); warns on flake eval errors.
 { pkgs, lib }:
 {
   mkAgent =
     {
       name,
       real,
-      # Extra flags appended to every invocation, before the caller's own.
-      # Interpolated into both exec paths below - the fail-open one and the
-      # normal one - so an agent cannot lose them by having an untrusted
-      # .envrc.
       args ? "",
     }:
     pkgs.writeShellScriptBin name ''

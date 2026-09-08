@@ -29,20 +29,14 @@ in
       powerManagement.enable = true;
     };
 
-    # CUDA normally autoloads this via nvidia-modprobe, but containers can't
-    # load host modules, so load it at boot.
     boot.kernelModules = [ "nvidia-uvm" ];
 
     mine.allowedUnfree = [
       "nvidia-x11"
       "nvidia-settings"
-      "cuda_nvml_dev" # nvtop builds against NVML headers
+      "cuda_nvml_dev"
     ];
 
-    # Unfree CUDA packages aren't on cache.nixos.org. The only consumer left is
-    # nvtopPackages.nvidia (builds against cuda_nvml_dev) - vLLM now arrives as
-    # a prebuilt OCI image and llama.cpp's CUDA build is gone, so there is no
-    # large CUDA compile here any more, and with it no need to clamp max-jobs.
     nix.settings = {
       substituters = [ "https://cuda-maintainers.cachix.org" ];
       trusted-public-keys = [

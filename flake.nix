@@ -17,12 +17,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
-    # Trampoline app bundles for nix-installed apps so Spotlight can index
-    # them (it refuses to follow the symlinks home-manager makes).
     mac-app-util = {
       url = "github:hraban/mac-app-util";
-      # collapse its transitive pins (incl. two extra full nixpkgs
-      # snapshots) onto ours so every host isn't fetching dead weight
       inputs = {
         nixpkgs.follows = "nixpkgs";
         treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
@@ -31,9 +27,6 @@
       };
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    # Coding-agent orchestration daemon; upstream ships its own flake with
-    # a NixOS module. nixpkgs.follows keeps the container building against
-    # the same nixpkgs as the shared host store.
     paseo = {
       url = "github:getpaseo/paseo";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -57,15 +50,10 @@
         default = import ./devshell.nix { pkgs = nixpkgs.legacyPackages.${system}; };
       });
 
-      # nixfmt-tree, not bare nixfmt: `nix fmt` passes a directory, and nixfmt
-      # deprecates directory args and walks into .direnv's read-only store
-      # symlinks. The wrapper is treefmt driving nixfmt, and respects gitignore.
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       packages = forAllSystems (system: import ./packages { pkgs = nixpkgs.legacyPackages.${system}; });
 
-      # All five NixOS hosts are x86_64-linux, and the darwin config evaluates
-      # here too, so the whole check set lives under this one system.
       checks.x86_64-linux = import ./checks {
         inherit nixpkgs inputs;
         pkgs = nixpkgs.legacyPackages.x86_64-linux;

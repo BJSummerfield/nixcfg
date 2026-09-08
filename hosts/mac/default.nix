@@ -35,8 +35,6 @@
     ffmpeg
   ];
 
-  # Mac-only apps; anything shared with the nixos hosts is cask-managed
-  # by its module instead.
   homebrew = {
     casks = [
       "docker-desktop"

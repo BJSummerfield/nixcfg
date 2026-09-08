@@ -1,5 +1,3 @@
-# NixOS configuration for the devbox container.
-# Tailnet join and serve are manual — see nixos.nix.
 {
   inputs,
   tailnetHostname,
@@ -15,21 +13,8 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  # Seeded for pi as ~/.pi/agent/APPEND_SYSTEM.md by the home.file below, and
-  # passed to claude on the command line in mkAgent.
-  #
-  # It does not reach every pi subagent. pi discovers the global file only when
-  # no --append-system-prompt was passed (resource-loader.js: `if (!appendSources)`),
-  # and pi-subagents spends that flag on the agent's own body whenever the agent
-  # sets `systemPromptMode: append` - the bundled `delegate`, and any custom
-  # agent written that way. Agents in `replace` mode (worker, reviewer,
-  # researcher, scout, oracle) take --system-prompt instead, leave the append
-  # slot free, and do get this file. Anything *all* children must see belongs in
-  # pi-coding-agent/AGENTS.md, which reaches them through project context.
   envContract = ./ENVIRONMENT.md;
 
-  # Pi needs bun and node on PATH or plugins crash at startup.
-  # Wrapped here because the upstream module is disabled below.
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
     paths = [ pkgs.pi-coding-agent ];
@@ -43,9 +28,6 @@ let
     (mkAgent {
       name = "claude";
       real = lib.getExe pkgs.claude-code;
-      # Claude has no equivalent of pi's environment-contract file below, and
-      # the appendSystemPromptFile settings key is inert on 2.1.234 - the CLI
-      # flag is the only mechanism that works.
       args = ''--append-system-prompt "$(cat ${envContract})"'';
     })
     (mkAgent {
@@ -54,22 +36,12 @@ let
     })
   ];
 
-  # Wrapped to inject GH_TOKEN at use time so it never lands in the nix store.
-  # Replaces bare pkgs.gh — pkgs.buildEnv fails on duplicate names.
   ghWrapped = pkgs.writeShellScriptBin "gh" ''
     export GH_TOKEN=$(cat /run/secrets/github-token)
     exec ${lib.getExe pkgs.gh} "$@"
   '';
 
-  # Claude keeps preferences in one small file. No enabledPlugins entry:
-  # claude runs no plugins here. A rebuild re-seeds this file only; auth
-  # lives separately in .credentials.json and is untouched.
-  #
-  # Dropping the entry only stops nix *enabling* a plugin - it does not
-  # uninstall one. A container that ran the superpowers plugin still has
-  # claude's own state for it (marketplace clone, plugin cache,
-  # installed_plugins.json under $CLAUDE_CONFIG_DIR), which nix never
-  # wrote and will not clean:
+  # To manually remove stale plugin state after removing an enabledPlugins entry:
   #   claude plugin uninstall superpowers@claude-plugins-official
   #   claude plugin marketplace remove claude-plugins-official
   #   claude plugin list
@@ -88,12 +60,6 @@ in
     ../unfree/nixos.nix
   ];
 
-  ##########################################################################
-  # user + agents + home-manager
-  ##########################################################################
-
-  # Pinned outside the host uid range so nix-daemon treats the agent as
-  # untrusted (no extra-sandbox-paths), while still allowing builds.
   users.users.agent = {
     isNormalUser = true;
     uid = 1500;
@@ -101,10 +67,6 @@ in
     description = "coding agent";
   };
 
-  # nix builds go through the host daemon; the store is shared read-only.
-  # Pin the registry so `nix shell nixpkgs#foo` (promised by the design as
-  # available inside agent sessions) resolves against the shared host store
-  # instantly instead of fetching nixos-unstable over the network.
   nix.settings.experimental-features = [
     "nix-command"
     "flakes"
@@ -114,10 +76,6 @@ in
 
   mine.allowedUnfree = [ "claude-code" ];
 
-  # Also on the system PATH, not only in the user profile: the paseo
-  # daemon's inheritUserEnvironment may or may not pick up
-  # /etc/profiles/per-user/agent/bin, and a daemon that cannot find
-  # `claude` fails in a way that gives no hint why.
   environment.systemPackages =
     agentPkgs
     ++ [ ghWrapped ]
@@ -152,16 +110,8 @@ in
           pi-coding-agent.enable = true;
         };
 
-        # Suppresses the upstream module's own bin/pi - otherwise it
-        # collides with the mkAgent wrapper of the same name in this same
-        # home-manager profile (pkgs.buildEnv fails hard on same-name
-        # paths of equal priority). Settings/config generation from the
-        # module is untouched; only the package is disabled.
         programs.pi-coding-agent.package = null;
 
-        # Paseo creates worktrees under its dataDir, so per-repo `direnv allow`
-        # can never cover them. Whitelisting both trees — agent runs arbitrary
-        # code by design, and the container is the boundary.
         programs.direnv.config.whitelist.prefix = [
           "/home/agent/projects"
           "/var/lib/paseo/worktrees"
@@ -170,11 +120,6 @@ in
         home.packages = agentPkgs;
         home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
 
-        # git signs via `ssh-keygen -Y sign`, which takes a key file, not an
-        # agent — so these settings are the whole mechanism. All three are
-        # gated on signCommits as one unit: gpgSign left on without a key
-        # present makes git refuse to commit at all, which is worse than an
-        # instance that simply does not sign.
         programs.git = {
           enable = true;
           settings = {
@@ -184,9 +129,6 @@ in
             // lib.optionalAttrs signCommits {
               signingkey = "/run/secrets/signing-key";
             };
-            # Reads the token at use time so it never lands in a config file
-            # or the nix store. The token bounds which repos are reachable;
-            # a GitHub ruleset is what stops a push to a protected branch.
             credential."https://github.com".helper =
               "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
           }
@@ -196,101 +138,34 @@ in
           };
         };
 
-        # Copied, not linked: Claude rewrites settings.json (theme changes,
-        # plugin toggles), and a store symlink would make that write fail
-        # with EROFS. `rm` before `install` because install(1) follows an
-        # existing symlink to its read-only target - and because the file
-        # already exists unmanaged in every running container.
-        #
-        # This also means anything Claude itself writes to settings.json is
-        # reset on the next activation: a theme change, a plugin toggle, and
-        # - the one that actually changes behaviour - any user-scope
-        # `permissions` rules, which live in this same file and are silently
-        # discarded with it. An allow/deny rule added mid-session survives
-        # only until the next rebuild; put anything durable in a project's
-        # own .claude/settings.json instead.
-        # That is deliberate, not a gap to close: a container must never
-        # come up with a plugin enabled - or a permission granted - that
-        # this config did not ask for.
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
           run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
           run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
             "$HOME/.claude-state/settings.json"
         '';
-
-        # Nothing else of claude's is seeded. If a plugin is ever wanted
-        # again, its state - marketplace clone, plugin cache,
-        # installed_plugins.json - stays claude-owned and installed by
-        # claude: seeding it from the store would be read-only litter that
-        # claude's own rewrites die against, the same EROFS failure mode as
-        # the settings files above, and a pinned version would go stale
-        # between rebuilds. Nix would own only an enabledPlugins entry in
-        # the seed above (membership, no version) and this activation's
-        # copy-not-link mechanics.
       };
   };
-
-  ##########################################################################
-  # paseo
-  ##########################################################################
 
   services.paseo = {
     enable = true;
     user = "agent";
     group = "users";
     port = 6767;
-    # Never leaves loopback. `tailscale serve` is the only door, so
-    # nothing on the LAN and nothing on ve-devbox can reach the daemon.
     listenAddress = "127.0.0.1";
     openFirewall = false;
-    # No third party in the path; the tailnet is the transport. Cost is
-    # that a broken tailnet locks the environment out entirely, which is
-    # how every other service on this tailnet already behaves.
     relay.enable = false;
-    # Must match what `tailscale serve` publishes or requests are
-    # rejected on the Host header — mismatch causes 400 errors.
     hostnames = [ tailnetHostname ];
     dataDir = "/var/lib/paseo";
-    # System service doesn't inherit sessionVariables; duplicated from
-    # sessionVariables to prevent drift. Unset var makes agents read wrong config.
     environment = {
       CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
       DISABLE_AUTOUPDATER = "1";
-      # Web UI is off by default; without this, `tailscale serve` proxies
-      # to a 404 and looks like a routing problem. Uses env var instead of
-      # settings because the daemon also persists state into config.json.
       PASEO_WEB_UI_ENABLED = "true";
     };
   };
 
-  # Tailnet membership is not treated as sufficient authentication on its
-  # own (see mine.system.devboxes.<name>.paseoPasswordFile). Upstream's paseo module
-  # has no environmentFile-style option to consume this without the value
-  # passing through cfg.environment/cfg.settings - both of which the
-  # module renders into the nix store, which is world-readable. Overriding
-  # the generated unit's EnvironmentFile directly is the only way to hand
-  # the daemon a secret that never touches the store.
   systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/paseo-password";
 
-  # paseo's resolveAuthConfig (server/dist/server/server/config.js) only
-  # installs a password when PASEO_PASSWORD is non-empty; otherwise it
-  # silently falls back to persisted config or no auth at all. Meanwhile
-  # systemd only *logs a warning* for an EnvironmentFile= line missing an
-  # `=` - the unit still comes up "active". So a malformed
-  # paseo-password (wrong key, stray whitespace, empty value - the natural
-  # mistake, since the container's other secret is a bare-value file, not a
-  # KEY=value one) would leave paseo running unauthenticated on the tailnet
-  # with no failure anywhere. This turns that into a hard startup failure
-  # instead.
-  #
-  # Runs with the "+" prefix - i.e. as root, not the unit's own
-  # User=agent - because paseoPasswordFile is deliberately root-only
-  # (mode = "0400", see mine.system.devboxes.<name>.paseoPasswordFile);
-  # ExecStartPre without "+" runs as the unit's configured User=, which could
-  # not read it. Uses grep's own exit status only; never echoes the file's
-  # contents, matched or not, so the secret can't reach the unit's
-  # stderr/journal.
   systemd.services.paseo.serviceConfig.ExecStartPre = [
     (
       "+"
@@ -305,17 +180,9 @@ in
     )
   ];
 
-  ##########################################################################
-  # tailscale (firewall only - join and serve are manual, see nixos.nix)
-  ##########################################################################
-
-  # Declarative join and serve are flaky on nspawn containers.
-  # Manual one-time ritual is used instead — see nixos.nix header.
   services.tailscale.enable = true;
 
   networking = {
-    # container has no host resolv.conf; needed for the tailscale
-    # control plane and for agents fetching from the network
     nameservers = [
       "9.9.9.9"
       "1.1.1.1"
@@ -327,17 +194,8 @@ in
     };
   };
 
-  ##########################################################################
-  # boot-time directories
-  ##########################################################################
-
   systemd.tmpfiles.rules = [
-    # New repos are cloned here; without the directory the first clone of a
-    # new project fails.
     "d /home/agent/projects 0755 agent users -"
-    # paseo creates worktrees here at runtime; created ahead of time so the
-    # path exists from boot rather than only after the first worktree is
-    # ever created.
     "d /var/lib/paseo/worktrees 0755 agent users -"
   ];
 

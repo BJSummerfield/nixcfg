@@ -1,4 +1,3 @@
-# Hammerspoon PaperWM config; the app itself is installed via homebrew.
 {
   pkgs,
   lib,

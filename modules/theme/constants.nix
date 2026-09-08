@@ -1,29 +1,27 @@
-# Catppuccin-mocha palette from base16-schemes; base01/base03/base04 differ from upstream.
 {
   colors = {
-    base00 = "1e1e2e"; # default background
-    base01 = "313244"; # lighter background (status bars)
-    base02 = "45475a"; # selection background
-    base03 = "6c7086"; # comments, invisibles
-    base04 = "a6adc8"; # dark foreground
-    base05 = "cdd6f4"; # default foreground
-    base06 = "f5e0dc"; # light foreground
-    base07 = "b4befe"; # light background
-    base08 = "f38ba8"; # red
-    base09 = "fab387"; # orange
-    base0A = "f9e2af"; # yellow
-    base0B = "a6e3a1"; # green
-    base0C = "94e2d5"; # cyan
-    base0D = "89b4fa"; # blue
-    base0E = "cba6f7"; # magenta
-    base0F = "f2cdcd"; # brown
+    base00 = "1e1e2e";
+    base01 = "313244";
+    base02 = "45475a";
+    base03 = "6c7086";
+    base04 = "a6adc8";
+    base05 = "cdd6f4";
+    base06 = "f5e0dc";
+    base07 = "b4befe";
+    base08 = "f38ba8";
+    base09 = "fab387";
+    base0A = "f9e2af";
+    base0B = "a6e3a1";
+    base0C = "94e2d5";
+    base0D = "89b4fa";
+    base0E = "cba6f7";
+    base0F = "f2cdcd";
 
-    # Catppuccin slots outside base16, used by the terminal palette
-    surface2 = "585b70"; # bright black
-    overlay1 = "7f849c"; # dim foreground
-    subtext1 = "bac2de"; # terminal white
-    pink = "f5c2e7"; # terminal magenta
-    maroon = "eba0ac"; # escape / muted red
+    surface2 = "585b70";
+    overlay1 = "7f849c";
+    subtext1 = "bac2de";
+    pink = "f5c2e7";
+    maroon = "eba0ac";
   };
 
   fonts = {

@@ -1,21 +1,7 @@
-# Persistent coding-agent containers. Security boundary: ssh/sops/signing keys
-# stay on the host. Repos live in the container filesystem — GitHub holds the code.
-#
-# Each attribute of mine.system.devboxes is one container. Once an instance is
-# running, join the tailnet and publish paseo once, substituting its attribute
-# name for <name>:
+# Once an instance is running, substituting its attribute name for <name>:
 # sudo nixos-container root-login <name>
 # tailscale up --hostname=<name> --advertise-tags=tag:devbox
 # tailscale serve --bg 6767
-#
-# Reusing tag:devbox across instances keeps one set of tailnet ACLs; a distinct
-# tag per instance would need ACL edits on the Tailscale side.
-#
-# Both are one-time. /var/lib/tailscale is bind-mounted to
-# /var/lib/tailscale-<name> on the host, so the node identity and the serve
-# config survive container restarts and rebuilds; you only redo this if
-# that host directory is wiped. Manual tailscale join — more reliable than
-# declarative on nspawn containers.
 {
   config,
   lib,
@@ -172,7 +158,6 @@ in
   config = mkIf (cfg != { }) {
     assertions =
       mapAttrsToList (name: box: {
-        # Must be FQDN to match paseo Host-header allowlist.
         assertion = lib.hasInfix "." box.tailnetHostname;
         message = ''
           mine.system.devboxes.${name}.tailnetHostname
@@ -181,9 +166,6 @@ in
         '';
       }) cfg
       ++ mapAttrsToList (name: _: {
-        # ve-<name> is a network interface name, and Linux caps those at 15
-        # characters. An over-long name fails when the container starts, not
-        # when it is evaluated.
         assertion = builtins.stringLength name <= 12;
         message = ''
           mine.system.devboxes.${name}: instance names may be at most 12
@@ -193,9 +175,6 @@ in
       }) cfg
       ++ [
         {
-          # A duplicate address produces a container that starts cleanly and
-          # then cannot route, which reads as a NAT problem rather than a
-          # config one.
           assertion = lib.length (lib.unique addresses) == lib.length addresses;
           message = ''
             mine.system.devboxes: hostAddress and localAddress must be unique
@@ -210,7 +189,6 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Persist each container's tailscale node identity across rebuilds.
     systemd.tmpfiles.rules = mapAttrsToList (
       name: _: "d /var/lib/tailscale-${name} 0700 root root -"
     ) cfg;
@@ -228,23 +206,14 @@ in
       ];
 
       bindMounts = {
-        # needed for tailscale network
         "/dev/net/tun" = {
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # Persists the tailscale node identity across container restarts
-        # and rebuilds. This is what makes the manual `tailscale up` in the
-        # header comment a genuinely one-time cost rather than a
-        # per-rebuild ritual: wipe this host directory and you re-auth,
-        # otherwise you never touch it again.
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-${name}";
           isReadOnly = false;
         };
-        # Destination paths carry no instance name: they live in this
-        # container's own mount namespace, so every instance can use the
-        # same two, and container.nix stays free of instance identity.
         "/run/secrets/github-token" = {
           hostPath = box.githubTokenFile;
           isReadOnly = true;

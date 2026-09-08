@@ -1,5 +1,3 @@
-# Immich photo server container.
-# Bring-up:
 #   sudo nixos-container root-login immich
 #   tailscale up --hostname=immich --advertise-tags=tag:solo-node
 #   tailscale serve --bg 2283
@@ -58,7 +56,6 @@ in
       ];
     };
 
-    # for hardware acceleration
     users.groups.render.gid = renderGid;
 
     networking.nat = {
@@ -67,11 +64,6 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # Immich's built-in nightly DB backup (02:00) writes pg_dump output to
-    # /var/lib/immich/backups, bind-mounted from the NAS. Registering the
-    # host-side mount ships those dumps to B2 as well — the NAS's own backup
-    # is unmanaged by this repo and unverifiable from here. Photo blobs stay
-    # NAS-only by design; only the DB metadata is irreplaceable here.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "${immichMountPoint}/backups" ];
     };
@@ -89,8 +81,6 @@ in
       hostAddress = "192.168.100.20";
       localAddress = "192.168.100.21";
 
-      # tun is needed for tailscale network
-      # renderD128 for hardware acceleration
       allowedDevices = [
         {
           modifier = "rwm";
@@ -135,12 +125,10 @@ in
           hostPath = "/dev/dri";
           isReadOnly = false;
         };
-        # GPU drivers from host - avoids duplicating hardware.graphics in container
         "/run/opengl-driver" = {
           hostPath = "/run/opengl-driver";
           isReadOnly = true;
         };
-        # persists the tailscale node
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-immich";
           isReadOnly = false;
@@ -154,11 +142,9 @@ in
           ...
         }:
         {
-          # container level gids for nfs mounts
           users.groups.homes-rw.gid = homesRwGid;
           users.groups.immich-rw.gid = immichRwGid;
 
-          # for hardware acceleration
           users.groups.render.gid = renderGid;
 
           services.immich = {
@@ -179,14 +165,12 @@ in
           services.tailscale.enable = true;
 
           networking = {
-            # needed to get the dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

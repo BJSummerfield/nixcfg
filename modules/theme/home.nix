@@ -31,8 +31,6 @@ in
     gtk4.extraConfig.gtk-theme-name = "adw-gtk3";
   };
 
-  # Palette-derived @define-color CSS (vendored from the stylix gtk target);
-  # regenerate by hand if constants.nix colors change.
   xdg.configFile."gtk-3.0/gtk.css".source = ./gtk.css;
   xdg.configFile."gtk-4.0/gtk.css".source = ./gtk.css;
 
@@ -66,12 +64,8 @@ in
     };
   };
 
-  # Kvantum theme vendored from the stylix qt target (colors baked from
-  # constants.nix palette).
   xdg.configFile."Kvantum/Base16Kvantum" = {
     source = ./kvantum/Base16Kvantum;
-    # Per-file links (not one dir symlink) so activation can take over the
-    # directory the previous generation already managed recursively.
     recursive = true;
   };
   xdg.configFile."Kvantum/kvantum.kvconfig".text = ''
@@ -82,7 +76,6 @@ in
   dconf.settings."org/gnome/desktop/interface" = {
     color-scheme = "prefer-dark";
     font-name = "${fontName} ${toString appSize}";
-    # double space preserved from the stylix template we migrated off of
     document-font-name = "${fontName}  ${toString (appSize - 1)}";
     monospace-font-name = "${monoName} ${toString appSize}";
   };

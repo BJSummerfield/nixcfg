@@ -1,4 +1,3 @@
-# Vikunja task manager container.
 # Bring-up:
 #   sudo nixos-container root-login vikunja
 #   tailscale up --hostname=vikunja --advertise-tags=tag:solo-node
@@ -38,11 +37,6 @@ in
       paths = [ "/var/lib/vikunja-dumps" ];
     };
 
-    # Tailscale state and the DB dump are the only things persisted on the
-    # host directly. Vikunja files + Postgres data live inside the
-    # container's own filesystem at /var/lib/nixos-containers/vikunja/,
-    # which survives restarts and rebuilds; the nightly dump surfaced at
-    # /var/lib/vikunja-dumps is what mine.backups ships off-site.
     system.activationScripts.vikunja-dirs = ''
       mkdir -p /var/lib/tailscale-vikunja
       chmod 700 /var/lib/tailscale-vikunja
@@ -56,7 +50,6 @@ in
       hostAddress = "192.168.100.22";
       localAddress = "192.168.100.23";
 
-      # tun is needed for tailscale network
       allowedDevices = [
         {
           modifier = "rwm";
@@ -69,19 +62,14 @@ in
           hostPath = "/dev/net/tun";
           isReadOnly = false;
         };
-        # persists the tailscale node identity across container restarts
         "/var/lib/tailscale" = {
           hostPath = "/var/lib/tailscale-vikunja";
           isReadOnly = false;
         };
-        # Host's sops-decrypted JWT secret, surfaced inside the container
         "/run/secrets/vikunja-jwt-secret" = {
           hostPath = cfg.jwtSecretFile;
           isReadOnly = true;
         };
-        # Surfaces the nightly pg_dump on the host so the host-side restic
-        # job (modules/backups/nixos.nix) can ship it. The container's
-        # tmpfiles rule re-owns the mount to its postgres user on start.
         "/var/lib/postgresql/dumps" = {
           hostPath = "/var/lib/vikunja-dumps";
           isReadOnly = false;
@@ -97,21 +85,19 @@ in
         {
           services.vikunja = {
             enable = true;
-            # Tailscale serve terminates TLS in front of us
             frontendScheme = "https";
             frontendHostname = "vikunja.mist-gamma.ts.net";
             port = 3456;
             environmentFiles = [ "/run/secrets/vikunja-jwt-secret" ];
             database = {
               type = "postgres";
-              host = "/run/postgresql"; # unix socket — no password
+              host = "/run/postgresql";
               user = "vikunja";
               database = "vikunja";
             };
             settings = {
               service = {
-                enableregistration = true; # flip to false after creating your account
-                # JWTSecret deliberately omitted — comes from environmentFiles
+                enableregistration = true;
               };
             };
           };
@@ -127,10 +113,6 @@ in
             ];
           };
 
-          # Nightly DB dump, written where the bind mount surfaces it on the
-          # host as /var/lib/vikunja-dumps for the host-side restic job.
-          # Written as postgres via -Fc so restores work across Postgres
-          # versions; the tmp-then-mv keeps restic from shipping a torn dump.
           systemd.services.vikunja-db-dump = {
             description = "Dump Vikunja Postgres DB for backup";
             serviceConfig = {
@@ -159,14 +141,12 @@ in
           services.tailscale.enable = true;
 
           networking = {
-            # needed to get dns for https nameserver
             nameservers = [
               "9.9.9.9"
               "1.1.1.1"
             ];
             firewall = {
               enable = true;
-              # allows connection from other tailscale devices
               trustedInterfaces = [ "tailscale0" ];
               allowedUDPPorts = [ config.services.tailscale.port ];
             };

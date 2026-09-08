@@ -1,4 +1,3 @@
-# Niri integration separated so the shared alacritty module can be imported on darwin.
 { lib, config, ... }:
 let
   inherit (lib) mkIf;

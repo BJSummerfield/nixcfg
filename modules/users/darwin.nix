@@ -10,9 +10,6 @@
   ];
 
   config = {
-    # Bridge: propagate per-user mine.allowedUnfree up to system scope,
-    # same as users/nixos.nix. Required because useGlobalPkgs forbids HM
-    # modules from writing nixpkgs.config directly.
     mine.allowedUnfree = lib.concatLists (
       lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );

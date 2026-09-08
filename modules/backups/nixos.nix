@@ -1,18 +1,3 @@
-# Nightly restic backups to B2, generalizing the pattern proven by
-# modules/stalwart-server/nixos.nix: ONE job per host, running HOST-side so
-# no container ever sees the B2 credentials — a compromised service cannot
-# read, delete or poison its own backups.
-#
-# This module knows nothing about individual services. Each service module
-# appends its own state paths to mine.backups.paths (and, for services whose
-# sqlite lives in the container rootfs, its container name to
-# stopContainers) guarded on mine.backups.enable — so registrations are
-# inert until a host opts in.
-#
-# The repo password's sops copy is decrypted by this host's SSH key and dies
-# with the disk: keep a copy in 1Password or the backups are unreadable
-# exactly when they are needed.
-#
 # Restore:
 #   Files (sqlite dirs, yaml) — stop the owning container, then:
 #     restic -r <repository> restore latest --target / --include <path>
@@ -99,9 +84,6 @@ in
         OnCalendar = cfg.schedule;
         Persistent = true;
       };
-      # `|| true` on stop: a container already down must not abort the run.
-      # `|| true` on start: a restart failure surfaces as the container's own
-      # failed unit, not as a failed backup that actually uploaded fine.
       backupPrepareCommand = lib.concatMapStringsSep "\n" (
         c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
       ) cfg.stopContainers;

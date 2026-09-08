@@ -13,40 +13,6 @@
     helix
   ];
 
-  # Coding-agent container secrets, one set of three per container. Each set
-  # is bind-mounted read-only into its own container by
-  # modules/devbox/nixos.nix, onto the same three paths inside every
-  # container (/run/secrets/github-token, /run/secrets/paseo-password and
-  # /run/secrets/signing-key); no secret ever enters a container's
-  # filesystem or the nix store.
-  #
-  # The two containers exist to hold two different GitHub tokens, so the
-  # token files are what actually distinguishes them.
-  #
-  # The three modes differ deliberately:
-  #
-  #   github-token   read by the *agent* (uid 1500, group users) at use
-  #                  time, via the git credential helper and the gh
-  #                  wrapper. sops-nix's default 0400 root is unreadable
-  #                  to it, and `owner` can't help - it takes a host
-  #                  username and no host user has uid 1500.
-  #
-  #   paseo-password read by PID 1 as root, via the paseo unit's
-  #                  EnvironmentFile=, before the process drops to
-  #                  User=agent. Root-only is sufficient and safer: it
-  #                  keeps the daemon password out of reach of anything
-  #                  running as agent, including a compromised agent.
-  #
-  #   signing-key    read by the agent via `ssh-keygen -Y sign`, which
-  #                  ignores any key a group or other bit can reach. That
-  #                  rules out the 0440/group trick: 0400 owned by uid 1500,
-  #                  set numerically since `owner` takes a host username.
-  #
-  # Each container gets its own signing key, so a commit's signature says
-  # which box made it.
-  #
-  # Rotating any of them needs `systemctl restart container@<name>` - the
-  # bind mount resolved to the old file when the container started.
   sops.secrets = {
     devbox-github-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
@@ -96,11 +62,6 @@
       nvidia.enable = true;
       openssh.outbound.enable = true;
       privateCache.enable = true;
-      # Paths come from the sops.secrets declarations above rather than
-      # being hardcoded, so a change to sops-nix's layout can't silently
-      # desync them. Addresses are stated per instance so a collision
-      # between the two is visible right here rather than showing up as a
-      # container that starts and then cannot route.
       devboxes = {
         devbox = {
           githubTokenFile = config.sops.secrets.devbox-github-token.path;
@@ -205,9 +166,6 @@
     };
   };
 
-  # memoryPercent is a ceiling on the zram device, not a reservation - it only
-  # consumes RAM as pages actually swap in. Machine-sized policy, so it lives
-  # here rather than in the nvidia module.
   zramSwap = {
     enable = true;
     memoryPercent = 50;

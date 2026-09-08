@@ -1,10 +1,6 @@
-# TeamSpeak server container.
-# Bring-up:
-#   sudo nixos-container root-login teamspeak
-#   tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node
-#
-# Get ServerAdmin token from journalctl:
-#   sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
+# sudo nixos-container root-login teamspeak
+# tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node
+# sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
 
 { lib, config, ... }:
 let
@@ -29,17 +25,14 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # ts3server.sqlitedb holds the server identity — losing it forces every
-    # client to re-trust a new server. Rootfs path (DynamicUser +
-    # StateDirectory), so: stop, copy raw, restart.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "/var/lib/nixos-containers/teamspeak/var/lib/private/teamspeak3-server" ];
       stopContainers = [ "teamspeak" ];
     };
 
     networking.firewall = lib.mkIf cfg.publicAccess {
-      allowedUDPPorts = [ 9987 ]; # Voice
-      allowedTCPPorts = [ 30033 ]; # File Transfer
+      allowedUDPPorts = [ 9987 ];
+      allowedTCPPorts = [ 30033 ];
     };
 
     containers.teamspeak = {
@@ -53,12 +46,12 @@ in
           protocol = "udp";
           hostPort = 9987;
           containerPort = 9987;
-        } # Voice
+        }
         {
           protocol = "tcp";
           hostPort = 30033;
           containerPort = 30033;
-        } # File Transfer
+        }
       ];
 
       allowedDevices = lib.mkIf cfg.tailscaleAccess [

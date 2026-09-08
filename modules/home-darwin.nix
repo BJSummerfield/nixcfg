@@ -1,4 +1,3 @@
-# Darwin-safe home-manager modules; Linux-only options prevent importing the full set.
 { ... }: {
   imports = [
     ./alacritty/home.nix

@@ -1,12 +1,3 @@
-# nixpkgs marks keybase-gui 6.5.1 insecure (Electron 28, EOL since 2023-12).
-# Upstream fixed it in 6.6.3 (Electron 44) and nixpkgs PR #497751 has the bump
-# approved but unmerged since 2026-03-08, so carry it here until it lands:
-# https://github.com/NixOS/nixpkgs/pull/497751
-#
-# Delete this file when `nix eval nixpkgs#keybase-gui.version` reports 6.6.3 or
-# later. The warning below fires on the next rebuild after that happens - the
-# overlay pins unconditionally, so without it a newer nixpkgs would be silently
-# rolled back to 6.6.3.
 { lib, ... }:
 let
   version = "6.6.3";

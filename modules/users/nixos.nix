@@ -78,7 +78,6 @@ in
     users.mutableUsers = false;
     nix.settings.trusted-users = [ "root" ] ++ adminUsernames;
 
-    # Make sure there is always at least 1 admin user
     assertions = [
       {
         assertion = lib.any (user: user.isSuperUser) (lib.attrValues cfg);
@@ -107,10 +106,6 @@ in
       openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
     }) cfg;
 
-    # Bridge: propagate per-user mine.allowedUnfree up to system scope
-    # so the system-level allowUnfreePredicate sees them. Required because
-    # home-manager.useGlobalPkgs = true forbids HM modules from writing
-    # nixpkgs.config directly.
     mine.allowedUnfree = lib.concatLists (
       lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
     );
