@@ -2,11 +2,14 @@
 #   sudo nixos-container root-login valheim
 #   tailscale up --hostname=valheim --advertise-tags=tag:solo-node
 #
-# Players join from the Valheim client's "Join IP" field, using
-# valheim.<tailnet>.ts.net:2456. Crossplay must stay off for that to work.
+# Fetch the game now rather than waiting for the timer, which is needed on
+# first start and after a patch. The first fetch is about 1.6 GB:
+#   sudo nixos-container run valheim -- systemctl start valheim-update
 #
-# Roll the server back to an older Steam build after a bad patch:
-#   set branch, then nixos-rebuild switch and restart the container.
+# Roll back to an older Steam build: set branch, nixos-rebuild switch, then
+# run the fetch above.
+#
+# Players join valheim.<tailnet>.ts.net:2456 from the client's Join IP field.
 
 {
   lib,
@@ -54,11 +57,12 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        World-readable in the Nix store. Fine for casual use: the server is
-        reachable only from the tailnet and is not listed publicly.
+        World-readable in the Nix store, and visible in the server's argv.
+        Fine for casual use: the server is reachable only from the tailnet
+        and is not listed publicly.
 
         Valheim requires at least 5 characters and refuses to start when the
-        password occurs anywhere in the world name.
+        password occurs in either the server name or the world name.
       '';
     };
 
@@ -166,23 +170,15 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Re-fetch the server build from Steam before every start. Valheim
+        Refetch the server build shortly after boot and once a day. Valheim
         refuses connections from clients on a different build, and clients
         update themselves, so tracking the current build is what keeps the
         server joinable.
-      '';
-    };
 
-    localBackups = lib.mkOption {
-      type = lib.types.ints.unsigned;
-      default = 4;
-      description = ''
-        Copies kept by Valheim's own save rotation, which writes into the
-        directory restic also backs up. Restic only runs nightly, so these
-        are what a world is recovered from when it is lost during the day.
-
-        Iron Gate documents the default as 4 and does not say whether 0
-        disables rotation outright, so 0 is untested here.
+        The fetch deliberately does not gate startup: the server comes up on
+        whatever build is already on disk, and is restarted once the fetch
+        finishes. With this off, the game has to be fetched by hand before
+        the server can start at all.
       '';
     };
   };
@@ -194,10 +190,12 @@ in
         message = "mine.system.valheim-server.password must be at least 5 characters";
       }
       {
-        assertion = cfg.password == null || !(lib.hasInfix cfg.password cfg.worldName);
+        assertion =
+          cfg.password == null
+          || !(lib.hasInfix cfg.password cfg.worldName || lib.hasInfix cfg.password cfg.serverName);
         message =
           "mine.system.valheim-server.password must not occur in worldName "
-          + "(${cfg.worldName}); Valheim refuses to start";
+          + "(${cfg.worldName}) or serverName (${cfg.serverName}); Valheim refuses to start";
       }
     ];
 
@@ -207,12 +205,12 @@ in
       externalInterface = config.mine.system.externalInterface;
     };
 
-    # The game install is refetched from Steam on demand, so only the saves
-    # are worth storing.
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ "/var/lib/valheim-data" ];
       stopContainers = [ "valheim" ];
     };
+
+    systemd.services."container@valheim".serviceConfig.TimeoutStopSec = "180";
 
     system.activationScripts.valheim-dirs = ''
       mkdir -p /var/lib/valheim-data
@@ -265,48 +263,45 @@ in
         let
           install = "/var/lib/valheim/server";
           home = "/var/lib/valheim/home";
-          flags = lib.escapeShellArgs (
-            # A preset is emitted first because it overwrites every modifier
-            # set before it.
-            lib.optionals (cfg.preset != null) [
-              "-preset"
-              cfg.preset
-            ]
-            ++ [
-              "-name"
-              cfg.serverName
-              "-port"
-              (toString cfg.port)
-              "-world"
-              cfg.worldName
-              "-nographics"
-              "-batchmode"
-              "-public"
-              (if cfg.public then "1" else "0")
-              "-backups"
-              (toString cfg.localBackups)
-            ]
-            ++ lib.optionals (cfg.password != null) [
-              "-password"
-              cfg.password
-            ]
-            ++ lib.concatLists (
-              lib.mapAttrsToList (
-                category: value:
-                lib.optionals (value != null) [
-                  "-modifier"
-                  category
-                  value
-                ]
-              ) cfg.modifiers
+          exe = "${install}/valheim_server.x86_64";
+          systemctl = "${config.systemd.package}/bin/systemctl";
+          flags = builtins.replaceStrings [ "$" "%" ] [ "$$" "%%" ] (
+            lib.escapeShellArgs (
+              lib.optionals (cfg.preset != null) [
+                "-preset"
+                cfg.preset
+              ]
+              ++ [
+                "-name"
+                cfg.serverName
+                "-port"
+                (toString cfg.port)
+                "-world"
+                cfg.worldName
+                "-nographics"
+                "-batchmode"
+                "-public"
+                (if cfg.public then "1" else "0")
+              ]
+              ++ lib.optionals (cfg.password != null) [
+                "-password"
+                cfg.password
+              ]
+              ++ lib.concatLists (
+                lib.mapAttrsToList (
+                  category: value:
+                  lib.optionals (value != null) [
+                    "-modifier"
+                    category
+                    value
+                  ]
+                ) cfg.modifiers
+              )
+              ++ lib.optional cfg.crossplay "-crossplay"
             )
-            ++ lib.optional cfg.crossplay "-crossplay"
           );
         in
         {
-          # Steam ships an ordinary glibc binary. nix-ld lends it an
-          # interpreter in place, so the tree stays byte-identical to the
-          # depot and the next fetch has nothing to repair.
           programs.nix-ld.enable = true;
 
           users.users.valheim = {
@@ -321,14 +316,20 @@ in
             "d ${install} 0700 valheim valheim -"
           ];
 
-          systemd.services.valheim-update = lib.mkIf cfg.autoUpdate {
+          systemd.timers.valheim-update = lib.mkIf cfg.autoUpdate {
+            wantedBy = [ "timers.target" ];
+            timerConfig = {
+              OnBootSec = "2min";
+              OnUnitActiveSec = "1d";
+            };
+          };
+
+          systemd.services.valheim-update = {
             description = "Fetch the Valheim dedicated server build from Steam";
             serviceConfig = {
               Type = "oneshot";
               User = "valheim";
               Group = "valheim";
-              # Steam's scratch state follows HOME, and HOME is the directory
-              # restic keeps, so point it at the install tree instead.
               Environment = [ "HOME=${install}" ];
               ExecStart = lib.escapeShellArgs (
                 [
@@ -346,6 +347,10 @@ in
                   cfg.branch
                 ]
               );
+              ExecStartPost = [
+                "${pkgs.coreutils}/bin/chmod +x ${exe}"
+                "+${systemctl} --no-block restart valheim.service"
+              ];
               TimeoutStartSec = "30min";
             };
           };
@@ -353,10 +358,7 @@ in
           systemd.services.valheim = {
             description = "Valheim dedicated server";
             wantedBy = [ "multi-user.target" ];
-            after = [ "network-online.target" ] ++ lib.optional cfg.autoUpdate "valheim-update.service";
-            # Wanted, not required: an unreachable Steam leaves the server on
-            # the build already on disk rather than refusing to start.
-            wants = [ "network-online.target" ] ++ lib.optional cfg.autoUpdate "valheim-update.service";
+            unitConfig.ConditionPathExists = exe;
             serviceConfig = {
               User = "valheim";
               Group = "valheim";
@@ -365,24 +367,22 @@ in
                 "HOME=${home}"
                 "SteamAppId=892970"
                 "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
-                # nix-ld publishes these through sessionVariables, which a
-                # unit does not inherit.
                 "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:${install}/linux64"
                 "LD_LIBRARY_PATH=${install}/linux64"
               ];
-              ExecStart = "${install}/valheim_server.x86_64 ${flags}";
-              # Valheim saves on SIGINT and drops the world on SIGTERM.
+              ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
               TimeoutStopSec = "120";
-              Restart = "always";
-              RestartSec = "10";
-              # World simulation is single threaded.
+              Restart = "on-failure";
+              RestartSec = "30";
               Nice = -5;
               PrivateTmp = true;
               ProtectSystem = "strict";
               ReadWritePaths = [ "/var/lib/valheim" ];
               NoNewPrivileges = true;
             };
+            startLimitIntervalSec = 600;
+            startLimitBurst = 5;
           };
 
           services.tailscale.enable = true;
@@ -399,7 +399,7 @@ in
             };
           };
 
-          system.stateVersion = "26.05";
+          system.stateVersion = "26.11";
         };
     };
   };

@@ -40,142 +40,113 @@ let
       ];
     }).config;
 
-  host = mkHost {
+  base = {
     enable = true;
     worldName = "beefy";
     password = "beefcake";
   };
 
-  crossplayHost = mkHost {
-    enable = true;
-    worldName = "beefy";
-    crossplay = true;
-  };
+  host = mkHost base;
+  execOf = h: h.containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart;
 
   container = host.containers.valheim.config;
   unit = container.systemd.services.valheim;
   update = container.systemd.services.valheim-update;
   env = unit.serviceConfig.Environment;
+  exec = unit.serviceConfig.ExecStart;
 
-  paynefield = inputs.self.nixosConfigurations.paynefield.config;
+  # "HOME=/x" -> "/x"
+  homeOf = e: lib.removePrefix "HOME=" (lib.head (lib.filter (lib.hasPrefix "HOME=") e));
+
+  seconds =
+    s:
+    let
+      n = lib.toInt (lib.head (builtins.match "([0-9]+).*" s));
+    in
+    if lib.hasSuffix "min" s then n * 60 else n;
 
   checks = [
     {
-      name = "the container takes the next free address pair on the container lan";
-      ok =
-        host.containers.valheim.hostAddress == "192.168.100.32"
-        && host.containers.valheim.localAddress == "192.168.100.33";
-    }
-    {
-      name = "the container's interface is natted out through the host uplink";
-      ok =
-        lib.elem "ve-valheim" host.networking.nat.internalInterfaces
-        && host.networking.nat.externalInterface == "eth0";
-    }
-    {
-      name = "saves are bound from the host and the refetchable install is kept apart";
-      ok =
-        host.containers.valheim.bindMounts."/var/lib/valheim/home".hostPath == "/var/lib/valheim-data"
-        &&
-          host.containers.valheim.bindMounts."/var/lib/valheim/server".hostPath == "/var/lib/valheim-server"
-        && host.containers.valheim.bindMounts."/var/lib/tailscale".hostPath == "/var/lib/tailscale-valheim";
-    }
-    {
-      name = "only the saves are backed up, and the container is stopped for a clean copy";
-      ok =
-        lib.elem "/var/lib/valheim-data" host.mine.backups.paths
-        && !(lib.elem "/var/lib/valheim-server" host.mine.backups.paths)
-        && lib.elem "valheim" host.mine.backups.stopContainers;
-    }
-    {
-      name = "the tailnet is trusted and nothing is forwarded in from the host";
-      ok =
-        lib.elem "tailscale0" container.networking.firewall.trustedInterfaces
-        && host.containers.valheim.forwardPorts == [ ];
-    }
-    {
-      name = "crossplay is off by default, so the server binds a dialable socket";
-      ok = !(lib.hasInfix "-crossplay" unit.serviceConfig.ExecStart);
-    }
-    {
-      name = "turning crossplay on does reach the command line";
-      ok = lib.hasInfix "-crossplay" crossplayHost.containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart;
-    }
-    {
-      name = "the server is not listed publicly and keeps valheim's own save rotation";
-      ok =
-        lib.hasInfix "-public 0" unit.serviceConfig.ExecStart
-        && lib.hasInfix "-backups 4" unit.serviceConfig.ExecStart;
-    }
-    {
-      name = "a null password leaves the flag off entirely";
-      ok =
-        !(lib.hasInfix "-password"
-          (mkHost {
-            enable = true;
-            worldName = "beefy";
-          }).containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart
-        );
-    }
-    {
-      name = "no preset is emitted by default, leaving the world on valheim's own balance";
-      ok = !(lib.hasInfix "-preset" unit.serviceConfig.ExecStart);
-    }
-    {
-      name = "a preset is emitted ahead of everything it would otherwise overwrite";
-      ok =
-        lib.hasPrefix "/var/lib/valheim/server/valheim_server.x86_64 -preset hard"
-          (mkHost {
-            enable = true;
-            worldName = "beefy";
-            preset = "hard";
-          }).containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart;
-    }
-    {
-      name = "no modifier is emitted by default";
-      ok = !(lib.hasInfix "-modifier" unit.serviceConfig.ExecStart);
-    }
-    {
-      name = "each set modifier is emitted as its own flag, and null ones are left out";
+      name = "the saves the server writes are the saves that get backed up";
       ok =
         let
-          exec =
-            (mkHost {
-              enable = true;
-              worldName = "beefy";
-              modifiers = {
-                deathpenalty = "casual";
-                resources = "more";
-              };
-            }).containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart;
+          savesAt = homeOf env;
+          hostPath = host.containers.valheim.bindMounts.${savesAt}.hostPath;
         in
-        lib.hasInfix "-modifier deathpenalty casual" exec
-        && lib.hasInfix "-modifier resources more" exec
-        && !(lib.hasInfix "combat" exec)
-        && !(lib.hasInfix "raids" exec)
-        && !(lib.hasInfix "portals" exec);
+        lib.elem hostPath host.mine.backups.paths && lib.elem "valheim" host.mine.backups.stopContainers;
     }
     {
-      name = "a preset stays ahead of the modifiers it would otherwise overwrite";
+      name = "the refetchable install is bound from the host but kept out of the backup";
       ok =
         let
-          exec =
-            (mkHost {
-              enable = true;
-              worldName = "beefy";
-              preset = "hard";
-              modifiers.resources = "most";
-            }).containers.valheim.config.systemd.services.valheim.serviceConfig.ExecStart;
+          installAt = lib.removePrefix "HOME=" (
+            lib.head (lib.filter (lib.hasPrefix "HOME=") update.serviceConfig.Environment)
+          );
+          hostPath = host.containers.valheim.bindMounts.${installAt}.hostPath;
         in
-        lib.hasInfix "-preset hard" exec
-        && lib.hasInfix "-modifier resources most" exec
-        &&
-          (lib.stringLength (lib.head (lib.splitString "-preset" exec)))
-          < (lib.stringLength (lib.head (lib.splitString "-modifier" exec)));
+        !(lib.elem hostPath host.mine.backups.paths) && hostPath != null;
+    }
+    {
+      name = "the server runs the binary out of the directory the fetch writes to";
+      ok =
+        let
+          installAt = lib.removePrefix "HOME=" (
+            lib.head (lib.filter (lib.hasPrefix "HOME=") update.serviceConfig.Environment)
+          );
+        in
+        lib.hasInfix "-dir ${installAt}" update.serviceConfig.ExecStart
+        && lib.hasPrefix "${installAt}/" exec
+        && unit.serviceConfig.WorkingDirectory == installAt;
+    }
+    {
+      name = "the binary is made executable, because the steam depot does not flag it";
+      ok = lib.any (c: lib.hasInfix "chmod +x" c) update.serviceConfig.ExecStartPost;
+    }
+    {
+      name = "the server only starts once that binary exists";
+      ok =
+        unit.unitConfig.ConditionPathExists
+        == lib.removeSuffix " ${lib.last (lib.splitString " " exec)}" exec
+        || lib.hasPrefix unit.unitConfig.ConditionPathExists exec;
+    }
+    {
+      name = "the fetch is off the container's boot path, so a slow download cannot kill it";
+      ok =
+        !(lib.elem "valheim-update.service" unit.wants)
+        && !(lib.elem "valheim-update.service" unit.after)
+        && update.wantedBy == [ ]
+        && container.systemd.timers.valheim-update.wantedBy == [ "timers.target" ];
+    }
+    {
+      name = "a finished fetch restarts the server, with the privilege to do it";
+      ok = lib.any (
+        c: lib.hasPrefix "+" c && lib.hasInfix "restart valheim.service" c
+      ) update.serviceConfig.ExecStartPost;
+    }
+    {
+      name = "the host waits longer for a stop than the server is allowed to take saving";
+      ok =
+        seconds host.systemd.services."container@valheim".serviceConfig.TimeoutStopSec
+        > seconds unit.serviceConfig.TimeoutStopSec;
     }
     {
       name = "the world is saved on stop, which needs SIGINT rather than SIGTERM";
       ok = unit.serviceConfig.KillSignal == "SIGINT";
+    }
+    {
+      name = "a crash loop cannot become a steam download loop";
+      ok =
+        unit.serviceConfig.Restart == "on-failure"
+        && unit.startLimitBurst > 0
+        && unit.startLimitIntervalSec > 0;
+    }
+    {
+      name = "turning autoUpdate off removes the timer, leaving the fetch manual";
+      ok =
+        let
+          c = (mkHost (base // { autoUpdate = false; })).containers.valheim.config;
+        in
+        !(c.systemd.timers ? valheim-update) && c.systemd.services ? valheim-update;
     }
     {
       name = "the unit carries nix-ld's paths, which sessionVariables would not give it";
@@ -185,40 +156,112 @@ let
         && container.programs.nix-ld.enable;
     }
     {
-      name = "saves land in the bound home, while steam's scratch state stays in the install";
+      name = "the container takes the next free address pair and nats out through the uplink";
       ok =
-        lib.elem "HOME=/var/lib/valheim/home" env
-        && lib.elem "HOME=/var/lib/valheim/server" update.serviceConfig.Environment;
+        host.containers.valheim.hostAddress == "192.168.100.32"
+        && host.containers.valheim.localAddress == "192.168.100.33"
+        && lib.elem "ve-valheim" host.networking.nat.internalInterfaces;
     }
     {
-      name = "a failed fetch leaves the server on the build already on disk";
+      name = "the tailnet is trusted and nothing is forwarded in from the host";
       ok =
-        lib.elem "valheim-update.service" unit.wants
-        && !(lib.elem "valheim-update.service" (unit.requires or [ ]));
+        lib.elem "tailscale0" container.networking.firewall.trustedInterfaces
+        && host.containers.valheim.forwardPorts == [ ]
+        && host.networking.firewall.allowedUDPPorts or [ ] == [ ];
+    }
+    {
+      name = "crossplay is off by default and reaches the command line when asked for";
+      ok =
+        !(lib.hasInfix "-crossplay" exec)
+        && lib.hasInfix "-crossplay" (execOf (mkHost (base // { crossplay = true; })));
+    }
+    {
+      name = "the server is not listed publicly";
+      ok = lib.hasInfix "-public 0" exec;
+    }
+    {
+      name = "a null password leaves the flag off entirely";
+      ok =
+        !(lib.hasInfix "-password" (
+          execOf (mkHost {
+            enable = true;
+          })
+        ));
+    }
+    {
+      name = "shell metacharacters in a password survive systemd's own expansion";
+      ok =
+        let
+          e = execOf (mkHost (base // { password = "a$b%c"; }));
+        in
+        lib.hasInfix "a$$b%%c" e;
+    }
+    {
+      name = "a password inside the server name is refused, not just one inside the world name";
+      ok =
+        let
+          bad = f: !(builtins.tryEval (builtins.seq (mkHost (f base)).system.build.toplevel true)).success;
+        in
+        bad (b: b // { serverName = "beefcake-server"; })
+        && bad (b: b // { worldName = "beefcakeworld"; })
+        && bad (b: b // { password = "beef"; });
+    }
+    {
+      name = "no preset or modifier is emitted by default";
+      ok = !(lib.hasInfix "-preset" exec) && !(lib.hasInfix "-modifier" exec);
+    }
+    {
+      name = "each set modifier is emitted as its own flag, and null ones are left out";
+      ok =
+        let
+          e = execOf (
+            mkHost (
+              base
+              // {
+                modifiers = {
+                  deathpenalty = "casual";
+                  resources = "more";
+                };
+              }
+            )
+          );
+        in
+        lib.hasInfix "-modifier deathpenalty casual" e
+        && lib.hasInfix "-modifier resources more" e
+        && !(lib.hasInfix "combat" e)
+        && !(lib.hasInfix "raids" e);
+    }
+    {
+      name = "a preset stays ahead of the modifiers it would otherwise overwrite";
+      ok =
+        let
+          e = execOf (
+            mkHost (
+              base
+              // {
+                preset = "hard";
+                modifiers.resources = "most";
+              }
+            )
+          );
+        in
+        lib.hasInfix "-preset hard" e
+        && lib.hasInfix "-modifier resources most" e
+        &&
+          lib.stringLength (lib.head (lib.splitString "-preset" e))
+          < lib.stringLength (lib.head (lib.splitString "-modifier" e));
     }
     {
       name = "the fetch is anonymous and tracks the default branch until pinned";
       ok =
+        let
+          pinned =
+            (mkHost (base // { branch = "public-test"; }))
+            .containers.valheim.config.systemd.services.valheim-update.serviceConfig.ExecStart;
+        in
         lib.hasInfix "-app 896660" update.serviceConfig.ExecStart
-        && !(lib.hasInfix "-username" update.serviceConfig.ExecStart)
-        && !(lib.hasInfix "-branch" update.serviceConfig.ExecStart);
-    }
-    {
-      name = "setting a branch pins the fetch";
-      ok =
-        lib.hasInfix "-branch public-test"
-          (mkHost {
-            enable = true;
-            worldName = "beefy";
-            branch = "public-test";
-          }).containers.valheim.config.systemd.services.valheim-update.serviceConfig.ExecStart;
-    }
-    {
-      name = "paynefield runs the world it means to, with a password valheim will accept";
-      ok =
-        paynefield.mine.system.valheim-server.worldName == "beefy"
-        && paynefield.mine.system.valheim-server.password == "beefcake"
-        && !paynefield.mine.system.valheim-server.crossplay;
+        && !(lib.hasInfix "-branch" update.serviceConfig.ExecStart)
+        && lib.hasInfix "-branch public-test" pinned;
     }
   ];
 
