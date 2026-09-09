@@ -34,6 +34,7 @@
     ./theme/nixos.nix
     ./unfree/nixos.nix
     ./users/nixos.nix
+    ./valheim-server/nixos.nix
     ./vikunja-server/nixos.nix
   ];
 

@@ -50,6 +50,11 @@
       jellyfin-server.enable = true;
       immich-server.enable = true;
       terraria-server.enable = true;
+      valheim-server = {
+        enable = true;
+        worldName = "beefy";
+        password = "beefcake";
+      };
       vikunja-server = {
         enable = true;
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
