@@ -20,6 +20,13 @@
 let
   cfg = config.mine.system.valheim-server;
 
+  dataDir = "/var/lib/valheim-data";
+  serverDir = "/var/lib/valheim-server";
+  tailscaleDir = "/var/lib/tailscale-valheim";
+
+  saveTimeout = 120;
+  containerStopTimeout = saveTimeout + 60;
+
   mkModifier =
     description: values:
     lib.mkOption {
@@ -209,19 +216,19 @@ in
     };
 
     mine.backups = lib.mkIf config.mine.backups.enable {
-      paths = [ "/var/lib/valheim-data" ];
+      paths = [ dataDir ];
       stopContainers = [ "valheim" ];
     };
 
-    systemd.services."container@valheim".serviceConfig.TimeoutStopSec = "180";
+    systemd.services."container@valheim".serviceConfig.TimeoutStopSec = toString containerStopTimeout;
 
     system.activationScripts.valheim-dirs = ''
-      mkdir -p /var/lib/valheim-data
-      chmod 700 /var/lib/valheim-data
-      mkdir -p /var/lib/valheim-server
-      chmod 700 /var/lib/valheim-server
-      mkdir -p /var/lib/tailscale-valheim
-      chmod 700 /var/lib/tailscale-valheim
+      mkdir -p ${dataDir}
+      chmod 700 ${dataDir}
+      mkdir -p ${serverDir}
+      chmod 700 ${serverDir}
+      mkdir -p ${tailscaleDir}
+      chmod 700 ${tailscaleDir}
     '';
 
     containers.valheim = {
@@ -239,11 +246,11 @@ in
 
       bindMounts = {
         "/var/lib/valheim/home" = {
-          hostPath = "/var/lib/valheim-data";
+          hostPath = dataDir;
           isReadOnly = false;
         };
         "/var/lib/valheim/server" = {
-          hostPath = "/var/lib/valheim-server";
+          hostPath = serverDir;
           isReadOnly = false;
         };
         "/dev/net/tun" = {
@@ -251,7 +258,7 @@ in
           isReadOnly = false;
         };
         "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-valheim";
+          hostPath = tailscaleDir;
           isReadOnly = false;
         };
       };
@@ -374,7 +381,7 @@ in
               ];
               ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
-              TimeoutStopSec = "120";
+              TimeoutStopSec = toString saveTimeout;
               Restart = "on-failure";
               RestartSec = "30";
               Nice = -5;

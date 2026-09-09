@@ -20,18 +20,6 @@ in
 evalAll "nixos" inputs.self.nixosConfigurations
 // evalAll "darwin" inputs.self.darwinConfigurations
 // {
-  devboxes = import ../tests/devboxes.nix {
-    inherit nixpkgs inputs;
-    system = "x86_64-linux";
-  };
-  valheim = import ../tests/valheim.nix {
-    inherit nixpkgs inputs;
-    system = "x86_64-linux";
-  };
-  photoform = import ../tests/photoform.nix {
-    inherit nixpkgs inputs;
-    system = "x86_64-linux";
-  };
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
