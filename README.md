@@ -11,7 +11,7 @@ disks are declared with disko, and every host is on the same tailnet.
 | `redtruck` | NixOS | Desktop workstation (NVIDIA/CUDA). Runs the `local-llm` container and the `devbox` agent sandbox, plus printing and the media encode queue. |
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
-| `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Vikunja, Terraria, backups. |
+| `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
 | `vps` | NixOS | Public edge — Caddy (with the layer4 app), Stalwart mail, photoform, backups. |
 | `mac` | nix-darwin | macOS workstation. |
 
@@ -22,7 +22,7 @@ disks are declared with disko, and every host is on the same tailnet.
 - `modules/` — the `mine.*` option modules, split into `nixos.nix` / `home.nix` / `darwin.nix` per feature.
 - `users/` — per-user definitions.
 - `packages/` — flake packages.
-- `checks/` — the flake checks (see below). `tests/` — NixOS VM tests they pull in.
+- `checks/` — the flake checks (see below).
 - `secrets/` — sops-encrypted secrets, keyed to host SSH keys.
 - `ci/`, `.github/workflows/check.yml` — CI, including the binary cache plumbing.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
@@ -38,8 +38,7 @@ nix flake check                               # everything below
 ```
 
 `nix flake check` evaluates every host, runs the formatter/statix/deadnix gates,
-builds the flake packages, adapts each Caddy host's real Caddyfile, and runs the
-devbox and photoform VM tests.
+builds the flake packages, and adapts each Caddy host's real Caddyfile.
 
 ## Conventions
 

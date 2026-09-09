@@ -49,14 +49,18 @@
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
-      terraria-server.enable = true;
+      terraria-server.enable = false;
       valheim-server = {
         enable = true;
-        worldName = "beefy";
+        worldName = "saucy";
         password = "beefcake";
+        modifiers = {
+          resources = "most";
+          deathpenalty = "veryeasy";
+        };
       };
       vikunja-server = {
-        enable = true;
+        enable = false;
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
     };

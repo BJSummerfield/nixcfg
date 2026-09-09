@@ -3,7 +3,8 @@
 #   tailscale up --hostname=valheim --advertise-tags=tag:solo-node
 #
 # Fetch the game now rather than waiting for the timer, which is needed on
-# first start and after a patch. The first fetch is about 1.6 GB:
+# first start and after a patch. The first fetch is about 1.6 GB, and the
+# server is stopped for the duration and started again at the end:
 #   sudo nixos-container run valheim -- systemctl start valheim-update
 #
 # Roll back to an older Steam build: set branch, nixos-rebuild switch, then
@@ -18,6 +19,13 @@
 }:
 let
   cfg = config.mine.system.valheim-server;
+
+  dataDir = "/var/lib/valheim-data";
+  serverDir = "/var/lib/valheim-server";
+  tailscaleDir = "/var/lib/tailscale-valheim";
+
+  saveTimeout = 120;
+  containerStopTimeout = saveTimeout + 60;
 
   mkModifier =
     description: values:
@@ -176,9 +184,11 @@ in
         server joinable.
 
         The fetch deliberately does not gate startup: the server comes up on
-        whatever build is already on disk, and is restarted once the fetch
-        finishes. With this off, the game has to be fetched by hand before
-        the server can start at all.
+        whatever build is already on disk. The fetch itself stops the server
+        for its duration, because the download overwrites the running binary,
+        and starts it again at the end whether or not it succeeded. With this
+        off, the game has to be fetched by hand before the server can start
+        at all.
       '';
     };
   };
@@ -206,19 +216,19 @@ in
     };
 
     mine.backups = lib.mkIf config.mine.backups.enable {
-      paths = [ "/var/lib/valheim-data" ];
+      paths = [ dataDir ];
       stopContainers = [ "valheim" ];
     };
 
-    systemd.services."container@valheim".serviceConfig.TimeoutStopSec = "180";
+    systemd.services."container@valheim".serviceConfig.TimeoutStopSec = toString containerStopTimeout;
 
     system.activationScripts.valheim-dirs = ''
-      mkdir -p /var/lib/valheim-data
-      chmod 700 /var/lib/valheim-data
-      mkdir -p /var/lib/valheim-server
-      chmod 700 /var/lib/valheim-server
-      mkdir -p /var/lib/tailscale-valheim
-      chmod 700 /var/lib/tailscale-valheim
+      mkdir -p ${dataDir}
+      chmod 700 ${dataDir}
+      mkdir -p ${serverDir}
+      chmod 700 ${serverDir}
+      mkdir -p ${tailscaleDir}
+      chmod 700 ${tailscaleDir}
     '';
 
     containers.valheim = {
@@ -236,11 +246,11 @@ in
 
       bindMounts = {
         "/var/lib/valheim/home" = {
-          hostPath = "/var/lib/valheim-data";
+          hostPath = dataDir;
           isReadOnly = false;
         };
         "/var/lib/valheim/server" = {
-          hostPath = "/var/lib/valheim-server";
+          hostPath = serverDir;
           isReadOnly = false;
         };
         "/dev/net/tun" = {
@@ -248,7 +258,7 @@ in
           isReadOnly = false;
         };
         "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-valheim";
+          hostPath = tailscaleDir;
           isReadOnly = false;
         };
       };
@@ -319,8 +329,8 @@ in
           systemd.timers.valheim-update = lib.mkIf cfg.autoUpdate {
             wantedBy = [ "timers.target" ];
             timerConfig = {
-              OnBootSec = "2min";
-              OnUnitActiveSec = "1d";
+              OnCalendar = "06:30";
+              Persistent = true;
             };
           };
 
@@ -347,10 +357,9 @@ in
                   cfg.branch
                 ]
               );
-              ExecStartPost = [
-                "${pkgs.coreutils}/bin/chmod +x ${exe}"
-                "+${systemctl} --no-block restart valheim.service"
-              ];
+              ExecStartPre = "+${systemctl} stop valheim.service";
+              ExecStartPost = "${pkgs.coreutils}/bin/chmod +x ${exe}";
+              ExecStopPost = "+${systemctl} start valheim.service";
               TimeoutStartSec = "30min";
             };
           };
@@ -372,7 +381,7 @@ in
               ];
               ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
-              TimeoutStopSec = "120";
+              TimeoutStopSec = toString saveTimeout;
               Restart = "on-failure";
               RestartSec = "30";
               Nice = -5;
