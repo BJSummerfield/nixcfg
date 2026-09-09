@@ -160,8 +160,6 @@ let
             lib.toIntBase10 (lib.head parts) * 60 + lib.toIntBase10 (lib.last parts);
           at = minutes timer.OnCalendar;
         in
-        # 03:00-05:00 is mine.system.autoUpgrade's reboot window, which can cut
-        # a download short; the backup stops the whole container while it runs.
         timer.Persistent
         && !(at >= minutes "03:00" && at <= minutes "05:00")
         && lib.all (b: at > minutes b) host.mine.backups.schedule;

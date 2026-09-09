@@ -319,10 +319,6 @@ in
             "d ${install} 0700 valheim valheim -"
           ];
 
-          # 06:30 is the first quiet slot of the morning: past the 03:00-05:00
-          # auto-upgrade reboot window, and past 05:15 restic, which stops this
-          # whole container for the length of its run. Persistent catches a run
-          # up when the box was down for it, so no boot-time firing is needed.
           systemd.timers.valheim-update = lib.mkIf cfg.autoUpdate {
             wantedBy = [ "timers.target" ];
             timerConfig = {
@@ -354,12 +350,6 @@ in
                   cfg.branch
                 ]
               );
-              # The download writes over the very binary the server is
-              # executing, which the kernel refuses with ETXTBSY, so the server
-              # has to be down for it. Coming back up is ExecStopPost rather
-              # than ExecStartPost because that runs on a failed fetch too: a
-              # Steam outage must not leave the world offline until someone
-              # notices.
               ExecStartPre = "+${systemctl} stop valheim.service";
               ExecStartPost = "${pkgs.coreutils}/bin/chmod +x ${exe}";
               ExecStopPost = "+${systemctl} start valheim.service";
