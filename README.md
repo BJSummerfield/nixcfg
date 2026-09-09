@@ -11,7 +11,7 @@ disks are declared with disko, and every host is on the same tailnet.
 | `redtruck` | NixOS | Desktop workstation (NVIDIA/CUDA). Runs the `local-llm` container and the `devbox` agent sandbox, plus printing and the media encode queue. |
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
-| `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Vikunja, Valheim, backups. |
+| `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
 | `vps` | NixOS | Public edge — Caddy (with the layer4 app), Stalwart mail, photoform, backups. |
 | `mac` | nix-darwin | macOS workstation. |
 

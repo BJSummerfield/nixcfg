@@ -49,6 +49,7 @@
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
+      terraria-server.enable = false;
       valheim-server = {
         enable = true;
         worldName = "saucy";
@@ -59,7 +60,7 @@
         };
       };
       vikunja-server = {
-        enable = true;
+        enable = false;
         jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
     };
