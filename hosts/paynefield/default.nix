@@ -51,8 +51,12 @@
       immich-server.enable = true;
       valheim-server = {
         enable = true;
-        worldName = "beefy";
+        worldName = "saucy";
         password = "beefcake";
+        modifiers = {
+          resources = "most";
+          deathpenalty = "veryeasy";
+        };
       };
       vikunja-server = {
         enable = true;

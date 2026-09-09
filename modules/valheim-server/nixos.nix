@@ -3,7 +3,8 @@
 #   tailscale up --hostname=valheim --advertise-tags=tag:solo-node
 #
 # Fetch the game now rather than waiting for the timer, which is needed on
-# first start and after a patch. The first fetch is about 1.6 GB:
+# first start and after a patch. The first fetch is about 1.6 GB, and the
+# server is stopped for the duration and started again at the end:
 #   sudo nixos-container run valheim -- systemctl start valheim-update
 #
 # Roll back to an older Steam build: set branch, nixos-rebuild switch, then
@@ -176,9 +177,11 @@ in
         server joinable.
 
         The fetch deliberately does not gate startup: the server comes up on
-        whatever build is already on disk, and is restarted once the fetch
-        finishes. With this off, the game has to be fetched by hand before
-        the server can start at all.
+        whatever build is already on disk. The fetch itself stops the server
+        for its duration, because the download overwrites the running binary,
+        and starts it again at the end whether or not it succeeded. With this
+        off, the game has to be fetched by hand before the server can start
+        at all.
       '';
     };
   };
@@ -316,11 +319,15 @@ in
             "d ${install} 0700 valheim valheim -"
           ];
 
+          # 06:30 is the first quiet slot of the morning: past the 03:00-05:00
+          # auto-upgrade reboot window, and past 05:15 restic, which stops this
+          # whole container for the length of its run. Persistent catches a run
+          # up when the box was down for it, so no boot-time firing is needed.
           systemd.timers.valheim-update = lib.mkIf cfg.autoUpdate {
             wantedBy = [ "timers.target" ];
             timerConfig = {
-              OnBootSec = "2min";
-              OnUnitActiveSec = "1d";
+              OnCalendar = "06:30";
+              Persistent = true;
             };
           };
 
@@ -347,10 +354,15 @@ in
                   cfg.branch
                 ]
               );
-              ExecStartPost = [
-                "${pkgs.coreutils}/bin/chmod +x ${exe}"
-                "+${systemctl} --no-block restart valheim.service"
-              ];
+              # The download writes over the very binary the server is
+              # executing, which the kernel refuses with ETXTBSY, so the server
+              # has to be down for it. Coming back up is ExecStopPost rather
+              # than ExecStartPost because that runs on a failed fetch too: a
+              # Steam outage must not leave the world offline until someone
+              # notices.
+              ExecStartPre = "+${systemctl} stop valheim.service";
+              ExecStartPost = "${pkgs.coreutils}/bin/chmod +x ${exe}";
+              ExecStopPost = "+${systemctl} start valheim.service";
               TimeoutStartSec = "30min";
             };
           };

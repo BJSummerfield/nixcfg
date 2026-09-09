@@ -100,7 +100,7 @@ let
     }
     {
       name = "the binary is made executable, because the steam depot does not flag it";
-      ok = lib.any (c: lib.hasInfix "chmod +x" c) update.serviceConfig.ExecStartPost;
+      ok = lib.hasInfix "chmod +x" (toString update.serviceConfig.ExecStartPost);
     }
     {
       name = "the server only starts once that binary exists";
@@ -118,10 +118,17 @@ let
         && container.systemd.timers.valheim-update.wantedBy == [ "timers.target" ];
     }
     {
-      name = "a finished fetch restarts the server, with the privilege to do it";
-      ok = lib.any (
-        c: lib.hasPrefix "+" c && lib.hasInfix "restart valheim.service" c
-      ) update.serviceConfig.ExecStartPost;
+      name = "the server is stopped before the fetch, which cannot write a running binary";
+      ok =
+        lib.hasPrefix "+" update.serviceConfig.ExecStartPre
+        && lib.hasInfix "stop valheim.service" update.serviceConfig.ExecStartPre;
+    }
+    {
+      name = "a fetch that fails still brings the server back, rather than leaving it down";
+      ok =
+        lib.hasPrefix "+" update.serviceConfig.ExecStopPost
+        && lib.hasInfix "start valheim.service" update.serviceConfig.ExecStopPost
+        && !(lib.hasInfix "valheim.service" (toString update.serviceConfig.ExecStartPost));
     }
     {
       name = "the host waits longer for a stop than the server is allowed to take saving";
@@ -139,6 +146,25 @@ let
         unit.serviceConfig.Restart == "on-failure"
         && unit.startLimitBurst > 0
         && unit.startLimitIntervalSec > 0;
+    }
+    {
+      name = "the fetch is scheduled clear of the reboot window and of restic stopping the container";
+      ok =
+        let
+          timer = container.systemd.timers.valheim-update.timerConfig;
+          minutes =
+            hhmm:
+            let
+              parts = lib.splitString ":" hhmm;
+            in
+            lib.toIntBase10 (lib.head parts) * 60 + lib.toIntBase10 (lib.last parts);
+          at = minutes timer.OnCalendar;
+        in
+        # 03:00-05:00 is mine.system.autoUpgrade's reboot window, which can cut
+        # a download short; the backup stops the whole container while it runs.
+        timer.Persistent
+        && !(at >= minutes "03:00" && at <= minutes "05:00")
+        && lib.all (b: at > minutes b) host.mine.backups.schedule;
     }
     {
       name = "turning autoUpdate off removes the timer, leaving the fetch manual";
