@@ -52,11 +52,13 @@
       terraria-server.enable = false;
       valheim-server = {
         enable = true;
-        worldName = "saucy";
+        worldName = "janky";
         password = "beefcake";
         modifiers = {
           resources = "most";
-          deathpenalty = "veryeasy";
+          deathpenalty = "casual";
+          raids = "muchless";
+          portals = "casual";
         };
       };
       vikunja-server = {
