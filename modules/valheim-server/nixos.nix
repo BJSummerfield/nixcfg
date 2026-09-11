@@ -2,13 +2,26 @@
 #   sudo nixos-container root-login valheim
 #   tailscale up --hostname=valheim --advertise-tags=tag:solo-node
 #
-# Fetch the game now rather than waiting for the timer, which is needed on
-# first start and after a patch. The first fetch is about 1.6 GB, and the
-# server is stopped for the duration and started again at the end:
+# First install or repair: valheim-update stages a full copy in the
+# background, verifies it, then stops the server only long enough to swap it
+# in. Use it for the first install and any time the running build looks
+# broken:
 #   sudo nixos-container run valheim -- systemctl start valheim-update
+# A run started this way stops a timer tick that's in progress first, but if
+# one is already mid-download it waits for that download's lock before it
+# starts its own.
 #
-# Roll back to an older Steam build: set branch, nixos-rebuild switch, then
-# run the fetch above.
+# With autoUpdate on (the default), the same check runs on its own every ten
+# minutes; a new build downloads in the background and is swapped in as soon
+# as the server is empty, or after forceRestartAfter minutes regardless.
+# Status:
+#   sudo nixos-container run valheim -- journalctl -u valheim-autoupdate
+#   sudo nixos-container run valheim -- cat /var/lib/valheim/server/state/pending
+#
+# Instant rollback: flip /var/lib/valheim/server/current to point at the
+# other slot (slots/a or slots/b) and restart valheim.service by hand. Set
+# autoUpdate = false, or pin branch, so the next auto-update doesn't undo it;
+# a branch pin is picked up by the next check, within about 10 minutes.
 #
 # Players join valheim.<tailnet>.ts.net:2456 from the client's Join IP field.
 
@@ -178,17 +191,23 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Refetch the server build shortly after boot and once a day. Valheim
-        refuses connections from clients on a different build, and clients
-        update themselves, so tracking the current build is what keeps the
-        server joinable.
+        Check Steam every 10 minutes and download any new build into a spare
+        copy while the server keeps running. Restart onto it as soon as
+        nobody is connected, or after forceRestartAfter minutes. Valheim
+        refuses clients on a different build, and clients update themselves,
+        so this keeps the server joinable. With this off, updates, including
+        the first install, happen only through valheim-update.
+      '';
+    };
 
-        The fetch deliberately does not gate startup: the server comes up on
-        whatever build is already on disk. The fetch itself stops the server
-        for its duration, because the download overwrites the running binary,
-        and starts it again at the end whether or not it succeeded. With this
-        off, the game has to be fetched by hand before the server can start
-        at all.
+    forceRestartAfter = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 60;
+      description = ''
+        How long a downloaded build waits for the server to empty before the
+        restart happens anyway. Clients on the new build can't join until
+        then. Counted from the moment the download finished; a container
+        restart applies a waiting build immediately.
       '';
     };
   };
@@ -273,8 +292,44 @@ in
         let
           install = "/var/lib/valheim/server";
           home = "/var/lib/valheim/home";
-          exe = "${install}/valheim_server.x86_64";
+          exe = "${install}/current/valheim_server.x86_64";
           systemctl = "${config.systemd.package}/bin/systemctl";
+
+          # How often valheim-autoupdate checks Steam for a new build.
+          checkCalendar = "*:0/10";
+          # Per-phase timeouts (minutes), shared between the units' own
+          # TimeoutStartSec and the env vars the script uses for `timeout`
+          # and `flock -w`.
+          checkTimeoutMin = 10;
+          stageTimeoutMin = 45;
+          lockWaitMin = 10;
+
+          valheimUpdater = pkgs.writeShellApplication {
+            name = "valheim-updater";
+            runtimeInputs = [
+              pkgs.depotdownloader
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.gawk
+              pkgs.gnugrep
+              pkgs.util-linux
+              config.systemd.package
+            ];
+            text = builtins.readFile ./updater.sh;
+          };
+
+          # Shared by valheim-layout, valheim-autoupdate and valheim-update.
+          updaterEnvironment = [
+            "VALHEIM_INSTALL=${install}"
+            "VALHEIM_APP_ID=${cfg.appId}"
+            "VALHEIM_BRANCH=${if cfg.branch == null then "" else cfg.branch}"
+            "VALHEIM_FORCE_AFTER_MIN=${toString cfg.forceRestartAfter}"
+            "VALHEIM_USER=valheim"
+            "VALHEIM_CHECK_TIMEOUT_MIN=${toString checkTimeoutMin}"
+            "VALHEIM_STAGE_TIMEOUT_MIN=${toString stageTimeoutMin}"
+            "VALHEIM_LOCK_WAIT_MIN=${toString lockWaitMin}"
+          ];
+
           flags = builtins.replaceStrings [ "$" "%" ] [ "$$" "%%" ] (
             lib.escapeShellArgs (
               lib.optionals (cfg.preset != null) [
@@ -324,60 +379,87 @@ in
           systemd.tmpfiles.rules = [
             "d ${home} 0700 valheim valheim -"
             "d ${install} 0700 valheim valheim -"
+            "d ${install}/slots 0700 valheim valheim -"
+            "d ${install}/state 0700 valheim valheim -"
           ];
 
-          systemd.timers.valheim-update = lib.mkIf cfg.autoUpdate {
+          systemd.services.valheim-layout = {
+            description = "Lay out the Valheim install directory";
+            wantedBy = [ "multi-user.target" ];
+            # Re-running on a rebuild would flip current to a pending slot
+            # under a running server, which then never gets restarted onto it.
+            restartIfChanged = false;
+            before = [
+              "valheim.service"
+              "valheim-autoupdate.service"
+              "valheim-update.service"
+            ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              Environment = updaterEnvironment;
+              ExecStart = "${lib.getExe valheimUpdater} layout";
+            };
+          };
+
+          systemd.services.valheim-autoupdate = {
+            description = "Check Steam for a Valheim build update and swap it in when idle";
+            requires = [ "valheim-layout.service" ];
+            after = [ "valheim-layout.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              Environment = updaterEnvironment;
+              ExecStart = "${lib.getExe valheimUpdater} auto";
+              ExecStopPost = "${lib.getExe valheimUpdater} stop-post";
+              Nice = 10;
+              IOSchedulingClass = "idle";
+              TimeoutStartSec = "${toString (checkTimeoutMin + stageTimeoutMin + cfg.forceRestartAfter + 15)}min";
+              ProtectSystem = "strict";
+              ReadWritePaths = [ "/var/lib/valheim" ];
+              PrivateTmp = true;
+            };
+          };
+
+          systemd.timers.valheim-autoupdate = lib.mkIf cfg.autoUpdate {
             wantedBy = [ "timers.target" ];
             timerConfig = {
-              OnCalendar = "06:30";
-              Persistent = true;
+              OnCalendar = checkCalendar;
             };
           };
 
           systemd.services.valheim-update = {
-            description = "Fetch the Valheim dedicated server build from Steam";
+            description = "Fetch the Valheim dedicated server build from Steam now";
+            requires = [ "valheim-layout.service" ];
+            after = [ "valheim-layout.service" ];
             serviceConfig = {
               Type = "oneshot";
-              User = "valheim";
-              Group = "valheim";
-              Environment = [ "HOME=${install}" ];
-              ExecStart = lib.escapeShellArgs (
-                [
-                  (lib.getExe pkgs.depotdownloader)
-                  "-app"
-                  cfg.appId
-                  "-osarch"
-                  "64"
-                  "-dir"
-                  install
-                  "-validate"
-                ]
-                ++ lib.optionals (cfg.branch != null) [
-                  "-branch"
-                  cfg.branch
-                ]
-              );
-              ExecStartPre = "+${systemctl} stop valheim.service";
-              ExecStartPost = "${pkgs.coreutils}/bin/chmod +x ${exe}";
-              ExecStopPost = "+${systemctl} start valheim.service";
-              TimeoutStartSec = "30min";
+              Environment = updaterEnvironment;
+              ExecStartPre = "${systemctl} stop valheim-autoupdate.service";
+              ExecStart = "${lib.getExe valheimUpdater} now";
+              ExecStopPost = "${lib.getExe valheimUpdater} stop-post";
+              TimeoutStartSec = "${toString (lockWaitMin + checkTimeoutMin + stageTimeoutMin + 5)}min";
+              ProtectSystem = "strict";
+              ReadWritePaths = [ "/var/lib/valheim" ];
+              PrivateTmp = true;
             };
           };
 
           systemd.services.valheim = {
             description = "Valheim dedicated server";
             wantedBy = [ "multi-user.target" ];
+            wants = [ "valheim-layout.service" ];
+            after = [ "valheim-layout.service" ];
             unitConfig.ConditionPathExists = exe;
             serviceConfig = {
               User = "valheim";
               Group = "valheim";
-              WorkingDirectory = install;
+              WorkingDirectory = "${install}/current";
               Environment = [
                 "HOME=${home}"
                 "SteamAppId=892970"
                 "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
-                "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:${install}/linux64"
-                "LD_LIBRARY_PATH=${install}/linux64"
+                "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:${install}/current/linux64"
+                "LD_LIBRARY_PATH=${install}/current/linux64"
               ];
               ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
