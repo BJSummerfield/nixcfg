@@ -14,8 +14,9 @@
 #   stopped Meant as valheim.service's `ExecStopPost=+`. Reads $SERVICE_RESULT
 #           (and $EXIT_STATUS for the crash case) and turns the stop into a
 #           message, unless it was a self-inflicted update restart (recorded
-#           by the updater in state/stop-reason) or nobody was online for a
-#           stop that doesn't otherwise need reporting.
+#           by the updater in state/stop-reason), which the updater announces
+#           itself. Stops post whether or not anyone is online, so the chat
+#           always shows the server's status.
 #
 # Env contract for `watch` and `stopped` (not required by `parse`):
 #   VALHEIM_INSTALL     Install root; state lives at $VALHEIM_INSTALL/state.
@@ -27,17 +28,12 @@
 # valheim-notify.service and the updater both run as root):
 #   stop-reason      Written by the updater's cmd_swap before it stops the
 #                    server for an update; read and deleted by `stopped`.
-#   last-stop        Written by `stopped`: "update N", "planned N", "timeout
-#                    N" or "crash N", where N is the online count at the
-#                    moment of the stop. Read and deleted by the next `up`
-#                    event, which uses N (not the live, now-zeroed `online`
-#                    file) to decide whether a quiet "up" is worth posting.
+#   last-stop        Written by `stopped`: "update", "planned", "timeout" or
+#                    "crash". Read and deleted by the next `up` event, to word
+#                    its message ("back up after the crash", "back up on
+#                    version X").
 #   last-version     Last version `up` saw, to word "back up on version X
 #                    (was Y)" after an update.
-#   online           Current online count, kept up to date by `watch` on
-#                    every join/leave (replay included); read by `stopped`
-#                    to decide whether a quiet stop is worth posting, then
-#                    reset to 0 since the server is going down regardless.
 #   notify-crash-at  mtime is the last time a crash was posted, so repeated
 #                    crash-restart-crash loops don't spam more than once
 #                    every 10 minutes.
@@ -204,18 +200,18 @@ cmd_parse() {
 
 handle_up() {
   local version="$1"
-  local last_stop_raw last_stop last_stop_online last_version msg always=0
+  local last_stop last_version msg
 
-  last_stop_raw=$(read_state last-stop)
+  last_stop=$(read_state last-stop)
   rm -f "$STATE/last-stop"
-  read -r last_stop last_stop_online <<<"$last_stop_raw"
-  [[ "$last_stop_online" =~ ^[0-9]+$ ]] || last_stop_online=0
+  # A last-stop written by an older build has a second field; only the
+  # reason matters.
+  last_stop=${last_stop%% *}
   last_version=$(read_state last-version)
 
   case "$last_stop" in
     crash)
       msg="✅ Valheim is back up after the crash ($version)"
-      always=1
       ;;
     update)
       if [[ -n "$last_version" && "$last_version" != "$version" ]]; then
@@ -223,21 +219,15 @@ handle_up() {
       else
         msg="✅ Valheim is back up on version *$version*"
       fi
-      always=1
       ;;
     *)
       msg="⚔️ Valheim server is up ($version, world $VALHEIM_WORLD)"
-      always=0
       ;;
   esac
 
   write_state last-version "$version"
 
-  if ((always)) || [[ "$last_stop_online" != 0 ]]; then
-    post "$msg"
-  else
-    log "$msg (not posted, nobody was online)"
-  fi
+  post "$msg"
 }
 
 handle_event() {
@@ -251,7 +241,6 @@ handle_event() {
       handle_up "$rest"
       ;;
     join | leave)
-      write_state online "${#JOINED_NAME[@]}"
       ((is_replay)) && return 0
       local name="a player" verb="left" icon="👋"
       if [[ "$rest" =~ ^[0-9]+\ (.+)\ \([0-9]+\ online\)$ ]]; then
@@ -352,29 +341,17 @@ cmd_stopped() {
     rm -f "$STATE/stop-reason"
   fi
 
-  local online
-  online=$(read_state online)
-  [[ "$online" =~ ^[0-9]+$ ]] || online=0
-
   local result="${SERVICE_RESULT:-unknown}"
-  local write_reason="" msg="" always=0
+  local write_reason="" msg=""
 
   if [[ "$result" == success && "$reason" == update ]]; then
     write_reason=update
   elif [[ "$result" == success ]]; then
     write_reason=planned
-    local system_state
-    system_state=$(systemctl is-system-running 2>/dev/null || true)
-    if [[ "$system_state" == stopping ]]; then
-      msg="🔴 Valheim server stopped"
-    else
-      msg="🔴 Valheim server stopped"
-      always=1
-    fi
+    msg="🔴 Valheim server stopped"
   elif [[ "$result" == timeout ]]; then
     write_reason=timeout
     msg="⚠️ Valheim server was shut down before it finished saving; the last few minutes of play may be lost"
-    always=1
   else
     write_reason=crash
     if crash_throttled; then
@@ -382,20 +359,15 @@ cmd_stopped() {
     else
       log "crash detected: result=$result exit_status=${EXIT_STATUS:-unknown}"
       msg="💥 *Valheim server crashed*; it will try to restart on its own"
-      always=1
       write_state notify-crash-at "$(date +%s)"
     fi
   fi
 
-  write_state last-stop "$write_reason $online"
-  write_state online 0
+  # Written before the post, so a hung post can't lose it.
+  write_state last-stop "$write_reason"
 
   if [[ -n "$msg" ]]; then
-    if ((always)) || [[ "$online" != 0 ]]; then
-      post "$msg"
-    else
-      log "$msg (not posted, nobody was online)"
-    fi
+    post "$msg"
   fi
 }
 
