@@ -20,8 +20,8 @@
 # Env contract for `watch` and `stopped` (not required by `parse`):
 #   VALHEIM_INSTALL     Install root; state lives at $VALHEIM_INSTALL/state.
 #   VALHEIM_WORLD       World name, used in the plain "up" message.
-#   VALHEIM_NOTIFY_SEND Path to a keybase-notify binary (already baked with
-#                       its own URL file and prefix). Empty means log only.
+#   VALHEIM_NOTIFY_SEND Path to a keybase-notify binary, already baked with
+#                       the in-container URL file path.
 #
 # State files under $VALHEIM_INSTALL/state (all root-owned; the container's
 # valheim-notify.service and the updater both run as root):

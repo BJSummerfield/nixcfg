@@ -21,9 +21,11 @@ let
 
   startedStateFile = "/run/mine-backups-started";
 
+  sender = pkgs.callPackage ../keybase-notify/package.nix { urlFile = cfg.notifyUrlFile; };
+
   # message may itself contain shell variable references (e.g. "$took"),
   # so it is embedded in double quotes rather than shell-escaped.
-  notify = message: ''${timeout} 25 "${cfg.notifyCommand}" "${message}" || true'';
+  notify = message: ''${timeout} 25 ${lib.getExe sender} "${message}" || true'';
 
   startedMessage =
     if cfg.stopContainers == [ ] then
@@ -84,17 +86,18 @@ in
       '';
     };
 
-    notifyCommand = lib.mkOption {
+    notifyUrlFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        Program run with one argument, a chat message, to announce backup
-        start, success and failure. Its failures and hangs are ignored: it
-        is always run as `timeout 25 <notifyCommand> "<message>" || true`.
-        Null disables backup notifications entirely, and leaves the
-        generated prepare/cleanup scripts unchanged.
+        Host path to a file holding a Keybase webhookbot URL (e.g.
+        config.sops.secrets.keybase-webhook-url.path). When set, backup
+        start, success and failure are posted there; posts that fail or
+        hang are ignored. A string rather than a path, so a Nix path
+        literal can't copy the secret into the store. Null posts nothing
+        and leaves the prepare/cleanup scripts unchanged.
       '';
-      example = "/run/current-system/sw/bin/keybase-notify";
+      example = "/run/secrets/keybase-webhook-url";
     };
   };
 
@@ -117,7 +120,7 @@ in
         Persistent = true;
       };
       backupPrepareCommand =
-        lib.optionalString (cfg.notifyCommand != null) ''
+        lib.optionalString (cfg.notifyUrlFile != null) ''
           ${date} +%s > ${startedStateFile}
           ${notify startedMessage}
         ''
@@ -128,7 +131,7 @@ in
         lib.concatMapStringsSep "\n" (
           c: "${pkgs.nixos-container}/bin/nixos-container start ${c} || true"
         ) cfg.stopContainers
-        + lib.optionalString (cfg.notifyCommand != null) ''
+        + lib.optionalString (cfg.notifyUrlFile != null) ''
 
           if [ "$SERVICE_RESULT" = success ]; then
             started=$(${cat} ${startedStateFile} 2>/dev/null || echo "$(${date} +%s)")

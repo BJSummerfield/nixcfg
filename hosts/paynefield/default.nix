@@ -1,9 +1,4 @@
-{
-  lib,
-  pkgs,
-  config,
-  ...
-}:
+{ pkgs, config, ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -35,8 +30,6 @@
     mode = "0400";
   };
 
-  mine.system.keybase-notify.urlFile = config.sops.secrets.keybase-webhook-url.path;
-
   environment.pathsToLink = [
     "/share/applications"
     "/share/xdg-desktop-portal"
@@ -60,10 +53,10 @@
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
-      keybase-notify.enable = true;
       terraria-server.enable = false;
       valheim-server = {
         enable = true;
+        notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
         worldName = "janky";
         password = "beefcake";
         modifiers = {
@@ -79,7 +72,7 @@
       repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
-      notifyCommand = lib.getExe config.mine.system.keybase-notify.package;
+      notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
     };
     users.waktu.authorizedKeys = [
       "onepassword"
