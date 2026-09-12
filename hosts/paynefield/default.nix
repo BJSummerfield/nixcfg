@@ -25,6 +25,10 @@
     sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
+  sops.secrets.keybase-webhook-url = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
 
   environment.pathsToLink = [
     "/share/applications"
@@ -52,6 +56,7 @@
       terraria-server.enable = false;
       valheim-server = {
         enable = true;
+        notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
         worldName = "janky";
         password = "beefcake";
         modifiers = {
@@ -61,16 +66,13 @@
           portals = "casual";
         };
       };
-      vikunja-server = {
-        enable = false;
-        jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
-      };
     };
     backups = {
       enable = true;
       repository = "s3:s3.us-east-005.backblazeb2.com/spacefunk-nix-backups/paynefield";
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
+      notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
     };
     users.waktu.authorizedKeys = [
       "onepassword"

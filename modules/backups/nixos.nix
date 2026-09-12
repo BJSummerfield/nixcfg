@@ -13,6 +13,20 @@
 }:
 let
   cfg = config.mine.backups;
+
+  timeout = lib.getExe' pkgs.coreutils "timeout";
+  date = lib.getExe' pkgs.coreutils "date";
+  cat = lib.getExe' pkgs.coreutils "cat";
+  rm = lib.getExe' pkgs.coreutils "rm";
+
+  startedStateFile = "/run/mine-backups-started";
+
+  sender = pkgs.callPackage ../keybase-notify/package.nix { urlFile = cfg.notifyUrlFile; };
+
+  # message may itself contain shell variable references (e.g. "$took"),
+  # so it is embedded in double quotes rather than shell-escaped.
+  notify = message: ''${timeout} 25 ${lib.getExe sender} "${message}" || true'';
+
 in
 {
   options.mine.backups = {
@@ -64,6 +78,20 @@ in
         copy of sqlite state living in the container rootfs.
       '';
     };
+
+    notifyUrlFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Host path to a file holding a Keybase webhookbot URL (e.g.
+        config.sops.secrets.keybase-webhook-url.path). When set, backup
+        start, success and failure are posted there; posts that fail or
+        hang are ignored. A string rather than a path, so a Nix path
+        literal can't copy the secret into the store. Null posts nothing
+        and leaves the prepare/cleanup scripts unchanged.
+      '';
+      example = "/run/secrets/keybase-webhook-url";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -84,12 +112,29 @@ in
         OnCalendar = cfg.schedule;
         Persistent = true;
       };
-      backupPrepareCommand = lib.concatMapStringsSep "\n" (
-        c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
-      ) cfg.stopContainers;
-      backupCleanupCommand = lib.concatMapStringsSep "\n" (
-        c: "${pkgs.nixos-container}/bin/nixos-container start ${c} || true"
-      ) cfg.stopContainers;
+      backupPrepareCommand =
+        lib.optionalString (cfg.notifyUrlFile != null) ''
+          ${date} +%s > ${startedStateFile}
+          ${notify "💾 Backup started"}
+        ''
+        + lib.concatMapStringsSep "\n" (
+          c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
+        ) cfg.stopContainers;
+      backupCleanupCommand =
+        lib.concatMapStringsSep "\n" (
+          c: "${pkgs.nixos-container}/bin/nixos-container start ${c} || true"
+        ) cfg.stopContainers
+        + lib.optionalString (cfg.notifyUrlFile != null) ''
+
+          if [ "$SERVICE_RESULT" = success ]; then
+            started=$(${cat} ${startedStateFile} 2>/dev/null || echo "$(${date} +%s)")
+            took=$(( ($(${date} +%s) - started) / 60 ))
+            ${notify "✅ Backup finished (took $took min)"}
+          else
+            ${notify "🚨 *Backup FAILED*"}
+          fi
+          ${rm} -f ${startedStateFile}
+        '';
       pruneOpts = [
         "--keep-daily 30"
         "--keep-weekly 12"
