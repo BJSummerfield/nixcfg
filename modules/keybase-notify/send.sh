@@ -4,9 +4,12 @@
 #   Arguments are joined with spaces to form the message.
 #
 # Config comes from two shell variables baked in by package.nix
-# (DEFAULT_URL_FILE, DEFAULT_PREFIX), overridable at runtime by:
+# (DEFAULT_URL_FILE, DEFAULT_PREFIX, DEFAULT_TIME_ZONE), overridable at
+# runtime by:
 #   KEYBASE_NOTIFY_URL_FILE  path to a file containing just the webhook URL
 #   KEYBASE_NOTIFY_PREFIX    text prepended to every message
+#   KEYBASE_NOTIFY_TIME_ZONE zone of the time stamp appended to every post,
+#                            e.g. America/Chicago; set but empty disables it
 #   KEYBASE_NOTIFY_DRY_RUN=1 print the JSON body instead of posting
 #
 # The message is always logged first, before the JSON body is built, so a
@@ -24,9 +27,11 @@ trap 'exit 0' EXIT
 
 : "${DEFAULT_URL_FILE:=}"
 : "${DEFAULT_PREFIX:=}"
+: "${DEFAULT_TIME_ZONE:=}"
 
 url_file="${KEYBASE_NOTIFY_URL_FILE:-$DEFAULT_URL_FILE}"
 prefix="${KEYBASE_NOTIFY_PREFIX:-$DEFAULT_PREFIX}"
+time_zone="${KEYBASE_NOTIFY_TIME_ZONE-$DEFAULT_TIME_ZONE}"
 
 log() {
   echo "keybase-notify: $*" >&2
@@ -34,7 +39,16 @@ log() {
 
 msg="$*"
 log "$prefix$msg"
-body="$(jq -n --arg msg "$prefix$msg" '{msg: $msg}')"
+
+# Posting time, e.g. "3:42 PM CDT". Keybase shows its own time on hover, but
+# in each reader's zone; this gives everyone the same one. date doesn't fail
+# on an unknown zone, it prints UTC under the zone's name, so a zone with no
+# zoneinfo file drops the stamp instead of posting a wrong time.
+stamp=""
+if [[ -n "$time_zone" && -f "${TZDIR:-/usr/share/zoneinfo}/$time_zone" ]]; then
+  stamp=$(TZ="$time_zone" date '+%-I:%M %p %Z') || stamp=""
+fi
+body="$(jq -n --arg msg "$prefix$msg${stamp:+ · $stamp}" '{msg: $msg}')"
 
 if [[ "${KEYBASE_NOTIFY_DRY_RUN:-}" == "1" ]]; then
   echo "$body"
