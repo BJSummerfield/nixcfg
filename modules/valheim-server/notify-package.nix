@@ -1,4 +1,5 @@
 {
+  lib,
   writeShellApplication,
   coreutils,
   gnugrep,
@@ -11,5 +12,8 @@ writeShellApplication {
     gnugrep
     systemd
   ];
-  text = builtins.readFile ./notify.sh;
+  text = ''
+    DEFAULT_DEATH_LINES=${lib.escapeShellArg "${./death-lines.txt}"}
+  ''
+  + builtins.readFile ./notify.sh;
 }

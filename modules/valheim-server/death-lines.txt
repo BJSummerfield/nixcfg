@@ -1,0 +1,134 @@
+# Rotating death announcement lines for valheim-notify.
+# One message per line; {player} is replaced with the dying character's
+# name. Lines are used in order and rotate back to the start once
+# exhausted. Blank lines and lines starting with # are ignored.
+{player} has died. Hugin would like a word about that. 🐦‍⬛
+Odin's ravens are keeping {player}'s secret, whatever it was. 🐦
+Nobody saw exactly what happened to {player}. Nobody ever does.
+Hugin delivered the news of {player}'s death personally. 🐦
+Nobody at the mead hall wants to be the one to explain {player}'s death.
+{player} died, and their pride went with them.
+Odin's mead hall has a strict entry policy, and {player} did not meet it.
+Odin is not writing {player}'s name down today.
+The mead hall toasts to {player}, mostly out of pity. 🍺
+Somewhere, a skald just tore up a draft about {player}. 🎶
+{player}'s tombstone is out there somewhere, waiting patiently. 🪦
+{player} now has a tombstone to go find. Good luck with that.
+The last log entry for {player} reads: overconfident.
+Another entry for the annals: {player}, deceased. 📜
+The saga of {player} continues, mostly through embarrassing footnotes.
+We will never know what really happened to {player}.
+Valhalla remains, as ever, unconvinced by {player}.
+{player} is respawning, minus a few skill levels and most of their dignity. 🪦
+Nobody claims to have seen {player}'s final moment. Convenient, that. 🤫
+{player} has shuffled off this mortal coil, tombstone included. 🪦
+Skalds are workshopping a title for {player}'s death. Nothing fits.
+A runestone will not be carved for {player}. Not this time.
+The corpse run begins for {player}. May the gods be quick about it.
+The gods looked away at the crucial moment for {player}.
+The gods are staying suspiciously quiet about {player} tonight.
+The saga of {player} just got a very awkward new chapter.
+{player} has regrettably died
+The details of {player}'s demise remain, mercifully, unknown.
+Valhalla's doors stayed shut for {player} this time.
+{player} is respawning, minus a few things nobody wants to list.
+Odin's raven brought back nothing but bad news about {player}. 🐦
+The sagas will note {player}'s passing and move swiftly on.
+The details of {player}'s end are being kept, diplomatically, vague.
+{player} is respawning naked, which feels appropriate. 😬
+{player} was slain: it wasn't pretty
+Odin marked {player}'s file pending further review.
+That was, by all accounts, a rough one for {player}.
+Valhalla's front desk says {player}'s application is still under review.
+{player} has re-entered the Tenth World, minus a bit of experience and a lot of pride.
+{player} has died, and frankly, the details are staying classified.
+{player}'s ancestors are watching, and they are not proud right now.
+The skalds tried three different rhymes for {player}. None of them worked. 🎶
+Hugin circled once over {player}, then flew away disappointed. 🐦
+The Valkyries had a meeting about {player} and it did not go well.
+The Valkyries are pretending not to laugh at {player}.
+Odin really can't say much about {player}'s death.
+{player}'s ancestors are drafting a strongly worded letter.
+{player}'s death has been noted. The cause has not.
+The ancestors are unimpressed with {player} tonight.
+Hugin filed a report on {player}. The details are, conveniently, redacted. 🐦
+{player} joins the long, undistinguished list of the recently deceased. 📜
+Hugin refuses to elaborate further on {player}'s death. 🐦‍⬛
+{player}'s honour and gear both took a hit just now.
+{player} died, and the how of it will stay a mystery forever.
+{player}'s skill points scattered somewhere out there, unclaimed. 🪦
+{player} died. Try to act surprised. 🙄
+Odin's not saying how {player} died. He's just not saying.
+The details of {player}'s death are, for now, classified.
+The Valkyrie took one look at {player} and kept flying.
+The skalds are on strike over {player}'s death. Too hard to make it sound good.
+The Valkyries reviewed the footage of {player}'s death and declined to comment.
+{player}'s tombstone is out there, quietly judging. 🪦
+{player} is starting the long walk back to their own corpse. 🚶
+The gate to Valhalla remains closed to {player}, for now.
+{player} is back to square one, with fewer skills than before. 🔁
+{player}'s corpse run is now underway. Nobody envies it. 🪦
+{player}'s honour has been misplaced, along with everything else.
+{player}'s name comes up in the mead hall tonight, and not kindly. 🍺
+The sagas will remember {player}. Poorly, but they'll remember.
+{player}'s ancestors would like a word, but there's a line.
+Word of {player}'s death has already reached the mead hall. 🍺
+Valhalla's guest registry has a big question mark next to {player}'s name.
+The skalds have a new verse, and it's about {player}, and it is not flattering.
+{player} respawned with a look of quiet regret. 😬
+Hugin brought Odin the news about {player}, and Odin was not thrilled. 🐦‍⬛
+A runestone somewhere will eventually mention {player}. Eventually.
+Somewhere, Odin sighs at the mention of {player}.
+Hugin saw the whole thing and isn't telling {player}'s side of it. 🐦‍⬛
+{player} respawned, and the silence that followed said everything.
+Valhalla's guest list did not update to include {player} today.
+Somewhere, a bard is quietly refusing to write about {player}.
+With all due respect, {player} has died.
+{player} just added another chapter to a saga nobody asked for.
+{player} is now naked and deeply confused.
+{player}'s name is being whispered in the mead hall, not sung. 🍺
+Odin has added {player} to a very long, very unremarkable list.
+{player}'s tombstone awaits, as tombstones do. 🪦
+{player} died. It's going to be hard to write a song about this one.
+{player}'s corpse run is now a matter of public record. 📜
+The sagas skip a beat whenever {player} shows up in them.
+The gods have logged {player}'s death and moved on with their day.
+{player} is now the subject of a very short, very sad song. 🎶
+{player}'s death is, per the Valkyries, not going in the highlight reel.
+Valhalla sent {player}'s paperwork back marked insufficient.
+Nobody's willing to explain {player}'s death out loud.
+{player} died. The skalds are pretending they didn't see that.
+{player} is dead. The Allfather has been informed.
+The Valkyries were unavailable to comment on {player}'s passing.
+A moment of silence, or possibly laughter, for {player}.
+{player} is now doing the walk of shame back to the corpse. 😬
+{player} is doing the corpse run of shame right now.
+Somewhere, a skald is writing {player} a very short song. 🎶
+{player} has begun a corpse run. Pray for the tombstone. 🪦
+{player} died. The mead hall has thoughts, but nobody's sharing them. 🍺
+Odin's ravens have filed their report on {player}.
+Hugin has seen worse than {player}, but not by much. 🐦‍⬛
+Valhalla has reviewed {player}'s application and is sending it back.
+Odin's ravens whispered something about {player}, but nobody's saying what. 🐦
+That's one for the Tenth World's books: {player}.
+Odin watched {player}'s final moments and shrugged.
+{player}'s death has been logged, filed, and quietly forgotten.
+{player} has a long walk ahead of them, and no pants for it.
+Valhalla's intake office is still processing {player}'s case.
+{player}'s skill levels just took a hit nobody wanted to talk about.
+That was rough, {player}. Truly, deeply rough.
+The ancestors are giving {player} a wide, respectful berth right now. 🙄
+The skalds have officially run out of nice things to say about {player}.
+Somewhere in the Tenth World, {player} just became a cautionary tale.
+The mead hall has a new toast tonight, and it's not a happy one for {player}. 🍺
+Odin has seen a lot of deaths, and {player}'s barely made the list.
+{player} died and it was shameful
+{player} is back at spawn, naked and thoughtful.
+{player}'s corpse run has officially begun. Bring snacks. 🪦
+Another one for the annals, and {player} did not come out looking good.
+The mead hall goes quiet whenever {player}'s name comes up now. 🍺
+Word travels fast in the mead hall, and it's not good for {player} tonight. 🍺
+{player}'s tombstone will be waiting. It always is. 🪦
+The Valkyries' report on {player} is one word long: no.
+The Valkyries flipped a coin on {player} and it landed wrong.
+The runestones will not record how {player} died. Some mysteries stay mysteries.

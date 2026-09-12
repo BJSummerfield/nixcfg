@@ -218,10 +218,11 @@ in
       description = ''
         Host path to a file holding a Keybase webhookbot URL (e.g.
         config.sops.secrets.keybase-webhook-url.path), bind-mounted
-        read-only into the container. When set, joins, leaves, server
-        up/down and update progress are posted there. A string rather than
-        a path, so a Nix path literal can't copy the secret into the store.
-        Null removes the watcher unit and the valheim.service stop hook.
+        read-only into the container. When set, joins, leaves, deaths,
+        server up/down and update progress are posted there. A string
+        rather than a path, so a Nix path literal can't copy the secret
+        into the store. Null removes the watcher unit and the
+        valheim.service stop hook.
       '';
       example = "/run/secrets/keybase-webhook-url";
     };
@@ -524,7 +525,7 @@ in
           };
 
           systemd.services.valheim-notify = lib.mkIf notifyOn {
-            description = "Watch the Valheim journal and post join/leave/version events";
+            description = "Watch the Valheim journal and post join/leave/version/death events";
             # Deliberately no wantedBy/bindsTo: it is only ever started by
             # valheim.service's ExecStartPost, on every start including
             # restarts, and exits on its own once its invocation is stale.

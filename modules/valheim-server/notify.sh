@@ -1,24 +1,35 @@
-# Valheim event notifier: parses the server's journal for join/leave/version
-# events and turns systemd stop reasons into chat messages.
+# Valheim event notifier: parses the server's journal for join/leave/version/
+# death events and turns systemd stop reasons into chat messages.
 #
 # Subcommands:
-#   parse   Pure. Reads journal message lines on stdin, prints one event per
-#           line to stdout: "up VERSION", "join STEAMID NAME (N online)",
-#           "leave STEAMID NAME (N online)", "mismatch THEIRS MINE". No
-#           side effects, no env required. Used by the parser check.
-#   watch   Follows the current valheim.service invocation's journal live,
-#           replaying anything already logged silently, then posts new
-#           events. Exits once the invocation it is following stops being
-#           current (id changed, or the server is no longer active); it is
-#           restarted by valheim.service's ExecStartPost on every start.
-#   stopped Meant as valheim.service's `ExecStopPost=+`. Reads $SERVICE_RESULT
-#           (and $EXIT_STATUS for the crash case) and turns the stop into a
-#           message, unless it was a self-inflicted update restart (recorded
-#           by the updater in state/stop-reason), which the updater announces
-#           itself. Stops post whether or not anyone is online, so the chat
-#           always shows the server's status.
+#   parse         Pure. Reads journal message lines on stdin, prints one
+#                 event per line to stdout: "up VERSION",
+#                 "join STEAMID NAME (N online)",
+#                 "leave STEAMID NAME (N online)", "mismatch THEIRS MINE",
+#                 "death NAME". No side effects, no env required. Used by
+#                 the parser check.
+#   watch         Follows the current valheim.service invocation's journal
+#                 live, replaying anything already logged silently, then
+#                 posts new events. Exits once the invocation it is
+#                 following stops being current (id changed, or the server
+#                 is no longer active); it is restarted by valheim.service's
+#                 ExecStartPost on every start.
+#   stopped       Meant as valheim.service's `ExecStopPost=+`. Reads
+#                 $SERVICE_RESULT (and $EXIT_STATUS for the crash case) and
+#                 turns the stop into a message, unless it was a
+#                 self-inflicted update restart (recorded by the updater in
+#                 state/stop-reason), which the updater announces itself.
+#                 Stops post whether or not anyone is online, so the chat
+#                 always shows the server's status.
+#   death-message Pure. Prints the death-line template at INDEX (rotated
+#                 modulo the number of usable lines), with NAME substituted
+#                 in, to stdout. No side effects, no service env required;
+#                 used by the death-message check to test rotation and
+#                 substitution deterministically. Honors VALHEIM_DEATH_LINES
+#                 the same way `watch` does (see load_death_lines below).
 #
-# Env contract for `watch` and `stopped` (not required by `parse`):
+# Env contract for `watch` and `stopped` (not required by `parse` or
+# `death-message`):
 #   VALHEIM_INSTALL     Install root; state lives at $VALHEIM_INSTALL/state.
 #   VALHEIM_WORLD       World name, used in the plain "up" message.
 #   VALHEIM_NOTIFY_SEND Path to a keybase-notify binary, already baked with
@@ -37,6 +48,10 @@
 #   notify-crash-at  mtime is the last time a crash was posted, so repeated
 #                    crash-restart-crash loops don't spam more than once
 #                    every 10 minutes.
+#   death-line-next  Index of the next death line to use, so rotation is
+#                    sequential across restarts instead of resetting to 0.
+#                    Written by `watch` after every death post; replays
+#                    never advance it.
 #
 # Every post is wrapped in `timeout 25` and closes fd 9 (`9>&-`) so it can
 # never fail or hang whatever holds the updater's lock, and a failure is
@@ -110,10 +125,49 @@ MISMATCH_RE='Network version check, their:([0-9]+), mine:([0-9]+)'
 ZDOID_RE='Got character ZDOID from (.+) : (-?[0-9]+):([0-9]+)[[:space:]]*$'
 CLOSE_RE='Closing socket ([0-9]+)'
 
+# Game-time stamp each server log line carries, e.g. "09/10/2026 20:41:27:".
+# Unanchored, like the patterns above; only used on ZDOID lines, and only to
+# measure deltas between them, so it runs in naive UTC regardless of the
+# sandbox's or container's own time zone.
+GAME_TS_RE='([0-9]{2})/([0-9]{2})/([0-9]{4}) ([0-9]{2}):([0-9]{2}):([0-9]{2}):'
+
+# Sets the caller's LINE_EPOCH to the game-time stamp on $1 as a Unix epoch,
+# or "" if the line has none or the stamp fails to parse. Call only after
+# copying any needed fields out of BASH_REMATCH from another regex match on
+# the same line (this overwrites it). An empty LINE_EPOCH means the death
+# guards below never fire for that line: safe by construction.
+line_epoch() {
+  LINE_EPOCH=""
+  [[ "$1" =~ $GAME_TS_RE ]] || return 0
+  LINE_EPOCH=$(TZ=UTC0 date -d "${BASH_REMATCH[3]}-${BASH_REMATCH[1]}-${BASH_REMATCH[2]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s 2>/dev/null) || LINE_EPOCH=""
+}
+
+# Death detection thresholds; see the ZDOID branch below. Real respawn
+# counters observed in the wild: 1778-18290. Join-artifact "returns" (a 0:0
+# right after a fresh join, before the character ever really existed) seen
+# at counters 1-12, all within seconds of the 0:0. DEATH_MIN_COUNTER sits
+# well below the smallest real sample and well above the largest artifact.
+DEATH_MIN_SESSION_SECS=120 # 0:0 earlier than this after joining = join artifact
+DEATH_RETURN_SECS=30       # the return must follow the 0:0 within this
+DEATH_MIN_COUNTER=100      # return id_lo below this is treated as an artifact
+
+# Operates on the caller's (dynamically scoped, via `local`) JOINED_NAME.
+# True if NAME is any currently joined character. Not fixed: two players
+# sharing the same character name are indistinguishable here, so a respawn
+# from either can be mistaken for the other's already-joined name.
+is_joined() {
+  local name="$1" k
+  for k in "${!JOINED_NAME[@]}"; do
+    [[ "${JOINED_NAME[$k]}" == "$name" ]] && return 0
+  done
+  return 1
+}
+
 # Operates on the caller's (dynamically scoped, via `local`) STEAM_NAME,
-# JOINED_NAME, PENDING, VERSION and UP_EMITTED, and leaves any events fired
-# by this one line in the global EVENTS array. Shared by `parse` (which
-# just prints EVENTS) and `watch` (which also decides whether to post them).
+# JOINED_NAME, PENDING, VERSION, UP_EMITTED, FIRST_SEEN, LAST_HI, DEATH_AT
+# and DEATH_HI, and leaves any events fired by this one line in the global
+# EVENTS array. Shared by `parse` (which just prints EVENTS) and `watch`
+# (which also decides whether to post them).
 parse_events_from_line() {
   local line="$1"
   EVENTS=()
@@ -141,30 +195,62 @@ parse_events_from_line() {
       fi
     fi
   elif [[ "$line" =~ $ZDOID_RE ]]; then
-    local name="${BASH_REMATCH[1]}" id_hi="${BASH_REMATCH[2]}"
-    if [[ "$id_hi" != "0" ]]; then
-      # Not fixed: two players sharing the same character name are
-      # indistinguishable here, so a respawn from either can be mistaken for
-      # the other's already-joined name.
-      local already=0 k
-      for k in "${!JOINED_NAME[@]}"; do
-        if [[ "${JOINED_NAME[$k]}" == "$name" ]]; then
-          already=1
-          break
+    local name="${BASH_REMATCH[1]}" id_hi="${BASH_REMATCH[2]}" id_lo="${BASH_REMATCH[3]}"
+    local now=""
+    line_epoch "$line"
+    now="$LINE_EPOCH"
+    # set -u: never read the assoc arrays bare below; copy once into scalars.
+    local fs="${FIRST_SEEN[$name]:-}" lh="${LAST_HI[$name]:-}"
+    local dat="${DEATH_AT[$name]:-}" dhi="${DEATH_HI[$name]:-}"
+
+    if [[ "$id_hi" == "0" && "$id_lo" == "0" ]]; then
+      # A second 0:0 with no return in between restarts the pending record
+      # rather than stacking; only the most recent 0:0 can ever fire.
+      # shellcheck disable=SC2016
+      unset -v 'DEATH_AT[$name]' 'DEATH_HI[$name]'
+      if [[ -n "$now" && -n "$fs" && -n "$lh" ]] && is_joined "$name" \
+        && ((now - fs >= DEATH_MIN_SESSION_SECS)); then
+        DEATH_AT["$name"]="$now"
+        DEATH_HI["$name"]="$lh"
+      fi
+      # A bare 0:0 is never itself an event; only its return line can be.
+    elif [[ "$id_hi" != "0" ]]; then
+      if [[ -n "$dat" ]]; then
+        if [[ -n "$now" ]] && ((now - dat >= 0 && now - dat <= DEATH_RETURN_SECS)) \
+          && [[ "$id_hi" == "$dhi" && "$id_lo" =~ ^[0-9]{1,9}$ ]] \
+          && ((10#$id_lo >= DEATH_MIN_COUNTER)); then
+          EVENTS+=("death $name")
         fi
-      done
-      if ((already == 0)) && ((${#PENDING[@]} > 0)); then
+        # shellcheck disable=SC2016
+        unset -v 'DEATH_AT[$name]' 'DEATH_HI[$name]' # consumed either way
+      fi
+      LAST_HI["$name"]="$id_hi"
+
+      if ! is_joined "$name" && ((${#PENDING[@]} > 0)); then
         local sid="${PENDING[0]}"
         PENDING=("${PENDING[@]:1}")
         JOINED_NAME["$sid"]="$name"
+        [[ -n "$now" ]] && FIRST_SEEN["$name"]="$now"
+        # shellcheck disable=SC2016
+        unset -v 'DEATH_AT[$name]' 'DEATH_HI[$name]'
         EVENTS+=("join $sid $name (${#JOINED_NAME[@]} online)")
       fi
     fi
+    # Any other id_hi == 0 line (nonzero id_lo alongside it) is a shape
+    # we've never seen; ignored entirely, death state untouched, per the
+    # never-misfire rule.
   elif [[ "$line" =~ $CLOSE_RE ]]; then
     local sid="${BASH_REMATCH[1]}"
     if [[ -n "${JOINED_NAME[$sid]+x}" ]]; then
       local display="${JOINED_NAME[$sid]}"
+      local gone="$display"
       unset "JOINED_NAME[$sid]"
+      if [[ -n "$gone" ]]; then
+        # A logout clears this character's death-tracking state too, so a
+        # rejoin restarts the DEATH_MIN_SESSION_SECS clock from zero.
+        # shellcheck disable=SC2016
+        unset -v 'FIRST_SEEN[$gone]' 'LAST_HI[$gone]' 'DEATH_AT[$gone]' 'DEATH_HI[$gone]'
+      fi
       if [[ -z "$display" ]]; then
         display="${STEAM_NAME[$sid]:-a player}"
       fi
@@ -185,6 +271,7 @@ parse_events_from_line() {
 
 cmd_parse() {
   local -A STEAM_NAME=() JOINED_NAME=()
+  local -A FIRST_SEEN=() LAST_HI=() DEATH_AT=() DEATH_HI=()
   local -a PENDING=()
   local VERSION="" UP_EMITTED=0
   local line ev
@@ -197,6 +284,66 @@ cmd_parse() {
 }
 
 # --- watch --------------------------------------------------------------
+
+: "${DEFAULT_DEATH_LINES:=}"
+
+# Formats NAME for chat into the caller's FORMATTED_NAME: strips backticks
+# (which would open a Keybase code span and always get dropped) and bolds
+# it, unless it still contains markdown characters of its own. Shared by
+# join/leave and death.
+format_name() {
+  local name="$1"
+  FORMATTED_NAME="${name//\`/}"
+  if [[ "$FORMATTED_NAME" != *[*_~]* ]]; then
+    FORMATTED_NAME="*$FORMATTED_NAME*"
+  fi
+}
+
+# Fills the caller's DEATH_LINES array from the death-line template file at
+# $VALHEIM_DEATH_LINES, falling back to DEFAULT_DEATH_LINES baked in by
+# notify-package.nix (the runtime override is for tests only). Keeps every
+# non-blank, non-comment line that contains exactly one "{player}"; a file
+# with nothing usable in it (missing, unreadable, empty) leaves DEATH_LINES
+# with a single generic fallback, so a broken lines file can never crash a
+# live death post.
+load_death_lines() {
+  local path="${VALHEIM_DEATH_LINES:-$DEFAULT_DEATH_LINES}"
+  local -a raw=()
+  DEATH_LINES=()
+  if [[ -n "$path" && -r "$path" ]]; then
+    mapfile -t raw <"$path"
+  fi
+  local l rest
+  for l in "${raw[@]}"; do
+    l="${l%$'\r'}"
+    [[ -z "$l" || "$l" =~ ^[[:space:]]*# ]] && continue
+    [[ "$l" == *"{player}"* ]] || continue
+    # Exactly one occurrence: the text after the first one must not contain
+    # another.
+    rest="${l#*\{player\}}"
+    [[ "$rest" == *"{player}"* ]] && continue
+    DEATH_LINES+=("$l")
+  done
+  if ((${#DEATH_LINES[@]} == 0)); then
+    DEATH_LINES=("{player} died")
+  fi
+}
+
+# Renders DEATH_LINES[INDEX % count] for NAME into the caller's DEATH_MSG.
+# Splits on the first "{player}" and substitutes literally rather than with
+# bash's ${line//\{player\}/$name}: bash 5.2's patsub_replacement expands a
+# `&` or backslash sequence in the replacement text, and a player name is
+# untrusted input.
+render_death_message() {
+  local idx="$1" name="$2"
+  local tmpl pre suffix
+  idx=$((idx % ${#DEATH_LINES[@]}))
+  tmpl="${DEATH_LINES[$idx]}"
+  pre="${tmpl%%\{player\}*}"
+  suffix="${tmpl#*\{player\}}"
+  format_name "$name"
+  DEATH_MSG="💀 $pre$FORMATTED_NAME$suffix"
+}
 
 handle_up() {
   local version="$1"
@@ -244,19 +391,25 @@ handle_event() {
       ((is_replay)) && return 0
       local name="a player" verb="left" icon="👋"
       if [[ "$rest" =~ ^[0-9]+\ (.+)\ \([0-9]+\ online\)$ ]]; then
-        # Keybase renders chat markdown, so a name is bolded only when it
-        # has no markdown characters of its own; backticks would open a
-        # code span and are always dropped.
-        name="${BASH_REMATCH[1]//\`/}"
-        if [[ "$name" != *[*_~]* ]]; then
-          name="*$name*"
-        fi
+        format_name "${BASH_REMATCH[1]}"
+        name="$FORMATTED_NAME"
       fi
       if [[ "$kind" == join ]]; then
         verb="joined"
         icon="🟢"
       fi
       post "$icon $name $verb Valheim (${#JOINED_NAME[@]} online)"
+      ;;
+    death)
+      ((is_replay)) && return 0
+      local idx n=${#DEATH_LINES[@]}
+      ((n > 0)) || return 0
+      idx=$(read_state death-line-next) || idx=0
+      [[ "$idx" =~ ^[0-9]{1,6}$ ]] || idx=0
+      idx=$((10#$idx % n))
+      render_death_message "$idx" "$rest"
+      write_state death-line-next "$(((idx + 1) % n))" || true
+      post "$DEATH_MSG"
       ;;
     mismatch)
       ((is_replay)) && return 0
@@ -275,9 +428,12 @@ cmd_watch() {
   require_service_env
 
   local -A STEAM_NAME=() JOINED_NAME=()
+  local -A FIRST_SEEN=() LAST_HI=() DEATH_AT=() DEATH_HI=()
   local -a PENDING=()
+  local -a DEATH_LINES=()
   local VERSION="" UP_EMITTED=0 LAST_MISMATCH_POST=0
   local start id
+  load_death_lines
   start=$(date +%s)
   if ! systemctl is-active --quiet valheim.service; then
     log "watch: valheim.service is not active, exiting"
@@ -371,8 +527,19 @@ cmd_stopped() {
   fi
 }
 
+# --- death-message (pure, for the death-lines/rotation checks) ----------
+
+cmd_death_message() {
+  local idx="${1:?usage: valheim-notify death-message INDEX NAME}"
+  local name="${2:?usage: valheim-notify death-message INDEX NAME}"
+  local -a DEATH_LINES=()
+  load_death_lines
+  render_death_message "$idx" "$name"
+  echo "$DEATH_MSG"
+}
+
 usage() {
-  echo "usage: valheim-notify {parse|watch|stopped}" >&2
+  echo "usage: valheim-notify {parse|watch|stopped|death-message INDEX NAME}" >&2
   exit 1
 }
 
@@ -380,5 +547,9 @@ case "${1:-}" in
   parse) cmd_parse ;;
   watch) cmd_watch ;;
   stopped) cmd_stopped ;;
+  death-message)
+    shift
+    cmd_death_message "$@"
+    ;;
   *) usage ;;
 esac
