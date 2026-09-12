@@ -30,8 +30,12 @@
     sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
-  # sops.secrets.keybase-webhook-url = { sopsFile = ../../secrets/hosts/paynefield.yaml; mode = "0400"; };
-  # mine.system.keybase-notify.urlFile = config.sops.secrets.keybase-webhook-url.path;
+  sops.secrets.keybase-webhook-url = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
+
+  mine.system.keybase-notify.urlFile = config.sops.secrets.keybase-webhook-url.path;
 
   environment.pathsToLink = [
     "/share/applications"
@@ -68,10 +72,6 @@
           raids = "muchless";
           portals = "casual";
         };
-      };
-      vikunja-server = {
-        enable = false;
-        jwtSecretFile = config.sops.secrets.vikunja-jwt-secret.path;
       };
     };
     backups = {
