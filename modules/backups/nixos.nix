@@ -13,6 +13,25 @@
 }:
 let
   cfg = config.mine.backups;
+
+  timeout = lib.getExe' pkgs.coreutils "timeout";
+  date = lib.getExe' pkgs.coreutils "date";
+  cat = lib.getExe' pkgs.coreutils "cat";
+  rm = lib.getExe' pkgs.coreutils "rm";
+
+  startedStateFile = "/run/mine-backups-started";
+
+  # message may itself contain shell variable references (e.g. "$took"),
+  # so it is embedded in double quotes rather than shell-escaped.
+  notify = message: ''${timeout} 25 "${cfg.notifyCommand}" "${message}" || true'';
+
+  startedMessage =
+    if cfg.stopContainers == [ ] then
+      "💾 Backup started"
+    else
+      "💾 Backup started; ${lib.concatStringsSep ", " cfg.stopContainers} "
+      + (if builtins.length cfg.stopContainers == 1 then "is" else "are")
+      + " down until it finishes";
 in
 {
   options.mine.backups = {
@@ -64,6 +83,19 @@ in
         copy of sqlite state living in the container rootfs.
       '';
     };
+
+    notifyCommand = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Program run with one argument, a chat message, to announce backup
+        start, success and failure. Its failures and hangs are ignored: it
+        is always run as `timeout 25 <notifyCommand> "<message>" || true`.
+        Null disables backup notifications entirely, and leaves the
+        generated prepare/cleanup scripts unchanged.
+      '';
+      example = "/run/current-system/sw/bin/keybase-notify";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -84,12 +116,29 @@ in
         OnCalendar = cfg.schedule;
         Persistent = true;
       };
-      backupPrepareCommand = lib.concatMapStringsSep "\n" (
-        c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
-      ) cfg.stopContainers;
-      backupCleanupCommand = lib.concatMapStringsSep "\n" (
-        c: "${pkgs.nixos-container}/bin/nixos-container start ${c} || true"
-      ) cfg.stopContainers;
+      backupPrepareCommand =
+        lib.optionalString (cfg.notifyCommand != null) ''
+          ${date} +%s > ${startedStateFile}
+          ${notify startedMessage}
+        ''
+        + lib.concatMapStringsSep "\n" (
+          c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
+        ) cfg.stopContainers;
+      backupCleanupCommand =
+        lib.concatMapStringsSep "\n" (
+          c: "${pkgs.nixos-container}/bin/nixos-container start ${c} || true"
+        ) cfg.stopContainers
+        + lib.optionalString (cfg.notifyCommand != null) ''
+
+          if [ "$SERVICE_RESULT" = success ]; then
+            started=$(${cat} ${startedStateFile} 2>/dev/null || echo "$(${date} +%s)")
+            took=$(( ($(${date} +%s) - started) / 60 ))
+            ${notify "✅ Backup finished (took $took min)"}
+          else
+            ${notify "🚨 *Backup FAILED*"}
+          fi
+          ${rm} -f ${startedStateFile}
+        '';
       pruneOpts = [
         "--keep-daily 30"
         "--keep-weekly 12"

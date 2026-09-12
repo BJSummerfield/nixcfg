@@ -14,6 +14,7 @@
     ./jellyfin-server/nixos.nix
     ./jellybox/nixos.nix
     ./keybase/nixos.nix
+    ./keybase-notify/nixos.nix
     ./local-llm/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix

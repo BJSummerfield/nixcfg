@@ -24,6 +24,12 @@
 #
 # A manual `valheim-updater now` racing an `auto` tick waits for the lock
 # rather than failing.
+#
+# VALHEIM_NOTIFY, when non-empty, is the path to a keybase-notify binary
+# (already baked with its own URL file and prefix). It is always run through
+# the notify() helper, which never lets a hung or failing post delay the
+# updater beyond 25s: `timeout 25 ... 9>&-` so the child never inherits the
+# lock fd, and a failure is logged and ignored. An empty value means off.
 
 : "${VALHEIM_INSTALL:?VALHEIM_INSTALL must be set}"
 : "${VALHEIM_APP_ID:?VALHEIM_APP_ID must be set}"
@@ -33,6 +39,7 @@
 : "${VALHEIM_CHECK_TIMEOUT_MIN:?VALHEIM_CHECK_TIMEOUT_MIN must be set}"
 : "${VALHEIM_STAGE_TIMEOUT_MIN:?VALHEIM_STAGE_TIMEOUT_MIN must be set}"
 : "${VALHEIM_LOCK_WAIT_MIN:?VALHEIM_LOCK_WAIT_MIN must be set}"
+: "${VALHEIM_NOTIFY?VALHEIM_NOTIFY must be set (empty string for none)}"
 
 INSTALL="$VALHEIM_INSTALL"
 SLOTS="$INSTALL/slots"
@@ -48,6 +55,8 @@ CURRENT_LINK="$INSTALL/current"
 log() {
   echo "valheim-updater: $*"
 }
+
+notify() { [[ -n "$VALHEIM_NOTIFY" ]] || return 0; timeout 25 "$VALHEIM_NOTIFY" "$*" 9>&- || log "notify: post failed (ignored)"; }
 
 # Every directory the valheim user writes into is created (or re-chowned)
 # with this helper so a pre-existing install self-heals if ownership ever
@@ -101,6 +110,7 @@ marker_compare_lines() {
 cmd_layout() {
   ensure_dir "$STATE"
   rm -f "$STATE/swap-in-progress"
+  rm -f "$STATE/stop-reason"
 
   if [[ ! -e "$CURRENT_LINK" ]] \
     && { [[ -e "$INSTALL/valheim_server.x86_64" ]] || [[ -e "$INSTALL/.DepotDownloader" ]]; }; then
@@ -368,8 +378,13 @@ cmd_idle() {
   [[ "$count" == 0 ]]
 }
 
+# forced=1 means the swap is happening at the forceRestartAfter deadline with
+# players still connected, rather than because the server went idle: the
+# "going down" post is skipped in favor of a "forcing" one, sent by the
+# caller (cmd_auto) before this runs. Both cases still mark the stop as a
+# self-inflicted update so the ExecStopPost hook stays silent about it.
 cmd_swap() {
-  local slot="$1"
+  local slot="$1" forced="${2:-0}"
   case "$slot" in
     a | b) ;;
     *)
@@ -378,12 +393,22 @@ cmd_swap() {
       ;;
   esac
 
+  if systemctl is-active --quiet valheim.service; then
+    write_owned "$STATE/stop-reason" <<<"update" || log "swap: could not record stop-reason"
+    if ((forced)); then
+      notify "🔄 Update wait is over: restarting Valheim now for the update"
+    else
+      notify "🔄 Valheim going down for an update, back in a couple of minutes"
+    fi
+  fi
+
   touch "$STATE/swap-in-progress"
   systemctl stop valheim.service
   ln -sfn "slots/$slot" "$INSTALL/.current.tmp"
   mv -Tf "$INSTALL/.current.tmp" "$CURRENT_LINK"
   rm -f "$PENDING_FILE"
   systemctl start valheim.service
+  rm -f "$STATE/stop-reason"
   rm -f "$STATE/swap-in-progress"
 }
 
@@ -418,14 +443,16 @@ cmd_auto() {
   # Keep an existing pending file's mtime: that's the staged-at time the
   # force deadline below is measured from, and must survive a killed and
   # re-run updater landing on the same already-staged target.
+  local fresh=0
   if [[ ! -s "$PENDING_FILE" ]]; then
     write_owned "$PENDING_FILE" <<<"$target"
+    fresh=1
   fi
 
   local deadline
   deadline=$(($(stat -c %Y "$PENDING_FILE") + VALHEIM_FORCE_AFTER_MIN * 60))
 
-  local last_state="" last_log_ts=0
+  local last_state="" last_log_ts=0 waiting_notified=0 warned_5min=0
   while true; do
     local now state reason
     now=$(date +%s)
@@ -448,13 +475,28 @@ cmd_auto() {
       last_log_ts=$now
     fi
 
+    if [[ "$state" == busy ]]; then
+      if ((fresh == 1 && waiting_notified == 0)); then
+        notify "⬇️ A Valheim update is downloaded. The server restarts onto it once the server is empty, or in $VALHEIM_FORCE_AFTER_MIN min regardless. Players who have already updated can't join until then."
+        waiting_notified=1
+      fi
+      if ((warned_5min == 0 && VALHEIM_FORCE_AFTER_MIN > 5 && deadline - now <= 300)); then
+        notify "⏳ Valheim restarts for the update in about *5 minutes*, whether or not anyone is online"
+        warned_5min=1
+      fi
+    fi
+
     if [[ "$state" != busy ]]; then
       break
     fi
     sleep 30
   done
 
-  cmd_swap "$target"
+  if [[ "$state" == forced ]]; then
+    cmd_swap "$target" 1
+  else
+    cmd_swap "$target"
+  fi
 }
 
 cmd_now() {

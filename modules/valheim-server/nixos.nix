@@ -32,6 +32,12 @@
 }:
 let
   cfg = config.mine.system.valheim-server;
+  # Must stay here, in the outer host-level let, not inside the container's
+  # own `config` closure below: that closure's module args rebind the name
+  # `config` to the container's own config, so re-reading
+  # `config.mine.system.keybase-notify` from inside it would silently query
+  # the wrong (container-internal) config instead of the host's.
+  notifyCfg = config.mine.system.keybase-notify;
 
   dataDir = "/var/lib/valheim-data";
   serverDir = "/var/lib/valheim-server";
@@ -210,6 +216,16 @@ in
         restart applies a waiting build immediately.
       '';
     };
+
+    notify = lib.mkOption {
+      type = lib.types.bool;
+      default = config.mine.system.keybase-notify.enable;
+      defaultText = lib.literalExpression "config.mine.system.keybase-notify.enable";
+      description = ''
+        Post join/leave/up/down/update events to keybase-notify. Off removes
+        the watcher unit and the valheim.service stop hook entirely.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -280,6 +296,12 @@ in
           hostPath = tailscaleDir;
           isReadOnly = false;
         };
+      }
+      // lib.optionalAttrs (cfg.notify && notifyCfg.urlFile != null) {
+        "/run/host-secrets/keybase-webhook-url" = {
+          hostPath = notifyCfg.urlFile;
+          isReadOnly = true;
+        };
       };
 
       config =
@@ -318,6 +340,24 @@ in
             text = builtins.readFile ./updater.sh;
           };
 
+          # The secret is bind-mounted read-only at this fixed in-container
+          # path only when notifyCfg.urlFile is set (see the host-level
+          # bindMounts above); an empty urlFile here means keybase-notify
+          # logs instead of posting.
+          sender = pkgs.callPackage ../keybase-notify/package.nix {
+            urlFile = if notifyCfg.urlFile != null then "/run/host-secrets/keybase-webhook-url" else "";
+            inherit (notifyCfg) prefix;
+          };
+
+          valheimNotify = pkgs.callPackage ./notify-package.nix { };
+
+          # Used by valheim.service's ExecStopPost and by valheim-notify.
+          notifyEnvironment = [
+            "VALHEIM_INSTALL=${install}"
+            "VALHEIM_NOTIFY_SEND=${lib.getExe sender}"
+            "VALHEIM_WORLD=${cfg.worldName}"
+          ];
+
           # Shared by valheim-layout, valheim-autoupdate and valheim-update.
           updaterEnvironment = [
             "VALHEIM_INSTALL=${install}"
@@ -328,6 +368,7 @@ in
             "VALHEIM_CHECK_TIMEOUT_MIN=${toString checkTimeoutMin}"
             "VALHEIM_STAGE_TIMEOUT_MIN=${toString stageTimeoutMin}"
             "VALHEIM_LOCK_WAIT_MIN=${toString lockWaitMin}"
+            "VALHEIM_NOTIFY=${if cfg.notify then lib.getExe sender else ""}"
           ];
 
           flags = builtins.replaceStrings [ "$" "%" ] [ "$$" "%%" ] (
@@ -448,7 +489,7 @@ in
             description = "Valheim dedicated server";
             wantedBy = [ "multi-user.target" ];
             wants = [ "valheim-layout.service" ];
-            after = [ "valheim-layout.service" ];
+            after = [ "valheim-layout.service" ] ++ lib.optional cfg.notify "network.target";
             unitConfig.ConditionPathExists = exe;
             serviceConfig = {
               User = "valheim";
@@ -460,9 +501,12 @@ in
                 "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
                 "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:${install}/current/linux64"
                 "LD_LIBRARY_PATH=${install}/current/linux64"
-              ];
+              ]
+              ++ lib.optionals cfg.notify notifyEnvironment;
               ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
+              # 120s to save plus ~25s worst case for a notify post stays
+              # comfortably under the container's containerStopTimeout (180s).
               TimeoutStopSec = toString saveTimeout;
               Restart = "on-failure";
               RestartSec = "30";
@@ -471,9 +515,35 @@ in
               ProtectSystem = "strict";
               ReadWritePaths = [ "/var/lib/valheim" ];
               NoNewPrivileges = true;
+            }
+            // lib.optionalAttrs cfg.notify {
+              # Every start (including automatic restarts) hands the fresh
+              # invocation to a freshly (re)started watcher; `+` runs it as
+              # root regardless of this unit's own User=.
+              ExecStartPost = "-+${systemctl} restart --no-block valheim-notify.service";
+              ExecStopPost = "-+${lib.getExe valheimNotify} stopped";
             };
             startLimitIntervalSec = 600;
             startLimitBurst = 5;
+          };
+
+          systemd.services.valheim-notify = lib.mkIf cfg.notify {
+            description = "Watch the Valheim journal and post join/leave/version events";
+            # Deliberately no wantedBy/bindsTo: it is only ever started by
+            # valheim.service's ExecStartPost, on every start including
+            # restarts, and exits on its own once its invocation is stale.
+            after = [ "valheim.service" ];
+            serviceConfig = {
+              Type = "simple";
+              Environment = notifyEnvironment;
+              ExecStart = "${lib.getExe valheimNotify} watch";
+              Restart = "on-failure";
+              RestartSec = 10;
+              ProtectSystem = "strict";
+              ReadWritePaths = [ "${install}/state" ];
+              PrivateTmp = true;
+              NoNewPrivileges = true;
+            };
           };
 
           services.tailscale.enable = true;
