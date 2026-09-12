@@ -27,13 +27,6 @@ let
   # so it is embedded in double quotes rather than shell-escaped.
   notify = message: ''${timeout} 25 ${lib.getExe sender} "${message}" || true'';
 
-  startedMessage =
-    if cfg.stopContainers == [ ] then
-      "💾 Backup started"
-    else
-      "💾 Backup started; ${lib.concatStringsSep ", " cfg.stopContainers} "
-      + (if builtins.length cfg.stopContainers == 1 then "is" else "are")
-      + " down until it finishes";
 in
 {
   options.mine.backups = {
@@ -122,7 +115,7 @@ in
       backupPrepareCommand =
         lib.optionalString (cfg.notifyUrlFile != null) ''
           ${date} +%s > ${startedStateFile}
-          ${notify startedMessage}
+          ${notify "💾 Backup started"}
         ''
         + lib.concatMapStringsSep "\n" (
           c: "${pkgs.nixos-container}/bin/nixos-container stop ${c} || true"
