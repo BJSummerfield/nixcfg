@@ -227,7 +227,45 @@ handle_up() {
 
   write_state last-version "$version"
 
-  post "$msg"
+  # Always empty at this point (a fresh invocation has no players yet), but
+  # posted anyway so the start reads the same as a join or leave.
+  post "$msg"$'\n\n'"$(format_roster)"
+}
+
+# Keybase renders chat markdown, so a name is bolded only when it has no
+# markdown characters of its own; backticks would open a code span and are
+# always dropped.
+format_name() {
+  local name="${1//\`/}"
+  if [[ "$name" != *[*_~]* ]]; then
+    name="*$name*"
+  fi
+  printf '%s' "$name"
+}
+
+# Multi-line roster from the caller's JOINED_NAME: a header, one sorted
+# name per line, then the total.
+format_roster() {
+  local -a names=()
+  local sid
+  for sid in "${!JOINED_NAME[@]}"; do
+    names+=("${JOINED_NAME[$sid]:-${STEAM_NAME[$sid]:-a player}}")
+  done
+  local count=${#names[@]}
+  printf '🏰 *Server state*\n'
+  if ((count == 0)); then
+    printf '🌙 Nobody online, the world sleeps'
+    return 0
+  fi
+  local name
+  while IFS= read -r name; do
+    printf '• %s\n' "$(format_name "$name")"
+  done < <(printf '%s\n' "${names[@]}" | sort -f)
+  if ((count == 1)); then
+    printf '⚔️ 1 Viking online'
+  else
+    printf '⚔️ %s Vikings online' "$count"
+  fi
 }
 
 handle_event() {
@@ -242,21 +280,18 @@ handle_event() {
       ;;
     join | leave)
       ((is_replay)) && return 0
-      local name="a player" verb="left" icon="👋"
+      local name="A player" head
       if [[ "$rest" =~ ^[0-9]+\ (.+)\ \([0-9]+\ online\)$ ]]; then
-        # Keybase renders chat markdown, so a name is bolded only when it
-        # has no markdown characters of its own; backticks would open a
-        # code span and are always dropped.
-        name="${BASH_REMATCH[1]//\`/}"
-        if [[ "$name" != *[*_~]* ]]; then
-          name="*$name*"
-        fi
+        name=$(format_name "${BASH_REMATCH[1]}")
       fi
       if [[ "$kind" == join ]]; then
-        verb="joined"
-        icon="🟢"
+        head="🟢 $name joined the server"
+      else
+        head="👋 $name left the server"
       fi
-      post "$icon $name $verb Valheim (${#JOINED_NAME[@]} online)"
+      # Every join/leave carries the full roster, so each post alone shows
+      # the server's current state.
+      post "$head"$'\n\n'"$(format_roster)"
       ;;
     mismatch)
       ((is_replay)) && return 0
