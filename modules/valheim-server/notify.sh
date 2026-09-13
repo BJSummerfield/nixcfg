@@ -227,7 +227,9 @@ handle_up() {
 
   write_state last-version "$version"
 
-  post "$msg"
+  # Always empty at this point (a fresh invocation has no players yet), but
+  # posted anyway so the start reads the same as a join or leave.
+  post "$msg"$'\n\n'"$(format_roster)"
 }
 
 # Keybase renders chat markdown, so a name is bolded only when it has no
