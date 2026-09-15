@@ -40,8 +40,9 @@
       };
       vision = {
         maxImages = 3;
-        width = 1280;
-        height = 800;
+        width = 2000;
+        height = 2000;
+        maxPixels = 4000000;
       };
 
       vllm = {
