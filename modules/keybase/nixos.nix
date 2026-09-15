@@ -8,7 +8,7 @@ in
       keybase = prev.keybase.overrideAttrs (old: {
         inherit version;
         src = old.src.override {
-          tag = "v";
+          tag = "v${version}";
           hash = "sha256-TRDJINzuObgn6JWZ9CoHWxKO23I9sceDlB4MmnqlOvw=";
         };
         vendorHash = "sha256-OGavtp0vYqK0D4P+ypVyEF8GsvDvfIDQXsjlKmpKJJ4=";
