@@ -40,13 +40,18 @@
       };
       vision = {
         maxImages = 3;
-        width = 1280;
-        height = 800;
+        width = 2000;
+        height = 2000;
+        maxPixels = 4000000;
       };
 
       vllm = {
-        gpuMemoryUtilization = 0.955;
-        maxNumSeqs = 2;
+        gpuMemoryUtilization = 0.95;
+        cpuOffload = {
+          gb = 0.9;
+          params = [ "visual" ];
+        };
+        maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
         speculativeTokens = 3;

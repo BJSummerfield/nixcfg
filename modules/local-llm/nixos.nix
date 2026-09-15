@@ -17,7 +17,7 @@ let
   nvidiaEnabled = config.mine.system.nvidia.enable;
   cudaEnabled = cfg.cuda.enable;
 
-  vllmImage = "docker.io/vllm/vllm-openai:nightly-8a728663c1c3eeace834a95f5654fa653cc1998c";
+  vllmImage = "docker.io/vllm/vllm-openai:nightly-dc36fcce902a63eab06c1b93a5c4a5ee178a0c56";
   nvidiaDevices = [
     "/dev/nvidia0"
     "/dev/nvidiactl"
