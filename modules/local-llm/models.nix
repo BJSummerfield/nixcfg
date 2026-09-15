@@ -50,7 +50,7 @@
           gb = 0.9;
           params = [ "visual" ];
         };
-        maxNumSeqs = 2;
+        maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
         speculativeTokens = 3;
