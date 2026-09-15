@@ -47,6 +47,10 @@ let
     "--speculative-config '{\"method\": \"mtp\", \"num_speculative_tokens\": ${num m.vllm.speculativeTokens}, \"disable_eagle_block_drop\": true}'"
     "--no-async-scheduling"
   ]
+  ++ lib.optionals (m.vllm ? cpuOffload) [
+    "--cpu-offload-gb ${num m.vllm.cpuOffload.gb}"
+    "--cpu-offload-params ${lib.concatStringsSep " " m.vllm.cpuOffload.params}"
+  ]
   ++ lib.optionals (m.vllm.enablePrefixCaching or false) [
     "--enable-prefix-caching"
     "--mamba-cache-mode align"

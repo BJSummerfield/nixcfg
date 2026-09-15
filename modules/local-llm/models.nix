@@ -45,7 +45,11 @@
       };
 
       vllm = {
-        gpuMemoryUtilization = 0.955;
+        gpuMemoryUtilization = 0.95;
+        cpuOffload = {
+          gb = 0.9;
+          params = [ "visual" ];
+        };
         maxNumSeqs = 2;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
