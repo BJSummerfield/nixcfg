@@ -54,7 +54,7 @@ in
     };
     defaultProvider = llm.provider;
     defaultModel = llm.default;
-    defaultThinkingLevel = "high";
+    defaultThinkingLevel = "medium";
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
@@ -64,18 +64,22 @@ in
         scout = {
           output = "context.md";
           outputMode = "file-only";
+          thinking = "medium";
         };
         researcher = {
           output = "research.md";
           outputMode = "file-only";
+          thinking = "medium";
         };
         reviewer = {
           output = "review.md";
           outputMode = "file-only";
+          thinking = "medium";
         };
         oracle = {
           output = "oracle.md";
           outputMode = "file-only";
+          thinking = "medium";
         };
       };
     };
