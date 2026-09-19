@@ -51,10 +51,6 @@
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
-        kvOffloading = {
-          sizeGiB = 8;
-          backend = "native";
-        };
         speculativeTokens = 3;
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
