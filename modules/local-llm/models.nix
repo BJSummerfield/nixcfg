@@ -26,9 +26,6 @@
       maxTokens = 32768;
       sampling = {
         temperature = 1.0;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
       thinkingLevels = {
         minimal = "medium";
@@ -54,6 +51,10 @@
         maxNumSeqs = 3;
         maxNumBatchedTokens = 2048;
         kvCacheDtype = "fp8";
+        kvOffloading = {
+          sizeGiB = 8;
+          backend = "native";
+        };
         speculativeTokens = 3;
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
@@ -92,9 +93,6 @@
       maxTokens = 32768;
       sampling = {
         temperature = 0.6;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
 
       vllm = {
@@ -142,9 +140,6 @@
       maxTokens = 8192;
       sampling = {
         temperature = 0.6;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
 
       vllm = {

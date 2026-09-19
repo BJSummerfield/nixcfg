@@ -54,6 +54,14 @@ let
     "--cpu-offload-gb ${num m.vllm.cpuOffload.gb}"
     "--cpu-offload-params ${lib.concatStringsSep " " m.vllm.cpuOffload.params}"
   ]
+  ++ lib.optionals (m.vllm ? kvOffloading) [
+    "--kv-offloading-size ${num m.vllm.kvOffloading.sizeGiB}"
+    "--kv-offloading-backend ${m.vllm.kvOffloading.backend}"
+    # expandable_segments makes vLLM reject every KV connector unless the cumem
+    # allocator is on; it keeps expandable segments everywhere except the KV
+    # pool. Without this flag the engine refuses to start - loudly, not silently.
+    "--enable-cumem-allocator"
+  ]
   ++ lib.optionals (m.vllm.enablePrefixCaching or false) [
     "--enable-prefix-caching"
     "--mamba-cache-mode align"
@@ -62,9 +70,13 @@ let
   podmanArgs = [
     "run --rm --replace --pull=never"
     "--name ${containerName}"
-    "--log-driver=none"
+    "--log-driver=journald"
     "--device nvidia.com/gpu=all"
     "--ipc=host"
+    # The offload pool is pinned via cudaHostRegister and that failure is NOT
+    # fatal: without a raised memlock the pool comes up swappable, which is
+    # slower than no offload at all. Verify with Mlocked in /proc/meminfo.
+    "--ulimit memlock=-1"
     "-e HF_HUB_OFFLINE=1"
     "-e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
     "-p ${hostAddress}:${toString port}:8000"
