@@ -70,7 +70,7 @@ let
   podmanArgs = [
     "run --rm --replace --pull=never"
     "--name ${containerName}"
-    "--log-driver=journald"
+    "--log-driver=none"
     "--device nvidia.com/gpu=all"
     "--ipc=host"
     # The offload pool is pinned via cudaHostRegister and that failure is NOT
