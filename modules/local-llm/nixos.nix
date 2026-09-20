@@ -10,7 +10,8 @@
 #   llm-engine vllm       (the reverse)
 #   llm-engine stop | status
 #   llm-engine args ninfer   (prints the exact command that unit runs)
-# `cuda.engine` picks which one comes back after a reboot.
+# `cuda.engine` picks which one comes back after a reboot; it defaults to
+# "none", so a fresh boot leaves the card idle and neither engine running.
 #
 # NInfer's flags live in models.nix, but a throwaway A/B needs no rebuild: put
 # one NINFER_EXTRA_ARGS=... line in /var/lib/local-llm/ninfer.env and restart
@@ -108,14 +109,15 @@ in
       enable = lib.mkEnableOption "Serve NVFP4 models from the host on the CUDA/Blackwell card";
       engine = lib.mkOption {
         type = lib.types.enum [
+          "none"
           "vllm"
           "ninfer"
         ];
-        default = "vllm";
+        default = "none";
         description = ''
-          Which engine starts at boot. Both units are always built; this only
-          adds the wantedBy. Switch at runtime with `llm-engine <name>`, which
-          does not survive a reboot.
+          Which engine starts at boot, if any. Both units are always built;
+          this only adds the wantedBy. The default leaves the card idle until
+          `llm-engine vllm|ninfer` starts one, which does not survive a reboot.
         '';
       };
     };
