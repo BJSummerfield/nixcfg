@@ -1,24 +1,12 @@
-{ vllmEndpoint }:
 {
   config,
-  lib,
   ...
 }:
+# The container exists only to own the `llm` tailnet node: its `tailscale serve
+# --https=8443` is the address pi and every other client talks to, and it has to
+# survive whichever engine is running on the host behind it.
 {
   services.tailscale.enable = true;
-
-  services.open-webui = {
-    enable = true;
-    host = "0.0.0.0";
-    port = 8080;
-    environment = {
-      OPENAI_API_BASE_URL = "${vllmEndpoint}/v1";
-      OPENAI_API_KEY = "sk-no-key-required";
-      ENABLE_OLLAMA_API = "False";
-      WEBUI_AUTH = "True";
-      ENABLE_SIGNUP = "True";
-    };
-  };
 
   networking = {
     nameservers = [
@@ -28,13 +16,10 @@
     enableIPv6 = false;
     firewall = {
       enable = true;
-      allowedTCPPorts = [ 8080 ];
       trustedInterfaces = [ "tailscale0" ];
       allowedUDPPorts = [ config.services.tailscale.port ];
     };
   };
-
-  nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "open-webui" ];
 
   system.stateVersion = "24.11";
 }

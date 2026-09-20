@@ -99,8 +99,10 @@ let
 in
 {
   description = "vLLM OpenAI server (${name})";
-  wantedBy = [ "container@local-llm.service" ];
-  partOf = [ "container@local-llm.service" ];
+  # Deliberately not wantedBy anything: the engine you want at boot is chosen
+  # by mine.system.local-llm.cuda.engine, which adds the wantedBy there.
+  # One GPU, one resident model: starting either engine stops the other.
+  conflicts = [ "ninfer.service" ];
   after = [
     "container@local-llm.service"
     "network-online.target"
