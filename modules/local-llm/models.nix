@@ -23,7 +23,14 @@
       reasoning = true;
       maxModelLen = 102400;
       headroom = 4096;
-      maxTokens = 32768;
+      # pi sends min(this, contextWindow - prompt - headroom) as max_tokens, and
+      # NInfer reserves prompt + that figure for the life of the request - so an
+      # unused ceiling costs lanes on every call. Measured over 3,803 real turns
+      # (~/.pi/agent/sessions, since 2026-08-20): median 385, p99 13,202, and
+      # only 0.68% above 16,384 against 0.05% above 32,768. Halving the ceiling
+      # takes a 42k-prompt reservation from 75k to 58k - 3.8 lanes instead of
+      # 2.9 - and the 0.68% is what the budget valve is for.
+      maxTokens = 16384;
       sampling = {
         temperature = 1.0;
       };
