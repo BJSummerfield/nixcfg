@@ -60,14 +60,9 @@ in
 
     subagents = {
       maxThinking = "xhigh";
-      # Cheap execution, expensive judgement. An agent that declares its own
-      # level wins over defaultThinkingLevel, so every bundled agent this model
-      # serves is listed here: pi-subagents 0.66.0 ships worker/reviewer/oracle
-      # at "high", which this model's thinkingLevels map sends as xhigh - 84.0s
-      # and 9,746 completion tokens against medium's 16.7s and 2,079, measured.
-      # Worth it for a review pass, not for every worker in a fan-out.
       agentOverrides = {
         scout = {
+          model = qualified "Qwen3.8-27B-NVFP4-8k";
           output = "context.md";
           outputMode = "file-only";
           thinking = "medium";
@@ -84,11 +79,13 @@ in
           thinking = "medium";
         };
         reviewer = {
+          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "review.md";
           outputMode = "file-only";
           thinking = "xhigh";
         };
         oracle = {
+          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "oracle.md";
           outputMode = "file-only";
           thinking = "xhigh";
