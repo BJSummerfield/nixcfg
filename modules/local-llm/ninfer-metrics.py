@@ -170,6 +170,7 @@ class LogTail:
             "speculative": eng.get("speculative_backend"),
             "draft_window": eng.get("speculative_draft_window"),
             "vision": eng.get("vision"),
+            "argv": ev.get("argv"),
         }
 
 
