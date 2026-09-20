@@ -1,11 +1,8 @@
+{ engine }:
+{ config, lib, ... }:
 {
-  config,
-  ...
-}:
-# The container exists only to own the `llm` tailnet node: its `tailscale serve
-# --https=8443` is the address pi and every other client talks to, and it has to
-# survive whichever engine is running on the host behind it.
-{
+  imports = lib.optional (engine == "ninfer") ./ninfer.nix;
+
   services.tailscale.enable = true;
 
   networking = {

@@ -1,25 +1,19 @@
 # Once the container is running log into it with
 # sudo nixos-container root-login local-llm
 # tailscale up --hostname=llm --advertise-tags=tag:solo-node
-# tailscale serve --bg --https=8443 http://192.168.100.24:5800       # the engine, for pi
-# The 8443 rule must be re-run by hand after a rebuild; it does not follow nix.
+# tailscale serve --bg --https=8443 http://127.0.0.1:5800                  # the engine
+# tailscale serve --bg --https=8443 --set-path /ops http://127.0.0.1:5801  # ninfer-metrics
+# The serve rules must be re-run by hand after a rebuild; they do not follow nix.
 #
-# Both engines bind that same host port, and systemd Conflicts= keeps exactly
-# one of them resident, so the serve rule survives switching between them:
-#   llm-engine ninfer     (stops vllm, starts ninfer, waits for /health)
-#   llm-engine vllm       (the reverse)
-#   llm-engine stop | status
-#   llm-engine ninfer --spec dflash2 --draft-tokens 7   (persist NInfer flags)
-#   llm-engine ninfer --reset                           (drop them again)
-#   llm-engine args ninfer   (prints the exact command that unit runs)
-# `cuda.engine` picks which one comes back after a reboot; it defaults to
-# "none", so a fresh boot leaves the card idle and neither engine running.
+# Nothing starts on its own: `nixos-container start local-llm` brings the
+# container up, and cuda.autoStart decides whether the engine comes with it.
 #
-# NInfer's flags live in models.nix, but a throwaway A/B needs no rebuild: put
-# one NINFER_EXTRA_ARGS=... line in /var/lib/local-llm/ninfer.env and restart
-# the unit. The server takes the last value for a repeated flag, so that
-# overrides models.nix - except the booleans (--lm-head-draft, --vision),
-# which have no off-switch and must be turned off in models.nix.
+# A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
+# /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
+# Later flags win, except the booleans (--lm-head-draft, --vision).
+#
+# engine = "vllm" runs on the host in podman; its serve rule then points at
+# http://192.168.100.24:5800.
 
 {
   lib,
@@ -32,11 +26,15 @@ let
 
   nvidiaEnabled = config.mine.system.nvidia.enable;
   cudaEnabled = cfg.cuda.enable;
+  engine = cfg.cuda.engine;
+  ninferSelected = cudaEnabled && engine == "ninfer";
+  vllmSelected = cudaEnabled && engine == "vllm";
 
   vllmImage = "docker.io/vllm/vllm-openai:nightly-dc36fcce902a63eab06c1b93a5c4a5ee178a0c56";
   hostAddress = "192.168.100.24";
   localAddress = "192.168.100.25";
   enginePort = 5800;
+  metricsPort = 5801;
 
   catalog = import ./models.nix;
   allAliasNames = builtins.concatMap (n: builtins.attrNames (catalog.models.${n}.aliases or { })) (
@@ -57,88 +55,42 @@ let
       ;
     port = enginePort;
   };
-  ninferService = import ./ninfer-service.nix {
-    inherit
-      lib
-      pkgs
-      catalog
-      artifactOf
-      ninfer
-      hostAddress
-      ;
-    port = enginePort;
-  };
 
   ninferAvailable = catalog.models.${catalog.default} ? ninfer;
 
-  llm-engine = pkgs.writeShellApplication {
-    name = "llm-engine";
-    runtimeInputs = [ pkgs.systemd ];
-    text = ''
-      usage() {
-        echo "usage: llm-engine vllm | ninfer [flags... | --reset] | stop | status | args [vllm|ninfer]" >&2
-        exit 2
-      }
-
-      case "''${1-status}" in
-        args)
-          # The exact command each unit runs: copy it, edit the flags, and run
-          # it by hand after `llm-engine stop` for a one-off configuration.
-          systemctl cat "''${2-ninfer}.service" | ${lib.getExe' pkgs.gnugrep "grep"} -m1 ExecStart= |
-            ${lib.getExe' pkgs.gnused "sed"} 's/^ExecStart=//' | ${lib.getExe' pkgs.findutils "xargs"} cat
-          ;;
-        vllm|ninfer)
-          engine="$1"
-          shift
-          # Trailing flags are NInfer's: they are persisted as the override the
-          # unit reads, so a plain restart keeps them and `--reset` drops them.
-          # The server takes the last value for a repeated flag, so these win
-          # over models.nix.
-          if [ "$engine" = ninfer ] && [ "$#" -gt 0 ]; then
-            if [ "$1" = "--reset" ]; then
-              rm -f /var/lib/local-llm/ninfer.env
-            else
-              printf 'NINFER_EXTRA_ARGS=%s\n' "$*" > /var/lib/local-llm/ninfer.env
-            fi
-            # A running engine would otherwise keep the old flags.
-            systemctl stop ninfer.service
-          elif [ "$#" -gt 0 ]; then
-            echo "llm-engine: extra flags are only supported for ninfer" >&2
-            exit 2
-          fi
-          # Conflicts= stops the other engine as part of this transaction, so
-          # the two never hold the card at once.
-          systemctl start "$engine.service"
-          systemctl --no-pager --lines=0 status "$engine.service" || true
-          ;;
-        stop)
-          systemctl stop vllm.service ninfer.service
-          ;;
-        status)
-          systemctl --no-pager --lines=0 status vllm.service ninfer.service || true
-          ;;
-        *) usage ;;
-      esac
-    '';
-  };
+  gpuNodes = [
+    "/dev/nvidia0"
+    "/dev/nvidiactl"
+    "/dev/nvidia-modeset"
+    "/dev/nvidia-uvm"
+    "/dev/nvidia-uvm-tools"
+  ];
+  gpuDevices = map (node: {
+    modifier = "rwm";
+    inherit node;
+  }) gpuNodes;
+  gpuMounts = lib.genAttrs gpuNodes (node: {
+    hostPath = node;
+    isReadOnly = false;
+  });
 in
 {
   options.mine.system.local-llm = {
     enable = lib.mkEnableOption "Enable Local LLM container";
     cuda = {
-      enable = lib.mkEnableOption "Serve NVFP4 models from the host on the CUDA/Blackwell card";
+      enable = lib.mkEnableOption "Serve NVFP4 models on the CUDA/Blackwell card";
       engine = lib.mkOption {
         type = lib.types.enum [
-          "none"
-          "vllm"
           "ninfer"
+          "vllm"
         ];
-        default = "none";
-        description = ''
-          Which engine starts at boot, if any. Both units are always built;
-          this only adds the wantedBy. The default leaves the card idle until
-          `llm-engine vllm|ninfer` starts one, which does not survive a reboot.
-        '';
+        default = "ninfer";
+        description = "Which engine is built: NInfer inside the container, or vLLM on the host in podman.";
+      };
+      autoStart = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Start the engine whenever its container starts. The container itself never autostarts.";
       };
     };
   };
@@ -172,7 +124,7 @@ in
         message = "local-llm: model and alias names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
       }
       {
-        assertion = (cudaEnabled && cfg.cuda.engine == "ninfer") -> ninferAvailable;
+        assertion = ninferSelected -> ninferAvailable;
         message = "local-llm: cuda.engine = \"ninfer\" but models.nix has no `ninfer` block for ${catalog.default} (it needs its own .ninfer artifact; vLLM's safetensors will not load)";
       }
     ];
@@ -182,8 +134,6 @@ in
       extraPackages = lib.optionals (!nvidiaEnabled) [ pkgs.rocmPackages.clr.icd ];
     };
 
-    # The container has no published ports of its own now that Open WebUI is
-    # gone - it reaches the tailnet outbound, and clients arrive over tailscale.
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-local-llm" ];
@@ -195,10 +145,7 @@ in
       chmod 755 /var/lib/local-llm
     '';
 
-    virtualisation.podman.enable = lib.mkIf cudaEnabled true;
-    hardware.nvidia-container-toolkit.enable = lib.mkIf cudaEnabled true;
-
-    mine.allowedUnfree = lib.mkIf cudaEnabled [
+    mine.allowedUnfree = lib.mkIf ninferSelected [
       "libnvvm"
       "cuda_crt"
       "cuda_cccl"
@@ -207,21 +154,18 @@ in
       "cuda_nvcc"
     ];
 
-    environment.systemPackages = lib.mkIf cudaEnabled [ llm-engine ];
+    virtualisation.podman.enable = lib.mkIf vllmSelected true;
+    hardware.nvidia-container-toolkit.enable = lib.mkIf vllmSelected true;
 
-    systemd.services.vllm = lib.mkIf cudaEnabled (
-      vllmService // lib.optionalAttrs (cfg.cuda.engine == "vllm") { wantedBy = [ "multi-user.target" ]; }
-    );
-    systemd.services.ninfer = lib.mkIf (cudaEnabled && ninferAvailable) (
-      ninferService
-      // lib.optionalAttrs (cfg.cuda.engine == "ninfer") { wantedBy = [ "multi-user.target" ]; }
+    systemd.services.vllm = lib.mkIf vllmSelected (
+      vllmService // lib.optionalAttrs cfg.cuda.autoStart { wantedBy = [ "multi-user.target" ]; }
     );
 
-    networking.firewall.interfaces."ve-local-llm" = lib.mkIf cudaEnabled {
+    networking.firewall.interfaces."ve-local-llm" = lib.mkIf vllmSelected {
       allowedTCPPorts = [ enginePort ];
     };
 
-    systemd.services.vllm-image-pull = lib.mkIf cudaEnabled {
+    systemd.services.vllm-image-pull = lib.mkIf vllmSelected {
       description = "pull the pinned vLLM OCI image";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
@@ -242,7 +186,8 @@ in
           modifier = "rwm";
           node = "/dev/net/tun";
         }
-      ];
+      ]
+      ++ lib.optionals ninferSelected gpuDevices;
 
       bindMounts = {
         "/dev/net/tun" = {
@@ -253,9 +198,30 @@ in
           hostPath = "/var/lib/local-llm";
           isReadOnly = false;
         };
-      };
+      }
+      // lib.optionalAttrs ninferSelected (
+        gpuMounts
+        // {
+          "/run/opengl-driver" = {
+            hostPath = "/run/opengl-driver";
+            isReadOnly = true;
+          };
+        }
+      );
 
-      config = import ./container.nix;
+      config = {
+        imports = [ (import ./container.nix { engine = if ninferSelected then "ninfer" else "none"; }) ];
+        _module.args = {
+          inherit
+            catalog
+            artifactOf
+            ninfer
+            enginePort
+            metricsPort
+            ;
+          inherit (cfg.cuda) autoStart;
+        };
+      };
     };
   };
 }

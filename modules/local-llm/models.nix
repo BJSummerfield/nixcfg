@@ -69,14 +69,7 @@
         enablePrefixCaching = true;
       };
 
-      # The alternative engine, off unless `cuda.engine = "ninfer"` or you
-      # start ninfer.service by hand. Same card, same model family, different
-      # trade: a bigger KV pool and a pinned-RAM tier that survives eviction,
-      # against an engine with open context-cache bugs and no releases.
       ninfer = {
-        # Built by upstream from the same unsloth NVFP4 text weights this
-        # model's `files` already pull, plus Qwen's BF16 checkpoint for the
-        # embedding. It is not loadable by vLLM and vice versa.
         artifact = {
           repo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
           revision = "f0b43ad436b9fa8142c6ed6647c470a6fe409484";
@@ -84,32 +77,21 @@
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
         maxContext = 102400;
-        # Sizes the KV pool from whatever VRAM is left after weights, vision
-        # and state slots, keeping 1 GiB of headroom. Without it the pool is
-        # only as large as maxContext.
         kvCapacity = "auto";
-        maxConcurrency = 3;
+        maxConcurrency = 6;
         kvDtype = "fp8";
         prefillChunk = 2048;
-        # "mtp" (draftTokens 1..5) or "dflash2" (1..15, published config 7).
-        # One backend is resident per process; switching is a restart.
         spec = "mtp";
         draftTokens = 3;
         lmHeadDraft = true;
         deviceStateSlots = 3;
-        hostStateSlots = 8;
-        hostKvMib = 8192;
+        hostStateSlots = 12;
+        hostKvMib = 20480;
         maxSharedPrefixes = 8;
-        maxPrivateContinuations = 8;
+        maxPrivateContinuations = 12;
         pendingTimeoutMs = 600000;
         defaultMaxTokens = 8192;
         vision = true;
-        # Appended last, so these override the flags above (the server parses
-        # argv in order and takes the last value). For flags with no option
-        # here at all: --no-prefix-reuse, --default-thinking-budget,
-        # --max-long-anchors-per-continuation, --no-cuda-graph, --log-level,
-        # --chat-template, --api-key, the sampler overrides. For a throwaway
-        # A/B, prefer /var/lib/local-llm/ninfer.env, which needs no rebuild.
         extraArgs = [ ];
       };
     };
