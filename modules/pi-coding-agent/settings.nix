@@ -103,6 +103,7 @@ in
         apiKey = "dummy";
         compat = {
           supportsDeveloperRole = false;
+          supportsStrictMode = false;
           supportsReasoningEffort = true;
           thinkingFormat = "chat-template";
           chatTemplateKwargs = {

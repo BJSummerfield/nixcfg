@@ -124,6 +124,15 @@ in
         message = "local-llm: model and alias names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
       }
       {
+        assertion =
+          ninferSelected
+          -> builtins.all (
+            n:
+            builtins.all (a: lib.hasPrefix "${n}-" a) (builtins.attrNames (catalog.models.${n}.aliases or { }))
+          ) catalog.enabled;
+        message = "local-llm: NInfer serves one --model-id and is patched to accept only `<model-id>-<suffix>` besides it, so every alias of the enabled model must start with `<model>-`";
+      }
+      {
         assertion = ninferSelected -> ninferAvailable;
         message = "local-llm: cuda.engine = \"ninfer\" but models.nix has no `ninfer` block for ${catalog.default} (it needs its own .ninfer artifact; vLLM's safetensors will not load)";
       }
