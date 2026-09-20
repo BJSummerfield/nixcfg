@@ -9,7 +9,14 @@
 #   llm-engine ninfer     (stops vllm, starts ninfer, waits for /health)
 #   llm-engine vllm       (the reverse)
 #   llm-engine stop | status
+#   llm-engine args ninfer   (prints the exact command that unit runs)
 # `cuda.engine` picks which one comes back after a reboot.
+#
+# NInfer's flags live in models.nix, but a throwaway A/B needs no rebuild: put
+# one NINFER_EXTRA_ARGS=... line in /var/lib/local-llm/ninfer.env and restart
+# the unit. The server takes the last value for a repeated flag, so that
+# overrides models.nix - except the booleans (--lm-head-draft, --vision),
+# which have no off-switch and must be turned off in models.nix.
 
 {
   lib,
@@ -66,11 +73,17 @@ let
     runtimeInputs = [ pkgs.systemd ];
     text = ''
       usage() {
-        echo "usage: llm-engine vllm|ninfer|stop|status" >&2
+        echo "usage: llm-engine vllm|ninfer|stop|status|args [vllm|ninfer]" >&2
         exit 2
       }
 
       case "''${1-status}" in
+        args)
+          # The exact command each unit runs: copy it, edit the flags, and run
+          # it by hand after `llm-engine stop` for a one-off configuration.
+          systemctl cat "''${2-ninfer}.service" | ${lib.getExe' pkgs.gnugrep "grep"} -m1 ExecStart= |
+            ${lib.getExe' pkgs.gnused "sed"} 's/^ExecStart=//' | ${lib.getExe' pkgs.findutils "xargs"} cat
+          ;;
         vllm|ninfer)
           # Conflicts= stops the other engine as part of this transaction, so
           # the two never hold the card at once.
@@ -156,7 +169,7 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/vllm-cache
+      mkdir -p /var/lib/local-llm/vllm-cache /var/lib/local-llm/ninfer
       chmod 755 /var/lib/local-llm
     '';
 

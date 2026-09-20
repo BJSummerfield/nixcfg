@@ -92,6 +92,13 @@
         pendingTimeoutMs = 600000;
         defaultMaxTokens = 8192;
         vision = true;
+        # Appended last, so these override the flags above (the server parses
+        # argv in order and takes the last value). For flags with no option
+        # here at all: --no-prefix-reuse, --default-thinking-budget,
+        # --max-long-anchors-per-continuation, --no-cuda-graph, --log-level,
+        # --chat-template, --api-key, the sampler overrides. For a throwaway
+        # A/B, prefer /var/lib/local-llm/ninfer.env, which needs no rebuild.
+        extraArgs = [ ];
       };
     };
 

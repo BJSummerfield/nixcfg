@@ -49,10 +49,19 @@ let
   ++ lib.optional (n.spec != null && n.lmHeadDraft) "--lm-head-draft"
   # Vision residency is independent of the speculative backend, and costs VRAM
   # that `--kv-capacity auto` would otherwise hand to the KV pool.
-  ++ lib.optional n.vision "--vision";
+  ++ lib.optional n.vision "--vision"
+  ++ n.extraArgs;
 
+  # serve_options.cpp parses argv in order with no duplicate check, so anything
+  # appended here wins over the flags above. That makes NINFER_EXTRA_ARGS a real
+  # override and not just an extension: `--spec dflash2 --draft-tokens 7`
+  # replaces the MTP selection without a rebuild. The exception is the boolean
+  # flags (--lm-head-draft, --vision), which have no off-switch - turn those off
+  # in models.nix. Deliberately unquoted: the file supplies several words.
+  # shellcheck disable=SC2086
   start = pkgs.writeShellScript "ninfer-start" ''
-    exec ${lib.getExe' ninfer "ninfer-serve"} ${lib.concatStringsSep " \\\n  " serveArgs}
+    exec ${lib.getExe' ninfer "ninfer-serve"} ${lib.concatStringsSep " \\\n  " serveArgs} \
+      ''${NINFER_EXTRA_ARGS-}
   '';
 
   waitHealthy = pkgs.writeShellScript "ninfer-wait-healthy" ''
@@ -82,6 +91,9 @@ in
   conflicts = [ "vllm.service" ];
   serviceConfig = {
     Type = "exec";
+    # Optional, hand-edited, survives a rebuild: one line of
+    # NINFER_EXTRA_ARGS=... for A/B runs that should not cost a rebuild.
+    EnvironmentFile = "-/var/lib/local-llm/ninfer.env";
     ExecStart = start;
     ExecStartPost = waitHealthy;
     TimeoutStartSec = 960;
