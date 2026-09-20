@@ -9,7 +9,14 @@ let
   cfg = config.mine.user.pi-coding-agent;
   data = import ./settings.nix;
 
-  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
+  settings = data.settings // {
+    subagents = data.settings.subagents // {
+      defaultSubagentOnlyExtensions = [
+        "${config.home.homeDirectory}/.pi/agent/extensions/budget-valve.js"
+      ];
+    };
+  };
+  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
 
 in
 {
@@ -22,12 +29,6 @@ in
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;
     };
-
-    # Discovered by pi's own extension scan of `agentDir/extensions` (loader.js
-    # discoverExtensionsInDir: a *.js file, symlink included, needs no manifest),
-    # so it loads for every `pi` invocation that reads this agent dir rather than
-    # only where a `packages` entry reaches.
-    home.file.".pi/agent/extensions/budget-valve.js".source = ./extensions/budget-valve.js;
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
       run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"

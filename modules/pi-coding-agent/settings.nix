@@ -55,6 +55,7 @@ in
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "medium";
+    cacheWarming = "off";
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
