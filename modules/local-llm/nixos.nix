@@ -9,6 +9,8 @@
 #   llm-engine ninfer     (stops vllm, starts ninfer, waits for /health)
 #   llm-engine vllm       (the reverse)
 #   llm-engine stop | status
+#   llm-engine ninfer --spec dflash2 --draft-tokens 7   (persist NInfer flags)
+#   llm-engine ninfer --reset                           (drop them again)
 #   llm-engine args ninfer   (prints the exact command that unit runs)
 # `cuda.engine` picks which one comes back after a reboot; it defaults to
 # "none", so a fresh boot leaves the card idle and neither engine running.
@@ -74,7 +76,7 @@ let
     runtimeInputs = [ pkgs.systemd ];
     text = ''
       usage() {
-        echo "usage: llm-engine vllm|ninfer|stop|status|args [vllm|ninfer]" >&2
+        echo "usage: llm-engine vllm | ninfer [flags... | --reset] | stop | status | args [vllm|ninfer]" >&2
         exit 2
       }
 
@@ -86,10 +88,28 @@ let
             ${lib.getExe' pkgs.gnused "sed"} 's/^ExecStart=//' | ${lib.getExe' pkgs.findutils "xargs"} cat
           ;;
         vllm|ninfer)
+          engine="$1"
+          shift
+          # Trailing flags are NInfer's: they are persisted as the override the
+          # unit reads, so a plain restart keeps them and `--reset` drops them.
+          # The server takes the last value for a repeated flag, so these win
+          # over models.nix.
+          if [ "$engine" = ninfer ] && [ "$#" -gt 0 ]; then
+            if [ "$1" = "--reset" ]; then
+              rm -f /var/lib/local-llm/ninfer.env
+            else
+              printf 'NINFER_EXTRA_ARGS=%s\n' "$*" > /var/lib/local-llm/ninfer.env
+            fi
+            # A running engine would otherwise keep the old flags.
+            systemctl stop ninfer.service
+          elif [ "$#" -gt 0 ]; then
+            echo "llm-engine: extra flags are only supported for ninfer" >&2
+            exit 2
+          fi
           # Conflicts= stops the other engine as part of this transaction, so
           # the two never hold the card at once.
-          systemctl start "$1.service"
-          systemctl --no-pager --lines=0 status "$1.service" || true
+          systemctl start "$engine.service"
+          systemctl --no-pager --lines=0 status "$engine.service" || true
           ;;
         stop)
           systemctl stop vllm.service ninfer.service
