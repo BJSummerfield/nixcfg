@@ -58,6 +58,13 @@ in
 evalAll "nixos" inputs.self.nixosConfigurations
 // evalAll "darwin" inputs.self.darwinConfigurations
 // {
+  devbox-hermes =
+    evalOnly "devbox-hermes"
+      (inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      }).config.system.build.toplevel.drvPath;
   fmt-check =
     pkgs.runCommand "fmt-check"
       {

@@ -20,6 +20,7 @@
       group = "users";
     };
     devbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
+    devbox-hermes-env.sopsFile = ../../secrets/hosts/redtruck.yaml;
     devbox-signing-key = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
@@ -67,6 +68,7 @@
           githubTokenFile = config.sops.secrets.devbox-github-token.path;
           paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.devbox-signing-key.path;
+          hermesEnvFile = config.sops.secrets.devbox-hermes-env.path;
           tailnetHostname = "devbox.mist-gamma.ts.net";
           hostAddress = "192.168.100.26";
           localAddress = "192.168.100.27";
