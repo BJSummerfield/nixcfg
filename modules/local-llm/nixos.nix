@@ -5,8 +5,8 @@
 # tailscale serve --bg --https=8443 --set-path /ops http://127.0.0.1:5801  # ninfer-metrics
 # The serve rules must be re-run by hand after a rebuild; they do not follow nix.
 #
-# Nothing starts on its own: `nixos-container start local-llm` brings the
-# container up, and cuda.autoStart decides whether the engine comes with it.
+# Nothing starts at boot: `nixos-container start local-llm` brings the container
+# and the engine up together (cuda.autoStart = false to start the engine by hand).
 #
 # A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
 # /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
@@ -89,8 +89,8 @@ in
       };
       autoStart = lib.mkOption {
         type = lib.types.bool;
-        default = false;
-        description = "Start the engine whenever its container starts. The container itself never autostarts.";
+        default = true;
+        description = "Start the engine whenever its container starts. The container itself never autostarts, so the card stays idle at boot either way.";
       };
     };
   };
