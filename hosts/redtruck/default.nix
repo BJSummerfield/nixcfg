@@ -1,4 +1,9 @@
-{ config, pkgs, ... }:
+{
+  config,
+  pkgs,
+  inputs,
+  ...
+}:
 {
   imports = [
     ./hardware-configuration.nix
@@ -11,6 +16,8 @@
     bottom
     git
     helix
+    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui
+    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop
   ];
 
   sops.secrets = {
