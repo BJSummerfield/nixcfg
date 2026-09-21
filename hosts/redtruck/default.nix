@@ -1,9 +1,4 @@
-{
-  config,
-  pkgs,
-  inputs,
-  ...
-}:
+{ config, pkgs, ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -55,8 +50,6 @@
       hermies = {
         desktop.enable = true;
         gui.enable = true;
-        desktop.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
-        gui.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui;
       };
       local-llm = {
         enable = true;

@@ -1,24 +1,25 @@
-{ lib, config, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  inputs,
+  ...
+}:
+let
+  system = pkgs.stdenv.hostPlatform.system;
+in
 {
   options.mine.system.hermies = {
-    desktop.enable = lib.mkEnableOption "Hermes desktop app (nix package)";
-    gui.enable = lib.mkEnableOption "Hermes TUI (nix package)";
-    desktop.package = lib.mkOption {
-      type = lib.types.package;
-      description = "Hermes desktop package, set by the host from inputs.hermes-agent";
-    };
-    gui.package = lib.mkOption {
-      type = lib.types.package;
-      description = "Hermes TUI package, set by the host from inputs.hermes-agent";
-    };
+    desktop.enable = lib.mkEnableOption "Hermes desktop app (hermes-agent flake input)";
+    gui.enable = lib.mkEnableOption "Hermes TUI (hermes-agent flake input)";
   };
 
   config = lib.mkMerge [
     (lib.mkIf config.mine.system.hermies.desktop.enable {
-      environment.systemPackages = [ config.mine.system.hermies.desktop.package ];
+      environment.systemPackages = [ inputs.hermes-agent.packages.${system}.desktop ];
     })
     (lib.mkIf config.mine.system.hermies.gui.enable {
-      environment.systemPackages = [ config.mine.system.hermies.gui.package ];
+      environment.systemPackages = [ inputs.hermes-agent.packages.${system}.tui ];
     })
   ];
 }
