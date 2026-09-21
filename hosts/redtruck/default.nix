@@ -166,11 +166,6 @@
     };
   };
 
-  zramSwap = {
-    enable = true;
-    memoryPercent = 50;
-  };
-
   systemd.tmpfiles.rules = [
     "d /games 0755 waktu users -"
     "d /media 0755 waktu users -"

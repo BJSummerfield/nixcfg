@@ -94,6 +94,20 @@ evalAll "nixos" inputs.self.nixosConfigurations
         deadnix --fail . --exclude ${hwConfigGlob}
         touch $out
       '';
+  # The valve gives a subagent one more turn when its reply is cut off. Its input
+  # (stopReason) is pi's, not ours, so the branches are worth pinning even though
+  # the harness semantics around them can only be verified by reading pi's source.
+  pi-budget-valve =
+    pkgs.runCommand "pi-budget-valve"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/pi-coding-agent/extensions/budget-valve.js} budget-valve.js
+        cp ${../modules/pi-coding-agent/extensions/budget-valve.test.mjs} budget-valve.test.mjs
+        node budget-valve.test.mjs
+        touch $out
+      '';
   valheim-notify-parser =
     pkgs.runCommand "valheim-notify-parser"
       {

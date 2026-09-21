@@ -17,7 +17,7 @@ let
 
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
-    paths = [ pkgs.pi-coding-agent ];
+    paths = [ (pkgs.callPackage ../pi-coding-agent/package.nix { }) ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}

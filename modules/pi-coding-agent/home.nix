@@ -9,7 +9,14 @@ let
   cfg = config.mine.user.pi-coding-agent;
   data = import ./settings.nix;
 
-  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
+  settings = data.settings // {
+    subagents = data.settings.subagents // {
+      defaultSubagentOnlyExtensions = [
+        "${config.home.homeDirectory}/.pi/agent/subagent-extensions/budget-valve.js"
+      ];
+    };
+  };
+  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
 
 in
 {
@@ -18,6 +25,8 @@ in
   };
   config = mkIf cfg.enable {
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
+
+    home.file.".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
 
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;

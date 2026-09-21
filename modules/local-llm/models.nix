@@ -23,12 +23,21 @@
       reasoning = true;
       maxModelLen = 102400;
       headroom = 4096;
-      maxTokens = 32768;
+      maxTokens = 16384;
+      aliases = {
+        "Qwen3.8-27B-NVFP4-8k" = {
+          displayName = "Qwen3.8 27B NVFP4 8k output (redtruck)";
+          contextWindow = 102400 - 4096;
+          maxTokens = 8192;
+        };
+        "Qwen3.8-27B-NVFP4-32k" = {
+          displayName = "Qwen3.8 27B NVFP4 32k output (redtruck)";
+          contextWindow = 102400 - 4096;
+          maxTokens = 32768;
+        };
+      };
       sampling = {
         temperature = 1.0;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
       thinkingLevels = {
         minimal = "medium";
@@ -60,6 +69,31 @@
         enablePrefixCaching = true;
       };
 
+      ninfer = {
+        artifact = {
+          repo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
+          revision = "f0b43ad436b9fa8142c6ed6647c470a6fe409484";
+          file = "qwen3_8_27b_nvfp4.ninfer";
+          hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
+        };
+        maxContext = 102400;
+        kvCapacity = "auto";
+        maxConcurrency = 4;
+        kvDtype = "fp8";
+        prefillChunk = 2048;
+        spec = "mtp";
+        draftTokens = 3;
+        lmHeadDraft = true;
+        deviceStateSlots = 3;
+        hostStateSlots = 48;
+        hostKvMib = 20480;
+        maxSharedPrefixes = 8;
+        maxPrivateContinuations = 48;
+        pendingTimeoutMs = 600000;
+        defaultMaxTokens = 8192;
+        vision = true;
+        extraArgs = [ ];
+      };
     };
 
     "Qwen3.6-27B-NVFP4" = {
@@ -92,9 +126,6 @@
       maxTokens = 32768;
       sampling = {
         temperature = 0.6;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
 
       vllm = {
@@ -142,9 +173,6 @@
       maxTokens = 8192;
       sampling = {
         temperature = 0.6;
-        top_p = 0.95;
-        top_k = 20;
-        min_p = 0.0;
       };
 
       vllm = {

@@ -1,0 +1,15 @@
+diff --git a/src/serve/openai_common.cpp b/src/serve/openai_common.cpp
+index f16a90f..8105fd2 100644
+--- a/src/serve/openai_common.cpp
++++ b/src/serve/openai_common.cpp
+@@ -215,6 +215,10 @@ std::int64_t unix_time_now() {
+ 
+ void validate_openai_model(std::string_view requested, std::string_view available) {
+     if (requested == available) { return; }
++    if (requested.size() > available.size() + 1 &&
++        requested.substr(0, available.size()) == available && requested[available.size()] == '-') {
++        return;
++    }
+     ApiError error;
+     error.status  = 404;
+     error.type    = "invalid_request_error";

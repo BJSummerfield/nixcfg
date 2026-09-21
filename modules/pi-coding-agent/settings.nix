@@ -54,7 +54,8 @@ in
     };
     defaultProvider = llm.provider;
     defaultModel = llm.default;
-    defaultThinkingLevel = "high";
+    defaultThinkingLevel = "medium";
+    cacheWarming = "off";
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
@@ -62,20 +63,33 @@ in
       maxThinking = "xhigh";
       agentOverrides = {
         scout = {
+          model = qualified "Qwen3.8-27B-NVFP4-8k";
           output = "context.md";
           outputMode = "file-only";
+          thinking = "medium";
         };
         researcher = {
           output = "research.md";
           outputMode = "file-only";
+          thinking = "medium";
+        };
+        worker = {
+          thinking = "medium";
+        };
+        delegate = {
+          thinking = "medium";
         };
         reviewer = {
+          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "review.md";
           outputMode = "file-only";
+          thinking = "xhigh";
         };
         oracle = {
+          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "oracle.md";
           outputMode = "file-only";
+          thinking = "xhigh";
         };
       };
     };
@@ -89,6 +103,7 @@ in
         apiKey = "dummy";
         compat = {
           supportsDeveloperRole = false;
+          supportsStrictMode = false;
           supportsReasoningEffort = true;
           thinkingFormat = "chat-template";
           chatTemplateKwargs = {
