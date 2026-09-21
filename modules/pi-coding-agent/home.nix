@@ -12,7 +12,7 @@ let
   settings = data.settings // {
     subagents = data.settings.subagents // {
       defaultSubagentOnlyExtensions = [
-        "${config.home.homeDirectory}/.pi/agent/extensions/budget-valve.js"
+        "${config.home.homeDirectory}/.pi/agent/subagent-extensions/budget-valve.js"
       ];
     };
   };
@@ -26,7 +26,7 @@ in
   config = mkIf cfg.enable {
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
-    home.file.".pi/agent/extensions/budget-valve.js".source = ./extensions/budget-valve.js;
+    home.file.".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
 
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;

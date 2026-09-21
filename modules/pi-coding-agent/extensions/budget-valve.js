@@ -29,10 +29,12 @@ function contextTokensOf(usage) {
   );
 }
 
-// Registration is subagents.defaultSubagentOnlyExtensions, so every session this
-// loads into is already a child. The two markers this used to test for both miss
-// foreground children: parentSession is set only on forks, and PI_SUBAGENT_CHILD
-// only by the background runner.
+// Every session this loads into is a child, but only while it is installed
+// outside ~/.pi/agent/extensions: pi loads everything in that directory into every
+// session, the interactive one included, and this would then end the user's own
+// run. It is reached through subagents.defaultSubagentOnlyExtensions alone. The
+// markers this used to test for both miss foreground children: parentSession is
+// set only on forks, and PI_SUBAGENT_CHILD only by the background runner.
 function isChildSession() {
   return true;
 }
