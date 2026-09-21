@@ -2,6 +2,8 @@
 # sudo nixos-container root-login <name>
 # tailscale up --hostname=<name> --advertise-tags=tag:devbox
 # tailscale serve --bg 6767
+# With hermesEnvFile set, also:
+# tailscale serve --bg --https=9119 9119
 {
   config,
   lib,
@@ -119,6 +121,48 @@ in
             example = "/run/secrets/devbox-signing-key";
           };
 
+          hermesEnvFile = mkOption {
+            type = types.nullOr types.path;
+            default = null;
+            description = ''
+              Path on the host to an environment file for Hermes Agent.
+              Setting it is what adds Hermes to this instance: the gateway
+              and the web dashboard, running as agent over the same checkouts
+              as paseo, with the dashboard published on the tailnet at
+              `https://<tailnetHostname>:9119`.
+
+              Required lines:
+
+                  HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=<dashboard password>
+                  HERMES_DASHBOARD_BASIC_AUTH_SECRET=<openssl rand -hex 32>
+
+              The secret signs login sessions so they survive a restart. It
+              must be at least 16 bytes: a shorter one makes the password
+              provider fail to construct, and the dashboard then refuses to
+              start with "no auth providers are registered" rather than
+              naming the secret.
+
+              Optional provider keys go in the same file, e.g.
+              `ANTHROPIC_API_KEY=<key>`. They cannot be entered at runtime
+              instead: under the NixOS module Hermes refuses every write to
+              its own config and .env, so `hermes model` and the dashboard's
+              API Keys page do not persist anything.
+
+              The password is mandatory because the dashboard is reached
+              through `tailscale serve`, and Hermes only accepts a
+              non-loopback Host header for a declared public URL, which in
+              turn forces its auth gate on.
+
+              sops-nix's default (`mode = "0400"`, `owner = "root"`) is
+              sufficient: activation reads the file as root and merges it
+              into `/var/lib/hermes/.hermes/.env`. That copy is readable by
+              agent, which Hermes itself runs as.
+
+              null leaves Hermes out of the container entirely.
+            '';
+            example = "/run/secrets/devbox-hermes-env";
+          };
+
           hostAddress = mkOption {
             type = types.str;
             description = ''
@@ -228,13 +272,27 @@ in
           hostPath = box.signingKeyFile;
           isReadOnly = true;
         };
+      }
+      // lib.optionalAttrs (box.hermesEnvFile != null) {
+        "/run/secrets/hermes-env" = {
+          hostPath = box.hermesEnvFile;
+          isReadOnly = true;
+        };
       };
 
-      config = import ./container.nix {
-        inherit inputs;
-        inherit (box) tailnetHostname gitIdentity;
-        signCommits = box.signingKeyFile != null;
-      };
+      config.imports = [
+        (import ./container.nix {
+          inherit inputs;
+          inherit (box) tailnetHostname gitIdentity;
+          signCommits = box.signingKeyFile != null;
+        })
+      ]
+      ++ lib.optional (box.hermesEnvFile != null) (
+        import ./hermes.nix {
+          inherit inputs;
+          inherit (box) tailnetHostname;
+        }
+      );
     }) cfg;
   };
 }
