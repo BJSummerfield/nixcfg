@@ -16,8 +16,6 @@
     bottom
     git
     helix
-    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui
-    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop
   ];
 
   sops.secrets = {
@@ -54,6 +52,12 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
+      hermies = {
+        desktop.enable = true;
+        gui.enable = true;
+        desktop.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
+        gui.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui;
+      };
       local-llm = {
         enable = true;
         cuda.enable = true;

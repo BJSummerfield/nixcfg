@@ -27,6 +27,10 @@
     _1password.enable = true;
     firefox.enable = true;
     keybase.enable = true;
+    hermies = {
+      desktop.enable = true;
+      gui.enable = true;
+    };
     paseo-desktop.enable = true;
     theme.fontSizes.terminal = 15;
   };
@@ -35,20 +39,13 @@
     ffmpeg
   ];
 
-  homebrew = {
-    # Hermes clients. The desktop app ships as a Homebrew cask. The TUI is the
-    # `hermes-agent` CLI, published as a Homebrew *formula* (not a cask), so it
-    # is listed under `brews` rather than `casks`.
-    casks = [
-      "docker-desktop"
-      "hammerspoon"
-      "hermes-desktop"
-      "microsoft-teams"
-      "tailscale-app"
-      "utm"
-    ];
-    brews = [ "hermes-agent" ];
-  };
+  homebrew.casks = [
+    "docker-desktop"
+    "hammerspoon"
+    "microsoft-teams"
+    "tailscale-app"
+    "utm"
+  ];
 
   home-manager.users.brian = {
     home.stateVersion = "24.11";

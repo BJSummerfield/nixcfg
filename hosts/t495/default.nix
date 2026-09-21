@@ -13,8 +13,6 @@
     bottom
     git
     helix
-    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui
-    inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop
   ];
 
   boot.initrd.systemd.enable = true;
@@ -27,6 +25,12 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
+      hermies = {
+        desktop.enable = true;
+        gui.enable = true;
+        desktop.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.desktop;
+        gui.package = inputs.hermes-agent.packages.${pkgs.stdenv.hostPlatform.system}.tui;
+      };
       niri.enable = true;
       openssh.outbound.enable = true;
       printing.enable = true;
