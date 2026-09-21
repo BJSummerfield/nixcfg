@@ -3,13 +3,13 @@
  *
  * These exercise the extension against a stub of the parts of pi's
  * ExtensionAPI it uses; they cannot prove pi's own semantics (that `followUp`
- * lands in the same run, that a cancelled compaction is caught), which were
- * verified by reading the installed 0.85.1 source instead.
+ * lands in the same run), which were verified by reading the installed 0.85.1
+ * source instead.
  */
 import assert from "node:assert/strict";
 import budgetValve from "./budget-valve.js";
 
-function harness({ child = false } = {}) {
+function harness() {
   const handlers = {};
   const sent = [];
   const pi = {
@@ -20,19 +20,11 @@ function harness({ child = false } = {}) {
       sent.push({ message, options });
     },
   };
-  const previousChildEnv = process.env.PI_SUBAGENT_CHILD;
-  if (child) process.env.PI_SUBAGENT_CHILD = "1";
-  else delete process.env.PI_SUBAGENT_CHILD;
   budgetValve(pi);
   return {
     sent,
-    turnEnd: (message) => handlers.turn_end({ type: "turn_end", message }),
-    turnEndWith: (message, ctx) => handlers.turn_end({ type: "turn_end", message }, ctx),
-    beforeCompact: (event) => handlers.session_before_compact(event),
-    restore: () => {
-      if (previousChildEnv === undefined) delete process.env.PI_SUBAGENT_CHILD;
-      else process.env.PI_SUBAGENT_CHILD = previousChildEnv;
-    },
+    handlers,
+    turnEnd: (message, ctx) => handlers.turn_end({ type: "turn_end", message }, ctx),
   };
 }
 
@@ -41,42 +33,6 @@ const assistant = (usage, stopReason = "stop") => ({
   stopReason,
   usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...usage },
 });
-
-// A turn well under the threshold is left alone.
-{
-  const h = harness();
-  await h.turnEnd(assistant({ totalTokens: 40_000 }));
-  assert.equal(h.sent.length, 0, "quiet below the threshold");
-  h.restore();
-}
-
-// Crossing the threshold asks for a handoff, once, on the next turn.
-{
-  const h = harness();
-  await h.turnEnd(assistant({ totalTokens: 64_000 }));
-  await h.turnEnd(assistant({ totalTokens: 70_000 }));
-  assert.equal(h.sent.length, 1, "handoff is one-shot");
-  assert.equal(h.sent[0].message.customType, "budget-valve-handoff");
-  assert.equal(h.sent[0].options.deliverAs, "nextTurn");
-  assert.match(h.sent[0].message.content[0].text, /FIRST write your output file/);
-  h.restore();
-}
-
-// Context size follows calculateContextTokens: the sum, when totalTokens is absent.
-{
-  const h = harness();
-  await h.turnEnd(assistant({ input: 60_000, output: 3_000, cacheRead: 1_000, cacheWrite: 500 }));
-  assert.equal(h.sent.length, 1, "summed counters cross the threshold");
-  h.restore();
-}
-
-// usage.input alone must not trigger it - that field is per-turn, not context.
-{
-  const h = harness();
-  await h.turnEnd(assistant({ input: 5_000, output: 200, totalTokens: 20_000 }));
-  assert.equal(h.sent.length, 0, "totalTokens wins over a small input");
-  h.restore();
-}
 
 // A truncated turn is recovered with a followUp, once.
 {
@@ -88,56 +44,57 @@ const assistant = (usage, stopReason = "stop") => ({
   assert.equal(h.sent[0].options.deliverAs, "followUp");
   assert.equal(h.sent[0].options.triggerTurn, true);
   assert.match(h.sent[0].message.content[0].text, /FIRST write your output file/);
-  h.restore();
 }
 
-// Truncation wins over the handoff branch: a cut-off turn near the threshold
-// needs recovering, not a wrap-up request it cannot act on.
+// Context size is pi's business: no turn is interrupted for being large, and
+// nothing is ever aborted.
 {
   const h = harness();
-  await h.turnEnd(assistant({ totalTokens: 90_000 }, "length"));
+  let aborted = 0;
+  const ctx = { abort: () => (aborted += 1) };
+  await h.turnEnd(assistant({ totalTokens: 70_000 }), ctx);
+  await h.turnEnd(assistant({ totalTokens: 90_000 }, "toolUse"), ctx);
+  await h.turnEnd(assistant({ totalTokens: 95_000 }, "toolUse"), ctx);
+  assert.equal(h.sent.length, 0, "no handoff request at any size");
+  assert.equal(aborted, 0, "no abort at any size");
+}
+
+// A child compacts like any other session: the valve does not listen for it.
+{
+  const h = harness();
+  assert.equal(h.handlers.session_before_compact, undefined);
+}
+
+// No recovery when the window is nearly full: the recovery turn would inherit the
+// same dead ceiling. The run is left to pi, not aborted.
+{
+  const h = harness();
+  let aborted = 0;
+  const ctx = {
+    abort: () => (aborted += 1),
+    getContextUsage: () => ({ contextWindow: 98_304, tokens: 93_000 }),
+  };
+  await h.turnEnd(assistant({ totalTokens: 93_000 }, "length"), ctx);
+  assert.equal(h.sent.length, 0);
+  assert.equal(aborted, 0);
+}
+
+// A skipped recovery does not use up the one attempt.
+{
+  const h = harness();
+  const full = { getContextUsage: () => ({ contextWindow: 98_304, tokens: 93_000 }) };
+  const roomy = { getContextUsage: () => ({ contextWindow: 98_304, tokens: 40_000 }) };
+  await h.turnEnd(assistant({ totalTokens: 93_000 }, "length"), full);
+  await h.turnEnd(assistant({ totalTokens: 40_000 }, "length"), roomy);
   assert.equal(h.sent.length, 1);
-  assert.equal(h.sent[0].message.customType, "budget-valve-truncated");
-  h.restore();
 }
 
 // Non-assistant turn_end payloads are ignored.
 {
   const h = harness();
-  await h.turnEnd({ role: "user", usage: { totalTokens: 90_000 } });
+  await h.turnEnd({ role: "user", stopReason: "length", usage: { totalTokens: 30_000 } });
   await h.turnEnd(undefined);
   assert.equal(h.sent.length, 0);
-  h.restore();
-}
-
-// Compaction: cancelled only for a subagent child, and only on the threshold path.
-{
-  const h = harness({ child: true });
-  assert.deepEqual(h.beforeCompact({ reason: "threshold" }), { cancel: true });
-  assert.equal(h.beforeCompact({ reason: "overflow", willRetry: true }), undefined);
-  assert.equal(h.beforeCompact({ reason: "manual" }), undefined);
-  h.restore();
-}
-
-// A foreground child carries neither marker the valve used to test for, and must
-// still be caught: it has no parentSession (a fork-only field) and the background
-// runner is what sets PI_SUBAGENT_CHILD.
-{
-  const h = harness({ child: false });
-  assert.deepEqual(h.beforeCompact({ reason: "threshold" }), { cancel: true });
-  h.restore();
-}
-
-// The abort still fires for a foreground child that keeps calling tools.
-{
-  const h = harness({ child: false });
-  let aborted = 0;
-  const ctx = { abort: () => (aborted += 1) };
-  await h.turnEndWith(assistant({ totalTokens: 70_000 }), ctx);
-  await h.turnEndWith(assistant({ totalTokens: 72_000 }, "toolUse"), ctx);
-  await h.turnEndWith(assistant({ totalTokens: 74_000 }, "toolUse"), ctx);
-  assert.equal(aborted, 1, "foreground child is aborted after the grace turns");
-  h.restore();
 }
 
 console.log("budget-valve: all assertions passed");

@@ -94,10 +94,9 @@ evalAll "nixos" inputs.self.nixosConfigurations
         deadnix --fail . --exclude ${hwConfigGlob}
         touch $out
       '';
-  # The valve decides whether a turn stops deliberately or hits a wall, and its
-  # inputs (stopReason, the context-token formula) are pi's, not ours - so the
-  # branches are worth pinning even though the harness semantics around them
-  # can only be verified by reading pi's source.
+  # The valve gives a subagent one more turn when its reply is cut off. Its input
+  # (stopReason) is pi's, not ours, so the branches are worth pinning even though
+  # the harness semantics around them can only be verified by reading pi's source.
   pi-budget-valve =
     pkgs.runCommand "pi-budget-valve"
       {

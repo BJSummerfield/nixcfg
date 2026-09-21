@@ -1,18 +1,13 @@
-// Ends a turn before it hits the output limit or the compaction threshold.
-// Child sessions are ended outright: a compaction inside one loses the run.
+// Gives a subagent one more turn when its reply is cut off by the output limit.
+// pi ends the run there if the cut-off reply held no tool call, and the parent
+// gets half a message. Context is left to pi: a child compacts and carries on.
+//
+// Install outside ~/.pi/agent/extensions. pi loads everything in that directory
+// into every session, the interactive one included; this is reached through
+// subagents.defaultSubagentOnlyExtensions alone.
 
-const HANDOFF_THRESHOLD_TOKENS = 64000;
 const PI_RESERVE_TOKENS = 4096;
 const MIN_RECOVERY_HEADROOM_TOKENS = 2000;
-const HANDOFF_GRACE_TURNS = 2;
-
-const HANDOFF_REQUEST =
-  "Context budget: this session has passed 64,000 tokens and is approaching " +
-  "the point where the harness would compact it, which loses the thread. " +
-  "Wrap up now, in this order: FIRST write your output file with everything " +
-  "you have so far, THEN reply with a short handoff - what you finished, what " +
-  "remains, and the paths a successor needs. Do not start new work. The run " +
-  "ends after your next two turns whether or not you have replied.";
 
 const TRUNCATION_RECOVERY =
   "Your previous turn ran out of output budget before it finished, so any " +
@@ -29,16 +24,6 @@ function contextTokensOf(usage) {
   );
 }
 
-// Every session this loads into is a child, but only while it is installed
-// outside ~/.pi/agent/extensions: pi loads everything in that directory into every
-// session, the interactive one included, and this would then end the user's own
-// run. It is reached through subagents.defaultSubagentOnlyExtensions alone. The
-// markers this used to test for both miss foreground children: parentSession is
-// set only on forks, and PI_SUBAGENT_CHILD only by the background runner.
-function isChildSession() {
-  return true;
-}
-
 function outputHeadroom(ctx, message) {
   const usage = ctx?.getContextUsage?.();
   const window = usage?.contextWindow ?? ctx?.model?.contextWindow;
@@ -49,59 +34,23 @@ function outputHeadroom(ctx, message) {
 
 export default function budgetValve(pi) {
   // Per registration: foreground children share the parent's process.
-  let handoffRequested = false;
-  let turnsSinceHandoff = 0;
-  let truncationRecoveryAttempted = false;
+  let recoveryAttempted = false;
 
   pi.on("turn_end", async (event, ctx) => {
     const message = event?.message;
     if (!message || message.role !== "assistant") return;
-    const child = isChildSession(ctx);
-
-    if (message.stopReason === "length") {
-      if (outputHeadroom(ctx, message) < MIN_RECOVERY_HEADROOM_TOKENS) {
-        if (child) ctx?.abort?.();
-        return;
-      }
-      if (truncationRecoveryAttempted) return;
-      truncationRecoveryAttempted = true;
-      await pi.sendMessage(
-        {
-          customType: "budget-valve-truncated",
-          content: [{ type: "text", text: TRUNCATION_RECOVERY }],
-          display: "Budget valve: recovering a truncated turn",
-        },
-        { deliverAs: "followUp", triggerTurn: true },
-      );
-      return;
-    }
-
-    if (handoffRequested) {
-      turnsSinceHandoff += 1;
-      if (child && turnsSinceHandoff >= HANDOFF_GRACE_TURNS && message.stopReason === "toolUse") {
-        ctx?.abort?.();
-      }
-      return;
-    }
-
-    if (contextTokensOf(message.usage) < HANDOFF_THRESHOLD_TOKENS) return;
-    handoffRequested = true;
+    if (message.stopReason !== "length") return;
+    if (recoveryAttempted) return;
+    // A recovery turn this close to the window inherits the same dead ceiling.
+    if (outputHeadroom(ctx, message) < MIN_RECOVERY_HEADROOM_TOKENS) return;
+    recoveryAttempted = true;
     await pi.sendMessage(
       {
-        customType: "budget-valve-handoff",
-        content: [{ type: "text", text: HANDOFF_REQUEST }],
-        display: "Budget valve: asking for a handoff before compaction",
+        customType: "budget-valve-truncated",
+        content: [{ type: "text", text: TRUNCATION_RECOVERY }],
+        display: "Budget valve: recovering a truncated turn",
       },
-      { deliverAs: "nextTurn" },
+      { deliverAs: "followUp", triggerTurn: true },
     );
-  });
-
-  pi.on("session_before_compact", (event, ctx) => {
-    if (!isChildSession(ctx)) return;
-    // "overflow" is pi's compact-and-retry after a failed turn; only the
-    // threshold path is intercepted.
-    if (event?.reason !== "threshold") return;
-    ctx?.abort?.();
-    return { cancel: true };
   });
 }
