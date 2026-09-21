@@ -183,9 +183,11 @@ def summarize(reqs, samples):
     drafted = sum(r["drafted"] for r in reqs)
     accepted = sum(r["accepted"] for r in reqs)
     decode_rates = [r["output"] / r["decode"] for r in reqs if r["decode"] > 0.05 and r["output"] >= 50]
-    big = [r for r in reqs if r["prompt"] > 50000]
-    cold = [r for r in big if r["cached"] < 0.1 * r["prompt"]]
-    evicted = [r for r in cold if r["messages"] > 4]
+    queue_s = sum(r["queue"] for r in reqs)
+    prefill_s = sum(r["prefill"] for r in reqs)
+    decode_s = sum(r["decode"] for r in reqs)
+    mid = [r for r in reqs if r["messages"] > 4]
+    cold = [r for r in mid if r["cached"] < 0.1 * r["prompt"]]
     finish = collections.Counter(r["finish"] for r in reqs)
     tiny_ceiling = sum(1 for r in reqs if r["finish"] == "output_limit" and r["requested_output"] <= 24)
 
@@ -224,11 +226,17 @@ def summarize(reqs, samples):
             "re_prefilled_pct": round(100 * computed / prompt, 1) if prompt else None,
             "output": output,
         },
+        "time_budget_s": {
+            "queue": round(queue_s),
+            "prefill": round(prefill_s),
+            "decode": round(decode_s),
+            "queue_pct": round(100 * queue_s / (queue_s + prefill_s + decode_s), 1) if queue_s else 0.0,
+        },
         "cache": {
-            "prompts_over_50k": len(big),
+            "mid_conversation": len(mid),
             "cold_under_10pct": len(cold),
-            "of_which_evicted_mid_conversation": len(evicted),
             "cold_re_prefill_tokens": sum(r["computed"] for r in cold),
+            "cold_re_prefill_seconds": round(sum(r["prefill"] for r in cold), 1),
         },
         "latency_s": {
             "ttft": _pcts([r["ttft"] for r in reqs]),
