@@ -10,6 +10,7 @@
     ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
+    ./hermies/nixos.nix
     ./immich-server/nixos.nix
     ./jellyfin-server/nixos.nix
     ./jellybox/nixos.nix
