@@ -29,13 +29,12 @@ function contextTokensOf(usage) {
   );
 }
 
-function isChildSession(ctx) {
-  try {
-    if (ctx?.sessionManager?.getHeader?.()?.parentSession) return true;
-  } catch {
-    // no readable header: treat as interactive
-  }
-  return process.env.PI_SUBAGENT_CHILD === "1";
+// Registration is subagents.defaultSubagentOnlyExtensions, so every session this
+// loads into is already a child. The two markers this used to test for both miss
+// foreground children: parentSession is set only on forks, and PI_SUBAGENT_CHILD
+// only by the background runner.
+function isChildSession() {
+  return true;
 }
 
 function outputHeadroom(ctx, message) {

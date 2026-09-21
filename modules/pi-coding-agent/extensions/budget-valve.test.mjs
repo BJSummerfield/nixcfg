@@ -27,6 +27,7 @@ function harness({ child = false } = {}) {
   return {
     sent,
     turnEnd: (message) => handlers.turn_end({ type: "turn_end", message }),
+    turnEndWith: (message, ctx) => handlers.turn_end({ type: "turn_end", message }, ctx),
     beforeCompact: (event) => handlers.session_before_compact(event),
     restore: () => {
       if (previousChildEnv === undefined) delete process.env.PI_SUBAGENT_CHILD;
@@ -118,10 +119,24 @@ const assistant = (usage, stopReason = "stop") => ({
   h.restore();
 }
 
-// The interactive session compacts normally.
+// A foreground child carries neither marker the valve used to test for, and must
+// still be caught: it has no parentSession (a fork-only field) and the background
+// runner is what sets PI_SUBAGENT_CHILD.
 {
   const h = harness({ child: false });
-  assert.equal(h.beforeCompact({ reason: "threshold" }), undefined);
+  assert.deepEqual(h.beforeCompact({ reason: "threshold" }), { cancel: true });
+  h.restore();
+}
+
+// The abort still fires for a foreground child that keeps calling tools.
+{
+  const h = harness({ child: false });
+  let aborted = 0;
+  const ctx = { abort: () => (aborted += 1) };
+  await h.turnEndWith(assistant({ totalTokens: 70_000 }), ctx);
+  await h.turnEndWith(assistant({ totalTokens: 72_000 }, "toolUse"), ctx);
+  await h.turnEndWith(assistant({ totalTokens: 74_000 }, "toolUse"), ctx);
+  assert.equal(aborted, 1, "foreground child is aborted after the grace turns");
   h.restore();
 }
 
