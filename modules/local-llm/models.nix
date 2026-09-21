@@ -86,7 +86,7 @@
         lmHeadDraft = true;
         deviceStateSlots = 3;
         hostStateSlots = 48;
-        hostKvMib = 20480;
+        hostKvMib = 10240;
         maxSharedPrefixes = 8;
         maxPrivateContinuations = 48;
         pendingTimeoutMs = 600000;
