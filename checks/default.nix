@@ -119,8 +119,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
           reasoning_effort: xhigh
         kanban:
           default_assignee: claude-scout
-          max_in_progress: 4
-          max_in_progress_per_profile: 2
+          max_in_progress: 6
+          max_in_progress_per_profile: 3
           orchestrator_profile: claude-orchestrator
         model:
           api_key: local
@@ -151,8 +151,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
           reasoning_effort: high
         kanban:
           default_assignee: claude-scout
-          max_in_progress: 4
-          max_in_progress_per_profile: 2
+          max_in_progress: 6
+          max_in_progress_per_profile: 3
           orchestrator_profile: claude-orchestrator
         model:
           default: claude-opus-4-6
