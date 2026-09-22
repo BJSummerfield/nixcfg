@@ -27,13 +27,6 @@
       };
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    hermes-agent = {
-      url = "github:NousResearch/hermes-agent";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        home-manager.follows = "home-manager";
-      };
-    };
     paseo = {
       url = "github:getpaseo/paseo";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -27,10 +27,6 @@
     _1password.enable = true;
     firefox.enable = true;
     keybase.enable = true;
-    hermies = {
-      desktop.enable = true;
-      gui.enable = true;
-    };
     paseo-desktop.enable = true;
     theme.fontSizes.terminal = 15;
   };

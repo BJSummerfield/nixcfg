@@ -25,7 +25,6 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
-      hermies.gui.enable = true;
       niri.enable = true;
       openssh.outbound.enable = true;
       printing.enable = true;
