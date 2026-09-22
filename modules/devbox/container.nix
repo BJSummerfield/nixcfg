@@ -41,15 +41,15 @@ let
     exec ${lib.getExe pkgs.gh} "$@"
   '';
 
-  # To manually remove stale plugin state after removing an enabledPlugins entry:
-  #   claude plugin uninstall superpowers@claude-plugins-official
-  #   claude plugin marketplace remove claude-plugins-official
-  #   claude plugin list
   claudeSettings = pkgs.writeText "claude-settings.json" (
     builtins.toJSON {
       theme = "dark";
       inputNeededNotifEnabled = true;
       agentPushNotifEnabled = true;
+      attribution = {
+        commit = "";
+        pr = "";
+      };
     }
   );
 in
