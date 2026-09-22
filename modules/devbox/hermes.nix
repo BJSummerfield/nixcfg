@@ -2,7 +2,11 @@
   inputs,
   tailnetHostname,
 }:
-{ lib, ... }:
+{
+  lib,
+  pkgs,
+  ...
+}:
 let
   llm = import ../local-llm/models.nix;
   model = llm.models.${llm.default};
@@ -28,6 +32,15 @@ in
     createUser = false;
     addToSystemPackages = true;
     environmentFiles = [ "/run/secrets/hermes-env" ];
+
+    # Claude CLI for hermes terminal invocations. The unit PATH is a
+    # narrow processPath, so claude must be added here explicitly;
+    # the auth state lives in CLAUDE_CONFIG_DIR, not the default
+    # ~/.claude. The raw binary (not the direnv-wrapped agentPkgs
+    # entry) keeps `claude -p ...` from spawning a project devShell
+    # inside the gateway.
+    extraPackages = [ pkgs.claude-code ];
+    environment.CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
 
     backend = {
       mode = "dashboard";
