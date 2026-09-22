@@ -2,6 +2,7 @@
   inputs,
   tailnetHostname,
   agentProfiles ? true,
+  agentPlugins ? true,
 }:
 {
   lib,
@@ -26,12 +27,29 @@ in
   imports = [
     inputs.hermes-agent.nixosModules.default
     ./hermes-profiles.nix
+    ./hermes-plugins.nix
   ];
 
   mine.hermes.agentProfiles = {
     enable = agentProfiles;
     profiles = import ./hermes-profiles-catalog.nix;
     inherit claudeConfigDir;
+  };
+
+  # The profile catalog's `readonly` and `verify` toolsets are not built-in
+  # names - this plugin is what registers them. Turning it off leaves those
+  # profiles resolving to no tools, so hermes-plugins.nix asserts against
+  # that combination rather than letting it boot.
+  mine.hermes.agentPlugins = {
+    enable = agentPlugins;
+    plugins.least-privilege-toolsets.package = pkgs.callPackage ./hermes-plugins/package.nix { } {
+      name = "least-privilege-toolsets";
+      src = ./hermes-plugins/least-privilege-toolsets;
+      providesToolsets = [
+        "readonly"
+        "verify"
+      ];
+    };
   };
 
   users.users.agent.linger = true;

@@ -163,6 +163,25 @@ in
             example = "/run/secrets/devbox-hermes-env";
           };
 
+          hermesPlugins.enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether this instance gets the shared Hermes plugins from
+              modules/devbox/hermes-plugins/ - currently
+              least-privilege-toolsets, which registers the `readonly` and
+              `verify` custom toolsets the profile catalog assigns to its
+              reviewer and verifier roles.
+
+              On by default, for the same reason hermesProfiles is. Setting it
+              false while hermesProfiles is true fails evaluation: those
+              profiles name toolsets that only this plugin defines, and Hermes
+              would resolve them to an empty tool list rather than error.
+              Without hermesEnvFile there is no Hermes in the container at all
+              and this has no effect.
+            '';
+          };
+
           hermesProfiles.enable = mkOption {
             type = types.bool;
             default = true;
@@ -308,6 +327,7 @@ in
           inherit inputs;
           inherit (box) tailnetHostname;
           agentProfiles = box.hermesProfiles.enable;
+          agentPlugins = box.hermesPlugins.enable;
         }
       );
     }) cfg;

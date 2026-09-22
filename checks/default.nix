@@ -282,6 +282,44 @@ evalAll "nixos" inputs.self.nixosConfigurations
       throw "hermes-profiles-catalog:\n  ${lib.concatStringsSep "\n  " failures}"
     else
       pkgs.runCommand "devbox-hermes-profiles-catalog" { } "touch $out";
+  # The plugin that registers the `readonly` and `verify` toolsets is only
+  # useful if BOTH halves of the wiring land: the directory under
+  # HERMES_HOME/plugins (extraPlugins) and the opt-in entry in
+  # plugins.enabled. Either alone is a silent no-op - an installed plugin with
+  # no allow-list entry is skipped with "not in plugins.enabled", and an
+  # allow-list entry with no directory matches nothing - so both are pinned,
+  # along with the manifest name they have to agree on.
+  devbox-hermes-plugins =
+    let
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      hermes = withHermes.config.containers.devbox.config.services.hermes-agent;
+      plugin = builtins.head hermes.extraPlugins;
+    in
+    pkgs.runCommand "devbox-hermes-plugins"
+      {
+        nativeBuildInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) ];
+        enabledJson = builtins.toJSON hermes.settings.plugins.enabled;
+      }
+      ''
+        [ "$enabledJson" = '["least-privilege-toolsets"]' ] || {
+          echo "plugins.enabled is $enabledJson" >&2; exit 1; }
+
+        # The allow-list is matched against the manifest's `name`, not the
+        # directory, so the two must agree for the opt-in to bite.
+        python3 -c '
+        import json, sys, yaml
+        name = yaml.safe_load(open("${plugin}/plugin.yaml"))["name"]
+        assert name in json.loads(sys.argv[1]), f"{name} is not in plugins.enabled"
+        ' "$enabledJson"
+
+        test -f ${plugin}/__init__.py
+        touch $out
+      '';
+
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
