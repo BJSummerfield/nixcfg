@@ -118,7 +118,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
           - browser
           reasoning_effort: xhigh
         kanban:
-          default_assignee: claude-scout
+          default_assignee: claude-reader
           max_in_progress: 6
           max_in_progress_per_profile: 3
           orchestrator_profile: claude-orchestrator
@@ -150,7 +150,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
         agent:
           reasoning_effort: high
         kanban:
-          default_assignee: claude-scout
+          default_assignee: claude-reader
           max_in_progress: 6
           max_in_progress_per_profile: 3
           orchestrator_profile: claude-orchestrator
@@ -183,11 +183,10 @@ evalAll "nixos" inputs.self.nixosConfigurations
       catalog = import ../modules/devbox/hermes-profiles-catalog.nix;
       roles = [
         "orchestrator"
-        "scout"
+        "reader"
         "worker"
         "verifier"
         "reviewer"
-        "oracle"
       ];
       families = {
         claude = "anthropic";
@@ -218,9 +217,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
       ];
       readOnlyRoles = [
         "orchestrator"
-        "scout"
+        "reader"
         "reviewer"
-        "oracle"
       ];
       expectedNames = lib.concatMap (f: map (r: "${f}-${r}") roles) (lib.attrNames families);
       actualNames = lib.attrNames catalog;

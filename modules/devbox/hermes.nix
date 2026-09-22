@@ -98,7 +98,7 @@ in
       # max_in_progress; a backend-independent writer cap is not expressible
       # with this knob.
       kanban = {
-        default_assignee = "claude-scout";
+        default_assignee = "claude-reader";
         orchestrator_profile = "claude-orchestrator";
         max_in_progress = 6;
         max_in_progress_per_profile = 3;
