@@ -50,6 +50,10 @@ let
       theme = "dark";
       inputNeededNotifEnabled = true;
       agentPushNotifEnabled = true;
+      attribution = {
+        commit = "";
+        pr = "";
+      };
     }
   );
 in
