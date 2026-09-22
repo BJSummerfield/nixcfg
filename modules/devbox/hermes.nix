@@ -81,13 +81,18 @@ in
         api_key = "local";
         context_length = model.maxModelLen - model.headroom;
       };
-      # 4 is really 3 implementation workers: the orchestrator's own root card
-      # is counted against max_in_progress while it fans out.
+      # max_in_progress counts only genuinely running tasks: a root triage card
+      # that has fanned out is no longer running, so it holds no slot.
+      # max_in_progress_per_profile is keyed per assignee name (GROUP BY
+      # assignee), not a global writer cap -- claude-worker=3 plus
+      # qwen-worker=3 permits up to 6 concurrent writers, bounded only by
+      # max_in_progress; a backend-independent writer cap is not expressible
+      # with this knob.
       kanban = {
         default_assignee = "claude-scout";
         orchestrator_profile = "claude-orchestrator";
-        max_in_progress = 4;
-        max_in_progress_per_profile = 2;
+        max_in_progress = 6;
+        max_in_progress_per_profile = 3;
       };
       terminal.cwd = "/home/agent/projects";
       dashboard = {
