@@ -117,6 +117,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
           disabled_toolsets:
           - browser
           reasoning_effort: xhigh
+        kanban:
+          default_assignee: claude-reader
+          max_in_progress: 6
+          max_in_progress_per_profile: 3
+          orchestrator_profile: claude-orchestrator
         model:
           api_key: local
           base_url: https://llm.mist-gamma.ts.net:8443/v1
@@ -144,6 +149,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ---
         agent:
           reasoning_effort: high
+        kanban:
+          default_assignee: claude-reader
+          max_in_progress: 6
+          max_in_progress_per_profile: 3
+          orchestrator_profile: claude-orchestrator
         model:
           default: claude-opus-4-6
           provider: anthropic
@@ -173,11 +183,10 @@ evalAll "nixos" inputs.self.nixosConfigurations
       catalog = import ../modules/devbox/hermes-profiles-catalog.nix;
       roles = [
         "orchestrator"
-        "scout"
+        "reader"
         "worker"
         "verifier"
         "reviewer"
-        "oracle"
       ];
       families = {
         claude = "anthropic";
@@ -208,9 +217,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
       ];
       readOnlyRoles = [
         "orchestrator"
-        "scout"
+        "reader"
         "reviewer"
-        "oracle"
       ];
       expectedNames = lib.concatMap (f: map (r: "${f}-${r}") roles) (lib.attrNames families);
       actualNames = lib.attrNames catalog;
@@ -352,6 +360,26 @@ evalAll "nixos" inputs.self.nixosConfigurations
       missing = lib.filter (d: !lib.hasInfix d text) wanted;
       owner = "${hermes.user}:${hermes.group}";
 
+      seedProjects = devbox.mine.hermes.agentProfiles.projects;
+      seedFailures =
+        lib.optional (
+          seedProjects == { }
+        ) "no projects are seeded, so profile-created cards get scratch workspaces"
+        ++ lib.optional (
+          !lib.hasInfix "projects.db" text
+        ) "activation never touches a profile's projects.db"
+        # A plain INSERT would abort the whole activation on the second run.
+        ++ lib.optional (
+          !lib.hasInfix "INSERT OR IGNORE INTO projects" text
+        ) "seed is not idempotent: re-activation would fail or duplicate"
+        ++ lib.concatMap (
+          p:
+          lib.optional (!lib.hasInfix p.id text) "seed never inserts project id ${p.id}"
+          ++ lib.optional (
+            !lib.hasInfix p.boardSlug text
+          ) "seed never binds board ${p.boardSlug}, so the board resolves no project"
+        ) (lib.attrValues seedProjects);
+
       failures =
         lib.optional (profiles == [ ]) "catalog is empty, so this check proves nothing"
         ++ map (d: "activation never creates ${d}") missing
@@ -363,12 +391,59 @@ evalAll "nixos" inputs.self.nixosConfigurations
         # recreates these parents root-owned 0755 (nixosModules.nix:488).
         ++ lib.optional (
           !lib.elem "hermes-agent-setup" (script.deps or [ ])
-        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist";
+        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist"
+        ++ seedFailures;
     in
     if failures != [ ] then
       throw "hermes-profile-state:\n  ${lib.concatStringsSep "\n  " failures}"
     else
       pkgs.runCommand "devbox-hermes-profile-state" { } "touch $out";
+
+  # kanban_db.py:1152 resolves a card's workspace by looking the board's
+  # project_id up in the creating profile's projects.db, and a miss falls back
+  # to a scratch workspace with no error at all. The declaration and the board
+  # are edited in different places at different times, so the only thing that
+  # catches a drifted id is comparing the declaration to the checked-in
+  # board manifest.
+  devbox-hermes-board-link =
+    let
+      inherit (nixpkgs) lib;
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      seeded = withHermes.config.containers.devbox.config.mine.hermes.agentProfiles.projects;
+
+      manifestDir = ../modules/devbox/kanban-boards;
+      boards = lib.mapAttrs' (
+        file: _:
+        lib.nameValuePair (lib.removeSuffix ".json" file) (
+          builtins.fromJSON (builtins.readFile (manifestDir + "/${file}"))
+        )
+      ) (lib.filterAttrs (file: _: lib.hasSuffix ".json" file) (builtins.readDir manifestDir));
+
+      failures = lib.concatMap (
+        p:
+        let
+          board = boards.${p.boardSlug} or null;
+        in
+        if board == null then
+          [
+            "project ${p.slug} binds board ${p.boardSlug}, which has no manifest in modules/devbox/kanban-boards"
+          ]
+        else
+          lib.optional (board.project_id != p.id)
+            "project ${p.slug} is seeded as ${p.id} but board ${p.boardSlug} wants ${board.project_id}: every card that board creates would silently get a scratch workspace instead of a worktree"
+          ++
+            lib.optional (board.default_workdir != p.primaryPath)
+              "project ${p.slug} cuts worktrees from ${p.primaryPath} but board ${p.boardSlug} works in ${board.default_workdir}"
+      ) (lib.attrValues seeded);
+    in
+    if failures != [ ] then
+      throw "hermes-board-link:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-board-link" { } "touch $out";
 
   fmt-check =
     pkgs.runCommand "fmt-check"

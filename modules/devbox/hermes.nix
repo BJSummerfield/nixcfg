@@ -34,6 +34,15 @@ in
     enable = agentProfiles;
     profiles = import ./hermes-profiles-catalog.nix;
     inherit claudeConfigDir;
+
+    # id and board must match kanban/boards/nixcfg/board.json; the link is by
+    # id, and a wrong one degrades to a scratch workspace without an error.
+    projects.nixcfg = {
+      id = "p_43348f57";
+      description = "Nix configuration repo: modules, hosts, ci, secrets";
+      icon = "🐍";
+      primaryPath = "/home/agent/projects/nixcfg";
+    };
   };
 
   # Registers the catalog's `readonly` and `verify` toolsets; they are not built-ins.
@@ -80,6 +89,19 @@ in
         base_url = llm.baseUrl;
         api_key = "local";
         context_length = model.maxModelLen - model.headroom;
+      };
+      # max_in_progress counts only genuinely running tasks: a root triage card
+      # that has fanned out is no longer running, so it holds no slot.
+      # max_in_progress_per_profile is keyed per assignee name (GROUP BY
+      # assignee), not a global writer cap -- claude-worker=3 plus
+      # qwen-worker=3 permits up to 6 concurrent writers, bounded only by
+      # max_in_progress; a backend-independent writer cap is not expressible
+      # with this knob.
+      kanban = {
+        default_assignee = "claude-reader";
+        orchestrator_profile = "claude-orchestrator";
+        max_in_progress = 6;
+        max_in_progress_per_profile = 3;
       };
       terminal.cwd = "/home/agent/projects";
       dashboard = {

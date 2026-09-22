@@ -20,9 +20,9 @@ let
       ];
     };
 
-    scout = {
+    reader = {
       description = ''
-        Gathers context read-only and returns a condensed brief: which files a task touches, where the call sites and prior art are, what the existing conventions look like, each with a path and line number. Cheap and fast, with a short output budget - send it "where is X", "how does Y work", "what already does Z" before committing a worker to a plan.
+        Reads and answers, read-only. Two jobs: it gathers context and returns a condensed brief - which files a task touches, where the call sites and prior art are, what the existing conventions look like, each with a path and line number; and it answers one hard, self-contained question - a design trade-off, an unfamiliar API's real contract, a root-cause hypothesis for a failure someone else reproduced - returning the argument and the evidence behind it. Send it "where is X", "how does Y work", "what already does Z" before committing a worker to a plan, and use it as the escalation target for a blocked worker. It returns findings, never a change; for the hard-question case pin a stronger model on the card as well as raising its reasoning effort.
       '';
       thinking = "medium";
       toolsets = [
@@ -85,32 +85,14 @@ let
         "computer_use"
       ];
     };
-
-    oracle = {
-      description = ''
-        Answers one hard, self-contained question at maximum reasoning effort and read-only: a design trade-off, an unfamiliar API's real contract, a root-cause hypothesis for a failure someone else reproduced. Returns the argument and the evidence behind it, not a change. Escalation target for a blocked worker; it is not a place to send work.
-      '';
-      thinking = "xhigh";
-      toolsets = [
-        "readonly"
-        "web"
-        "skills"
-      ];
-      disabledToolsets = [
-        "terminal"
-        "code_execution"
-        "computer_use"
-      ];
-    };
   };
 
   claudeModels = {
     orchestrator = "claude-opus-5";
-    scout = "claude-sonnet-5";
+    reader = "claude-sonnet-5";
     worker = "claude-opus-5";
     verifier = "claude-sonnet-5";
     reviewer = "claude-opus-5";
-    oracle = "claude-opus-5";
   };
 
   qwenModel = "Qwen3.8-27B-NVFP4";

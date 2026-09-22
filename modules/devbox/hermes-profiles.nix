@@ -299,6 +299,104 @@ let
       };
     };
 
+  projectModule =
+    { name, ... }:
+    {
+      options = {
+        id = mkOption {
+          type = types.strMatching "p_[0-9a-f]+";
+          description = ''
+            The project id, which must equal the `project_id` in the board's
+            `kanban/boards/<board>/board.json`. Linkage is by id, not by slug,
+            so a mismatch leaves cards falling back to a scratch workspace
+            with no error. `hermes project create` mints a fresh random id and
+            therefore cannot produce this row.
+          '';
+          example = "p_43348f57";
+        };
+
+        slug = mkOption {
+          type = types.str;
+          default = name;
+          description = ''
+            `projects.slug`, unique per database and the handle
+            `hermes project show <slug>` takes.
+          '';
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = name;
+          description = "Display name shown by `hermes project list`.";
+        };
+
+        description = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "One-line summary shown by `hermes project show`.";
+        };
+
+        icon = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description = "Emoji shown beside the project in the dashboard.";
+          example = "🐍";
+        };
+
+        boardSlug = mkOption {
+          type = types.str;
+          default = name;
+          description = ''
+            Kanban board this project anchors. A card created on that board
+            resolves its worktree through this row.
+          '';
+        };
+
+        primaryPath = mkOption {
+          type = types.str;
+          description = ''
+            Repository root the task worktrees are cut from: a card gets
+            `<primaryPath>/.worktrees/<task-id>` on a project-slug branch.
+          '';
+          example = "/home/agent/projects/nixcfg";
+        };
+      };
+    };
+
+  sqlStr = s: if s == null then "NULL" else "'${lib.replaceStrings [ "'" ] [ "''" ] s}'";
+
+  # created_at is stamped at first insert rather than pinned in the store: the
+  # row is written once and never rewritten, so a wall-clock value here stays
+  # stable while keeping the derivation independent of the current time.
+  insertOf = p: ''
+    INSERT OR IGNORE INTO projects (id, slug, name, description, icon, color, board_slug, primary_path, created_at, archived)
+    VALUES (${sqlStr p.id}, ${sqlStr p.slug}, ${sqlStr p.name}, ${sqlStr p.description}, ${sqlStr p.icon}, NULL, ${sqlStr p.boardSlug}, ${sqlStr p.primaryPath}, strftime('%s', 'now'), 0);
+  '';
+
+  # Mirrors the table hermes creates itself (0.21.3). Seeding runs before a
+  # profile has ever started, so the file may not exist yet; hermes adds the
+  # remaining tables on first use and migrates this one like any older
+  # database. INSERT OR IGNORE is what makes re-activation a no-op and leaves
+  # a profile's own rows untouched.
+  seedSql = concatStringsSep "\n" (
+    [
+      ''
+        CREATE TABLE IF NOT EXISTS projects (
+            id            TEXT PRIMARY KEY,
+            slug          TEXT NOT NULL UNIQUE,
+            name          TEXT NOT NULL,
+            description   TEXT,
+            icon          TEXT,
+            color         TEXT,
+            board_slug    TEXT,
+            primary_path  TEXT,
+            created_at    INTEGER NOT NULL,
+            archived      INTEGER NOT NULL DEFAULT 0
+        );''
+    ]
+    ++ map insertOf (attrValues cfg.projects)
+  );
+
   enabled = filterAttrs (_: p: p.enable) cfg.profiles;
   profiles = attrValues enabled;
   names = map (p: p.name) profiles;
@@ -353,6 +451,26 @@ in
           "terminal"
           "cwd"
         ]
+        # `hermes kanban decompose` and `hermes kanban dispatch` both resolve
+        # the invoking profile's own HERMES_HOME, so a profile without these
+        # would route to the upstream default and dispatch uncapped against the
+        # same shared board.
+        [
+          "kanban"
+          "default_assignee"
+        ]
+        [
+          "kanban"
+          "orchestrator_profile"
+        ]
+        [
+          "kanban"
+          "max_in_progress"
+        ]
+        [
+          "kanban"
+          "max_in_progress_per_profile"
+        ]
       ];
       description = ''
         Attribute paths copied from `services.hermes-agent.settings` into every
@@ -396,6 +514,29 @@ in
         CLAUDE_CONFIG_DIR for `anthropic` profiles: the directory holding the
         Claude Code OAuth credentials. Must match what the container puts
         there - nothing else supplies an Anthropic credential.
+      '';
+    };
+
+    projects = mkOption {
+      type = types.attrsOf (types.submodule projectModule);
+      default = { };
+      description = ''
+        Project rows seeded into every generated profile's `projects.db`,
+        keyed by slug.
+
+        Project registration is per-HERMES_HOME, so a profile that does not
+        carry the row creates kanban cards with no repository behind them: the
+        card silently falls back to a scratch workspace instead of a worktree
+        under the project. Seeding never overwrites, so a row a profile
+        already has - by id or by slug - wins.
+      '';
+      example = lib.literalExpression ''
+        {
+          nixcfg = {
+            id = "p_43348f57";
+            primaryPath = "/home/agent/projects/nixcfg";
+          };
+        }
       '';
     };
 
@@ -462,12 +603,29 @@ in
     # Ordered, not racing: deps on the upstream activation script by its real
     # attribute name, so it runs after the profile files exist and after
     # mkStateScript has created their parents with the wrong owner.
-    system.activationScripts.hermes-agent-profile-state = lib.stringAfter [ "hermes-agent-setup" ] ''
-      for _dir in ${lib.escapeShellArgs profileStateDirs}; do
-        mkdir -p "$_dir"
-        chown ${owner} "$_dir"
-        chmod 2770 "$_dir"
-      done
-    '';
+    system.activationScripts.hermes-agent-profile-state = lib.stringAfter [ "hermes-agent-setup" ] (
+      ''
+        for _dir in ${lib.escapeShellArgs profileStateDirs}; do
+          mkdir -p "$_dir"
+          chown ${owner} "$_dir"
+          chmod 2770 "$_dir"
+        done
+      ''
+      # A project is registered per HERMES_HOME, and a profile is its own, so
+      # a card a profile creates on the board resolves no repository and
+      # silently degrades to a scratch workspace. Nothing upstream copies the
+      # row down, and `hermes project create` mints a random id that would not
+      # match the board's project_id, so the row is written as SQL.
+      + lib.optionalString (cfg.projects != { }) ''
+        for _name in ${lib.escapeShellArgs names}; do
+          _db="${profilesRoot}/$_name/projects.db"
+          # The dashboard may hold the database open: wait rather than abort
+          # the activation on a transient lock.
+          ${pkgs.sqlite}/bin/sqlite3 -cmd ".timeout 5000" "$_db" ${lib.escapeShellArg seedSql}
+          chown ${owner} "$_db"
+          chmod 0660 "$_db"
+        done
+      ''
+    );
   };
 }
