@@ -163,6 +163,22 @@ in
             example = "/run/secrets/devbox-hermes-env";
           };
 
+          hermesProfiles.enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether this instance gets the shared Hermes agent profiles from
+              modules/devbox/hermes-profiles-catalog.nix - one
+              `$HERMES_HOME/profiles/<name>/` per declared role, with its own
+              model, reasoning effort and toolset.
+
+              On by default so a new instance is not quietly missing the roles
+              the others have. Set it false to run Hermes here with the default
+              profile alone. Without hermesEnvFile there is no Hermes in the
+              container at all and this has no effect.
+            '';
+          };
+
           hostAddress = mkOption {
             type = types.str;
             description = ''
@@ -291,6 +307,7 @@ in
         import ./hermes.nix {
           inherit inputs;
           inherit (box) tailnetHostname;
+          agentProfiles = box.hermesProfiles.enable;
         }
       );
     }) cfg;

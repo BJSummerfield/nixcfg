@@ -65,6 +65,97 @@ evalAll "nixos" inputs.self.nixosConfigurations
           { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
         ];
       }).config.system.build.toplevel.drvPath;
+
+  # The profile catalog is data, and an empty one renders nothing, so nothing
+  # in the host config exercises the generator. This check declares one profile
+  # per backend and diffs the rendered profiles/ tree, which pins both the file
+  # layout Hermes reads and the derivations: the context_length taken from the
+  # model alias, the thinkingLevels collapse (high -> xhigh), and the
+  # CLAUDE_CONFIG_DIR that an anthropic profile needs to find any credential at
+  # all.
+  devbox-hermes-profiles =
+    let
+      withProfiles = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          {
+            mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env";
+            containers.devbox.config.mine.hermes.agentProfiles.profiles = {
+              check-local = {
+                description = "Check fixture.";
+                model = "Qwen3.8-27B-NVFP4-32k";
+                thinking = "high";
+                toolsets = [
+                  "file"
+                  "skills"
+                ];
+                disabledToolsets = [ "browser" ];
+              };
+              check-claude = {
+                backend = "anthropic";
+                model = "claude-opus-4-6";
+                thinking = "high";
+              };
+            };
+          }
+        ];
+      };
+      files = withProfiles.config.containers.devbox.config.services.hermes-agent.hermesHomeFiles;
+      # hermesHomeFiles values are paths or inline strings; both must land on
+      # disk before they can be diffed.
+      materialize =
+        value:
+        if builtins.isPath value || pkgs.lib.isStorePath value then
+          value
+        else
+          pkgs.writeText "hermes-home-file" value;
+      tree = pkgs.runCommand "hermes-profiles-tree" { } (
+        "mkdir -p $out\n"
+        + nixpkgs.lib.concatStringsSep "\n" (
+          nixpkgs.lib.mapAttrsToList (name: value: "install -D ${materialize value} $out/${name}") files
+        )
+      );
+      expected = pkgs.runCommand "hermes-profiles-expected" { } ''
+        mkdir -p $out/profiles/check-local $out/profiles/check-claude
+        cat > $out/profiles/check-local/config.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        agent:
+          disabled_toolsets:
+          - browser
+          reasoning_effort: xhigh
+        model:
+          api_key: local
+          base_url: https://llm.mist-gamma.ts.net:8443/v1
+          context_length: 98304
+          default: Qwen3.8-27B-NVFP4-32k
+          provider: custom
+        platform_toolsets:
+          cli:
+          - file
+          - skills
+        EOF
+        cat > $out/profiles/check-local/profile.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        description: Check fixture.
+        description_auto: false
+        EOF
+        cat > $out/profiles/check-claude/config.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        agent:
+          reasoning_effort: high
+        model:
+          default: claude-opus-4-6
+          provider: anthropic
+        EOF
+        printf 'CLAUDE_CONFIG_DIR=/home/agent/.claude-state\n' > $out/profiles/check-claude/.env
+      '';
+    in
+    pkgs.runCommand "devbox-hermes-profiles" { } ''
+      diff -ru ${expected} ${tree}
+      touch $out
+    '';
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
