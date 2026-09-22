@@ -27,3 +27,17 @@ detail belongs in the file, not in the parent's context.
 final response.** The runtime persists that message to the output path; a short
 answer is the whole deliverable, lost. Your run-time instructions say which
 case you are in and override this file.
+
+## Planning artifacts go in `.plans/`
+
+Write the plan, the task breakdown and any delegation records to `.plans/` as
+you go: `.plans/<slug>.md` for a single plan, or `.plans/<slug>/` holding
+`plan.md`, `tasks.md` and `delegations/` when the work fans out to sub-agents.
+`mkdir -p` it; it will not already exist.
+
+`.plans/` is untracked and is **not** in `.gitignore` — that is deliberate, so
+the files stay visible in a git status viewer. Never `git add` anything under
+it. The `.githooks/pre-commit` hook unstages `.plans/` and lets the commit
+proceed, so a stray `git add .` is recovered rather than fatal, but do not rely
+on it. Nothing in `.plans/` is durable: `git clean -fd` removes it, and the
+directory dies with the worktree.

@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+staged=$(git diff --cached --name-only -- ':(top).plans/')
+[ -n "$staged" ] || exit 0
+
+git restore --staged -- ':(top).plans/'
+
+printf '%s\n' "pre-commit: unstaged .plans/ (never committed):" >&2
+printf '%s\n' "$staged" | sed 's/^/  /' >&2
+
+if git diff --cached --quiet; then
+  printf '%s\n' "pre-commit: nothing left to commit, aborting." >&2
+  exit 1
+fi

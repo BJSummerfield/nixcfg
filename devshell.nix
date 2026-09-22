@@ -6,4 +6,11 @@ pkgs.mkShell {
     statix
     deadnix
   ];
+
+  shellHook = ''
+    if git rev-parse --git-dir >/dev/null 2>&1 \
+      && [ "$(git config --get core.hooksPath)" != ".githooks" ]; then
+      git config core.hooksPath .githooks
+    fi
+  '';
 }
