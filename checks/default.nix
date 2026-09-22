@@ -403,7 +403,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
   # project_id up in the creating profile's projects.db, and a miss falls back
   # to a scratch workspace with no error at all. The declaration and the board
   # are edited in different places at different times, so the only thing that
-  # catches a drifted id is comparing them.
+  # catches a drifted id is comparing the declaration to the checked-in
+  # board manifest.
   devbox-hermes-board-link =
     let
       inherit (nixpkgs) lib;
