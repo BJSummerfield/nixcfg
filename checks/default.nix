@@ -362,6 +362,26 @@ evalAll "nixos" inputs.self.nixosConfigurations
       missing = lib.filter (d: !lib.hasInfix d text) wanted;
       owner = "${hermes.user}:${hermes.group}";
 
+      seedProjects = devbox.mine.hermes.agentProfiles.projects;
+      seedFailures =
+        lib.optional (
+          seedProjects == { }
+        ) "no projects are seeded, so profile-created cards get scratch workspaces"
+        ++ lib.optional (
+          !lib.hasInfix "projects.db" text
+        ) "activation never touches a profile's projects.db"
+        # A plain INSERT would abort the whole activation on the second run.
+        ++ lib.optional (
+          !lib.hasInfix "INSERT OR IGNORE INTO projects" text
+        ) "seed is not idempotent: re-activation would fail or duplicate"
+        ++ lib.concatMap (
+          p:
+          lib.optional (!lib.hasInfix p.id text) "seed never inserts project id ${p.id}"
+          ++ lib.optional (
+            !lib.hasInfix p.boardSlug text
+          ) "seed never binds board ${p.boardSlug}, so the board resolves no project"
+        ) (lib.attrValues seedProjects);
+
       failures =
         lib.optional (profiles == [ ]) "catalog is empty, so this check proves nothing"
         ++ map (d: "activation never creates ${d}") missing
@@ -373,7 +393,8 @@ evalAll "nixos" inputs.self.nixosConfigurations
         # recreates these parents root-owned 0755 (nixosModules.nix:488).
         ++ lib.optional (
           !lib.elem "hermes-agent-setup" (script.deps or [ ])
-        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist";
+        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist"
+        ++ seedFailures;
     in
     if failures != [ ] then
       throw "hermes-profile-state:\n  ${lib.concatStringsSep "\n  " failures}"

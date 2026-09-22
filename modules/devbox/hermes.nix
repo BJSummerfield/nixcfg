@@ -34,6 +34,15 @@ in
     enable = agentProfiles;
     profiles = import ./hermes-profiles-catalog.nix;
     inherit claudeConfigDir;
+
+    # id and board must match kanban/boards/nixcfg/board.json; the link is by
+    # id, and a wrong one degrades to a scratch workspace without an error.
+    projects.nixcfg = {
+      id = "p_43348f57";
+      description = "Nix configuration repo: modules, hosts, ci, secrets";
+      icon = "🐍";
+      primaryPath = "/home/agent/projects/nixcfg";
+    };
   };
 
   # Registers the catalog's `readonly` and `verify` toolsets; they are not built-ins.
