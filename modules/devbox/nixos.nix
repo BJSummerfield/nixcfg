@@ -163,6 +163,28 @@ in
             example = "/run/secrets/devbox-hermes-env";
           };
 
+          hermesPlugins.enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether this instance gets the shared Hermes plugins from
+              modules/devbox/hermes-plugins/. Turning it off while
+              hermesProfiles is on fails evaluation. No effect without
+              hermesEnvFile.
+            '';
+          };
+
+          hermesProfiles.enable = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether this instance gets the shared Hermes agent profiles from
+              modules/devbox/hermes-profiles-catalog.nix. false runs Hermes
+              here with the default profile alone. No effect without
+              hermesEnvFile.
+            '';
+          };
+
           hostAddress = mkOption {
             type = types.str;
             description = ''
@@ -291,6 +313,8 @@ in
         import ./hermes.nix {
           inherit inputs;
           inherit (box) tailnetHostname;
+          agentProfiles = box.hermesProfiles.enable;
+          agentPlugins = box.hermesPlugins.enable;
         }
       );
     }) cfg;

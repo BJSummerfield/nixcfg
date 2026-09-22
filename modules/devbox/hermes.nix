@@ -1,6 +1,8 @@
 {
   inputs,
   tailnetHostname,
+  agentProfiles ? true,
+  agentPlugins ? true,
 }:
 {
   lib,
@@ -11,6 +13,7 @@ let
   llm = import ../local-llm/models.nix;
   model = llm.models.${llm.default};
   port = 9119;
+  claudeConfigDir = "/home/agent/.claude-state";
   agentPaths = [
     "/home/agent"
     "/var/lib/paseo/worktrees"
@@ -21,7 +24,30 @@ let
   };
 in
 {
-  imports = [ inputs.hermes-agent.nixosModules.default ];
+  imports = [
+    inputs.hermes-agent.nixosModules.default
+    ./hermes-profiles.nix
+    ./hermes-plugins.nix
+  ];
+
+  mine.hermes.agentProfiles = {
+    enable = agentProfiles;
+    profiles = import ./hermes-profiles-catalog.nix;
+    inherit claudeConfigDir;
+  };
+
+  # Registers the catalog's `readonly` and `verify` toolsets; they are not built-ins.
+  mine.hermes.agentPlugins = {
+    enable = agentPlugins;
+    plugins.least-privilege-toolsets.package = pkgs.callPackage ./hermes-plugins/package.nix { } {
+      name = "least-privilege-toolsets";
+      src = ./hermes-plugins/least-privilege-toolsets;
+      providesToolsets = [
+        "readonly"
+        "verify"
+      ];
+    };
+  };
 
   users.users.agent.linger = true;
 
@@ -40,7 +66,7 @@ in
     # entry) keeps `claude -p ...` from spawning a project devShell
     # inside the gateway.
     extraPackages = [ pkgs.claude-code ];
-    environment.CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
+    environment.CLAUDE_CONFIG_DIR = claudeConfigDir;
 
     backend = {
       mode = "dashboard";

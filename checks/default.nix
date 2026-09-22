@@ -65,6 +65,311 @@ evalAll "nixos" inputs.self.nixosConfigurations
           { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
         ];
       }).config.system.build.toplevel.drvPath;
+
+  # mkForce: `profiles` is a merging attrset option and the diff covers the
+  # WHOLE tree, so the real catalog would read as unexpected entries.
+  devbox-hermes-profiles =
+    let
+      pluginSrc = ../modules/devbox/hermes-plugins/least-privilege-toolsets;
+      withProfiles = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          {
+            mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env";
+            containers.devbox.config.mine.hermes.agentProfiles.profiles = nixpkgs.lib.mkForce {
+              check-local = {
+                description = "Check fixture.";
+                model = "Qwen3.8-27B-NVFP4-32k";
+                thinking = "high";
+                toolsets = [
+                  "file"
+                  "skills"
+                ];
+                disabledToolsets = [ "browser" ];
+              };
+              check-claude = {
+                backend = "anthropic";
+                model = "claude-opus-4-6";
+                thinking = "high";
+              };
+            };
+          }
+        ];
+      };
+      files = withProfiles.config.containers.devbox.config.services.hermes-agent.hermesHomeFiles;
+      materialize =
+        value:
+        if builtins.isPath value || pkgs.lib.isStorePath value then
+          value
+        else
+          pkgs.writeText "hermes-home-file" value;
+      tree = pkgs.runCommand "hermes-profiles-tree" { } (
+        "mkdir -p $out\n"
+        + nixpkgs.lib.concatStringsSep "\n" (
+          nixpkgs.lib.mapAttrsToList (name: value: "install -D ${materialize value} $out/${name}") files
+        )
+      );
+      expected = pkgs.runCommand "hermes-profiles-expected" { } ''
+        mkdir -p $out/profiles/check-local $out/profiles/check-claude
+        cat > $out/profiles/check-local/config.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        agent:
+          disabled_toolsets:
+          - browser
+          reasoning_effort: xhigh
+        model:
+          api_key: local
+          base_url: https://llm.mist-gamma.ts.net:8443/v1
+          context_length: 98304
+          default: Qwen3.8-27B-NVFP4-32k
+          provider: custom
+        platform_toolsets:
+          cli:
+          - file
+          - skills
+        plugins:
+          enabled:
+          - least-privilege-toolsets
+        terminal:
+          cwd: /home/agent/projects
+        EOF
+        cat > $out/profiles/check-local/profile.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        description: Check fixture.
+        description_auto: false
+        EOF
+        cat > $out/profiles/check-claude/config.yaml <<'EOF'
+        %YAML 1.1
+        ---
+        agent:
+          reasoning_effort: high
+        model:
+          default: claude-opus-4-6
+          provider: anthropic
+        plugins:
+          enabled:
+          - least-privilege-toolsets
+        terminal:
+          cwd: /home/agent/projects
+        EOF
+        printf 'CLAUDE_CONFIG_DIR=/home/agent/.claude-state\n' > $out/profiles/check-claude/.env
+
+        # Every profile is its own HERMES_HOME: the root plugin install is invisible to it.
+        for p in check-local check-claude; do
+          install -D ${pluginSrc}/__init__.py $out/profiles/$p/plugins/least-privilege-toolsets/__init__.py
+          install -D ${pluginSrc}/plugin.yaml $out/profiles/$p/plugins/least-privilege-toolsets/plugin.yaml
+        done
+      '';
+    in
+    pkgs.runCommand "devbox-hermes-profiles" { } ''
+      diff -ru ${expected} ${tree}
+      touch $out
+    '';
+
+  devbox-hermes-profiles-catalog =
+    let
+      inherit (nixpkgs) lib;
+      catalog = import ../modules/devbox/hermes-profiles-catalog.nix;
+      roles = [
+        "orchestrator"
+        "scout"
+        "worker"
+        "verifier"
+        "reviewer"
+        "oracle"
+      ];
+      families = {
+        claude = "anthropic";
+        qwen = "local";
+      };
+      knownToolsets = [
+        "readonly"
+        "verify"
+        "web"
+        "search"
+        "vision"
+        "terminal"
+        "skills"
+        "browser"
+        "file"
+        "todo"
+        "memory"
+        "code_execution"
+        "delegation"
+        "kanban"
+        "clarify"
+        "chat_history_lookup"
+        "cronjob"
+        "computer_use"
+        "safe"
+        "coding"
+        "debugging"
+      ];
+      readOnlyRoles = [
+        "orchestrator"
+        "scout"
+        "reviewer"
+        "oracle"
+      ];
+      expectedNames = lib.concatMap (f: map (r: "${f}-${r}") roles) (lib.attrNames families);
+      actualNames = lib.attrNames catalog;
+
+      failures =
+        lib.optional (
+          lib.sort lib.lessThan actualNames != lib.sort lib.lessThan expectedNames
+        ) "profile set is ${toString actualNames}, expected ${toString expectedNames}"
+        ++ lib.concatMap (
+          name:
+          let
+            p = catalog.${name};
+            family = lib.head (lib.splitString "-" name);
+            role = lib.removePrefix "${family}-" name;
+            toolsets = p.toolsets or [ ];
+            disabled = p.disabledToolsets or [ ];
+            grants = t: lib.elem t toolsets;
+          in
+          lib.optional (
+            p.backend != families.${family}
+          ) "${name}: backend ${p.backend}, expected ${families.${family}} for the ${family} family"
+          ++ lib.optional (!(p ? model) || p.model == null) "${name}: no model id"
+          ++ lib.optional (!(p ? description)) "${name}: no description for the decomposer to route on"
+          ++ lib.optional (
+            !lib.elem p.thinking [
+              "medium"
+              "xhigh"
+            ]
+          ) "${name}: thinking ${p.thinking}, expected medium or xhigh"
+          ++ map (t: "${name}: unknown toolset ${t}") (lib.subtractLists knownToolsets toolsets)
+          ++ map (t: "${name}: unknown disabled toolset ${t}") (lib.subtractLists knownToolsets disabled)
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && grants "file"
+          ) "${name}: read-only role granted the indivisible `file` toolset, which can write"
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && grants "terminal"
+          ) "${name}: read-only role granted `terminal`"
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && !lib.elem "code_execution" disabled
+          ) "${name}: read-only role must disable `code_execution`, whose sandbox writes and runs commands"
+          ++ lib.optional (
+            role == "verifier" && !grants "verify"
+          ) "${name}: verifier must use the `verify` toolset"
+          ++ lib.optional (role == "verifier" && grants "file") "${name}: verifier must not grant `file`"
+          ++ lib.optional (
+            role == "reviewer" && !grants "readonly"
+          ) "${name}: reviewer must use the `readonly` toolset"
+          ++ lib.optional (
+            role == "worker" && !(grants "file" && grants "terminal")
+          ) "${name}: worker is the implementing role and needs both `file` and `terminal`"
+          ++ lib.optional (
+            role == "orchestrator" && !(grants "kanban" && grants "delegation")
+          ) "${name}: orchestrator dispatches and needs `kanban` and `delegation`"
+        ) actualNames;
+    in
+    if failures != [ ] then
+      throw "hermes-profiles-catalog:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-profiles-catalog" { } "touch $out";
+  # Both halves of the wiring: either alone is a silent no-op.
+  devbox-hermes-plugins =
+    let
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      hermes = withHermes.config.containers.devbox.config.services.hermes-agent;
+      plugin = builtins.head hermes.extraPlugins;
+
+      # A profile is its own HERMES_HOME, so the root install reaches none of
+      # them: discovery scans <home>/plugins and reads <home>/config.yaml.
+      profiles = nixpkgs.lib.attrNames (import ../modules/devbox/hermes-profiles-catalog.nix);
+      lacksPlugin = nixpkgs.lib.filter (
+        p: !(hermes.hermesHomeFiles ? "profiles/${p}/plugins/least-privilege-toolsets/__init__.py")
+      ) profiles;
+      profileConfigs = map (p: hermes.hermesHomeFiles."profiles/${p}/config.yaml") profiles;
+    in
+    assert profiles != [ ];
+    assert nixpkgs.lib.assertMsg (lacksPlugin == [ ])
+      "profiles ${toString lacksPlugin} have no plugin under their own HERMES_HOME; readonly/verify would resolve to no tools there";
+    pkgs.runCommand "devbox-hermes-plugins"
+      {
+        nativeBuildInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) ];
+        enabledJson = builtins.toJSON hermes.settings.plugins.enabled;
+      }
+      ''
+        for cfg in ${nixpkgs.lib.concatStringsSep " " (map toString profileConfigs)}; do
+          grep -q 'least-privilege-toolsets' "$cfg" || {
+            echo "$cfg does not enable the plugin in its own config.yaml" >&2; exit 1; }
+          grep -q 'cwd: /home/agent/projects' "$cfg" || {
+            echo "$cfg did not inherit terminal.cwd from the root settings" >&2; exit 1; }
+        done
+
+
+        [ "$enabledJson" = '["least-privilege-toolsets"]' ] || {
+          echo "plugins.enabled is $enabledJson" >&2; exit 1; }
+
+        # The allow-list matches the manifest name, not the directory name.
+        python3 -c '
+        import json, sys, yaml
+        name = yaml.safe_load(open("${plugin}/plugin.yaml"))["name"]
+        assert name in json.loads(sys.argv[1]), f"{name} is not in plugins.enabled"
+        ' "$enabledJson"
+
+        test -f ${plugin}/__init__.py
+        touch $out
+      '';
+
+  # Every profile needs its own cron/sessions/logs/memories: in managed mode
+  # Hermes raises instead of creating them (config_home.py:64), so a profile
+  # generated without them cannot start at all.
+  devbox-hermes-profile-state =
+    let
+      inherit (nixpkgs) lib;
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      devbox = withHermes.config.containers.devbox.config;
+      hermes = devbox.services.hermes-agent;
+      home = "${hermes.stateDir}/.hermes";
+      script = devbox.system.activationScripts.hermes-agent-profile-state;
+      profiles = lib.attrNames (import ../modules/devbox/hermes-profiles-catalog.nix);
+      required = [
+        "cron"
+        "sessions"
+        "logs"
+        "memories"
+        "plugins"
+      ];
+      text = script.text or script;
+      wanted = [
+        "${home}/profiles"
+      ]
+      ++ lib.concatMap (p: [ "${home}/profiles/${p}" ]) profiles
+      ++ lib.concatMap (p: map (d: "${home}/profiles/${p}/${d}") required) profiles;
+      missing = lib.filter (d: !lib.hasInfix d text) wanted;
+      owner = "${hermes.user}:${hermes.group}";
+
+      failures =
+        lib.optional (profiles == [ ]) "catalog is empty, so this check proves nothing"
+        ++ map (d: "activation never creates ${d}") missing
+        ++ lib.optional (
+          !lib.hasInfix "chown ${owner}" text
+        ) "activation never chowns the profile dirs to ${owner}"
+        ++ lib.optional (!lib.hasInfix "chmod 2770" text) "activation never chmods the profile dirs 2770"
+        # Unordered against upstream is a race: mkStateScript's `install -D`
+        # recreates these parents root-owned 0755 (nixosModules.nix:488).
+        ++ lib.optional (
+          !lib.elem "hermes-agent-setup" (script.deps or [ ])
+        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist";
+    in
+    if failures != [ ] then
+      throw "hermes-profile-state:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-profile-state" { } "touch $out";
+
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
