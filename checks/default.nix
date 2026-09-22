@@ -399,6 +399,51 @@ evalAll "nixos" inputs.self.nixosConfigurations
     else
       pkgs.runCommand "devbox-hermes-profile-state" { } "touch $out";
 
+  # kanban_db.py:1152 resolves a card's workspace by looking the board's
+  # project_id up in the creating profile's projects.db, and a miss falls back
+  # to a scratch workspace with no error at all. The declaration and the board
+  # are edited in different places at different times, so the only thing that
+  # catches a drifted id is comparing them.
+  devbox-hermes-board-link =
+    let
+      inherit (nixpkgs) lib;
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      seeded = withHermes.config.containers.devbox.config.mine.hermes.agentProfiles.projects;
+
+      manifestDir = ../modules/devbox/kanban-boards;
+      boards = lib.mapAttrs' (
+        file: _:
+        lib.nameValuePair (lib.removeSuffix ".json" file) (
+          builtins.fromJSON (builtins.readFile (manifestDir + "/${file}"))
+        )
+      ) (lib.filterAttrs (file: _: lib.hasSuffix ".json" file) (builtins.readDir manifestDir));
+
+      failures = lib.concatMap (
+        p:
+        let
+          board = boards.${p.boardSlug} or null;
+        in
+        if board == null then
+          [
+            "project ${p.slug} binds board ${p.boardSlug}, which has no manifest in modules/devbox/kanban-boards"
+          ]
+        else
+          lib.optional (board.project_id != p.id)
+            "project ${p.slug} is seeded as ${p.id} but board ${p.boardSlug} wants ${board.project_id}: every card that board creates would silently get a scratch workspace instead of a worktree"
+          ++
+            lib.optional (board.default_workdir != p.primaryPath)
+              "project ${p.slug} cuts worktrees from ${p.primaryPath} but board ${p.boardSlug} works in ${board.default_workdir}"
+      ) (lib.attrValues seeded);
+    in
+    if failures != [ ] then
+      throw "hermes-board-link:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-board-link" { } "touch $out";
+
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
