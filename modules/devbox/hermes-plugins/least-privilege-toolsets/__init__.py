@@ -1,19 +1,9 @@
-"""least-privilege-toolsets — register restricted custom toolsets for least-privilege roles.
+"""Register restricted custom toolsets for least-privilege roles.
 
-Tool restriction in Hermes is toolset-granular: the built-in ``file`` toolset is indivisible
-(``read_file``, ``write_file``, ``patch``, ``search_files``), so a reviewer profile granted
-``file`` can also WRITE. This plugin uses ``toolsets.create_custom_toolset`` — the documented
-escape hatch that takes an explicit tool-name list — to publish narrower toolsets:
-
-    readonly  -> read_file, search_files
-    verify    -> read_file, search_files, terminal, process_manage
-
-Both names then satisfy ``toolsets.validate_toolset``, resolve through
-``toolsets.resolve_toolset``, and can be used as ``hermes -t readonly`` or as a profile's
-``platform_toolsets.cli`` list (explicit non-configurable entries pass through
-``_get_platform_tools``).
-
-Registration is idempotent and never raises into plugin discovery.
+Hermes restricts tools per toolset, and the built-in ``file`` toolset is
+indivisible (``read_file``, ``write_file``, ``patch``, ``search_files``), so a
+reviewer profile granted ``file`` can also WRITE. ``create_custom_toolset`` is
+the documented escape hatch that takes an explicit tool-name list.
 """
 
 from __future__ import annotations
@@ -47,7 +37,7 @@ def _install() -> List[str]:
         existing = _toolsets.TOOLSETS.get(name)
         if existing is not None and list(existing.get("tools") or []) == list(tools):
             installed.append(name)
-            continue  # already correct (double discovery / force reload)
+            continue
         if existing is not None:
             logger.warning(
                 "least-privilege-toolsets: overwriting existing toolset %r (was %s)",
@@ -56,8 +46,7 @@ def _install() -> List[str]:
         _toolsets.create_custom_toolset(name, description, tools=list(tools))
         installed.append(name)
 
-    # create_custom_toolset mutates TOOLSETS after resolve_toolset() may already have
-    # memoized a miss for these names; drop the memo so the first lookup is correct.
+    # resolve_toolset() may already have memoized a miss for these names.
     try:
         _toolsets._resolve_toolset_memo.clear()
     except Exception:  # pragma: no cover - private detail, best effort
@@ -65,8 +54,7 @@ def _install() -> List[str]:
     return installed
 
 
-# Install at import time as well as in register(): some host code paths read TOOLSETS
-# before hook registration completes, and _install() is idempotent.
+# Some host code paths read TOOLSETS before hook registration completes.
 try:
     _install()
 except Exception:  # pragma: no cover
@@ -74,7 +62,7 @@ except Exception:  # pragma: no cover
 
 
 def register(ctx) -> None:
-    """Plugin entrypoint — publish the restricted toolsets."""
+    """Plugin entrypoint - publish the restricted toolsets."""
     try:
         installed = _install()
     except Exception:

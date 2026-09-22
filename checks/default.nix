@@ -66,21 +66,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ];
       }).config.system.build.toplevel.drvPath;
 
-  # This check declares one profile per backend and diffs the rendered
-  # profiles/ tree, which pins both the file layout Hermes reads and the
-  # derivations: the context_length taken from the model alias, the
-  # thinkingLevels collapse (high -> xhigh), and the CLAUDE_CONFIG_DIR that an
-  # anthropic profile needs to find any credential at all.
-  #
-  # mkForce, because the diff is over the WHOLE tree and `profiles` is an
-  # attrset option that merges: without it the real catalog's roles land
-  # alongside the fixtures and the diff reports each one as unexpected. That
-  # coupling is deliberate - this check is about the generator, and a golden
-  # tree that also had to be updated for every new role would be re-baselined
-  # instead of read. ../modules/devbox/hermes-profiles-catalog.nix is covered
-  # by devbox-hermes-profiles-catalog below instead.
+  # mkForce: `profiles` is a merging attrset option and the diff covers the
+  # WHOLE tree, so the real catalog would read as unexpected entries.
   devbox-hermes-profiles =
     let
+      pluginSrc = ../modules/devbox/hermes-plugins/least-privilege-toolsets;
       withProfiles = inputs.self.nixosConfigurations.redtruck.extendModules {
         modules = [
           {
@@ -106,8 +96,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ];
       };
       files = withProfiles.config.containers.devbox.config.services.hermes-agent.hermesHomeFiles;
-      # hermesHomeFiles values are paths or inline strings; both must land on
-      # disk before they can be diffed.
       materialize =
         value:
         if builtins.isPath value || pkgs.lib.isStorePath value then
@@ -139,6 +127,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
           cli:
           - file
           - skills
+        plugins:
+          enabled:
+          - least-privilege-toolsets
+        terminal:
+          cwd: /home/agent/projects
         EOF
         cat > $out/profiles/check-local/profile.yaml <<'EOF'
         %YAML 1.1
@@ -154,8 +147,19 @@ evalAll "nixos" inputs.self.nixosConfigurations
         model:
           default: claude-opus-4-6
           provider: anthropic
+        plugins:
+          enabled:
+          - least-privilege-toolsets
+        terminal:
+          cwd: /home/agent/projects
         EOF
         printf 'CLAUDE_CONFIG_DIR=/home/agent/.claude-state\n' > $out/profiles/check-claude/.env
+
+        # Every profile is its own HERMES_HOME: the root plugin install is invisible to it.
+        for p in check-local check-claude; do
+          install -D ${pluginSrc}/__init__.py $out/profiles/$p/plugins/least-privilege-toolsets/__init__.py
+          install -D ${pluginSrc}/plugin.yaml $out/profiles/$p/plugins/least-privilege-toolsets/plugin.yaml
+        done
       '';
     in
     pkgs.runCommand "devbox-hermes-profiles" { } ''
@@ -163,11 +167,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
       touch $out
     '';
 
-  # The catalog is data with invariants that nothing else enforces: the option
-  # type accepts any string as a toolset name, so a typo, a dropped `file`
-  # grant or a read-only role quietly handed a terminal all evaluate fine and
-  # only show up as a profile that can do more than it should. These assert
-  # the properties the catalog's own comments claim.
   devbox-hermes-profiles-catalog =
     let
       inherit (nixpkgs) lib;
@@ -184,8 +183,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         claude = "anthropic";
         qwen = "local";
       };
-      # Every name the CLI may be given. `readonly` and `verify` are the
-      # least-privilege-toolsets plugin's; the rest are Hermes built-ins.
       knownToolsets = [
         "readonly"
         "verify"
@@ -209,8 +206,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         "coding"
         "debugging"
       ];
-      # Roles that must not be able to change the tree. Membership here is the
-      # security claim; the assertions below are what make it true.
       readOnlyRoles = [
         "orchestrator"
         "scout"
@@ -239,8 +234,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
           ) "${name}: backend ${p.backend}, expected ${families.${family}} for the ${family} family"
           ++ lib.optional (!(p ? model) || p.model == null) "${name}: no model id"
           ++ lib.optional (!(p ? description)) "${name}: no description for the decomposer to route on"
-          # Only two effort levels survive the local collapse, so declaring a
-          # third would mean one family silently runs at a level the other does not.
           ++ lib.optional (
             !lib.elem p.thinking [
               "medium"
@@ -249,7 +242,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
           ) "${name}: thinking ${p.thinking}, expected medium or xhigh"
           ++ map (t: "${name}: unknown toolset ${t}") (lib.subtractLists knownToolsets toolsets)
           ++ map (t: "${name}: unknown disabled toolset ${t}") (lib.subtractLists knownToolsets disabled)
-          # `file` is indivisible - granting it grants write_file and patch.
           ++ lib.optional (
             lib.elem role readOnlyRoles && grants "file"
           ) "${name}: read-only role granted the indivisible `file` toolset, which can write"
@@ -259,14 +251,10 @@ evalAll "nixos" inputs.self.nixosConfigurations
           ++ lib.optional (
             lib.elem role readOnlyRoles && !lib.elem "code_execution" disabled
           ) "${name}: read-only role must disable `code_execution`, whose sandbox writes and runs commands"
-          # The verifier's whole point: a terminal to build and test with, and
-          # no way to edit the thing it is judging.
           ++ lib.optional (
             role == "verifier" && !grants "verify"
           ) "${name}: verifier must use the `verify` toolset"
           ++ lib.optional (role == "verifier" && grants "file") "${name}: verifier must not grant `file`"
-          # The reviewer is the one role with no terminal at all, so that it
-          # judges intent rather than being drawn into running the change.
           ++ lib.optional (
             role == "reviewer" && !grants "readonly"
           ) "${name}: reviewer must use the `readonly` toolset"
@@ -282,13 +270,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
       throw "hermes-profiles-catalog:\n  ${lib.concatStringsSep "\n  " failures}"
     else
       pkgs.runCommand "devbox-hermes-profiles-catalog" { } "touch $out";
-  # The plugin that registers the `readonly` and `verify` toolsets is only
-  # useful if BOTH halves of the wiring land: the directory under
-  # HERMES_HOME/plugins (extraPlugins) and the opt-in entry in
-  # plugins.enabled. Either alone is a silent no-op - an installed plugin with
-  # no allow-list entry is skipped with "not in plugins.enabled", and an
-  # allow-list entry with no directory matches nothing - so both are pinned,
-  # along with the manifest name they have to agree on.
+  # Both halves of the wiring: either alone is a silent no-op.
   devbox-hermes-plugins =
     let
       withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
@@ -298,18 +280,36 @@ evalAll "nixos" inputs.self.nixosConfigurations
       };
       hermes = withHermes.config.containers.devbox.config.services.hermes-agent;
       plugin = builtins.head hermes.extraPlugins;
+
+      # A profile is its own HERMES_HOME, so the root install reaches none of
+      # them: discovery scans <home>/plugins and reads <home>/config.yaml.
+      profiles = nixpkgs.lib.attrNames (import ../modules/devbox/hermes-profiles-catalog.nix);
+      lacksPlugin = nixpkgs.lib.filter (
+        p: !(hermes.hermesHomeFiles ? "profiles/${p}/plugins/least-privilege-toolsets/__init__.py")
+      ) profiles;
+      profileConfigs = map (p: hermes.hermesHomeFiles."profiles/${p}/config.yaml") profiles;
     in
+    assert profiles != [ ];
+    assert nixpkgs.lib.assertMsg (lacksPlugin == [ ])
+      "profiles ${toString lacksPlugin} have no plugin under their own HERMES_HOME; readonly/verify would resolve to no tools there";
     pkgs.runCommand "devbox-hermes-plugins"
       {
         nativeBuildInputs = [ (pkgs.python3.withPackages (ps: [ ps.pyyaml ])) ];
         enabledJson = builtins.toJSON hermes.settings.plugins.enabled;
       }
       ''
+        for cfg in ${nixpkgs.lib.concatStringsSep " " (map toString profileConfigs)}; do
+          grep -q 'least-privilege-toolsets' "$cfg" || {
+            echo "$cfg does not enable the plugin in its own config.yaml" >&2; exit 1; }
+          grep -q 'cwd: /home/agent/projects' "$cfg" || {
+            echo "$cfg did not inherit terminal.cwd from the root settings" >&2; exit 1; }
+        done
+
+
         [ "$enabledJson" = '["least-privilege-toolsets"]' ] || {
           echo "plugins.enabled is $enabledJson" >&2; exit 1; }
 
-        # The allow-list is matched against the manifest's `name`, not the
-        # directory, so the two must agree for the opt-in to bite.
+        # The allow-list matches the manifest name, not the directory name.
         python3 -c '
         import json, sys, yaml
         name = yaml.safe_load(open("${plugin}/plugin.yaml"))["name"]

@@ -1,14 +1,8 @@
-"""Build-time guard for a packaged Hermes plugin directory.
+"""Fail the build when a plugin manifest would be silently ignored at runtime.
 
-Two things can go wrong silently and only show up as a missing feature at
-runtime, so both are build failures instead:
-
-  * plugin.yaml's `name` differs from the Nix attribute name. That name is the
-    key Hermes looks for in `plugins.enabled`, so a mismatch installs the
-    plugin and then skips it with "not in plugins.enabled".
-  * `kind` is not `standalone`. Other kinds (exclusive, model-provider,
-    platform, backend) are routed to their own discovery and are NOT activated
-    by `plugins.enabled`, so the Nix wiring would be a no-op.
+A `name` that differs from the Nix attribute is installed and then skipped with
+"not in plugins.enabled"; a `kind` other than `standalone` is routed to its own
+discovery and never activated by `plugins.enabled` at all.
 
 Usage: check-manifest.py <plugin.yaml> <expected-name>
 """

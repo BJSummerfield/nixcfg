@@ -36,10 +36,7 @@ in
     inherit claudeConfigDir;
   };
 
-  # The profile catalog's `readonly` and `verify` toolsets are not built-in
-  # names - this plugin is what registers them. Turning it off leaves those
-  # profiles resolving to no tools, so hermes-plugins.nix asserts against
-  # that combination rather than letting it boot.
+  # Registers the catalog's `readonly` and `verify` toolsets; they are not built-ins.
   mine.hermes.agentPlugins = {
     enable = agentPlugins;
     plugins.least-privilege-toolsets.package = pkgs.callPackage ./hermes-plugins/package.nix { } {

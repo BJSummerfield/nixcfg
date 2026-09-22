@@ -168,17 +168,9 @@ in
             default = true;
             description = ''
               Whether this instance gets the shared Hermes plugins from
-              modules/devbox/hermes-plugins/ - currently
-              least-privilege-toolsets, which registers the `readonly` and
-              `verify` custom toolsets the profile catalog assigns to its
-              reviewer and verifier roles.
-
-              On by default, for the same reason hermesProfiles is. Setting it
-              false while hermesProfiles is true fails evaluation: those
-              profiles name toolsets that only this plugin defines, and Hermes
-              would resolve them to an empty tool list rather than error.
-              Without hermesEnvFile there is no Hermes in the container at all
-              and this has no effect.
+              modules/devbox/hermes-plugins/. Turning it off while
+              hermesProfiles is on fails evaluation. No effect without
+              hermesEnvFile.
             '';
           };
 
@@ -187,14 +179,9 @@ in
             default = true;
             description = ''
               Whether this instance gets the shared Hermes agent profiles from
-              modules/devbox/hermes-profiles-catalog.nix - one
-              `$HERMES_HOME/profiles/<name>/` per declared role, with its own
-              model, reasoning effort and toolset.
-
-              On by default so a new instance is not quietly missing the roles
-              the others have. Set it false to run Hermes here with the default
-              profile alone. Without hermesEnvFile there is no Hermes in the
-              container at all and this has no effect.
+              modules/devbox/hermes-profiles-catalog.nix. false runs Hermes
+              here with the default profile alone. No effect without
+              hermesEnvFile.
             '';
           };
 
