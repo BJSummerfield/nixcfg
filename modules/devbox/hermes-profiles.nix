@@ -353,9 +353,10 @@ in
           "terminal"
           "cwd"
         ]
-        # `hermes kanban decompose` runs in the invoking profile's own
-        # HERMES_HOME, so routing has to follow it there; the concurrency caps
-        # stay behind because only the gateway dispatcher reads them.
+        # `hermes kanban decompose` and `hermes kanban dispatch` both resolve
+        # the invoking profile's own HERMES_HOME, so a profile without these
+        # would route to the upstream default and dispatch uncapped against the
+        # same shared board.
         [
           "kanban"
           "default_assignee"
@@ -363,6 +364,14 @@ in
         [
           "kanban"
           "orchestrator_profile"
+        ]
+        [
+          "kanban"
+          "max_in_progress"
+        ]
+        [
+          "kanban"
+          "max_in_progress_per_profile"
         ]
       ];
       description = ''

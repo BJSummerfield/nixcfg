@@ -81,8 +81,8 @@ in
         api_key = "local";
         context_length = model.maxModelLen - model.headroom;
       };
-      # Explicit caps override the RAM-derived default, which is not re-clamped;
-      # the per-profile cap keys on the literal assignee string.
+      # 4 is really 3 implementation workers: the orchestrator's own root card
+      # is counted against max_in_progress while it fans out.
       kanban = {
         default_assignee = "claude-scout";
         orchestrator_profile = "claude-orchestrator";
