@@ -42,6 +42,21 @@ in
         api_key = "local";
         context_length = model.maxModelLen - model.headroom;
       };
+      # Selectable Claude entry: alias `claude` -> built-in `anthropic` provider.
+      # No api_key/base_url: the anthropic provider resolves its own endpoint and
+      # borrows the logged-in Claude Code OAuth (CLAUDE_CONFIG_DIR, set by
+      # wt/t_01612e3c / PR #201); no secret is stored here. The default stays the
+      # local Qwen endpoint (untouched), so existing providers are undisturbed.
+      # Model id matches the CLI-verified default for this Max login (1M ctx,
+      # verified end-to-end in t_e512d30e: claude -p -> claude-opus-5[1m]).
+      # (model_aliases entries take model/provider/base_url/api_key/key_env only;
+      #  request timeouts are governed globally, not per-alias.)
+      model_aliases = {
+        claude = {
+          model = "claude-opus-5";
+          provider = "anthropic";
+        };
+      };
       terminal.cwd = "/home/agent/projects";
       dashboard = {
         public_url = "https://${tailnetHostname}:${toString port}";
