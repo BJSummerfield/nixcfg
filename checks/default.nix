@@ -320,6 +320,56 @@ evalAll "nixos" inputs.self.nixosConfigurations
         touch $out
       '';
 
+  # Every profile needs its own cron/sessions/logs/memories: in managed mode
+  # Hermes raises instead of creating them (config_home.py:64), so a profile
+  # generated without them cannot start at all.
+  devbox-hermes-profile-state =
+    let
+      inherit (nixpkgs) lib;
+      withHermes = inputs.self.nixosConfigurations.redtruck.extendModules {
+        modules = [
+          { mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env"; }
+        ];
+      };
+      devbox = withHermes.config.containers.devbox.config;
+      hermes = devbox.services.hermes-agent;
+      home = "${hermes.stateDir}/.hermes";
+      script = devbox.system.activationScripts.hermes-agent-profile-state;
+      profiles = lib.attrNames (import ../modules/devbox/hermes-profiles-catalog.nix);
+      required = [
+        "cron"
+        "sessions"
+        "logs"
+        "memories"
+        "plugins"
+      ];
+      text = script.text or script;
+      wanted = [
+        "${home}/profiles"
+      ]
+      ++ lib.concatMap (p: [ "${home}/profiles/${p}" ]) profiles
+      ++ lib.concatMap (p: map (d: "${home}/profiles/${p}/${d}") required) profiles;
+      missing = lib.filter (d: !lib.hasInfix d text) wanted;
+      owner = "${hermes.user}:${hermes.group}";
+
+      failures =
+        lib.optional (profiles == [ ]) "catalog is empty, so this check proves nothing"
+        ++ map (d: "activation never creates ${d}") missing
+        ++ lib.optional (
+          !lib.hasInfix "chown ${owner}" text
+        ) "activation never chowns the profile dirs to ${owner}"
+        ++ lib.optional (!lib.hasInfix "chmod 2770" text) "activation never chmods the profile dirs 2770"
+        # Unordered against upstream is a race: mkStateScript's `install -D`
+        # recreates these parents root-owned 0755 (nixosModules.nix:488).
+        ++ lib.optional (
+          !lib.elem "hermes-agent-setup" (script.deps or [ ])
+        ) "activation does not depend on hermes-agent-setup, so it can run before the profile files exist";
+    in
+    if failures != [ ] then
+      throw "hermes-profile-state:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-profile-state" { } "touch $out";
+
   fmt-check =
     pkgs.runCommand "fmt-check"
       {

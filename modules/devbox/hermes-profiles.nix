@@ -302,6 +302,30 @@ let
   enabled = filterAttrs (_: p: p.enable) cfg.profiles;
   profiles = attrValues enabled;
   names = map (p: p.name) profiles;
+
+  hermes = config.services.hermes-agent;
+  # nixosModules.nix:50. Not an option, so it is recomputed rather than read.
+  hermesHome = "${hermes.stateDir}/.hermes";
+  owner = "${hermes.user}:${hermes.group}";
+  profilesRoot = "${hermesHome}/profiles";
+
+  # moduleCommon.nix:1135. Upstream makes these for the root home only:
+  # mkStateScript takes stateDirs hardcoded to this list (nixosModules.nix:488),
+  # so no option asks upstream to repeat it one level down.
+  stateSubdirs = [
+    "cron"
+    "sessions"
+    "logs"
+    "memories"
+    "plugins"
+  ];
+
+  # Parents first: the shell loop below makes them in order.
+  profileStateDirs = [
+    profilesRoot
+  ]
+  ++ lib.concatMap (p: [ "${profilesRoot}/${p.name}" ]) profiles
+  ++ lib.concatMap (p: map (d: "${profilesRoot}/${p.name}/${d}") stateSubdirs) profiles;
 in
 {
   options.mine.hermes.agentProfiles = {
@@ -426,5 +450,24 @@ in
     }) profiles;
 
     services.hermes-agent.hermesHomeFiles = foldl' (acc: p: acc // filesOf p) { } profiles;
+
+    # A profile directory is its own complete HERMES_HOME, and in managed mode
+    # Hermes refuses to build one: config_home.py:64 calls _ensure_directory with
+    # create=not managed, which raises HomeInitializationError on a missing
+    # cron/sessions/logs/memories instead of creating it. Upstream makes those
+    # for the root home only (nixosModules.nix:475), and hermesHomeFiles'
+    # `install -D` leaves every profile parent root-owned 0755 - so the service
+    # user could not write the SOUL.md that config_home.py:67 emits either.
+    #
+    # Ordered, not racing: deps on the upstream activation script by its real
+    # attribute name, so it runs after the profile files exist and after
+    # mkStateScript has created their parents with the wrong owner.
+    system.activationScripts.hermes-agent-profile-state = lib.stringAfter [ "hermes-agent-setup" ] ''
+      for _dir in ${lib.escapeShellArgs profileStateDirs}; do
+        mkdir -p "$_dir"
+        chown ${owner} "$_dir"
+        chmod 2770 "$_dir"
+      done
+    '';
   };
 }
