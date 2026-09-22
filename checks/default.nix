@@ -117,6 +117,9 @@ evalAll "nixos" inputs.self.nixosConfigurations
           disabled_toolsets:
           - browser
           reasoning_effort: xhigh
+        kanban:
+          default_assignee: claude-scout
+          orchestrator_profile: claude-orchestrator
         model:
           api_key: local
           base_url: https://llm.mist-gamma.ts.net:8443/v1
@@ -144,6 +147,9 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ---
         agent:
           reasoning_effort: high
+        kanban:
+          default_assignee: claude-scout
+          orchestrator_profile: claude-orchestrator
         model:
           default: claude-opus-4-6
           provider: anthropic

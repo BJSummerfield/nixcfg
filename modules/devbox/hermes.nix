@@ -81,6 +81,14 @@ in
         api_key = "local";
         context_length = model.maxModelLen - model.headroom;
       };
+      # Explicit caps override the RAM-derived default, which is not re-clamped;
+      # the per-profile cap keys on the literal assignee string.
+      kanban = {
+        default_assignee = "claude-scout";
+        orchestrator_profile = "claude-orchestrator";
+        max_in_progress = 4;
+        max_in_progress_per_profile = 2;
+      };
       terminal.cwd = "/home/agent/projects";
       dashboard = {
         public_url = "https://${tailnetHostname}:${toString port}";

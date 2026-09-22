@@ -353,6 +353,17 @@ in
           "terminal"
           "cwd"
         ]
+        # `hermes kanban decompose` runs in the invoking profile's own
+        # HERMES_HOME, so routing has to follow it there; the concurrency caps
+        # stay behind because only the gateway dispatcher reads them.
+        [
+          "kanban"
+          "default_assignee"
+        ]
+        [
+          "kanban"
+          "orchestrator_profile"
+        ]
       ];
       description = ''
         Attribute paths copied from `services.hermes-agent.settings` into every
