@@ -47,6 +47,10 @@
       fish.enable = true;
       _1password.enable = true;
       avahi.enable = true;
+      hermies = {
+        desktop.enable = true;
+        gui.enable = true;
+      };
       local-llm = {
         enable = true;
         cuda.enable = true;

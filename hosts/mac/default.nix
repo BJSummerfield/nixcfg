@@ -27,6 +27,10 @@
     _1password.enable = true;
     firefox.enable = true;
     keybase.enable = true;
+    hermies = {
+      desktop.enable = true;
+      gui.enable = true;
+    };
     paseo-desktop.enable = true;
     theme.fontSizes.terminal = 15;
   };
@@ -35,15 +39,13 @@
     ffmpeg
   ];
 
-  homebrew = {
-    casks = [
-      "docker-desktop"
-      "hammerspoon"
-      "microsoft-teams"
-      "tailscale-app"
-      "utm"
-    ];
-  };
+  homebrew.casks = [
+    "docker-desktop"
+    "hammerspoon"
+    "microsoft-teams"
+    "tailscale-app"
+    "utm"
+  ];
 
   home-manager.users.brian = {
     home.stateVersion = "24.11";

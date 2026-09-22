@@ -3,6 +3,7 @@
     inputs.mac-app-util.darwinModules.default
     ./_1password/darwin.nix
     ./firefox/darwin.nix
+    ./hermies/darwin.nix
     ./homebrew/darwin.nix
     ./keybase/darwin.nix
     ./paseo-desktop/darwin.nix
