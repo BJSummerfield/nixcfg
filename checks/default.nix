@@ -66,20 +66,26 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ];
       }).config.system.build.toplevel.drvPath;
 
-  # The profile catalog is data, and an empty one renders nothing, so nothing
-  # in the host config exercises the generator. This check declares one profile
-  # per backend and diffs the rendered profiles/ tree, which pins both the file
-  # layout Hermes reads and the derivations: the context_length taken from the
-  # model alias, the thinkingLevels collapse (high -> xhigh), and the
-  # CLAUDE_CONFIG_DIR that an anthropic profile needs to find any credential at
-  # all.
+  # This check declares one profile per backend and diffs the rendered
+  # profiles/ tree, which pins both the file layout Hermes reads and the
+  # derivations: the context_length taken from the model alias, the
+  # thinkingLevels collapse (high -> xhigh), and the CLAUDE_CONFIG_DIR that an
+  # anthropic profile needs to find any credential at all.
+  #
+  # mkForce, because the diff is over the WHOLE tree and `profiles` is an
+  # attrset option that merges: without it the real catalog's roles land
+  # alongside the fixtures and the diff reports each one as unexpected. That
+  # coupling is deliberate - this check is about the generator, and a golden
+  # tree that also had to be updated for every new role would be re-baselined
+  # instead of read. ../modules/devbox/hermes-profiles-catalog.nix is covered
+  # by devbox-hermes-profiles-catalog below instead.
   devbox-hermes-profiles =
     let
       withProfiles = inputs.self.nixosConfigurations.redtruck.extendModules {
         modules = [
           {
             mine.system.devboxes.devbox.hermesEnvFile = "/run/secrets/devbox-hermes-env";
-            containers.devbox.config.mine.hermes.agentProfiles.profiles = {
+            containers.devbox.config.mine.hermes.agentProfiles.profiles = nixpkgs.lib.mkForce {
               check-local = {
                 description = "Check fixture.";
                 model = "Qwen3.8-27B-NVFP4-32k";
@@ -156,6 +162,126 @@ evalAll "nixos" inputs.self.nixosConfigurations
       diff -ru ${expected} ${tree}
       touch $out
     '';
+
+  # The catalog is data with invariants that nothing else enforces: the option
+  # type accepts any string as a toolset name, so a typo, a dropped `file`
+  # grant or a read-only role quietly handed a terminal all evaluate fine and
+  # only show up as a profile that can do more than it should. These assert
+  # the properties the catalog's own comments claim.
+  devbox-hermes-profiles-catalog =
+    let
+      inherit (nixpkgs) lib;
+      catalog = import ../modules/devbox/hermes-profiles-catalog.nix;
+      roles = [
+        "orchestrator"
+        "scout"
+        "worker"
+        "verifier"
+        "reviewer"
+        "oracle"
+      ];
+      families = {
+        claude = "anthropic";
+        qwen = "local";
+      };
+      # Every name the CLI may be given. `readonly` and `verify` are the
+      # least-privilege-toolsets plugin's; the rest are Hermes built-ins.
+      knownToolsets = [
+        "readonly"
+        "verify"
+        "web"
+        "search"
+        "vision"
+        "terminal"
+        "skills"
+        "browser"
+        "file"
+        "todo"
+        "memory"
+        "code_execution"
+        "delegation"
+        "kanban"
+        "clarify"
+        "chat_history_lookup"
+        "cronjob"
+        "computer_use"
+        "safe"
+        "coding"
+        "debugging"
+      ];
+      # Roles that must not be able to change the tree. Membership here is the
+      # security claim; the assertions below are what make it true.
+      readOnlyRoles = [
+        "orchestrator"
+        "scout"
+        "reviewer"
+        "oracle"
+      ];
+      expectedNames = lib.concatMap (f: map (r: "${f}-${r}") roles) (lib.attrNames families);
+      actualNames = lib.attrNames catalog;
+
+      failures =
+        lib.optional (
+          lib.sort lib.lessThan actualNames != lib.sort lib.lessThan expectedNames
+        ) "profile set is ${toString actualNames}, expected ${toString expectedNames}"
+        ++ lib.concatMap (
+          name:
+          let
+            p = catalog.${name};
+            family = lib.head (lib.splitString "-" name);
+            role = lib.removePrefix "${family}-" name;
+            toolsets = p.toolsets or [ ];
+            disabled = p.disabledToolsets or [ ];
+            grants = t: lib.elem t toolsets;
+          in
+          lib.optional (
+            p.backend != families.${family}
+          ) "${name}: backend ${p.backend}, expected ${families.${family}} for the ${family} family"
+          ++ lib.optional (!(p ? model) || p.model == null) "${name}: no model id"
+          ++ lib.optional (!(p ? description)) "${name}: no description for the decomposer to route on"
+          # Only two effort levels survive the local collapse, so declaring a
+          # third would mean one family silently runs at a level the other does not.
+          ++ lib.optional (
+            !lib.elem p.thinking [
+              "medium"
+              "xhigh"
+            ]
+          ) "${name}: thinking ${p.thinking}, expected medium or xhigh"
+          ++ map (t: "${name}: unknown toolset ${t}") (lib.subtractLists knownToolsets toolsets)
+          ++ map (t: "${name}: unknown disabled toolset ${t}") (lib.subtractLists knownToolsets disabled)
+          # `file` is indivisible - granting it grants write_file and patch.
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && grants "file"
+          ) "${name}: read-only role granted the indivisible `file` toolset, which can write"
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && grants "terminal"
+          ) "${name}: read-only role granted `terminal`"
+          ++ lib.optional (
+            lib.elem role readOnlyRoles && !lib.elem "code_execution" disabled
+          ) "${name}: read-only role must disable `code_execution`, whose sandbox writes and runs commands"
+          # The verifier's whole point: a terminal to build and test with, and
+          # no way to edit the thing it is judging.
+          ++ lib.optional (
+            role == "verifier" && !grants "verify"
+          ) "${name}: verifier must use the `verify` toolset"
+          ++ lib.optional (role == "verifier" && grants "file") "${name}: verifier must not grant `file`"
+          # The reviewer is the one role with no terminal at all, so that it
+          # judges intent rather than being drawn into running the change.
+          ++ lib.optional (
+            role == "reviewer" && !grants "readonly"
+          ) "${name}: reviewer must use the `readonly` toolset"
+          ++ lib.optional (
+            role == "worker" && !(grants "file" && grants "terminal")
+          ) "${name}: worker is the implementing role and needs both `file` and `terminal`"
+          ++ lib.optional (
+            role == "orchestrator" && !(grants "kanban" && grants "delegation")
+          ) "${name}: orchestrator dispatches and needs `kanban` and `delegation`"
+        ) actualNames;
+    in
+    if failures != [ ] then
+      throw "hermes-profiles-catalog:\n  ${lib.concatStringsSep "\n  " failures}"
+    else
+      pkgs.runCommand "devbox-hermes-profiles-catalog" { } "touch $out";
   fmt-check =
     pkgs.runCommand "fmt-check"
       {
