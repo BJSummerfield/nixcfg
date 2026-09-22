@@ -26,6 +26,7 @@ disks are declared with disko, and every host is on the same tailnet.
 - `secrets/` — sops-encrypted secrets, keyed to host SSH keys.
 - `ci/`, `.github/workflows/check.yml` — CI, including the binary cache plumbing.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
+- `hermes-claude.md` — running Claude (Anthropic) models in the devbox Hermes.
 
 ## Working on it
 
