@@ -25,11 +25,6 @@
       headroom = 4096;
       maxTokens = 16384;
       aliases = {
-        "Qwen3.8-27B-NVFP4-8k" = {
-          displayName = "Qwen3.8 27B NVFP4 8k output (redtruck)";
-          contextWindow = 102400 - 4096;
-          maxTokens = 8192;
-        };
         "Qwen3.8-27B-NVFP4-32k" = {
           displayName = "Qwen3.8 27B NVFP4 32k output (redtruck)";
           contextWindow = 102400 - 4096;

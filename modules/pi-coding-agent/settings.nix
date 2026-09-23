@@ -63,7 +63,6 @@ in
       maxThinking = "xhigh";
       agentOverrides = {
         scout = {
-          model = qualified "Qwen3.8-27B-NVFP4-8k";
           output = "context.md";
           outputMode = "file-only";
           thinking = "medium";
