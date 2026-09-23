@@ -12,9 +12,9 @@ const MIN_RECOVERY_HEADROOM_TOKENS = 2000;
 const TRUNCATION_RECOVERY =
   "Your previous turn ran out of output budget before it finished, so any " +
   "tool call it was writing was discarded. Do not retry that work now. " +
-  "FIRST write your output file with the results you already have, THEN reply " +
-  "in one or two sentences stating that the attempt was cut off and what was " +
-  "incomplete.";
+  "FIRST save the results you already have to disk (your output file if you " +
+  "have one), THEN reply in one or two sentences stating that the attempt was " +
+  "cut off and what was incomplete.";
 
 function contextTokensOf(usage) {
   if (!usage) return 0;

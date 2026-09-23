@@ -43,7 +43,7 @@ const assistant = (usage, stopReason = "stop") => ({
   assert.equal(h.sent[0].message.customType, "budget-valve-truncated");
   assert.equal(h.sent[0].options.deliverAs, "followUp");
   assert.equal(h.sent[0].options.triggerTurn, true);
-  assert.match(h.sent[0].message.content[0].text, /FIRST write your output file/);
+  assert.match(h.sent[0].message.content[0].text, /FIRST save the results you already have to disk/);
 }
 
 // Context size is pi's business: no turn is interrupted for being large, and
