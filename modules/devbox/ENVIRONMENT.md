@@ -3,6 +3,8 @@
 You are inside a long-lived NixOS container (systemd-nspawn). The container is
 the security boundary; no sandbox wraps your commands.
 
+- Several identical containers exist (`devbox`, `workbox`); `hostname` says
+  which one you are in. Anything installed by hand is per container.
 - The container persists across sessions and host reboots: your home, shell
   history and anything installed by hand are still here next time. It is not
   self-cleaning scratch space.

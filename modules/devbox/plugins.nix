@@ -1,18 +1,18 @@
-# Update a running container (manual):
-#   pi update --extensions
+# Updating a plugin: bump its version below and rebuild the host. pi installs
+# the pinned version at its next start; `pi list` in the container shows what
+# is installed. If the old version survives the rebuild:  pi update --extensions
 #
-# Removing a plugin (manual cleanup):
+# Removing a plugin:
 #   1. drop the spec below, and rebuild the host
-#   2. in the container:  pi remove npm:@teelicht/pi-superagents
-#                         pi remove git:github.com/obra/superpowers
-#   3. check:  ls ~/.pi/agent/npm/node_modules ~/.pi/agent/git && pi list
+#   2. in the container:  pi remove npm:<name>
+#   3. check:  ls ~/.pi/agent/npm/node_modules && pi list
 #   4. restart pi
 #
-# If `pi remove` fails, manually rm under ~/.pi/agent: npm/node_modules/<name>,
-# git/, and extensions/<name>/.
+# If `pi remove` fails, manually rm ~/.pi/agent/npm/node_modules/<name>.
 {
   piPackages = [
-    "npm:pi-subagents"
-    "npm:pi-web-access"
+    "npm:pi-subagents@0.71.0"
+    "npm:pi-web-access@0.31.0"
+    "npm:@pinet/model-aware-compaction@0.2.21"
   ];
 }

@@ -8,7 +8,7 @@ disks are declared with disko, and every host is on the same tailnet.
 
 | Host | Platform | Role |
 | --- | --- | --- |
-| `redtruck` | NixOS | Desktop workstation (NVIDIA/CUDA). Runs the `local-llm` container and the `devbox` agent sandbox, plus printing and the media encode queue. |
+| `redtruck` | NixOS | Desktop workstation (NVIDIA/CUDA). Runs the `local-llm` container and the `devbox` / `workbox` agent sandboxes, plus printing and the media encode queue. |
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
 | `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |

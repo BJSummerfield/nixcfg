@@ -59,6 +59,10 @@ in
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
+    "model-aware-compaction" = {
+      compactionModel = "${qualified llm.default}:medium";
+    };
+
     subagents = {
       maxThinking = "xhigh";
       agentOverrides = {

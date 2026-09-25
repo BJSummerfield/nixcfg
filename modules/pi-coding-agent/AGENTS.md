@@ -1,49 +1,36 @@
 # Subagent dispatch
 
 pi's global context file (`~/.pi/agent/AGENTS.md`): survives compaction, read by
-the dispatching session only. Children inherit only the repository's `AGENTS.md`
-(`inheritGlobalContext` is false) — policy a child must follow goes there.
+the dispatching session only. Children inherit the repository's `AGENTS.md` and
+the environment contract, never this file — policy a child must follow goes in
+the repository.
 
 ## Model and thinking
 
-One model is served at a time; every registry id is that same instance. Naming a
-*different* model evicts it and stalls for minutes. Never do it mid-session.
+Every role's model, output budget and thinking level are set in nix
+(`agentOverrides`). A dispatch never needs `model:`; single-agent dispatch has
+no such field, and omitting it is correct. Chain and parallel steps do take a
+`model` field: leave it out. Setting it makes the call site the origin and the
+role's nix pin is silently ignored.
 
-Omitting `model:` inherits the parent's model with the full window. To set a
-thinking level, pass the full string from `{action: "models"}`:
-
-```
-model: "redtruck/Qwen3.8-27B-NVFP4:medium"
-```
-
-A bare `model: ":medium"` fails with `Unknown subagent model`; agent names are
-not model ids; `thinking` is **not** a dispatch field and is ignored. The suffix
-overrides the frontmatter default.
-
-Reasoning and answer share one `max_tokens`, so a long deliverable at a high
+Reasoning and answer share one output budget, so a long deliverable at a high
 level can spend it all thinking and return `stopReason: "length"` with nothing
-written. `worker`, `reviewer` and `oracle` default to `thinking: high` (= the
-server's `xhigh`), so always pass the suffix:
-
-| Role | Level | Note |
-|---|---|---|
-| worker | `:medium` | code deliverables are long |
-| researcher | `:medium` | reports are long |
-| reviewer | `:high` | brief it verdict-first (verdict, findings with file:line, then evidence) so truncation loses only tail evidence |
-| orchestrator | on the session | children inherit the model, not the level |
-
-Reserve `xhigh`/`max` for one-off short answers.
+written. Brief a reviewer verdict-first (verdict, findings with file:line, then
+evidence) so truncation loses only tail evidence.
 
 ## Context limits
 
-`clampMaxTokensToContext` caps a turn at `contextWindow - 4096` = **94,208
-tokens**; that (not `maxModelLen`) is what produces `length` deaths. A session
-that reaches it cannot self-recover — auto-compaction's summary call overflows
-identically. Resume from a fork.
+`clampMaxTokensToContext` caps a turn at `contextWindow - context - 4096`, so
+the output budget shrinks as the transcript grows: **98,304 minus whatever the
+prompt already costs**, floored at 1 token. That (not `maxModelLen`) is what
+produces `length` deaths, and it is why a long session's replies get shorter
+before they stop entirely. A session that reaches the floor cannot self-recover
+— auto-compaction's summary call overflows identically. Resume from a fork.
 
 - Fork only a child that needs your working context; dispatch self-contained
   briefs fresh. A fork of a large parent burns its budget in the inherited
-  compaction window before its first useful turn.
+  compaction window before its first useful turn, and the engine re-prefills
+  the whole inherited context: nothing is cached across a fork.
 - Long text goes to disk, never inline in a task string (a few KB inline
   arrives truncated). First stage writes it under `/var/tmp`; later stages read.
 
@@ -70,10 +57,8 @@ anything; silence proves nothing.
   stalled.
 - A steer is a turn. "Respond with a short status" is answered and the run
   **ends** half done. Every steer must say to continue the task afterwards.
-- Completion notices are best-effort: gated on an id fresh per pi process, and
-  the replay record expires after ~10 minutes, so a child whose parent process
-  was replaced finishes into nowhere. `bg_wait` survives that; use it for
-  anything you cannot afford to redo.
+- Completion notices are best-effort. `bg_wait` is not; use it for anything you
+  cannot afford to redo.
 
 ## Dispatch API
 
@@ -82,38 +67,23 @@ Tool access (frontmatter `tools:` is the source of truth):
 | Agent | Tools |
 |---|---|
 | worker, delegate, scout, oracle | `bash` |
-| reviewer | `read/grep/find/ls` |
+| reviewer | `read/grep/find/ls` + `watchdog_diff` |
 | researcher | `read/write` + web tools |
 
 Give shell steps to a `worker` rather than running them yourself. A child
 lacking a tool escalates mid-run via `subagent_supervisor`
 (list/send/ask/reply/pending/status — plain `subagent` has no `pending`).
 
-A task classifier runs **before launch** and kills a read-only agent whose task
-text sounds like implementation — including negated and meta uses ("do not
-rewrite the docs"). Keep reviewer, oracle and researcher briefs in pure
-review/analysis vocabulary; the child never ran, so reword and re-dispatch.
+`workflowScript` is plugin API and moves between releases; the plugin's guide
+is the reference, not this file. What holds regardless of version:
 
-`workflowScript` traps (fail at launch or silently):
-
-- `runs.all()` takes specs `{key, agent, task, model}`, not the handles
-  `runs.run()` returns.
-- `resume` and `agent` are mutually exclusive in `runs.run`; a resumed run
-  keeps the original's agent and model.
-- Results carry `.ok` (+ `.output`/`.outputReference`), not
-  `.status`/`.summary`; a guard on `.status` skips every later stage.
-- Top-level requests reject `model`, `timeoutMs`, `globalConcurrencyLimit`,
-  `action` (per-child model goes in the spec). A top-level `lane.key` must equal
-  a child key or nothing launches; lane metadata is display-only — omit it.
+- Run `subagent {action: "validate", workflowScript}` before any long launch.
 - A declared `output` under `/tmp` is deleted on completion; the session's
   `subagent-artifacts/` copies persist. A child's `write` may be rerouted to
   that managed path even when given an absolute one: check the reported path
   and copy to a stable location before a dependent stage.
 - Run status `failed` ≠ work failed: a child can finish and die emitting its
   report. Read the on-disk result before re-dispatching.
-- Scripts are JavaScript: no adjacent-string concatenation; a literal backtick
-  inside a template literal fails at parse. Join quoted lines, and run
-  `subagent {action: "validate", workflowScript}` before any long launch.
 
 ## Images
 
