@@ -13,7 +13,6 @@
     ./immich-server/nixos.nix
     ./jellyfin-server/nixos.nix
     ./jellybox/nixos.nix
-    ./keybase/nixos.nix
     ./local-llm/nixos.nix
     ./makemkv/nixos.nix
     ./niri/nixos.nix
