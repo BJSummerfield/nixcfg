@@ -26,6 +26,8 @@ in
   config = mkIf cfg.enable {
     home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
 
+    home.file.".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
+
     home.file.".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
 
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
