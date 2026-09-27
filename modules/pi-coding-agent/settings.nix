@@ -60,7 +60,7 @@ in
     packages = plugins.piPackages;
 
     "model-aware-compaction" = {
-      compactionModel = "${qualified llm.default}:medium";
+      compactionModel = "${qualified llm.default}:off";
     };
 
     subagents = {
@@ -117,7 +117,7 @@ in
               "$var" = "thinking.effort";
               omitWhenOff = true;
             };
-            preserve_thinking = false;
+            preserve_thinking = true;
           };
           supportsThinkingTokenBudget = false;
         };
