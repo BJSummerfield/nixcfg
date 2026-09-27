@@ -59,6 +59,8 @@ in
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
+    compaction.reserveTokens = 20480;
+
     "model-aware-compaction" = {
       compactionModel = "${qualified llm.default}:off";
     };
@@ -142,5 +144,9 @@ in
     ];
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.default;
+  };
+
+  subagentConfig = {
+    globalConcurrencyLimit = 6;
   };
 }
