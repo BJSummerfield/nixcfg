@@ -11,10 +11,10 @@ const MIN_RECOVERY_HEADROOM_TOKENS = 2000;
 
 const TRUNCATION_RECOVERY =
   "Your previous turn ran out of output budget before it finished, so any " +
-  "tool call it was writing was discarded. Do not retry that work now. " +
-  "FIRST save the results you already have to disk (your output file if you " +
-  "have one), THEN reply in one or two sentences stating that the attempt was " +
-  "cut off and what was incomplete.";
+  "tool call it was writing was discarded. Carry on, but in smaller pieces: " +
+  "keep your reasoning brief, and write any large file in sections of at most " +
+  "about 150 lines, one tool call per section. A second cut-off ends the run, " +
+  "so if anything you have gathered is not yet on disk, save it first.";
 
 function contextTokensOf(usage) {
   if (!usage) return 0;
