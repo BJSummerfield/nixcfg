@@ -144,9 +144,21 @@ in
     ];
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.default;
+    toolActivation = "eager";
   };
 
   subagentConfig = {
     globalConcurrencyLimit = 6;
+    toolActivation = "eager";
+    disabledFeatures = [
+      "agent-management"
+      "watchdog"
+      "panes"
+      "missions"
+      "lane-management"
+      "external-machines"
+      "usage-budgets"
+      "tool-budgets"
+    ];
   };
 }
