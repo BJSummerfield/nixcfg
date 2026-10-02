@@ -30,6 +30,8 @@ in
 
     home.file.".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
 
+    home.file.".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
+
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;
     };

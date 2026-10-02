@@ -13,6 +13,5 @@
   piPackages = [
     "npm:pi-subagents@0.74.0"
     "npm:pi-web-access@0.35.0"
-    "npm:@pinet/model-aware-compaction@0.2.21"
   ];
 }

@@ -61,10 +61,6 @@ in
 
     compaction.reserveTokens = 20480;
 
-    "model-aware-compaction" = {
-      compactionModel = "${qualified llm.default}:off";
-    };
-
     subagents = {
       maxThinking = "xhigh";
       agentOverrides = {
