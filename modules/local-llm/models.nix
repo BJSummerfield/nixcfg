@@ -80,8 +80,8 @@
         draftTokens = 3;
         lmHeadDraft = true;
         deviceStateSlots = 3;
-        hostStateSlots = 48;
-        hostKvMib = 10240;
+        hostStateSlots = 32;
+        hostKvMib = 12800;
         maxSharedPrefixes = 8;
         maxPrivateContinuations = 48;
         pendingTimeoutMs = 600000;
