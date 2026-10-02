@@ -16,13 +16,13 @@
 }:
 stdenv.mkDerivation {
   pname = "ninfer";
-  version = "0-unstable-2026-09-18";
+  version = "0-unstable-2026-09-29";
 
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "9e163eee4b8acec21ab0ac765107b6a3f287b217";
-    hash = "sha256-RvcHyR6ErYQXoBmqCPqSzP4q5yXOX91+X6TPXp5HAk4=";
+    rev = "d44ab58408aa389728cd8b1ee50179527e1f3e0d";
+    hash = "sha256-6xlbHxRAm6Sscb1WMGc2Q6OL/nc+dcmC5v8w9OmWtkA=";
   };
 
   patches = [ ./ninfer-accept-alias-ids.patch ];
