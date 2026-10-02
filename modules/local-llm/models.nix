@@ -23,14 +23,7 @@
       reasoning = true;
       maxModelLen = 102400;
       headroom = 4096;
-      maxTokens = 16384;
-      aliases = {
-        "Qwen3.8-27B-NVFP4-32k" = {
-          displayName = "Qwen3.8 27B NVFP4 32k output (redtruck)";
-          contextWindow = 102400 - 4096;
-          maxTokens = 32768;
-        };
-      };
+      maxTokens = 32768;
       sampling = {
         temperature = 1.0;
       };

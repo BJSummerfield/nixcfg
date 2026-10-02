@@ -85,13 +85,11 @@ in
           thinking = "medium";
         };
         reviewer = {
-          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "review.md";
           outputMode = "file-only";
           thinking = "xhigh";
         };
         oracle = {
-          model = qualified "Qwen3.8-27B-NVFP4-32k";
           output = "oracle.md";
           outputMode = "file-only";
           thinking = "xhigh";
