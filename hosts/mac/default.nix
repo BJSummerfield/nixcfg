@@ -85,8 +85,5 @@
         commit.gpgSign = true;
       };
     };
-    home.packages = with pkgs; [
-      lumen
-    ];
   };
 }
