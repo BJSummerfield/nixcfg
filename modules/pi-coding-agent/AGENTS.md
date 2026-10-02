@@ -74,10 +74,11 @@ Give shell steps to a `worker` rather than running them yourself. A child
 lacking a tool escalates mid-run via `subagent_supervisor`
 (list/send/ask/reply/pending/status — plain `subagent` has no `pending`).
 
-`workflowScript` is plugin API and moves between releases; the plugin's guide
-is the reference, not this file. What holds regardless of version:
+`workflow` is plugin API and moves between releases; the plugin's guide is
+the reference, not this file. What holds regardless of version:
 
-- Run `subagent {action: "validate", workflowScript}` before any long launch.
+- Run `subagent {action: "validate", workflow: true}` (with the fenced
+  ```` ```js workflow ```` block in the same reply) before any long launch.
 - A declared `output` under `/tmp` is deleted on completion; the session's
   `subagent-artifacts/` copies persist. A child's `write` may be rerouted to
   that managed path even when given an absolute one: check the reported path
