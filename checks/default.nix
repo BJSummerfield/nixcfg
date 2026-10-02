@@ -108,6 +108,20 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node budget-valve.test.mjs
         touch $out
       '';
+  # The resume card replaces pi's default summariser with a fixed template on
+  # every compaction. Its input (session_before_compact's payload shape) is
+  # pi's, not ours, so pinning it here only proves the template, not pi's side.
+  pi-resume-card =
+    pkgs.runCommand "pi-resume-card"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/pi-coding-agent/extensions/resume-card.js} resume-card.js
+        cp ${../modules/pi-coding-agent/extensions/resume-card.test.mjs} resume-card.test.mjs
+        node resume-card.test.mjs
+        touch $out
+      '';
   valheim-notify-parser =
     pkgs.runCommand "valheim-notify-parser"
       {

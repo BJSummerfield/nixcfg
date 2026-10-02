@@ -85,6 +85,7 @@ the reference, not this file. What holds regardless of version:
   and copy to a stable location before a dependent stage.
 - Run status `failed` ≠ work failed: a child can finish and die emitting its
   report. Read the on-disk result before re-dispatching.
+- A reply whose first line starts with `FAILED:` is a failed task even when the run says `completed`.
 
 ## Images
 
