@@ -122,20 +122,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node resume-card.test.mjs
         touch $out
       '';
-  # Stubs old tool output out of the request once context grows past a
-  # threshold. Its input (the `context` hook's messages array) is pi's, not
-  # ours, so pinning it here only proves the stubbing logic, not pi's side.
-  pi-prune-tool-output =
-    pkgs.runCommand "pi-prune-tool-output"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        cp ${../modules/pi-coding-agent/extensions/prune-tool-output.js} prune-tool-output.js
-        cp ${../modules/pi-coding-agent/extensions/prune-tool-output.test.mjs} prune-tool-output.test.mjs
-        node prune-tool-output.test.mjs
-        touch $out
-      '';
   valheim-notify-parser =
     pkgs.runCommand "valheim-notify-parser"
       {
