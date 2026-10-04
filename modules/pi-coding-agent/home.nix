@@ -32,8 +32,6 @@ in
 
     home.file.".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
 
-    home.file.".pi/agent/extensions/prune-tool-output.js".source = ./extensions/prune-tool-output.js;
-
     home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
       imageBudget = toString data.imageBudget;
     };
