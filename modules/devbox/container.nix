@@ -72,7 +72,7 @@ in
     "flakes"
   ];
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
-  nix.nixPath = [ "nixpkgs=flake:nixpkgs" ];
+  nix.settings.nix-path = [ "nixpkgs=flake:nixpkgs" ];
 
   mine.allowedUnfree = [ "claude-code" ];
 
