@@ -23,7 +23,7 @@
       reasoning = true;
       maxModelLen = 102400;
       headroom = 4096;
-      maxTokens = 16384;
+      maxTokens = 32768;
       sampling = {
         temperature = 1.0;
       };
@@ -66,17 +66,14 @@
         };
         maxContext = 102400;
         kvCapacity = "auto";
-        maxConcurrency = 3;
+        maxConcurrency = 4;
         kvDtype = "fp8";
         prefillChunk = 2048;
         spec = "mtp";
         draftTokens = 3;
         lmHeadDraft = true;
         deviceStateSlots = 3;
-        hostStateSlots = 32;
-        hostKvMib = 12800;
-        maxSharedPrefixes = 8;
-        maxPrivateContinuations = 48;
+        hostContextMib = 17500;
         pendingTimeoutMs = 600000;
         defaultMaxTokens = 8192;
         vision = true;
