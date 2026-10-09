@@ -20,28 +20,7 @@ let
     // thinkingMapOf m
     // inputsOf m;
 
-  mkAlias =
-    m: id: a:
-    {
-      inherit id;
-      name = a.displayName;
-      inherit (m) reasoning;
-      inherit (a) contextWindow;
-      inherit (a) maxTokens;
-    }
-    // thinkingMapOf m
-    // inputsOf m;
-
-  entriesFor =
-    name:
-    let
-      m = llm.models.${name};
-      aliases = m.aliases or { };
-    in
-    [ (mkModel name m) ]
-    ++ map (aliasId: mkAlias m aliasId aliases.${aliasId}) (builtins.attrNames aliases);
-
-  redtruckModels = builtins.concatMap entriesFor llm.enabled;
+  redtruckModels = map (name: mkModel name llm.models.${name}) llm.enabled;
 
   qualified = id: "${llm.provider}/${id}";
 in

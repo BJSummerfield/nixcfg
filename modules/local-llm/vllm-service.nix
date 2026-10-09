@@ -16,8 +16,6 @@ let
   podman = lib.getExe' pkgs.podman "podman";
   endpoint = "http://${hostAddress}:${toString port}";
 
-  servedNames = lib.concatStringsSep " " ([ name ] ++ builtins.attrNames (m.aliases or { }));
-
   mmLimit =
     if m ? vision then
       "'{\"image\": {\"count\": ${num m.vision.maxImages}, \"width\": ${num m.vision.width}, \"height\": ${num m.vision.height}}, \"video\": 0}'"
@@ -26,7 +24,7 @@ let
 
   vllmArgs = [
     "--model /model"
-    "--served-model-name ${servedNames}"
+    "--served-model-name ${name}"
     "--kv-cache-dtype ${m.vllm.kvCacheDtype}"
     "--max-model-len ${num m.maxModelLen}"
     (
