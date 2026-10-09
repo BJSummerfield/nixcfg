@@ -5,7 +5,6 @@
 # this revision; an engine restart clears both.
 {
   lib,
-  stdenv,
   fetchFromGitHub,
   cmake,
   ninja,
@@ -15,7 +14,9 @@
   ffmpeg,
   curl,
 }:
-stdenv.mkDerivation {
+# nvcc 13.1 hosts on GCC 15 and links its libstdc++; the default GCC 16 headers
+# emit atomic-wait symbols that library lacks (XGrammar semaphores).
+cudaPackages_13_1.backendStdenv.mkDerivation {
   pname = "ninfer";
   version = "0-unstable-2026-10-07";
 
