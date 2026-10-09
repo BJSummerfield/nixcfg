@@ -75,9 +75,13 @@ in
           thinking = "medium";
         };
         worker = {
+          output = "worker.md";
+          outputMode = "file-only";
           thinking = "medium";
         };
         delegate = {
+          output = "delegate.md";
+          outputMode = "file-only";
           thinking = "medium";
         };
         reviewer = {
@@ -142,7 +146,7 @@ in
   };
 
   subagentConfig = {
-    globalConcurrencyLimit = 6;
+    globalConcurrencyLimit = 2;
     toolActivation = "eager";
     disabledFeatures = [
       "agent-management"
