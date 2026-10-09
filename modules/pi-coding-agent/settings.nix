@@ -146,7 +146,7 @@ in
   };
 
   subagentConfig = {
-    globalConcurrencyLimit = 2;
+    globalConcurrencyLimit = 3;
     toolActivation = "eager";
     disabledFeatures = [
       "agent-management"

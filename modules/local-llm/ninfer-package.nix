@@ -1,7 +1,8 @@
 # NInfer ships no releases, no tags and no binaries: upstream's own instruction
 # is to build a commit from source. The pin is therefore the version. Bump it
 # deliberately - the engine is under daily development and its context-cache
-# bugs (upstream #251, #270, #177, #229) are open at this revision.
+# bugs (upstream #378 Host placement, #379 Host arena fragmentation) are open at
+# this revision; an engine restart clears both.
 {
   lib,
   stdenv,
@@ -16,13 +17,13 @@
 }:
 stdenv.mkDerivation {
   pname = "ninfer";
-  version = "0-unstable-2026-09-29";
+  version = "0-unstable-2026-10-07";
 
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "d44ab58408aa389728cd8b1ee50179527e1f3e0d";
-    hash = "sha256-6xlbHxRAm6Sscb1WMGc2Q6OL/nc+dcmC5v8w9OmWtkA=";
+    rev = "81c8ce093b2c1646a87566a8e59d807fcf0ec95c";
+    hash = "sha256-D+rrNhQ5+cvQu1Ylhlzu36WJZgGLmKydeGLGz8KZ/c8=";
   };
 
   patches = [ ./ninfer-accept-alias-ids.patch ];
