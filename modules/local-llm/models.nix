@@ -23,7 +23,7 @@
       reasoning = true;
       maxModelLen = 102400;
       headroom = 4096;
-      maxTokens = 32768;
+      maxTokens = 16384;
       sampling = {
         temperature = 1.0;
       };
@@ -66,7 +66,7 @@
         };
         maxContext = 102400;
         kvCapacity = "auto";
-        maxConcurrency = 4;
+        maxConcurrency = 3;
         kvDtype = "fp8";
         prefillChunk = 2048;
         spec = "mtp";
