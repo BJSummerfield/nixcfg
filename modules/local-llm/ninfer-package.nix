@@ -26,8 +26,6 @@ stdenv.mkDerivation {
     hash = "sha256-D+rrNhQ5+cvQu1Ylhlzu36WJZgGLmKydeGLGz8KZ/c8=";
   };
 
-  patches = [ ./ninfer-accept-alias-ids.patch ];
-
   nativeBuildInputs = [
     cmake
     ninja

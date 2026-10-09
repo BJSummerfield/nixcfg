@@ -121,12 +121,6 @@
         toolCallParser = "qwen3_xml";
         reasoningParser = "qwen3";
       };
-
-      aliases."Qwen3.6-27B-NVFP4-32k" = {
-        displayName = "Qwen3.6 27B NVFP4 32k budget (redtruck)";
-        contextWindow = 32768;
-        maxTokens = 8192;
-      };
     };
 
     "Qwen3.6-35B-A3B-NVFP4" = {

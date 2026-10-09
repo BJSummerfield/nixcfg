@@ -37,9 +37,6 @@ let
   metricsPort = 5801;
 
   catalog = import ./models.nix;
-  allAliasNames = builtins.concatMap (n: builtins.attrNames (catalog.models.${n}.aliases or { })) (
-    builtins.attrNames catalog.models
-  );
   weightsOf = import ./weights.nix { inherit lib pkgs; };
   artifactOf = import ./artifact.nix { inherit pkgs; };
   ninfer = pkgs.callPackage ./ninfer-package.nix { };
@@ -114,23 +111,10 @@ in
         message = "local-llm: models.nix `enabled` must name exactly one model - a single GPU serves one, and there is no swapper to pick between them";
       }
       {
-        assertion = builtins.all (a: !(catalog.models ? ${a})) allAliasNames;
-        message = "local-llm: models.nix alias names must not collide with model names (a colliding alias would be passed twice to --served-model-name and duplicate its id in the clients)";
-      }
-      {
         assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null) (
-          builtins.attrNames catalog.models ++ allAliasNames
+          builtins.attrNames catalog.models
         );
-        message = "local-llm: model and alias names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
-      }
-      {
-        assertion =
-          ninferSelected
-          -> builtins.all (
-            n:
-            builtins.all (a: lib.hasPrefix "${n}-" a) (builtins.attrNames (catalog.models.${n}.aliases or { }))
-          ) catalog.enabled;
-        message = "local-llm: NInfer serves one --model-id and is patched to accept only `<model-id>-<suffix>` besides it, so every alias of the enabled model must start with `<model>-`";
+        message = "local-llm: model names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
       }
       {
         assertion = ninferSelected -> ninferAvailable;
