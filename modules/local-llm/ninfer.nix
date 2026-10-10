@@ -47,17 +47,6 @@ let
   '';
 in
 {
-  users.users.ninfer = {
-    isSystemUser = true;
-    group = "ninfer";
-  };
-  users.groups.ninfer = { };
-
-  systemd.tmpfiles.rules = [
-    "d ${stateDir} 0755 ninfer ninfer -"
-    "Z ${stateDir} - ninfer ninfer -"
-  ];
-
   systemd.services.ninfer = ninferService // wanted;
 
   systemd.services.ninfer-watchdog = {
@@ -92,6 +81,8 @@ in
       Restart = "on-failure";
       RestartSec = 5;
       DynamicUser = true;
+      User = "ninfer";
+      StateDirectory = "ninfer";
       ProtectSystem = "strict";
       ProtectHome = true;
       PrivateTmp = true;
