@@ -1,8 +1,13 @@
 diff --git a/src/core/host_context_arena.cpp b/src/core/host_context_arena.cpp
-index fa497ab..150e43d 100644
+index fa497ab..a8f4530 100644
 --- a/src/core/host_context_arena.cpp
 +++ b/src/core/host_context_arena.cpp
-@@ -5,6 +5,153 @@
+@@ -1,10 +1,185 @@
+ #include "core/host_context_arena.h"
+ 
+ #include <algorithm>
++#include <array>
+ #include <limits>
  #include <stdexcept>
  
  namespace ninfer {
@@ -153,10 +158,37 @@ index fa497ab..150e43d 100644
 +    }
 +    return true;
 +}
++
++std::uint32_t host_context_placeable_pages(std::span<const HostContextRange> free_extents,
++                                           std::size_t stride, std::uint32_t pages,
++                                           std::size_t minimum_allocation_bytes) {
++    const auto places = [&](std::uint32_t count) {
++        const std::array<HostContextRun, 1> run{
++            {{.bytes = stride, .count = count, .divisible = true}}};
++        return host_context_placeable(free_extents, {}, run, minimum_allocation_bytes);
++    };
++    if (pages == 0 || stride == 0) { return 0; }
++    if (places(pages)) { return pages; }
++    std::size_t free_bytes = 0;
++    for (const auto& extent : free_extents) { free_bytes += extent.bytes; }
++    // Fewer pages never place worse, so search below what the free bytes can hold.
++    std::uint32_t room = 0;
++    for (auto high =
++             static_cast<std::uint32_t>(std::min<std::size_t>(pages - 1U, free_bytes / stride));
++         room < high;) {
++        const auto middle = room + (high - room + 1U) / 2U;
++        if (places(middle)) {
++            room = middle;
++        } else {
++            high = middle - 1U;
++        }
++    }
++    return room;
++}
  
  HostContextAllocation::~HostContextAllocation() { (void)release(); }
  
-@@ -65,18 +212,11 @@ HostContextArena::HostContextArena(std::size_t capacity_bytes, std::size_t minim
+@@ -65,18 +240,11 @@ HostContextArena::HostContextArena(std::size_t capacity_bytes, std::size_t minim
  }
  
  std::size_t HostContextArena::allocation_bytes(std::size_t bytes) const noexcept {
@@ -177,10 +209,14 @@ index fa497ab..150e43d 100644
  }
  
  bool HostContextArena::can_allocate(std::size_t bytes) const noexcept {
-@@ -84,18 +224,22 @@ bool HostContextArena::can_allocate(std::size_t bytes) const noexcept {
+@@ -84,18 +252,26 @@ bool HostContextArena::can_allocate(std::size_t bytes) const noexcept {
      return rounded != 0 && find_free_extent(rounded).has_value();
  }
  
++std::uint32_t HostContextArena::placeable_pages(std::size_t stride, std::uint32_t pages) const {
++    return host_context_placeable_pages(free_extents_, stride, pages, minimum_bytes_);
++}
++
 +bool HostContextArena::can_place(std::span<const HostContextRun> runs,
 +                                 std::span<const HostContextRange> released) const {
 +    return host_context_placeable(free_extents_, released, runs, minimum_bytes_);
@@ -207,7 +243,7 @@ index fa497ab..150e43d 100644
      occupied_bytes_ += rounded;
      reserved_bytes_ += rounded;
      peak_occupied_bytes_ = std::max(peak_occupied_bytes_, occupied_bytes_);
-@@ -124,27 +268,7 @@ void HostContextArena::release(std::size_t offset, std::size_t bytes, bool reser
+@@ -124,27 +300,7 @@ void HostContextArena::release(std::size_t offset, std::size_t bytes, bool reser
      occupied_bytes_ -= bytes;
      if (reserved) { reserved_bytes_ -= bytes; }
      --allocation_count_;
@@ -237,7 +273,7 @@ index fa497ab..150e43d 100644
  
  } // namespace ninfer
 diff --git a/src/core/host_context_arena.h b/src/core/host_context_arena.h
-index 56c6164..834d668 100644
+index 56c6164..5ad6de7 100644
 --- a/src/core/host_context_arena.h
 +++ b/src/core/host_context_arena.h
 @@ -3,7 +3,9 @@
@@ -250,7 +286,7 @@ index 56c6164..834d668 100644
  #include <utility>
  #include <vector>
  
-@@ -11,6 +13,27 @@ namespace ninfer {
+@@ -11,6 +13,32 @@ namespace ninfer {
  
  class HostContextArena;
  
@@ -275,20 +311,26 @@ index 56c6164..834d668 100644
 +                                          std::span<const HostContextRun> runs,
 +                                          std::size_t minimum_allocation_bytes);
 +
++// Largest count of pages up to pages that places as one divisible run, as a demotion reserves.
++[[nodiscard]] std::uint32_t
++host_context_placeable_pages(std::span<const HostContextRange> free_extents, std::size_t stride,
++                             std::uint32_t pages, std::size_t minimum_allocation_bytes);
++
  // A unique, immovable physical extent. Keeping this owner alive pins its bytes; views never
  // allocate or charge a second copy. Transfer destinations remain reserved until publication.
  class HostContextAllocation {
-@@ -82,6 +105,9 @@ public:
+@@ -82,6 +110,10 @@ public:
      [[nodiscard]] std::size_t allocation_count() const noexcept { return allocation_count_; }
  
      [[nodiscard]] bool can_allocate(std::size_t bytes) const noexcept;
 +    [[nodiscard]] bool can_place(std::span<const HostContextRun> runs,
 +                                 std::span<const HostContextRange> released = {}) const;
++    [[nodiscard]] std::uint32_t placeable_pages(std::size_t stride, std::uint32_t pages) const;
 +    [[nodiscard]] HostContextRange range(const std::byte* data, std::size_t bytes) const noexcept;
      [[nodiscard]] std::optional<HostContextAllocation> allocate(std::size_t bytes) noexcept;
      [[nodiscard]] std::pair<HostContextAllocation, HostContextAllocation>
      split(HostContextAllocation&& allocation, std::size_t byte_offset);
-@@ -89,14 +115,10 @@ public:
+@@ -89,14 +121,10 @@ public:
  private:
      friend class HostContextAllocation;
  
@@ -541,18 +583,10 @@ index 6a1d64b..f35f88b 100644
          return require(handle).content_epoch;
      }
 diff --git a/src/models/qwen3_5/program/transactions/reclaim.cpp b/src/models/qwen3_5/program/transactions/reclaim.cpp
-index 9b135a4..cf82e8a 100644
+index 9b135a4..0573bfc 100644
 --- a/src/models/qwen3_5/program/transactions/reclaim.cpp
 +++ b/src/models/qwen3_5/program/transactions/reclaim.cpp
-@@ -4,6 +4,7 @@
- #include "models/qwen3_5/program/context_work.h"
- 
- #include <algorithm>
-+#include <array>
- #include <iterator>
- #include <limits>
- #include <map>
-@@ -945,6 +946,27 @@ struct DemotionBatch {
+@@ -945,6 +945,19 @@ struct DemotionBatch {
          });
      }
  
@@ -563,24 +597,16 @@ index 9b135a4..cf82e8a 100644
 +        for (std::size_t i = 0; i < ordered.size() && i < needed; ++i) {
 +            missing += ordered[i]->host_resident ? 0U : 1U;
 +        }
-+        std::uint32_t room = 0;
-+        for (auto high = missing; room < high;) {
-+            const auto middle = room + (high - room + 1U) / 2U;
-+            const std::array<HostContextRun, 1> write{
-+                {{.bytes = stride, .count = middle, .divisible = true}}};
-+            if (program.host_placeable(write, {})) {
-+                room = middle;
-+            } else {
-+                high = middle - 1U;
-+            }
-+        }
-+        return static_cast<std::size_t>(room) * stride;
++        if (!missing || !program.host_context_arena) { return 0; }
++        return static_cast<std::size_t>(
++                   program.host_context_arena->placeable_pages(stride, missing)) *
++               stride;
 +    }
 +
      std::optional<ContextDemotion> finish() const {
          if (!valid || ordered.empty() || evaluation->owner->has_context_transaction()) {
              return std::nullopt;
-@@ -956,8 +978,7 @@ struct DemotionBatch {
+@@ -956,8 +969,7 @@ struct DemotionBatch {
          const auto stride    = resource == runtime::ContextResourceClass::MainKV
                                     ? program.text_host_kv_page_stride
                                     : program.backend_host_kv_page_stride;
@@ -590,7 +616,7 @@ index 9b135a4..cf82e8a 100644
          auto plan            = std::make_shared<DemotionPlan>();
          plan->owner          = &program;
          plan->resource       = resource;
-@@ -990,6 +1011,17 @@ struct DemotionBatch {
+@@ -990,6 +1002,17 @@ struct DemotionBatch {
      }
  };
  
@@ -609,7 +635,7 @@ index 9b135a4..cf82e8a 100644
      if (!quote.impl || quote.impl->owner != this || context_transaction_) { return false; }
      const auto& plan = *quote.impl;
 diff --git a/src/runtime/engine/context_cache/resource_manager.h b/src/runtime/engine/context_cache/resource_manager.h
-index db4456d..ca3902f 100644
+index db4456d..191580b 100644
 --- a/src/runtime/engine/context_cache/resource_manager.h
 +++ b/src/runtime/engine/context_cache/resource_manager.h
 @@ -488,8 +488,9 @@ public:
@@ -729,7 +755,7 @@ index db4456d..ca3902f 100644
          if (!admission && incoming) {
              admission = preservation_admission(
                  program, {&*incoming, 1}, cursor,
-@@ -1323,9 +1342,22 @@ private:
+@@ -1323,9 +1342,24 @@ private:
              }
          }
          auto actions = program.plan_releases(allowed, excluded, {.host_bytes = required});
@@ -739,10 +765,12 @@ index db4456d..ca3902f 100644
 +                if (!contains(into, handle)) { into.push_back(handle); }
 +            }
 +        };
++        // Evicting every planned action bounds every selection. A zero release means a pinned
++        // page voids the whole union (or it frees nothing), so the selection loop decides.
 +        std::vector<Handle> everything;
 +        for (const auto& action : actions) { merge(everything, action.sources); }
-+        if (!satisfied(std::span<const Handle>(everything),
-+                       program.host_bytes_released(everything))) {
++        const auto everything_bytes = program.host_bytes_released(everything);
++        if (everything_bytes && !satisfied(std::span<const Handle>(everything), everything_bytes)) {
 +            return std::nullopt;
 +        }
          std::vector<Handle> selected;
@@ -753,7 +781,7 @@ index db4456d..ca3902f 100644
              std::optional<std::size_t> best;
              std::vector<Handle> best_union;
              std::size_t best_bytes = 0;
-@@ -1368,8 +1400,23 @@ private:
+@@ -1368,8 +1402,23 @@ private:
              if (!best) { return std::nullopt; }
              selected = std::move(best_union);
              released = best_bytes;
@@ -852,10 +880,18 @@ index b6bfba6..0fd96dc 100644
                  "paused snapshot typed resources disagree with the actual saved replicas");
          require(program_.revoke_snapshot(*paused.paused) && !paused.paused->snapshot_handle() &&
 diff --git a/tests/runtime/test_resource_manager.cpp b/tests/runtime/test_resource_manager.cpp
-index 8d3ad03..6773b3f 100644
+index 8d3ad03..098af4a 100644
 --- a/tests/runtime/test_resource_manager.cpp
 +++ b/tests/runtime/test_resource_manager.cpp
-@@ -84,6 +84,7 @@ struct Program {
+@@ -75,6 +75,7 @@ struct Program {
+         bool leased              = false;
+         bool release_blocked     = false;
+         bool demotion_blocked    = false;
++        bool host_pinned         = false;
+         std::uint32_t main_pages = 1;
+         std::optional<std::uint32_t> demotion_page_limit;
+         std::optional<std::size_t> demotion_bytes;
+@@ -84,6 +85,7 @@ struct Program {
      struct HostBlock {
          std::size_t bytes;
          bool external_reference;
@@ -863,7 +899,7 @@ index 8d3ad03..6773b3f 100644
      };
  
      struct Metadata {
-@@ -115,12 +116,65 @@ struct Program {
+@@ -115,12 +117,73 @@ struct Program {
      std::uint32_t main_capacity    = 1024;
      bool transfer_in_progress      = false;
      bool combined_demotion_blocked = false;
@@ -882,8 +918,16 @@ index 8d3ad03..6773b3f 100644
          return blocks.size() - 1;
      }
  
-+    [[nodiscard]] bool block_released(std::size_t block, std::span<const Handle> victims) const {
-+        if (blocks[block].external_reference) { return false; }
++    [[nodiscard]] bool block_released(std::size_t block, std::span<const Handle> victims,
++                                      bool pins_void = true) const {
++        // Like a source-pinned page, one pinned victim voids a set's Host release; plan quotes
++        // still offer it.
++        if (blocks[block].external_reference ||
++            (pins_void && std::any_of(victims.begin(), victims.end(), [&](Handle victim) {
++                 return contents.at(victim.index).host_pinned;
++             }))) {
++            return false;
++        }
 +        bool referenced = false;
 +        for (std::uint32_t index = 0; index < contents.size(); ++index) {
 +            if (!references(contents[index], block)) { continue; }
@@ -930,8 +974,13 @@ index 8d3ad03..6773b3f 100644
      Handle add(Key tokens, std::vector<std::size_t> host_blocks = {},
                 Role role = Role::SharedPrefix) {
          const Handle handle{static_cast<std::uint32_t>(contents.size())};
-@@ -195,18 +249,7 @@ struct Program {
-     [[nodiscard]] std::size_t host_bytes_released(std::span<const Handle> victims) const {
+@@ -192,21 +255,11 @@ struct Program {
+         return result;
+     }
+ 
+-    [[nodiscard]] std::size_t host_bytes_released(std::span<const Handle> victims) const {
++    [[nodiscard]] std::size_t host_bytes_released(std::span<const Handle> victims,
++                                                  bool pins_void = true) const {
          std::size_t bytes = 0;
          for (std::size_t block = 0; block < blocks.size(); ++block) {
 -            if (blocks[block].external_reference) { continue; }
@@ -946,11 +995,20 @@ index 8d3ad03..6773b3f 100644
 -                }
 -            }
 -            if (referenced && !survives) { bytes += blocks[block].bytes; }
-+            if (block_released(block, victims)) { bytes += blocks[block].bytes; }
++            if (block_released(block, victims, pins_void)) { bytes += blocks[block].bytes; }
          }
          return bytes;
      }
-@@ -491,16 +534,15 @@ struct Program {
+@@ -422,7 +475,7 @@ struct Program {
+                 released.state_slots += content.device_state;
+                 released.main_kv_pages += content.main_pages;
+             }
+-            released.host_bytes = host_bytes_released(sources);
++            released.host_bytes = host_bytes_released(sources, false);
+             const bool useful   = shortage.state_slots        ? released.state_slots != 0
+                                   : shortage.main_kv_pages    ? released.main_kv_pages != 0
+                                   : shortage.backend_kv_pages ? false
+@@ -491,16 +544,15 @@ struct Program {
                     : 0;
      }
  
@@ -970,7 +1028,7 @@ index 8d3ad03..6773b3f 100644
          if (!plan.main_parts.empty()) {
              for (const auto& [handle, pages] : plan.main_parts) {
                  auto& content    = contents.at(handle.index);
-@@ -1311,6 +1353,78 @@ Key tokens(std::uint32_t count, std::uint32_t first = 1) {
+@@ -1311,6 +1363,95 @@ Key tokens(std::uint32_t count, std::uint32_t first = 1) {
      return result;
  }
  
@@ -1021,6 +1079,23 @@ index 8d3ad03..6773b3f 100644
 +            "Host write evicted a victim that borders no hole");
 +}
 +
++void test_pinned_victim_does_not_void_an_independent_host_eviction() {
++    Fixture f(64);
++    f.program.contiguous = true;
++    const auto pinned    = f.program.add({1}, {f.program.host_block(16)});
++    (void)f.program.host_block(16, true);
++    const auto gap      = f.program.add({2}, {f.program.host_block(16)});
++    const auto adjacent = f.program.add({3}, {f.program.host_block(16)});
++    require(f.program.release_checkpoint(gap), "fixture could not open a Host hole");
++    f.program.released.clear();
++    f.program.contents[pinned.index].host_pinned = true;
++    f.publish(pinned);
++    f.publish(adjacent);
++    const auto victims = f.cache.host_victims(f.program, 32, std::nullopt);
++    require(victims && *victims == std::vector<Handle>{adjacent},
++            "a pinned page in another victim refused an eviction that places the write");
++}
++
 +void test_fragmented_host_demotion_evicts_instead_of_deleting_its_source() {
 +    Fixture f(64);
 +    f.program.contiguous = true;
@@ -1049,29 +1124,31 @@ index 8d3ad03..6773b3f 100644
  void test_necessary_execution_preserves_long_recovery_across_one_off_requests() {
      Fixture f(0);
      const Base original{.tokens = tokens(100)};
-@@ -1930,6 +2044,9 @@ int main() {
+@@ -1930,6 +2071,10 @@ int main() {
          test_reclaim_cursor_keeps_host_writeback_permissions();
          test_failed_demotion_keeps_scanning_independent_history();
          test_failed_demotion_reports_prior_host_release();
 +        test_fragmented_host_write_evicts_until_it_places();
 +        test_fragmented_host_write_keeps_victims_that_border_no_hole();
++        test_pinned_victim_does_not_void_an_independent_host_eviction();
 +        test_fragmented_host_demotion_evicts_instead_of_deleting_its_source();
          std::cout << "ok\n";
          return 0;
      } catch (const std::exception& error) {
 diff --git a/tests/test_host_context_arena.cpp b/tests/test_host_context_arena.cpp
-index 6c64b8e..c3c5e2a 100644
+index 6c64b8e..6933a9f 100644
 --- a/tests/test_host_context_arena.cpp
 +++ b/tests/test_host_context_arena.cpp
-@@ -2,6 +2,7 @@
+@@ -2,6 +2,8 @@
  
  #include <cuda_runtime_api.h>
  
 +#include <array>
++#include <cstdint>
  #include <cstring>
  #include <iostream>
  #include <limits>
-@@ -73,6 +74,13 @@ void test_fragmentation_and_split() {
+@@ -73,6 +75,13 @@ void test_fragmentation_and_split() {
      }
      expect(arena.free_bytes() == 1024 && !arena.can_allocate(512) && !arena.allocate(512),
             "actual contiguous extents, not total free bytes, govern availability");
@@ -1085,7 +1162,7 @@ index 6c64b8e..c3c5e2a 100644
      (void)pieces[1].release();
      auto merged = arena.allocate(768);
      expect(merged.has_value(), "adjacent released split pieces coalesce for another geometry");
-@@ -90,15 +98,69 @@ void test_fragmentation_and_split() {
+@@ -90,15 +99,90 @@ void test_fragmentation_and_split() {
      expect(!disabled.allocate(256) && disabled.capacity_bytes() == 0,
             "Host zero has no backing or allocations");
  }
@@ -1136,12 +1213,33 @@ index 6c64b8e..c3c5e2a 100644
 +               !ninfer::host_context_placeable(free, nested, page, 256),
 +           "an overlapping release was accepted as room");
 +}
++
++void test_placeable_pages_is_the_largest_placeable_count() {
++    const std::array<std::vector<ninfer::HostContextRange>, 4> layouts{
++        {{{0, 768}, {1024, 768}},
++         {{0, 512}, {768, 512}, {1536, 1024}, {3072, 2560}},
++         {{0, 4096}},
++         {}}};
++    for (const auto& layout : layouts) {
++        for (std::uint32_t pages = 0; pages <= 12; ++pages) {
++            std::uint32_t largest = 0;
++            for (std::uint32_t count = 1; count <= pages; ++count) {
++                const std::array<ninfer::HostContextRun, 1> run{
++                    {{.bytes = 512, .count = count, .divisible = true}}};
++                if (ninfer::host_context_placeable(layout, {}, run, 256)) { largest = count; }
++            }
++            expect(ninfer::host_context_placeable_pages(layout, 512, pages, 256) == largest,
++                   "placeable pages differ from the largest count that places");
++        }
++    }
++}
  } // namespace
  
  int main() {
 +    try {
 +        test_placement_follows_extents_not_free_bytes();
 +        test_released_ranges_merge_once_and_never_overlap();
++        test_placeable_pages_is_the_largest_placeable_count();
 +    } catch (const std::exception& error) {
 +        std::cerr << error.what() << '\n';
 +        return 1;

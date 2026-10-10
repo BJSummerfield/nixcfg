@@ -69,7 +69,7 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    ctest --output-on-failure -R "^ninfer_(resource_manager|host_context_arena)_test$"
+    ctest --output-on-failure --no-tests=error -R "^ninfer_(resource_manager|host_context_arena)_test$"
     runHook postCheck
   '';
 
