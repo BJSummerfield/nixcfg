@@ -93,6 +93,12 @@
           };
           modules = [ ./hosts/paynefield ];
         };
+        streamer = nixpkgs.lib.nixosSystem {
+          specialArgs = {
+            inherit inputs;
+          };
+          modules = [ ./hosts/streamer ];
+        };
         vps = nixpkgs.lib.nixosSystem {
           specialArgs = {
             inherit inputs;

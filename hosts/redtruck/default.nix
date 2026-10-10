@@ -7,6 +7,8 @@
     ../../users/waktu.nix
   ];
 
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
+
   environment.systemPackages = with pkgs; [
     bottom
     git
