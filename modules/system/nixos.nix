@@ -44,11 +44,13 @@ in
         type = types.enum [
           "systemd-boot"
           "grub-bios"
+          "extlinux"
         ];
         default = "systemd-boot";
         description = ''
           Bootloader mode. "systemd-boot" (default) requires an ESP partition;
-          "grub-bios" is for BIOS/legacy VMs with a BIOS boot partition (EF02).
+          "grub-bios" is for BIOS/legacy VMs with a BIOS boot partition (EF02);
+          "extlinux" is for U-Boot boards such as the Raspberry Pi.
         '';
       };
 
@@ -160,6 +162,11 @@ in
 
     (mkIf (bootCfg.mode == "grub-bios") {
       boot.loader.grub.enable = true;
+    })
+
+    (mkIf (bootCfg.mode == "extlinux") {
+      boot.loader.grub.enable = false;
+      boot.loader.generic-extlinux-compatible.enable = true;
     })
   ];
 }

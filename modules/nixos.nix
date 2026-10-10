@@ -25,6 +25,7 @@
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix
+    ./streamer/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix

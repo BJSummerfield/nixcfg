@@ -1,6 +1,6 @@
 # nixcfg
 
-One flake for every machine I run: five NixOS hosts, one nix-darwin Mac, and the
+One flake for every machine I run: six NixOS hosts, one nix-darwin Mac, and the
 home-manager configuration for their users. Secrets are sops-encrypted in-tree,
 disks are declared with disko, and every host is on the same tailnet.
 
@@ -12,6 +12,7 @@ disks are declared with disko, and every host is on the same tailnet.
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
 | `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
+| `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. See `docs/streamer.md`. |
 | `vps` | NixOS | Public edge — Caddy (with the layer4 app), Stalwart mail, photoform, backups. |
 | `mac` | nix-darwin | macOS workstation. |
 
@@ -26,6 +27,7 @@ disks are declared with disko, and every host is on the same tailnet.
 - `secrets/` — sops-encrypted secrets, keyed to host SSH keys.
 - `ci/`, `.github/workflows/check.yml` — CI, including the binary cache plumbing.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
+- `docs/streamer.md` — building, flashing and bringing up the Raspberry Pi streamer.
 
 ## Working on it
 
