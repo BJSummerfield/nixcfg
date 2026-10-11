@@ -19,8 +19,10 @@ The Pi runs two renderers, both advertised as **Desk**:
 
 Both write straight to the converter's ALSA `hw:` device with no software
 mixing, so a 16/44.1 file reaches the DAC unchanged. A udev rule names the
-first USB sound card `dac`, so any USB converter (Douk U2, Schiit Eitr 2, …)
-works without a config change.
+audio device set in `mine.system.streamer.usbId` (its `lsusb` vendor:product ID)
+`dac` and restarts `gmediarender` whenever it appears. Other USB audio devices,
+such as a mic sharing a KVM, keep their own names. Swapping the DAC or
+converter means changing `usbId` in `hosts/streamer/default.nix`.
 
 The module is `modules/streamer/nixos.nix`; the host is `hosts/streamer/`.
 
@@ -181,9 +183,9 @@ KVM (USB). Nothing on the Pi can switch it.
   `boot.kernelParams = [ "usb-storage.quirks=<vid>:<pid>:u" ];` to the host.
   Bus-powered SSDs can also draw more than the Pi supplies; a powered
   enclosure fixes that.
-- **No `dac` card.** Check `dmesg` after plugging in the converter. The udev
-  rule matches any USB sound card. Once the converter is settled, pin it with
-  `ATTRS{idVendor}`/`ATTRS{idProduct}` in `modules/streamer/nixos.nix`.
+- **No `dac` card.** Check `cat /proc/asound/cards` and `dmesg` after plugging
+  in the DAC. If it's listed under another name, `usbId` doesn't match it:
+  compare with `lsusb` (`nix shell nixpkgs#usbutils -c lsusb`).
 - **Cast plays nothing, or AirPlay is silent.** `journalctl -u gmediarender -u shairport-sync`.
   "Device or resource busy" means the other renderer still holds the device
   (see [Switching](#switching-between-symfonium-and-airplay)).
