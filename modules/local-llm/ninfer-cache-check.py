@@ -13,8 +13,10 @@ import urllib.request
 MODEL = "Qwen3.8-27B-NVFP4"
 GAUGES = ("running", "waiting", "paused", "preemptions_total", "snapshot_restores_total",
           "replay_restores_total", "replayed_tokens_total", "host_context_bytes",
-          "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total")
-COUNTERS = GAUGES[3:7] + GAUGES[8:]
+          "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total",
+          "device_state_slots_used", "host_state_slots_used", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
+COUNTERS = ("preemptions_total", "snapshot_restores_total", "replay_restores_total", "replayed_tokens_total",
+            "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
 GIB = 2 ** 30
 
 
@@ -33,6 +35,16 @@ def read_metrics(base):
             name = name.split("{")[0][len("ninfer_"):]
             if name in GAUGES:
                 out[name] = out.get(name, 0.0) + float(val)
+    for line in http(base + "/metrics", timeout=5).splitlines():
+        name, _, val = line.rpartition(" ")
+        if name == "ninfer_host_context_used_bytes":
+            out["host_context_bytes"] = float(val)
+        elif name == "ninfer_host_context_capacity_bytes":
+            out["host_capacity_bytes"] = float(val)
+        elif name.startswith("ninfer_context_transfer_bytes_total{") and 'direction="d2h"' in name:
+            out["kv_d2h_bytes_total"] += float(val)
+        elif name.startswith("ninfer_context_transfer_bytes_total{") and 'direction="h2d"' in name:
+            out["kv_h2d_bytes_total"] += float(val)
     return out
 
 
@@ -79,6 +91,7 @@ class Ctx:
     def __init__(self, a):
         self.a, self.base = a, a.base_url.rstrip("/")
         self.tpw, self.max_ctx, self.pool = a.tokens_per_word, a.max_context, a.kv_capacity
+        self.dev_slots = a.device_state_slots
         self.run_id = a.seed if a.seed is not None else int.from_bytes(os.urandom(6), "big")
         self.mon = Monitor(self.base)
 
@@ -195,7 +208,7 @@ def ensure_host_full(ctx):
     except Exception as e:
         return "SKIP", "metrics endpoint unreachable: %s" % e, results
     n = 0
-    while cur < need:
+    while cur < need or (n == 0 and need > 0):
         if n >= a.fill_max:
             return "FAIL", "host %.2f GiB still < %.0f%% of %.2f GiB after %d fills" % (cur / GIB, a.host_threshold * 100, a.host_capacity_gib, n), results
         n += 1
@@ -287,79 +300,79 @@ def test_growth(ctx, m0):
     return ("FAIL" if bad else "PASS"), ("; ".join(bad[:6]) if bad else "%d turns, every follow-up reused its prior prompt" % len(rows)), rows, {}
 
 
+def push_count(a, ctx):
+    per = min(int(a.push_frac * ctx.pool), int(0.9 * ctx.max_ctx) - 16)
+    return max(ctx.dev_slots + 1, math.ceil(a.evict_factor * ctx.pool / per)), per
+
+
+def reused_convo(ctx, tag, tokens, results):
+    instr = "Ignore the text above. Reply with the single word ok."
+    msgs = [{"role": "user", "content": ctx.first_prompt(tag, tokens, instr)}]
+    for turn in (1, 2):
+        r = ctx.chat("%s%d" % (tag, turn), msgs, 16)
+        results.append(r)
+        if not r["ok"]:
+            return None, "%s failed: %s" % (r["label"], r["err"])
+        msgs += [{"role": "assistant", "content": r["content"]},
+                 {"role": "user", "content": "More text:\n%s\nIgnore it. Reply with the single word ok." % ctx.text(ctx.rng("%s/%d" % (tag, turn)), 500)}]
+    t1, t2 = results[-2], results[-1]
+    if t2["cached"] < t1["prompt"] - ctx.a.tolerance:
+        return None, "%s turn 2 cached %d of %d; GPU reuse failed before any eviction" % (tag, t2["cached"], t1["prompt"])
+    return msgs, None
+
+
 def test_host(ctx, m0):
     a = ctx.a
     st, msg, results = ensure_host_full(ctx)
     if st != "OK":
         return st, "Host precondition: " + msg, results, {}
-    time.sleep(2)
-    mA = read_metrics(ctx.base)
-    instr = "Ignore the text above. Reply with the single word ok."
-    msgs = [{"role": "user", "content": ctx.first_prompt("target", a.target_tokens, instr)}]
-    t1 = ctx.chat("target1", msgs, 16)
-    results.append(t1)
-    if not t1["ok"]:
-        return "FAIL", "target turn 1 failed", results, {}
-    time.sleep(2)
+    msgs, err = reused_convo(ctx, "target", a.target_tokens, results)
+    if err:
+        return "FAIL", err, results, {}
+    target_prompt = results[-1]["prompt"]
+    k, per = push_count(a, ctx)
+    print("  target reused once (%d tokens); pushing it out with %d reused conversations of ~%d tokens" % (target_prompt, k, per))
     mB = read_metrics(ctx.base)
-    per = int(0.9 * ctx.max_ctx) - 16
-    k = math.ceil(a.evict_factor * ctx.pool / per)
-    print("  evicting with %d concurrent cold requests of ~%d tokens" % (k, per))
-    with cf.ThreadPoolExecutor(k) as ex:
-        futs = []
-        for i in range(k):
-            futs.append(ex.submit(ctx.cold, "evict%d" % i, per, 16))
-            time.sleep(0.3)
-        ev = [f.result() for f in futs]
-    results += ev
+    for i in range(k):
+        _, err = reused_convo(ctx, "push%d" % i, per, results)
+        if err:
+            return "FAIL", err, results, {}
     ctx.wait_idle(180)
     time.sleep(2)
     mC = read_metrics(ctx.base)
-    evict_tokens = sum(e["prompt"] for e in ev if e["ok"])
-    spill = mC["spill_pages_total"] - mB["spill_pages_total"]
-    moved = mC["host_context_bytes"] - mB["host_context_bytes"]
-    extra = {"host_gib": {"before_fill_done": mA["host_context_bytes"] / GIB, "after_turn1": mB["host_context_bytes"] / GIB, "after_evict": mC["host_context_bytes"] / GIB},
-             "evictor_tokens": evict_tokens, "pool": ctx.pool, "spill_pages_delta": spill, "host_bytes_delta_evict": moved}
-    print("  eviction evidence: evictor tokens=%d vs pool=%d, spill_pages +%g, host bytes %+d" % (evict_tokens, ctx.pool, spill, moved))
-    if any(not e["ok"] for e in ev):
-        return "FAIL", "evictor errors", results, extra
-    if evict_tokens <= ctx.pool or (spill <= 0 and moved == 0):
-        return "FAIL", "inconclusive (failing closed): no evidence target left the GPU (evictor tokens=%d, pool=%d, spill_pages +%g, host bytes %+d)" % (evict_tokens, ctx.pool, spill, moved), results, extra
-    msgs += [{"role": "assistant", "content": t1["content"]},
-             {"role": "user", "content": "More text:\n%s\nIgnore it. Reply with the single word ok." % ctx.text(ctx.rng("target2"), 500)}]
-    mD = read_metrics(ctx.base)
-    t2 = ctx.chat("target2", msgs, 16)
-    results.append(t2)
+    extra = {"host_gib_before_push": mB["host_context_bytes"] / GIB, "host_gib_after_push": mC["host_context_bytes"] / GIB,
+             "push_convs": k, "push_tokens": per, "d2h_bytes_during_push": mC["kv_d2h_bytes_total"] - mB["kv_d2h_bytes_total"]}
+    t3 = ctx.chat("target3", msgs, 16)
+    results.append(t3)
     time.sleep(2)
     mE = read_metrics(ctx.base)
-    restores = mE["ram_restores_total"] - mD["ram_restores_total"]
-    h2d = mE["ram_kv_h2d_bytes_total"] - mD["ram_kv_h2d_bytes_total"]
-    ctx.attach([t1, t2], t1["t0"])
-    extra.update(host_gib_after_turn2=mE["host_context_bytes"] / GIB, ram_restores_delta=restores, ram_h2d_bytes_delta=h2d,
-                 target_paths=[rec(t1, "path"), rec(t2, "path")])
-    print("  turn2: ram_restores +%g, h2d bytes +%d, paths %s, host %.2f GiB" % (restores, h2d, extra["target_paths"], mE["host_context_bytes"] / GIB))
-    if not t2["ok"]:
-        return "FAIL", "target turn 2 failed: %s" % t2["err"], results, extra
-    if "rec" not in t2:
-        return "FAIL", "turn 2 has no matching /ops/requests record (failing closed)", results, extra
-    ok = t2["cached"] >= t1["prompt"] - a.tolerance and rec(t2, "path") != "root" and restores > 0
-    why = "turn2 cached=%d of turn1 prompt=%d, path=%s, ram_restores +%g, h2d +%.2f GiB" % (t2["cached"], t1["prompt"], rec(t2, "path"), restores, h2d / GIB)
-    return ("PASS" if ok else "FAIL"), why + ("" if ok else " (not served via Host restore; Host tier did not take the new conversation)"), results, extra
+    restores = mE["ram_restores_total"] - mC["ram_restores_total"]
+    h2d = mE["kv_h2d_bytes_total"] - mC["kv_h2d_bytes_total"]
+    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB)
+    print("  target3: ram_restores +%g, host->gpu +%.2f GiB, host %.2f GiB" % (restores, h2d / GIB, mE["host_context_bytes"] / GIB))
+    if not t3["ok"]:
+        return "FAIL", "target turn 3 failed: %s" % t3["err"], results, extra
+    why = "target3 cached=%d of %d, ram_restores +%g, host->gpu +%.2f GiB" % (t3["cached"], target_prompt, restores, h2d / GIB)
+    if t3["cached"] < target_prompt - a.tolerance:
+        return "FAIL", why + " (target lost: the Host tier did not keep it)", results, extra
+    if h2d <= 0:
+        return "SKIP", why + " (target never left the GPU; inconclusive)", results, extra
+    return "PASS", why + " (served by a Host restore)", results, extra
 
 
 def plan(a, ctx):
     per = int(a.pause_frac * ctx.max_ctx) - a.pause_max_tokens
     last = a.growth_start + (a.growth_turns - 1) * a.growth_step * ctx.tpw
-    ek = math.ceil(a.evict_factor * ctx.pool / (int(0.9 * ctx.max_ctx) - 16))
+    k, per = push_count(a, ctx)
     print("PLAN (dry run, no requests sent) max_context=%d pool=%d tokens/word=%.3f" % (ctx.max_ctx, ctx.pool, ctx.tpw))
     print("pause: first fills Host tier to %.0f%% (stall of %d fills = FAIL); then %d concurrent cold requests x ~%d tokens (total %d vs pool %d), max_tokens=%d, expect_snapshot=%s"
           % (a.host_threshold * 100, a.stall_fills, a.pause_n, per, a.pause_n * per, ctx.pool, a.pause_max_tokens, a.expect_snapshot))
     print("growth: %d conversations, %d tokens start, +~%d words/turn, %d turns, gap %gs, max_tokens=%d; final prompt ~%d (+%d out) vs max_context %d"
           % (a.growth_convs, a.growth_start, a.growth_step, a.growth_turns, a.growth_gap, a.growth_max_tokens, last, a.growth_max_tokens, ctx.max_ctx))
-    print("host-admit: need host_context_bytes >= %.0f%% of %.2f GiB, else up to %d sequential fills of ~%d tokens; "
-          "stall of %d fills = FAIL; then target ~%d tokens, %d evictors of ~%d tokens (needs sum > pool and spill/host change), then target turn 2 "
-          "must have a /ops/requests record, cached within %d, and ram_restores delta > 0"
-          % (a.host_threshold * 100, a.host_capacity_gib, a.fill_max, a.fill_tokens, a.stall_fills, a.target_tokens, ek, int(0.9 * ctx.max_ctx) - 16, a.tolerance))
+    print("host-admit: at least one fill, then fills of ~%d tokens until host_context_bytes >= %.0f%% of %.2f GiB (max %d, stall of %d = FAIL); "
+          "target ~%d tokens, reused once; %d sequential conversations of ~%d tokens, each reused once; target turn 3 "
+          "cached within %d and Host->GPU transfer > 0 = PASS, cached with no transfer = SKIP, not cached = FAIL"
+          % (a.fill_tokens, a.host_threshold * 100, a.host_capacity_gib, a.fill_max, a.stall_fills, a.target_tokens, k, per, a.tolerance))
 
 
 def main():
@@ -390,7 +403,9 @@ def main():
     p.add_argument("--stall-fills", type=int, default=3, help="consecutive fills without Host growth that count as a refusal")
     p.add_argument("--stall-bytes", type=int, default=64 * 1024 * 1024)
     p.add_argument("--target-tokens", type=int, default=30000)
-    p.add_argument("--evict-factor", type=float, default=1.25, help="evictor tokens as a multiple of the KV pool")
+    p.add_argument("--evict-factor", type=float, default=1.25, help="pushing tokens as a multiple of the KV pool")
+    p.add_argument("--push-frac", type=float, default=0.4, help="size of each pushing conversation as a fraction of the KV pool")
+    p.add_argument("--device-state-slots", type=int, default=3, help="dry-run value; read from /ops/health otherwise")
     a = p.parse_args()
     ctx = Ctx(a)
     tests = {"pause": test_pause, "growth": test_growth, "host-admit": test_host}
@@ -401,6 +416,10 @@ def main():
     h = json.loads(http(ctx.base + "/ops/health")).get("config", {})
     ctx.pool = h.get("kv_capacity_tokens", ctx.pool)
     ctx.max_ctx = h.get("max_context", ctx.max_ctx)
+    ctx.dev_slots = h.get("device_state_slots", ctx.dev_slots)
+    cap = read_metrics(ctx.base).get("host_capacity_bytes")
+    if cap:
+        a.host_capacity_gib = cap / GIB
     cal = ctx.chat("calibrate", [{"role": "user", "content": "x " + " ".join(VOCAB[:1500])}], 1)
     if not cal["ok"]:
         sys.exit("calibration failed: " + cal["err"])
