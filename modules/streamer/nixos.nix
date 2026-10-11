@@ -13,6 +13,9 @@ let
     ;
   cfg = config.mine.system.streamer;
   device = "hw:CARD=dac,DEV=0";
+  usbId = lib.splitString ":" cfg.usbId;
+  vendor = lib.head usbId;
+  product = lib.last usbId;
   uuid = lib.concatStringsSep "-" (
     builtins.match "(.{8})(.{4})(.{4})(.{4})(.{12})" (
       builtins.hashString "md5" config.networking.hostName
@@ -28,11 +31,17 @@ in
       default = "Desk";
       description = "Name the renderer advertises to UPnP and AirPlay clients.";
     };
+
+    usbId = mkOption {
+      type = types.strMatching "[0-9a-f]{4}:[0-9a-f]{4}";
+      example = "2972:0099";
+      description = "USB vendor:product ID (as shown by lsusb) of the audio device to play to.";
+    };
   };
 
   config = mkIf cfg.enable {
     services.udev.extraRules = ''
-      SUBSYSTEM=="sound", ACTION=="add", KERNEL=="card*", SUBSYSTEMS=="usb", ATTR{id}!="dac", ATTR{id}="dac"
+      SUBSYSTEM=="sound", ACTION=="add", KERNEL=="card*", ATTRS{idVendor}=="${vendor}", ATTRS{idProduct}=="${product}", ATTR{id}!="dac", ATTR{id}="dac", RUN+="${config.systemd.package}/bin/systemctl --no-block try-restart gmediarender.service"
     '';
 
     services.gmediarender = {
