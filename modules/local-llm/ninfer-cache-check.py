@@ -17,6 +17,8 @@ GAUGES = ("running", "waiting", "paused", "preemptions_total", "snapshot_restore
           "device_state_slots_used", "host_state_slots_used", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
 COUNTERS = ("preemptions_total", "snapshot_restores_total", "replay_restores_total", "replayed_tokens_total",
             "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
+WB_EVENTS = ("proven_admitted", "proven_demoted", "proven_downgraded", "proven_unrecorded", "proven_victimless",
+             "newer_unprivileged", "release_deferred", "proven_released", "demanded_evicted")
 GIB = 2 ** 30
 
 
@@ -29,6 +31,7 @@ def http(url, body=None, timeout=30):
 
 def read_metrics(base):
     out = dict.fromkeys(GAUGES, 0.0)
+    out.update(("wb_" + e, 0.0) for e in WB_EVENTS)
     for line in http(base + "/ops/metrics", timeout=5).splitlines():
         if line.startswith("ninfer_"):
             name, _, val = line.rpartition(" ")
@@ -45,6 +48,8 @@ def read_metrics(base):
             out["kv_d2h_bytes_total"] += float(val)
         elif name.startswith("ninfer_context_transfer_bytes_total{") and 'direction="h2d"' in name:
             out["kv_h2d_bytes_total"] += float(val)
+        elif name.startswith('ninfer_context_writeback_total{event="'):
+            out["wb_" + name.split('"')[1]] = float(val)
     return out
 
 
@@ -321,6 +326,10 @@ def reused_convo(ctx, tag, tokens, results):
     return msgs, None
 
 
+def wb_delta(a, b):
+    return {k[3:]: b.get(k, 0) - a.get(k, 0) for k in b if k.startswith("wb_")}
+
+
 def test_host(ctx, m0):
     a = ctx.a
     st, msg, results = ensure_host_full(ctx)
@@ -341,14 +350,16 @@ def test_host(ctx, m0):
     time.sleep(2)
     mC = read_metrics(ctx.base)
     extra = {"host_gib_before_push": mB["host_context_bytes"] / GIB, "host_gib_after_push": mC["host_context_bytes"] / GIB,
-             "push_convs": k, "push_tokens": per, "d2h_bytes_during_push": mC["kv_d2h_bytes_total"] - mB["kv_d2h_bytes_total"]}
+             "push_convs": k, "push_tokens": per, "d2h_bytes_during_push": mC["kv_d2h_bytes_total"] - mB["kv_d2h_bytes_total"],
+             "wb_push": wb_delta(mB, mC)}
     t3 = ctx.chat("target3", msgs, 16)
     results.append(t3)
     time.sleep(2)
     mE = read_metrics(ctx.base)
     restores = mE["ram_restores_total"] - mC["ram_restores_total"]
     h2d = mE["kv_h2d_bytes_total"] - mC["kv_h2d_bytes_total"]
-    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB)
+    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB, wb_target3=wb_delta(mC, mE))
+    print("  route hints " + " | ".join("%s: %s" % (ph, " ".join("%s=%g" % kv for kv in sorted(extra["wb_" + ph].items()))) for ph in ("push", "target3")))
     print("  target3: ram_restores +%g, host->gpu +%.2f GiB, host %.2f GiB" % (restores, h2d / GIB, mE["host_context_bytes"] / GIB))
     if not t3["ok"]:
         return "FAIL", "target turn 3 failed: %s" % t3["err"], results, extra
