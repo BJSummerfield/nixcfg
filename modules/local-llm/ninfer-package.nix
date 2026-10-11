@@ -13,6 +13,7 @@
   autoAddDriverRunpath,
   ffmpeg,
   curl,
+  python3,
 }:
 # nvcc 13.1 hosts on GCC 15 and links its libstdc++; the default GCC 16 headers
 # emit atomic-wait symbols that library lacks (XGrammar semaphores).
@@ -27,12 +28,18 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     hash = "sha256-D+rrNhQ5+cvQu1Ylhlzu36WJZgGLmKydeGLGz8KZ/c8=";
   };
 
+  # Our own fix for upstream #378 (a fragmented Host tier refuses new conversations
+  # and pause snapshots). Drop it once upstream fixes #378: bump the pin, delete
+  # this line and the patch, then run ninfer-cache-check.py --test all on redtruck.
+  patches = [ ./ninfer-host-placement.patch ];
+
   nativeBuildInputs = [
     cmake
     ninja
     pkg-config
     cudaPackages_13_1.cuda_nvcc
     autoAddDriverRunpath
+    python3
   ];
 
   buildInputs = [
@@ -48,14 +55,23 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   cmakeFlags = [
     (lib.cmakeFeature "CMAKE_CUDA_ARCHITECTURES" "120a")
     (lib.cmakeBool "NINFER_BUILD_APPS" true)
-    (lib.cmakeBool "BUILD_TESTING" false)
+    (lib.cmakeBool "BUILD_TESTING" true)
     (lib.cmakeBool "NINFER_BUILD_BENCHMARKS" false)
   ];
 
   ninjaFlags = [
     "ninfer"
     "ninfer-serve"
+    "ninfer_resource_manager_test"
+    "ninfer_host_context_arena_test"
   ];
+
+  doCheck = true;
+  checkPhase = ''
+    runHook preCheck
+    ctest --output-on-failure --no-tests=error -R "^ninfer_(resource_manager|host_context_arena)_test$"
+    runHook postCheck
+  '';
 
   # Upstream has no install target, by design ("run NInfer from its source
   # build tree"), so the two product binaries are installed by hand.
