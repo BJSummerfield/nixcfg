@@ -44,7 +44,10 @@
         enable = true;
         ssh = true;
       };
-      streamer.enable = true;
+      streamer = {
+        enable = true;
+        usbId = "2972:0099";
+      };
     };
     users.waktu.authorizedKeys = [
       "onepassword"
