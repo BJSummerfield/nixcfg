@@ -18,7 +18,10 @@ GAUGES = ("running", "waiting", "paused", "preemptions_total", "snapshot_restore
 COUNTERS = ("preemptions_total", "snapshot_restores_total", "replay_restores_total", "replayed_tokens_total",
             "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
 WB_EVENTS = ("proven_admitted", "proven_demoted", "proven_downgraded", "proven_unrecorded", "proven_victimless",
-             "newer_unprivileged", "release_deferred", "proven_released", "demanded_evicted")
+             "newer_unprivileged", "release_deferred", "proven_released", "demanded_evicted",
+             "unplaceable_victims", "demote_failed", "release_after_failed_demote", "stale_evicted", "stale_writer_refused")
+ENGINE_COUNTERS = ("context_capture_unplaceable", "context_capture_skipped", "pause_snapshots_requested",
+                   "pause_backup_failed", "pause_backup_image_failed")
 GIB = 2 ** 30
 
 
@@ -32,6 +35,7 @@ def http(url, body=None, timeout=30):
 def read_metrics(base):
     out = dict.fromkeys(GAUGES, 0.0)
     out.update(("wb_" + e, 0.0) for e in WB_EVENTS)
+    out.update(("ec_" + e, 0.0) for e in ENGINE_COUNTERS)
     for line in http(base + "/ops/metrics", timeout=5).splitlines():
         if line.startswith("ninfer_"):
             name, _, val = line.rpartition(" ")
@@ -50,6 +54,8 @@ def read_metrics(base):
             out["kv_h2d_bytes_total"] += float(val)
         elif name.startswith('ninfer_context_writeback_total{event="'):
             out["wb_" + name.split('"')[1]] = float(val)
+        elif name.startswith("ninfer_") and name.endswith("_total") and name[7:-6] in ENGINE_COUNTERS:
+            out["ec_" + name[7:-6]] = float(val)
     return out
 
 
@@ -111,23 +117,23 @@ class Ctx:
         head = "Document %s-%s-%.12f.\n" % (self.run_id, tag, rng.random())
         return head + self.text(rng, tokens - 40) + "\n" + instr
 
-    def chat(self, label, messages, max_tokens):
+    def chat(self, label, messages, max_tokens, extra=None):
         r = {"label": label, "ok": False, "t0": time.time()}
         try:
             body = {"model": MODEL, "messages": messages, "max_tokens": max_tokens,
-                    "chat_template_kwargs": {"enable_thinking": False}}
+                    "chat_template_kwargs": {"enable_thinking": False}, **(extra or {})}
             d = json.loads(http(self.base + "/v1/chat/completions", body, timeout=1800))
             u = d["usage"]
             r.update(ok=True, id=d.get("id"), prompt=u["prompt_tokens"], out=u.get("completion_tokens"),
                      cached=(u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0,
-                     content=d["choices"][0]["message"]["content"] or "")
+                     content=d["choices"][0]["message"]["content"] or "", finish=d["choices"][0].get("finish_reason"))
         except Exception as e:
             r["err"] = str(e)[:160]
         r["t1"] = time.time()
         return r
 
-    def cold(self, label, tokens, max_tokens, instr="Reply with the single word ok."):
-        return self.chat(label, [{"role": "user", "content": self.first_prompt(label, tokens, instr)}], max_tokens)
+    def cold(self, label, tokens, max_tokens, instr="Reply with the single word ok.", extra=None):
+        return self.chat(label, [{"role": "user", "content": self.first_prompt(label, tokens, instr)}], max_tokens, extra)
 
     def attach(self, results, since):
         try:
@@ -240,16 +246,20 @@ def test_pause(ctx, m0):
     m0 = read_metrics(ctx.base)
     if m0["host_context_bytes"] < a.host_threshold * a.host_capacity_gib * GIB:
         return "FAIL", "refusing to judge: Host tier below %.0f%% at pause start" % (a.host_threshold * 100), fills, {}
-    per = int(a.pause_frac * ctx.max_ctx) - a.pause_max_tokens
-    instr = "Ignore the text above. Count from 1 to 200, one number per line, nothing else."
+    anchor, per, need = pause_sizes(a, ctx)
+    if need <= ctx.pool:
+        return "SKIP", "sizing cannot overflow the KV pool (%d <= %d tokens)" % (need, ctx.pool), fills, {}
+    count = "Ignore the text above. Count from 1 to %d, one number per line, nothing else."
     with cf.ThreadPoolExecutor(a.pause_n) as ex:
-        futs = []
-        for i in range(a.pause_n):
-            futs.append(ex.submit(ctx.cold, "pause%d" % i, per, a.pause_max_tokens, instr))
+        futs = [ex.submit(ctx.cold, "pause0", anchor, a.pause_anchor_tokens, *anchor_request(a))]
+        for i in range(1, a.pause_n):
             time.sleep(0.3)
+            futs.append(ex.submit(ctx.cold, "pause%d" % i, per, a.pause_max_tokens, count % 200))
         results = [f.result() for f in futs]
     time.sleep(2)
-    d = delta(m0, read_metrics(ctx.base))
+    m1 = read_metrics(ctx.base)
+    d = delta(m0, m1)
+    route = hint("pause", m0, m1)
     ctx.attach(results, results[0]["t0"])
     replayed = d["replayed_tokens_total"] + sum(rec(r, "replayed", 0) for r in results if r["ok"])
     if d["snapshot_restores_total"] > 0 and replayed == 0:
@@ -261,9 +271,116 @@ def test_pause(ctx, m0):
     else:
         mode = "none"
     errs = [r for r in results if not r["ok"]]
-    ok = not errs and d["preemptions_total"] >= 1 and not (a.expect_snapshot and mode != "snapshot")
-    why = "%d/%d completed, preemptions=%g, resume=%s" % (len(results) - len(errs), len(results), d["preemptions_total"], mode)
-    return ("PASS" if ok else "FAIL"), why, fills + results, {"resume_mode": mode, "host_full": msg}
+    why = "%d/%d completed, preemptions=%g, resume=%s, anchor generated %s of %d tokens (finish_reason=%s)" % (
+        len(results) - len(errs), len(results), d["preemptions_total"], mode, results[0].get("out"), a.pause_anchor_tokens,
+        results[0].get("finish"))
+    extra = {"resume_mode": mode, "host_full": msg, "route_pause": route}
+    if errs:
+        return "FAIL", why, fills + results, extra
+    if d["preemptions_total"] < 1:
+        return "SKIP", why + " (TEST-DESIGN FAILURE: no preemption, nothing was tested)", fills + results, extra
+    ok = not (a.expect_snapshot and mode != "snapshot")
+    return ("PASS" if ok else "FAIL"), why, fills + results, extra
+
+
+# Fresh admission never preempts a resident (try_admit_one only reclaims cache and then waits),
+# so three cold requests can queue and run one after another. A preemption needs a resident
+# whose next unit cannot be reserved: an anchor keeps decoding near max_context while younger
+# requests prefill round-robin (next_prefill) until their joint KV passes the pool.
+# The anchor must not end early. The serve API has no ignore_eos/min_tokens and rejects nonzero
+# logit_bias, but it enforces JSON schemas with minItems (xgrammar): an array of at least
+# pause_anchor_tokens single digits cannot close before about that many tokens, so the anchor
+# runs to max_tokens (finish_reason "length"). --pause-anchor-format text falls back to counting.
+def anchor_request(a):
+    if a.pause_anchor_format == "text":
+        return "Ignore the text above. Count from 1 to %d, one number per line, nothing else." % (3 * a.pause_anchor_tokens), None
+    schema = {"type": "object", "additionalProperties": False, "required": ["digits"],
+              "properties": {"digits": {"type": "array", "minItems": a.pause_anchor_tokens,
+                                        "items": {"type": "integer", "minimum": 0, "maximum": 9}}}}
+    return ("Ignore the text above. Answer with a JSON object whose digits array lists random digits.",
+            {"response_format": {"type": "json_schema", "json_schema": {"name": "anchor", "schema": schema}}})
+
+
+def pause_sizes(a, ctx):
+    anchor = int(a.pause_frac * ctx.max_ctx) - a.pause_anchor_tokens
+    per = int(a.pause_frac * ctx.max_ctx) - a.pause_max_tokens
+    return anchor, per, anchor + a.pause_anchor_tokens + (a.pause_n - 1) * per
+
+
+class Dialog:
+    def __init__(self, ctx, tag, tokens):
+        self.ctx, self.tag, self.turn, self.prev = ctx, tag, 0, None
+        self.msgs = [{"role": "user", "content": ctx.first_prompt(tag, tokens, "Ignore the text above. Reply with the single word ok.")}]
+
+    def step(self, add, rows, lock):
+        if self.turn:
+            more = self.ctx.text(self.ctx.rng("%s/%d" % (self.tag, self.turn)), add)
+            self.msgs.append({"role": "user", "content": "More text:\n%s\nIgnore it. Reply with the single word ok." % more})
+        self.turn += 1
+        r = self.ctx.chat("%s%d" % (self.tag, self.turn), self.msgs, 16)
+        r["conv"], r["turn"], r["prev_prompt"] = self.tag, self.turn, self.prev
+        with lock:
+            rows.append(r)
+        if r["ok"]:
+            self.msgs.append({"role": "assistant", "content": r["content"]})
+            self.prev = r["prompt"]
+        return r
+
+
+def agent_sizes(a, ctx):
+    top = int(0.95 * ctx.max_ctx)
+    orch = min(a.agent_orchestrator, top - 3 * a.agent_step)
+    review = min(a.agent_reviewer, top - (a.agent_reviewer_turns - 1) * a.agent_step)
+    return orch, a.agent_child, review
+
+
+# The user's agentic run on a Host already full of earlier runs: an orchestrator, three
+# multi-turn children, then a reviewer that starts while the children finish and grows to
+# ~max_context. Every continued turn must find its previous prompt cached (GPU or Host).
+def test_agent(ctx, m0):
+    a = ctx.a
+    st, msg, fills = ensure_host_full(ctx)
+    if st != "OK":
+        return st, "Host precondition: " + msg, fills, {}
+    # Earlier runs left proven (continued) dialogues, not single-use fills, on the Host; the
+    # deployed patch's D spends single-use content anyway, so only proven residue tests it.
+    _, per = push_count(a, ctx)
+    for i in range(a.agent_prefill):
+        _, err = reused_convo(ctx, "agentpre%d" % i, per, fills)
+        if err:
+            return "FAIL", "Host precondition: " + err, fills, {}
+    m0 = read_metrics(ctx.base)
+    orch_tokens, child_tokens, review_tokens = agent_sizes(a, ctx)
+    step = a.agent_step
+    rows, lock = [], threading.Lock()
+    orch = Dialog(ctx, "orch", orch_tokens)
+    kids = [Dialog(ctx, "child%d" % i, child_tokens) for i in range(3)]
+    review = Dialog(ctx, "review", review_tokens)
+
+    def together(steps):
+        with cf.ThreadPoolExecutor(len(steps)) as ex:
+            futs = []
+            for d, add in steps:
+                futs.append(ex.submit(d.step, add, rows, lock))
+                time.sleep(0.3)
+            return all(f.result()["ok"] for f in futs)
+
+    ok = orch.step(0, rows, lock)["ok"] and orch.step(step, rows, lock)["ok"]
+    ok = ok and together([(k, 0) for k in kids]) and together([(k, step // 3) for k in kids])
+    ok = ok and orch.step(step, rows, lock)["ok"]
+    ok = ok and together([(review, 0)] + [(k, step // 3) for k in kids])
+    ok = ok and together([(k, step) for k in kids] + [(review, step)])
+    for _ in range(a.agent_reviewer_turns - 2):
+        ok = ok and review.step(step, rows, lock)["ok"]
+    ok = ok and orch.step(step // 5, rows, lock)["ok"] and together([(k, step // 10) for k in kids])
+    route = hint("agent", m0, read_metrics(ctx.base))
+    bad = ["%s error" % r["label"] for r in rows if not r["ok"]]
+    bad += ["%s cached %d < prev prompt %d" % (r["label"], r["cached"], r["prev_prompt"]) for r in rows
+            if r["ok"] and r["prev_prompt"] and r["cached"] < r["prev_prompt"] - a.tolerance]
+    if not ok and not bad:
+        bad.append("run stopped early")
+    why = "; ".join(bad[:6]) if bad else "%d turns, every continued turn reused its prior prompt" % len(rows)
+    return ("FAIL" if bad else "PASS"), why, fills + rows, {"host_full": msg, "route_agent": route}
 
 
 def test_growth(ctx, m0):
@@ -302,7 +419,8 @@ def test_growth(ctx, m0):
                 bad.append("%s cached %d < prev prompt %d" % (r["label"], r["cached"], prev["prompt"]))
     short = [c for c in "ABCDEFGH"[:a.growth_convs] if sum(1 for r in rows if r["conv"] == c) < a.growth_turns]
     bad += ["%s incomplete" % c for c in short]
-    return ("FAIL" if bad else "PASS"), ("; ".join(bad[:6]) if bad else "%d turns, every follow-up reused its prior prompt" % len(rows)), rows, {}
+    route = hint("growth", m0, read_metrics(ctx.base))
+    return ("FAIL" if bad else "PASS"), ("; ".join(bad[:6]) if bad else "%d turns, every follow-up reused its prior prompt" % len(rows)), rows, {"route_growth": route}
 
 
 def push_count(a, ctx):
@@ -326,8 +444,14 @@ def reused_convo(ctx, tag, tokens, results):
     return msgs, None
 
 
-def wb_delta(a, b):
-    return {k[3:]: b.get(k, 0) - a.get(k, 0) for k in b if k.startswith("wb_")}
+def wb_delta(a, b, prefix="wb_"):
+    return {k[len(prefix):]: b.get(k, 0) - a.get(k, 0) for k in b if k.startswith(prefix)}
+
+
+def hint(label, a, b):
+    d = {**wb_delta(a, b), **wb_delta(a, b, "ec_")}
+    print("  route hints %s: %s" % (label, " ".join("%s=%g" % kv for kv in sorted(d.items()))))
+    return d
 
 
 def test_host(ctx, m0):
@@ -351,15 +475,14 @@ def test_host(ctx, m0):
     mC = read_metrics(ctx.base)
     extra = {"host_gib_before_push": mB["host_context_bytes"] / GIB, "host_gib_after_push": mC["host_context_bytes"] / GIB,
              "push_convs": k, "push_tokens": per, "d2h_bytes_during_push": mC["kv_d2h_bytes_total"] - mB["kv_d2h_bytes_total"],
-             "wb_push": wb_delta(mB, mC)}
+             "wb_push": hint("push", mB, mC)}
     t3 = ctx.chat("target3", msgs, 16)
     results.append(t3)
     time.sleep(2)
     mE = read_metrics(ctx.base)
     restores = mE["ram_restores_total"] - mC["ram_restores_total"]
     h2d = mE["kv_h2d_bytes_total"] - mC["kv_h2d_bytes_total"]
-    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB, wb_target3=wb_delta(mC, mE))
-    print("  route hints " + " | ".join("%s: %s" % (ph, " ".join("%s=%g" % kv for kv in sorted(extra["wb_" + ph].items()))) for ph in ("push", "target3")))
+    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB, wb_target3=hint("target3", mC, mE))
     print("  target3: ram_restores +%g, host->gpu +%.2f GiB, host %.2f GiB" % (restores, h2d / GIB, mE["host_context_bytes"] / GIB))
     if not t3["ok"]:
         return "FAIL", "target turn 3 failed: %s" % t3["err"], results, extra
@@ -372,24 +495,31 @@ def test_host(ctx, m0):
 
 
 def plan(a, ctx):
-    per = int(a.pause_frac * ctx.max_ctx) - a.pause_max_tokens
+    anchor, per, need = pause_sizes(a, ctx)
     last = a.growth_start + (a.growth_turns - 1) * a.growth_step * ctx.tpw
-    k, per = push_count(a, ctx)
     print("PLAN (dry run, no requests sent) max_context=%d pool=%d tokens/word=%.3f" % (ctx.max_ctx, ctx.pool, ctx.tpw))
-    print("pause: first fills Host tier to %.0f%% (stall of %d fills = FAIL); then %d concurrent cold requests x ~%d tokens (total %d vs pool %d), max_tokens=%d, expect_snapshot=%s"
-          % (a.host_threshold * 100, a.stall_fills, a.pause_n, per, a.pause_n * per, ctx.pool, a.pause_max_tokens, a.expect_snapshot))
+    print("pause: first fills Host tier to %.0f%% (stall of %d fills = FAIL); then an anchor of ~%d tokens decoding %d tokens (%s) and %d younger cold requests x ~%d tokens (max_tokens=%d): "
+          "%d tokens vs pool %d; no preemption = SKIP (a test-design failure), expect_snapshot=%s"
+          % (a.host_threshold * 100, a.stall_fills, anchor, a.pause_anchor_tokens,
+             "length forced by a JSON schema" if a.pause_anchor_format == "schema" else "model asked to count", a.pause_n - 1, per, a.pause_max_tokens, need, ctx.pool, a.expect_snapshot))
+    k, per = push_count(a, ctx)
     print("growth: %d conversations, %d tokens start, +~%d words/turn, %d turns, gap %gs, max_tokens=%d; final prompt ~%d (+%d out) vs max_context %d"
           % (a.growth_convs, a.growth_start, a.growth_step, a.growth_turns, a.growth_gap, a.growth_max_tokens, last, a.growth_max_tokens, ctx.max_ctx))
     print("host-admit: at least one fill, then fills of ~%d tokens until host_context_bytes >= %.0f%% of %.2f GiB (max %d, stall of %d = FAIL); "
           "target ~%d tokens, reused once; %d sequential conversations of ~%d tokens, each reused once; target turn 3 "
           "cached within %d and Host->GPU transfer > 0 = PASS, cached with no transfer = SKIP, not cached = FAIL"
           % (a.fill_tokens, a.host_threshold * 100, a.host_capacity_gib, a.fill_max, a.stall_fills, a.target_tokens, k, per, a.tolerance))
+    orch, child, review = agent_sizes(a, ctx)
+    print("agent: Host filled as above, then %d proven conversations of ~%d tokens (each continued once); orchestrator ~%d tokens (+%d, +%d, +%d), 3 children ~%d tokens (5 turns, 3 in flight), "
+          "reviewer ~%d tokens growing +%d for %d turns (R1 with the children's turn 3, R2 after their turn 4 starts); "
+          "every continued turn cached within %d = PASS"
+          % (a.agent_prefill, per, orch, a.agent_step, a.agent_step, a.agent_step // 5, child, review, a.agent_step, a.agent_reviewer_turns, a.tolerance))
 
 
 def main():
     p = argparse.ArgumentParser(description="Live cache/preemption/host-tier checks for NInfer")
     p.add_argument("--base-url", default="https://llm.mist-gamma.ts.net:8443")
-    p.add_argument("--test", choices=("pause", "growth", "host-admit", "all"), default="all")
+    p.add_argument("--test", choices=("pause", "growth", "host-admit", "agent", "all"), default="all")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--json-out")
     p.add_argument("--seed", type=int, help="fixes prefixes; reuse shares cache with the prior run")
@@ -400,6 +530,8 @@ def main():
     p.add_argument("--pause-n", type=int, default=3)
     p.add_argument("--pause-frac", type=float, default=0.94)
     p.add_argument("--pause-max-tokens", type=int, default=300)
+    p.add_argument("--pause-anchor-tokens", type=int, default=4000, help="the oldest request keeps decoding this long so the younger ones overflow the pool")
+    p.add_argument("--pause-anchor-format", choices=("schema", "text"), default="schema", help="schema forces the anchor's length; text relies on the model counting")
     p.add_argument("--expect-snapshot", action="store_true")
     p.add_argument("--growth-convs", type=int, default=3)
     p.add_argument("--growth-start", type=int, default=40000)
@@ -417,9 +549,15 @@ def main():
     p.add_argument("--evict-factor", type=float, default=1.25, help="pushing tokens as a multiple of the KV pool")
     p.add_argument("--push-frac", type=float, default=0.4, help="size of each pushing conversation as a fraction of the KV pool")
     p.add_argument("--device-state-slots", type=int, default=3, help="dry-run value; read from /ops/health otherwise")
+    p.add_argument("--agent-orchestrator", type=int, default=50000)
+    p.add_argument("--agent-child", type=int, default=20000)
+    p.add_argument("--agent-reviewer", type=int, default=60000)
+    p.add_argument("--agent-reviewer-turns", type=int, default=5)
+    p.add_argument("--agent-step", type=int, default=10000, help="tokens added per orchestrator/reviewer turn")
+    p.add_argument("--agent-prefill", type=int, default=3, help="proven conversations of push size left on the Host before the run")
     a = p.parse_args()
     ctx = Ctx(a)
-    tests = {"pause": test_pause, "growth": test_growth, "host-admit": test_host}
+    tests = {"pause": test_pause, "growth": test_growth, "host-admit": test_host, "agent": test_agent}
     names = list(tests) if a.test == "all" else [a.test]
     if a.dry_run:
         plan(a, ctx)

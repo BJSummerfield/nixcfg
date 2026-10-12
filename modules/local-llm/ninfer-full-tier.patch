@@ -1,0 +1,2676 @@
+diff --git a/include/ninfer/types.h b/include/ninfer/types.h
+index a96b1fe..d1b1d99 100644
+--- a/include/ninfer/types.h
++++ b/include/ninfer/types.h
+@@ -1057,6 +1057,25 @@ struct RuntimeStats {
+     double backend_kv_d2d_seconds      = 0.0;
+ 
+     std::uint64_t pressure_spill_pages             = 0;
++    std::uint64_t context_writeback_proven_admitted = 0;
++    std::uint64_t context_writeback_proven_demoted = 0;
++    std::uint64_t context_writeback_proven_downgraded = 0;
++    std::uint64_t context_writeback_proven_unrecorded = 0;
++    std::uint64_t context_writeback_proven_victimless = 0;
++    std::uint64_t context_writeback_newer_unprivileged = 0;
++    std::uint64_t context_writeback_release_deferred = 0;
++    std::uint64_t context_writeback_proven_released = 0;
++    std::uint64_t context_writeback_demanded_evicted = 0;
++    std::uint64_t context_writeback_unplaceable_victims = 0;
++    std::uint64_t context_writeback_demote_failed = 0;
++    std::uint64_t context_writeback_release_after_failed_demote = 0;
++    std::uint64_t context_writeback_stale_evicted = 0;
++    std::uint64_t context_writeback_stale_writer_refused = 0;
++    std::uint64_t context_capture_unplaceable = 0;
++    std::uint64_t pause_snapshots_requested = 0;
++    std::uint64_t pause_backup_failures = 0;
++    std::uint64_t pause_backup_image_failures = 0;
++    std::uint64_t context_capture_skipped = 0;
+     std::uint64_t partial_tail_cow_pages           = 0;
+     std::uint32_t device_state_occupied_slots      = 0;
+     std::uint32_t host_state_occupied_slots        = 0;
+diff --git a/src/core/host_context_arena.cpp b/src/core/host_context_arena.cpp
+index fa497ab..c3a5c32 100644
+--- a/src/core/host_context_arena.cpp
++++ b/src/core/host_context_arena.cpp
+@@ -1,4 +1,5 @@
+ #include "core/host_context_arena.h"
++#include "core/host_extent_runs.h"
+ 
+ #include <algorithm>
+ #include <limits>
+@@ -84,6 +85,31 @@ bool HostContextArena::can_allocate(std::size_t bytes) const noexcept {
+     return rounded != 0 && find_free_extent(rounded).has_value();
+ }
+ 
++bool HostContextArena::can_place_runs(std::size_t stride, std::size_t count) const {
++    auto free = free_extents_;
++    return reserve_halving_runs(
++        count,
++        [&](std::size_t, std::size_t n) -> std::optional<std::pair<std::size_t, std::size_t>> {
++            const std::size_t rounded =
++                stride && n <= std::numeric_limits<std::size_t>::max() / stride
++                    ? allocation_bytes(stride * n)
++                    : 0;
++            if (rounded == 0) { return std::nullopt; }
++            for (std::size_t index = 0; index < free.size(); ++index) {
++                if (free[index].bytes >= rounded) { return std::pair{index, rounded}; }
++            }
++            return std::nullopt;
++        },
++        [&](std::size_t, std::size_t, std::pair<std::size_t, std::size_t> taken) {
++            auto& extent = free[taken.first];
++            extent.offset += taken.second;
++            extent.bytes -= taken.second;
++            if (extent.bytes == 0) {
++                free.erase(free.begin() + static_cast<std::ptrdiff_t>(taken.first));
++            }
++        });
++}
++
+ std::optional<HostContextAllocation> HostContextArena::allocate(std::size_t bytes) noexcept {
+     const std::size_t rounded = allocation_bytes(bytes);
+     if (rounded == 0) { return std::nullopt; }
+diff --git a/src/core/host_context_arena.h b/src/core/host_context_arena.h
+index 56c6164..844ed70 100644
+--- a/src/core/host_context_arena.h
++++ b/src/core/host_context_arena.h
+@@ -82,6 +82,8 @@ public:
+     [[nodiscard]] std::size_t allocation_count() const noexcept { return allocation_count_; }
+ 
+     [[nodiscard]] bool can_allocate(std::size_t bytes) const noexcept;
++    // Whether `count` items of `stride` bytes place as halving runs (see host_extent_runs.h).
++    [[nodiscard]] bool can_place_runs(std::size_t stride, std::size_t count) const;
+     [[nodiscard]] std::optional<HostContextAllocation> allocate(std::size_t bytes) noexcept;
+     [[nodiscard]] std::pair<HostContextAllocation, HostContextAllocation>
+     split(HostContextAllocation&& allocation, std::size_t byte_offset);
+diff --git a/src/core/host_extent_runs.h b/src/core/host_extent_runs.h
+new file mode 100644
+index 0000000..a82788a
+--- /dev/null
++++ b/src/core/host_extent_runs.h
+@@ -0,0 +1,32 @@
++#pragma once
++
++#include <cstddef>
++#include <utility>
++
++namespace ninfer {
++
++// Reserves `total` consecutive items as runs, each the longest prefix of the remainder that
++// `prepare(offset, count)` places, halving the count on failure. `emit(offset, count, reservation)`
++// receives each run in order. Returns false when not even one item places; runs already
++// emitted stay with the caller, who unwinds them.
++template <class Prepare, class Emit>
++bool reserve_halving_runs(std::size_t total, Prepare&& prepare, Emit&& emit) {
++    std::size_t offset = 0;
++    while (offset < total) {
++        auto count  = total - offset;
++        bool placed = false;
++        while (count && !placed) {
++            if (auto reservation = prepare(offset, count)) {
++                emit(offset, count, std::move(*reservation));
++                placed = true;
++            } else {
++                count /= 2;
++            }
++        }
++        if (!placed) { return false; }
++        offset += count;
++    }
++    return true;
++}
++
++} // namespace ninfer
+diff --git a/src/models/qwen3_5/program/program.cpp b/src/models/qwen3_5/program/program.cpp
+index 419ac91..6ae9f3d 100644
+--- a/src/models/qwen3_5/program/program.cpp
++++ b/src/models/qwen3_5/program/program.cpp
+@@ -225,6 +225,12 @@ std::optional<CapturePreparation> Program::prepare_capture(SequenceHandle h) {
+ void Program::skip_capture(SequenceHandle h) { impl_->skip_capture(h); }
+ 
+ bool Program::start_demote(const ContextDemotion& plan) { return impl_->start_demote(plan); }
++bool Program::host_placeable(const ContextDemotion& plan) const {
++    return impl_->host_placeable(plan);
++}
++bool Program::host_placeable_bytes(std::size_t bytes) const {
++    return impl_->host_placeable_bytes(bytes);
++}
+ 
+ ContextReclaimPlan Program::plan_reclaim(std::span<const CheckpointHandle> allowed,
+                                          std::span<const CheckpointHandle> excluded,
+diff --git a/src/models/qwen3_5/program/program.h b/src/models/qwen3_5/program/program.h
+index afc1723..5b1e512 100644
+--- a/src/models/qwen3_5/program/program.h
++++ b/src/models/qwen3_5/program/program.h
+@@ -457,6 +457,10 @@ public:
+     plan_releases(std::span<const CheckpointHandle> allowed,
+                   std::span<const CheckpointHandle> excluded,
+                   runtime::ContextResourceUsage shortage) const;
++    // Whether start_demote could reserve this quote's Host destination in the current free
++    // extents (free bytes alone are not room, #378), and whether one extent of `bytes` places.
++    [[nodiscard]] bool host_placeable(const ContextDemotion& plan) const;
++    [[nodiscard]] bool host_placeable_bytes(std::size_t bytes) const;
+     [[nodiscard]] bool start_demote(const ContextDemotion& plan);
+     [[nodiscard]] bool start_pause(SequenceHandle sequence, bool save_snapshot,
+                                    runtime::ExecutionTiming* timing = nullptr);
+diff --git a/src/models/qwen3_5/program/program_impl.h b/src/models/qwen3_5/program/program_impl.h
+index 51d5e41..ffb7499 100644
+--- a/src/models/qwen3_5/program/program_impl.h
++++ b/src/models/qwen3_5/program/program_impl.h
+@@ -306,6 +306,8 @@ public:
+                                                             std::span<const CheckpointHandle>,
+                                                             runtime::ContextResourceUsage) const;
+     [[nodiscard]] bool start_demote(const ContextDemotion&);
++    [[nodiscard]] bool host_placeable(const ContextDemotion&) const;
++    [[nodiscard]] bool host_placeable_bytes(std::size_t bytes) const;
+     [[nodiscard]] bool start_pause(SequenceHandle, bool save_snapshot, runtime::ExecutionTiming*);
+     [[nodiscard]] ContextProgress poll_context(runtime::CancellationFlagView);
+ 
+diff --git a/src/models/qwen3_5/program/transactions/pause.cpp b/src/models/qwen3_5/program/transactions/pause.cpp
+index 50d5ce8..711f764 100644
+--- a/src/models/qwen3_5/program/transactions/pause.cpp
++++ b/src/models/qwen3_5/program/transactions/pause.cpp
+@@ -1,8 +1,10 @@
+ #include "models/qwen3_5/program/program_impl.h"
+ #include "models/qwen3_5/program/context_work.h"
+ #include "core/device.h"
++#include "core/host_extent_runs.h"
+ 
+ #include <array>
++#include <span>
+ #include <stdexcept>
+ 
+ namespace ninfer::models::qwen3_5::detail {
+@@ -67,7 +69,10 @@ bool ProgramImpl::prepare_backup(ContextTransaction& tx, CheckpointState& record
+     if (!state_store->host_resident(record.state)) {
+         auto transfer = state_store->reserve_device_to_host(record.state);
+         if (transfer) { tx.state_transfer.emplace(std::move(*transfer)); }
+-        if (!tx.state_transfer) { return false; }
++        if (!tx.state_transfer) {
++            tx.operations.pause_backup_image_failures = 1;
++            return false;
++        }
+     }
+     const auto collect = [&](KVAddressSpaceStore& addresses, LogicalKVPageStore& pages,
+                              KVAddressSpaceHandle address, runtime::ContextResourceClass resource) {
+@@ -87,15 +92,27 @@ bool ProgramImpl::prepare_backup(ContextTransaction& tx, CheckpointState& record
+                 transfer.logical.push_back(page);
+             }
+         }
+-        if (!transfer.logical.empty()) {
+-            auto destination =
+-                host_kv_extents ? host_kv_extents->prepare(pages, transfer.logical) : std::nullopt;
+-            if (destination) { transfer.host_destination.emplace(std::move(*destination)); }
+-            if (!transfer.host_destination) { return false; }
+-            transfer.physical = host_kv_extents->device_sources(*transfer.host_destination);
++        if (transfer.logical.empty()) {
++            tx.kv_transfers.push_back(std::move(transfer));
++            return true;
+         }
+-        tx.kv_transfers.push_back(std::move(transfer));
+-        return true;
++        if (!host_kv_extents) { return false; }
++        const auto logical = std::move(transfer.logical);
++        return reserve_halving_runs(
++            logical.size(),
++            [&](std::size_t offset, std::size_t count) {
++                return host_kv_extents->prepare(pages, std::span(logical).subspan(offset, count));
++            },
++            [&](std::size_t offset, std::size_t count, HostKVExtentReservation destination) {
++                KVTransfer part;
++                part.pages       = &pages;
++                part.resource    = resource;
++                part.drop_device = true;
++                part.logical.assign(logical.begin() + offset, logical.begin() + offset + count);
++                part.physical = host_kv_extents->device_sources(destination);
++                part.host_destination.emplace(std::move(destination));
++                tx.kv_transfers.push_back(std::move(part));
++            });
+     };
+     if (!collect(*text_kv_addresses, *text_kv_pages, record.kv->text,
+                  runtime::ContextResourceClass::MainKV)) {
+@@ -191,6 +208,7 @@ bool ProgramImpl::start_pause(SequenceHandle handle, bool save_snapshot,
+     if (tx.paused->has_snapshot()) {
+         auto& snapshot = checkpoint(*tx.paused->impl_->snapshot);
+         if (!prepare_backup(tx, snapshot, true)) {
++            tx.operations.pause_backup_failures = 1;
+             tx.state_transfer.reset();
+             tx.kv_transfers.clear();
+             if (!revoke_snapshot(*tx.paused)) {
+diff --git a/src/models/qwen3_5/program/transactions/reclaim.cpp b/src/models/qwen3_5/program/transactions/reclaim.cpp
+index 9b135a4..c9a4ae4 100644
+--- a/src/models/qwen3_5/program/transactions/reclaim.cpp
++++ b/src/models/qwen3_5/program/transactions/reclaim.cpp
+@@ -990,6 +990,26 @@ struct DemotionBatch {
+     }
+ };
+ 
++bool ProgramImpl::host_placeable(const ContextDemotion& quote) const {
++    if (!quote.host_bytes || !quote.impl) { return true; }
++    if (!host_context_arena) { return false; }
++    const auto& plan = *quote.impl;
++    if (plan.state) {
++        return plan.state->host_resident ||
++               host_context_arena->can_allocate(state_images->host_layout().image_bytes);
++    }
++    std::size_t missing = 0;
++    for (const auto& page : plan.pages) { missing += page.host_resident ? 0U : 1U; }
++    const auto stride = plan.resource == runtime::ContextResourceClass::MainKV
++                            ? text_host_kv_page_stride
++                            : backend_host_kv_page_stride;
++    return host_context_arena->can_place_runs(stride, missing);
++}
++
++bool ProgramImpl::host_placeable_bytes(std::size_t bytes) const {
++    return host_context_arena && host_context_arena->can_allocate(bytes);
++}
++
+ bool ProgramImpl::start_demote(const ContextDemotion& quote) {
+     if (!quote.impl || quote.impl->owner != this || context_transaction_) { return false; }
+     const auto& plan = *quote.impl;
+diff --git a/src/runtime/contract/resources.h b/src/runtime/contract/resources.h
+index b640b96..e378374 100644
+--- a/src/runtime/contract/resources.h
++++ b/src/runtime/contract/resources.h
+@@ -101,6 +101,10 @@ struct ContextOperationCounts {
+     std::uint64_t state_restores         = 0;
+     std::uint64_t pressure_spill_pages   = 0;
+     std::uint64_t partial_tail_cow_pages = 0;
++    // A requested pause snapshot whose Host backup could not be reserved, and the subset
++    // that failed on the state image (one contiguous extent).
++    std::uint64_t pause_backup_failures       = 0;
++    std::uint64_t pause_backup_image_failures = 0;
+ };
+ 
+ struct SequenceCapacityCurve {
+diff --git a/src/runtime/engine/context_cache/resource_manager.h b/src/runtime/engine/context_cache/resource_manager.h
+index db4456d..d851193 100644
+--- a/src/runtime/engine/context_cache/resource_manager.h
++++ b/src/runtime/engine/context_cache/resource_manager.h
+@@ -39,8 +39,30 @@ public:
+         std::uint32_t frontier = 0;
+         std::optional<Handle> checkpoint;
+         std::vector<Handle> sources;
++        bool proven = false;
+     };
+ 
++    struct WritebackCounters {
++        std::uint64_t proven_admitted   = 0;
++        std::uint64_t proven_demoted    = 0;
++        std::uint64_t proven_downgraded = 0;
++        std::uint64_t proven_unrecorded = 0;
++        std::uint64_t proven_victimless = 0;
++        std::uint64_t newer_unprivileged = 0;
++        std::uint64_t release_deferred  = 0;
++        std::uint64_t proven_released   = 0;
++        std::uint64_t demanded_evicted  = 0;
++        std::uint64_t unplaceable_victims = 0;
++        std::uint64_t demote_failed       = 0;
++        std::uint64_t release_after_failed_demote = 0;
++        std::uint64_t stale_evicted               = 0;
++        std::uint64_t stale_writer_refused        = 0;
++    };
++
++    [[nodiscard]] const WritebackCounters& writeback_counters() const noexcept {
++        return writeback_;
++    }
++
+     struct ReclaimCursor {
+         struct Victim {
+             Handle handle;
+@@ -326,6 +348,7 @@ public:
+         }
+         auto* owner              = find_owner(token);
+         owner->active            = true;
++        owner->active_at         = ++activity_;
+         owner->publication_order = publication_order;
+         replace_points(program, *owner, carried);
+         prune(program);
+@@ -493,22 +516,32 @@ public:
+                  std::span<const Handle> later_snapshots = {},
+                  std::span<const Handle> excluded        = {},
+                  std::optional<Admission> admission      = std::nullopt,
+-                 const ReclaimCursor* decision = nullptr, ReclaimRights rights = {}) {
++                 const ReclaimCursor* decision = nullptr, ReclaimRights rights = {},
++                 bool bytes_are_shortage = false) {
+         prune(program);
+         Evaluation evaluation;
+         if (decision) {
+             return host_victims_in_order(program, bytes, incoming, later_snapshots, excluded,
+-                                         decision->admission, *decision, evaluation);
++                                         decision->admission, *decision, evaluation,
++                                         bytes_are_shortage);
+         }
+         auto cursor   = reclaim_order(program);
+         cursor.rights = admission ? ReclaimRights{ReclaimPurpose::OptionalWrite} : rights;
+         return host_victims_in_order(program, bytes, incoming, later_snapshots, excluded, admission,
+-                                     cursor, evaluation);
++                                     cursor, evaluation, bytes_are_shortage);
+     }
+ 
+     void commit_host_victims(Program& program, std::span<const Handle> handles,
+                              ReclaimCursor& cursor) {
+-        commit_release(program, handles, cursor);
++        Evaluation evaluation;
++        auto view = recency_view(program, evaluation, std::nullopt);
++        if (proven_demand(program, handles, cursor, view).reused) { ++writeback_.demanded_evicted; }
++        if (std::ranges::any_of(handles, [&](auto h) { return stale_handle(h, view); })) {
++            ++writeback_.stale_evicted;
++        }
++        ActionFacts facts;
++        facts.kept = surviving(program, handles);
++        commit_release(program, handles, cursor, action_loss(program, handles, facts, view));
+     }
+ 
+     bool erase(Program& program, Handle handle, ReclaimRights rights = {}) {
+@@ -549,7 +582,7 @@ public:
+                 host_victims_in_order(program, shortage.host_bytes, std::nullopt, {}, excluded,
+                                       cursor.admission, cursor, evaluation, true);
+             if (!victims) { return ReclaimProgress::Blocked; }
+-            commit_release(program, *victims, cursor);
++            commit_host_victims(program, *victims, cursor);
+             return victims->empty() ? ReclaimProgress::Blocked : ReclaimProgress::Changed;
+         }
+         auto plans = program.plan_reclaim(allowed, excluded, shortage);
+@@ -567,9 +600,15 @@ public:
+ 
+         const auto usage     = program.physical_usage();
+         const auto free_host = usage.capacity.host_bytes - usage.occupied.host_bytes;
++        // Free bytes that place no extent are not room (#378): a write the arena cannot
++        // place takes Host victims for its whole size, as if nothing were free.
++        const auto unplaceable = [&](const auto& plan) {
++            return plan.host_bytes != 0 && !program.host_placeable(plan);
++        };
+         const bool needs_host_cleanup =
+-            std::any_of(plans.demotions.begin(), plans.demotions.end(),
+-                        [&](const auto& plan) { return plan.host_bytes > free_host; });
++            std::any_of(plans.demotions.begin(), plans.demotions.end(), [&](const auto& plan) {
++                return plan.host_bytes > free_host || unplaceable(plan);
++            });
+         const bool existing_host_destination =
+             std::any_of(plans.demotions.begin(), plans.demotions.end(),
+                         [](const auto& plan) { return plan.host_bytes == 0; });
+@@ -581,6 +620,7 @@ public:
+         }
+ 
+         std::vector<Action> actions;
++        std::vector<std::vector<Handle>> failed_demotions;
+         actions.reserve(plans.demotions.size() + plans.releases.size());
+         for (auto& plan : plans.demotions) {
+             const auto units = useful(plan.released, shortage);
+@@ -592,15 +632,30 @@ public:
+             auto protected_sources = std::vector<Handle>(excluded.begin(), excluded.end());
+             protected_sources.insert(protected_sources.end(), plan.sources.begin(),
+                                      plan.sources.end());
+-            auto preservation =
+-                preservation_admission(program, plan.sources, cursor, facts.priority);
+-            auto victims =
+-                host_victims_in_order(program, plan.host_bytes, preservation.checkpoint, {},
+-                                      protected_sources, preservation, cursor, evaluation);
+-            if (!victims) { continue; }
++            bool unrecorded   = false;
++            auto preservation = preservation_admission(program, plan.sources, cursor,
++                                                       facts.priority, evaluation, &unrecorded);
++            if (unrecorded && !preservation.proven) { ++writeback_.proven_unrecorded; }
++            // Host victims are judged and charged in the writer's recency view. A writer past the
++            // window keeps no proven right (A) and may take only content older than itself.
++            auto host_view = recency_view(program, evaluation, plan.sources);
++            if (host_view.stale_writer && preservation.proven) {
++                preservation.proven   = false;
++                preservation.demand   = {};
++                preservation.priority = facts.priority;
++            }
++            auto victims = host_victims_in_order(program, plan.host_bytes, preservation.checkpoint,
++                                                 {}, protected_sources, preservation, cursor,
++                                                 evaluation, unplaceable(plan));
++            if (!victims) {
++                writeback_.proven_victimless += preservation.proven;
++                writeback_.stale_writer_refused += host_view.stale_writer;
++                continue;
++            }
++            if (preservation.proven && !victims->empty()) { ++writeback_.proven_admitted; }
+             auto rank       = rank_action(program, plan.sources, facts, units, evaluation, true);
+-            auto host_facts = action_facts(program, *victims, cursor, evaluation);
+-            const auto host_rank = rank_action(program, *victims, host_facts, units, evaluation);
++            auto host_facts      = action_facts(program, *victims, cursor, host_view);
++            const auto host_rank = rank_action(program, *victims, host_facts, units, host_view);
+             rank.loss            = host_rank.loss;
+             rank.waiting         = host_rank.waiting;
+             rank.order           = std::max(rank.order, host_rank.order);
+@@ -624,6 +679,19 @@ public:
+             auto rank = rank_action(program, plan.sources, facts, units, evaluation);
+             actions.push_back({.release = std::move(plan), .rank = rank});
+         }
++        // A demotion admitted on its sources' proven demand is tried before deleting the
++        // same sources: moving and deleting share one protection judgment.
++        for (auto& action : actions) {
++            if (!action.release) { continue; }
++            for (const auto& move : actions) {
++                if (move.demotion && move.preservation->proven &&
++                    std::ranges::equal(move.demotion->sources, action.release->sources) &&
++                    less_rank(action.rank, move.rank)) {
++                    action.rank = move.rank;
++                    ++writeback_.release_deferred;
++                }
++            }
++        }
+         std::stable_sort(actions.begin(), actions.end(),
+                          [](const auto& a, const auto& b) { return less_rank(a.rank, b.rank); });
+         for (std::size_t index = 0; index < actions.size(); ++index) {
+@@ -671,19 +739,43 @@ public:
+                 auto protected_sources = std::vector<Handle>(excluded.begin(), excluded.end());
+                 protected_sources.insert(protected_sources.end(), plan.sources.begin(),
+                                          plan.sources.end());
++                const bool forced  = unplaceable(plan);
+                 const auto current = host_victims_in_order(
+                     program, plan.host_bytes, action.preservation->checkpoint, {},
+-                    protected_sources, action.preservation, cursor, evaluation);
++                    protected_sources, action.preservation, cursor, evaluation, forced);
+                 if (!current || *current != action.host_victims) { continue; }
++                if (forced && !action.host_victims.empty()) { ++writeback_.unplaceable_victims; }
++                const bool proven = action.preservation->proven && !action.host_victims.empty();
++                const bool downgraded =
++                    proven && !action_priority(program, plan.sources, cursor, evaluation).reused;
++                const auto view = recency_view(program, evaluation, plan.sources);
++                if (proven_demand(program, action.host_victims, cursor, view).reused) {
++                    ++writeback_.demanded_evicted;
++                }
++                if (std::ranges::any_of(action.host_victims,
++                                        [&](auto h) { return stale_handle(h, view); })) {
++                    ++writeback_.stale_evicted;
++                }
+                 commit_release(program, action.host_victims, cursor, action.rank.loss);
+                 if (program.start_demote(plan)) {
++                    writeback_.proven_demoted += proven;
++                    writeback_.proven_downgraded += downgraded;
+                     return program.has_context_transaction() ? ReclaimProgress::Transferring
+                                                              : ReclaimProgress::Changed;
+                 }
++                ++writeback_.demote_failed;
++                failed_demotions.push_back(plan.sources);
+                 if (!action.host_victims.empty()) { return ReclaimProgress::Changed; }
+                 continue;
+             }
+             // Native quoted every holder required for this actual physical release.
++            if (std::ranges::find(failed_demotions, action.release->sources) !=
++                failed_demotions.end()) {
++                ++writeback_.release_after_failed_demote;
++            }
++            if (proven_demand(program, action.release->sources, cursor, evaluation).reused) {
++                ++writeback_.proven_released;
++            }
+             commit_release(program, action.release->sources, cursor, action.rank.loss);
+             return ReclaimProgress::Changed;
+         }
+@@ -819,6 +911,7 @@ private:
+         std::uint32_t proven_frontier   = 0;
+         std::uint64_t retained_at       = 0;
+         std::uint64_t publication_order = 0;
++        std::uint64_t active_at         = 0;
+         bool active                     = false;
+         std::optional<SessionKey> session;
+         std::vector<Point> points;
+@@ -1047,8 +1140,105 @@ private:
+     struct Evaluation {
+         const NativeReclaimPlan* native = nullptr;
+         std::optional<std::vector<Handle>> retained;
++        // Host-tier recency (round 4): inactive owners with at least a window of newer Host
++        // content, and the activity of the write asking for room. Set only on a Host view.
++        std::optional<std::vector<std::pair<OwnerToken, std::uint64_t>>> beyond_window;
++        std::optional<std::uint64_t> writer;
++        bool stale_writer = false;
+     };
+ 
++    // Content a plain LRU of 3/4 of the Host would already have dropped (the soft target
++    // balance_reused applies to the reused segment), measured by owner activity.
++    [[nodiscard]] Evaluation
++    recency_view(Program& program, Evaluation& evaluation,
++                 std::optional<std::span<const Handle>> writer_sources) const {
++        if (!evaluation.beyond_window) {
++            evaluation.beyond_window.emplace();
++            const auto limit = program.physical_usage().capacity.host_bytes / 4 * 3;
++            std::vector<const Owner*> order;
++            for (const auto& owner : owners_) { order.push_back(&owner); }
++            std::sort(order.begin(), order.end(), [](const Owner* a, const Owner* b) {
++                if (a->active != b->active) { return a->active; }
++                if (a->active_at != b->active_at) { return a->active_at > b->active_at; }
++                return a->token > b->token;
++            });
++            std::uint64_t newer = 0;
++            std::vector<Handle> points;
++            for (const auto* owner : order) {
++                if (limit && !owner->active && newer >= limit) {
++                    evaluation.beyond_window->emplace_back(owner->token, owner->active_at);
++                }
++                points.clear();
++                for (const auto& point : owner->points) {
++                    if (program.valid_checkpoint(point.handle)) { points.push_back(point.handle); }
++                }
++                if (!points.empty()) { newer += program.checkpoint_footprint(points).host_bytes; }
++            }
++        }
++        std::uint64_t writer = UINT64_MAX;
++        if (writer_sources && !writer_sources->empty()) {
++            writer = 0;
++            for (const auto& owner : owners_) {
++                if (std::none_of(owner.points.begin(), owner.points.end(), [&](const auto& p) {
++                        return contains(*writer_sources, p.handle);
++                    })) {
++                    continue;
++                }
++                writer = std::max(writer, owner.active ? UINT64_MAX : owner.active_at);
++            }
++            if (!writer) { writer = UINT64_MAX; }
++        }
++        auto view   = evaluation;
++        view.writer = writer;
++        // A writer past the window is the stalest content asking for room: it has no right
++        // over anything newer than itself.
++        view.stale_writer =
++            writer != UINT64_MAX &&
++            std::any_of(evaluation.beyond_window->begin(), evaluation.beyond_window->end(),
++                        [&](const auto& entry) { return entry.second == writer; });
++        return view;
++    }
++
++    [[nodiscard]] bool stale_owner(OwnerToken token, const Evaluation& evaluation) const {
++        if (!evaluation.writer || !evaluation.beyond_window) { return false; }
++        return std::any_of(evaluation.beyond_window->begin(), evaluation.beyond_window->end(),
++                           [&](const auto& entry) {
++                               return entry.first == token && entry.second < *evaluation.writer;
++                           });
++    }
++
++    [[nodiscard]] std::uint64_t last_activity(std::span<const Handle> handles) const {
++        std::uint64_t newest = 0;
++        for (const auto& owner : owners_) {
++            if (std::any_of(owner.points.begin(), owner.points.end(),
++                            [&](const auto& p) { return contains(handles, p.handle); })) {
++                newest = std::max(newest, owner.active_at);
++            }
++        }
++        return newest;
++    }
++
++    // Stale content has every holder stale: no shared entry, no waiting request.
++    [[nodiscard]] bool stale_handle(Handle handle, const Evaluation& evaluation) const {
++        if (!evaluation.writer) { return false; }
++        bool held = false;
++        for (const auto& owner : owners_) {
++            if (std::none_of(owner.points.begin(), owner.points.end(),
++                             [&](const auto& p) { return p.handle == handle; })) {
++                continue;
++            }
++            if (!stale_owner(owner.token, evaluation)) { return false; }
++            held = true;
++        }
++        if (!held) { return false; }
++        if (std::any_of(shared_.begin(), shared_.end(),
++                        [&](const auto& entry) { return entry.handle == handle; })) {
++            return false;
++        }
++        return std::none_of(waiting_.begin(), waiting_.end(),
++                            [&](const auto& waiting) { return contains(waiting.held, handle); });
++    }
++
+     struct ActionFacts {
+         CacheRetentionPriority priority;
+         std::size_t order = 0;
+@@ -1087,9 +1277,14 @@ private:
+     [[nodiscard]] std::uint64_t action_loss(Program& program, std::span<const Handle> sources,
+                                             ActionFacts& facts, Evaluation& evaluation) const {
+         if (!facts.loss) {
+-            facts.loss = sources.empty()
++            // Stale content costs a newer write nothing; it still is no fallback for the rest.
++            std::vector<Handle> current;
++            for (const auto handle : sources) {
++                if (!stale_handle(handle, evaluation)) { current.push_back(handle); }
++            }
++            facts.loss = current.empty()
+                              ? 0
+-                             : recovery_loss(program, sources,
++                             : recovery_loss(program, current,
+                                              action_survivors(program, sources, facts, evaluation),
+                                              evaluation);
+         }
+@@ -1117,7 +1312,7 @@ private:
+             if (!private_owner) { include(victim.priority); }
+         }
+         for (const auto& proof : cursor.owners) {
+-            if (!proof.priority.reused) { continue; }
++            if (!proof.priority.reused || stale_owner(proof.owner, evaluation)) { continue; }
+             const auto* owner = find_owner(proof.owner);
+             bool affected     = false;
+             bool covered      = owner != nullptr;
+@@ -1151,6 +1346,50 @@ private:
+         return priority;
+     }
+ 
++    [[nodiscard]] CacheRetentionPriority proven_demand(Program& program,
++                                                       std::span<const Handle> sources,
++                                                       const ReclaimCursor& cursor,
++                                                       const Evaluation& evaluation,
++                                                       bool* unrecorded = nullptr) const {
++        CacheRetentionPriority result;
++        for (const auto& proof : cursor.owners) {
++            if (!proof.proven_frontier || stale_owner(proof.owner, evaluation)) { continue; }
++            const auto* owner = find_owner(proof.owner);
++            if (!owner) { continue; }
++            std::optional<Handle> holder;
++            bool covered = true;
++            for (const auto handle : proof.points) {
++                if (!contains(sources, handle) || !program.valid_checkpoint(handle)) { continue; }
++                const auto frontier = program.checkpoint_metadata(handle).frontier;
++                if (frontier < proof.proven_frontier) { continue; }
++                if (!holder) { holder = handle; }
++                bool fallback = false;
++                for (const auto& point : owner->points) {
++                    if (contains(sources, point.handle) || !program.valid_checkpoint(point.handle)) {
++                        continue;
++                    }
++                    const auto candidate = program.checkpoint_metadata(point.handle).frontier;
++                    if (candidate < proof.proven_frontier || candidate > frontier) { continue; }
++                    if (recovery_loss(program, {&handle, 1}, {&point.handle, 1}, evaluation) ==
++                        frontier - candidate) {
++                        fallback = true;
++                        break;
++                    }
++                }
++                covered = covered && fallback;
++            }
++            if (!holder || covered) { continue; }
++            const auto demand =
++                demand_priority(program.checkpoint_key(*holder, proof.proven_frontier));
++            if (!demand.reused) {
++                if (unrecorded) { *unrecorded = true; }
++                continue;
++            }
++            if (!result.reused || demand.last_demand > result.last_demand) { result = demand; }
++        }
++        return result;
++    }
++
+     [[nodiscard]] ActionFacts action_facts(Program& program, std::span<const Handle> sources,
+                                            const ReclaimCursor& cursor,
+                                            const Evaluation& evaluation) const {
+@@ -1169,6 +1408,7 @@ private:
+         std::uint64_t units   = 0;
+         std::size_t order     = 0;
+         std::uint64_t waiting = 0;
++        bool stale            = false;
+     };
+ 
+     [[nodiscard]] ActionRank rank_action(Program& program, std::span<const Handle> sources,
+@@ -1184,6 +1424,7 @@ private:
+     static bool less_rank(const ActionRank& left, const ActionRank& right) {
+         if (bool(left.waiting) != bool(right.waiting)) { return !left.waiting; }
+         if (left.waiting != right.waiting) { return left.waiting > right.waiting; }
++        if (left.stale != right.stale) { return left.stale; }
+         if (left.priority.reused != right.priority.reused) { return !left.priority.reused; }
+         if (left.priority.reused && left.priority.last_demand != right.priority.last_demand) {
+             return left.priority.last_demand < right.priority.last_demand;
+@@ -1199,7 +1440,9 @@ private:
+     [[nodiscard]] Admission preservation_admission(Program& program,
+                                                    std::span<const Handle> sources,
+                                                    const ReclaimCursor& cursor,
+-                                                   CacheRetentionPriority priority) const {
++                                                   CacheRetentionPriority priority,
++                                                   const Evaluation& evaluation,
++                                                   bool* unrecorded = nullptr) const {
+         Admission result{.priority = priority,
+                          .sources  = std::vector<Handle>(sources.begin(), sources.end())};
+         std::uint32_t deepest = 0;
+@@ -1219,6 +1462,10 @@ private:
+                 result.demand = demand;
+             }
+         }
++        if (!result.demand.reused) {
++            result.demand = proven_demand(program, sources, cursor, evaluation, unrecorded);
++            result.proven = result.demand.reused;
++        }
+         if (result.demand.reused) { result.priority = result.demand; }
+         return result;
+     }
+@@ -1262,7 +1509,15 @@ private:
+                                   loss >= *cursor.gain_limit - cursor.sacrificed)) {
+             return false;
+         }
+-        if (admission->demand.reused) { return true; }
++        bool newer = false;
++        if (admission->proven) {
++            const auto held = proven_demand(program, removed, cursor, evaluation);
++            if (held.reused && held.last_demand >= admission->demand.last_demand) {
++                ++writeback_.newer_unprivileged;
++                newer = true;
++            }
++        }
++        if (admission->demand.reused && !newer) { return true; }
+         const auto kept = preserving ? retained(program, evaluation)
+                                      : action_survivors(program, removed, facts, evaluation);
+         return recovery_gain(program, *admission, kept, evaluation) > loss;
+@@ -1302,7 +1557,7 @@ private:
+         if (!admission && incoming) {
+             admission = preservation_admission(
+                 program, {&*incoming, 1}, cursor,
+-                action_priority(program, {&*incoming, 1}, cursor, evaluation));
++                action_priority(program, {&*incoming, 1}, cursor, evaluation), evaluation);
+         }
+         std::vector<Handle> allowed;
+         for (const auto& victim : cursor.victims) {
+@@ -1322,6 +1577,12 @@ private:
+                 }
+             }
+         }
++        // Victims are judged in the writer's recency view: content beyond the window and
++        // older than the writer has no grade, no proof and no recovery cost against it.
++        auto view    = recency_view(program, evaluation,
++                                 admission && !admission->sources.empty()
++                                        ? std::optional<std::span<const Handle>>(admission->sources)
++                                        : std::nullopt);
+         auto actions = program.plan_releases(allowed, excluded, {.host_bytes = required});
+         std::vector<Handle> selected;
+         std::size_t released = 0;
+@@ -1338,16 +1599,31 @@ private:
+                 }
+                 const auto amount = program.host_bytes_released(combined);
+                 if (amount <= released) { continue; }
+-                auto facts = action_facts(program, combined, cursor, evaluation);
++                const bool stale = std::ranges::all_of(
++                    combined, [&](auto handle) { return stale_handle(handle, view); });
++                if (view.stale_writer && !stale) { continue; }
++                auto facts = action_facts(program, combined, cursor, view);
+                 // A migration must satisfy both its own preservation rights and the
+                 // optional capture that requested space. Source heat cannot grant the
+                 // outer capture permission to erase unrelated hot Host history.
+-                if (!admits(program, combined, facts, admission, cursor, evaluation) ||
+-                    !admits(program, combined, facts, cursor.admission, cursor, evaluation)) {
++                if (!admits(program, combined, facts, admission, cursor, view) ||
++                    !admits(program, combined, facts, cursor.admission, cursor, view)) {
+                     continue;
+                 }
+-                const auto rank            = rank_action(program, combined, facts,
+-                                                         std::min<std::size_t>(amount, required), evaluation);
++                auto rank  = rank_action(program, combined, facts,
++                                         std::min<std::size_t>(amount, required), view);
++                rank.stale = stale;
++                if (rank.stale) {
++                    // Stale content goes first, least recently active first (plain LRU).
++                    rank.priority = {};
++                    rank.loss     = 0;
++                    rank.order    = last_activity(combined);
++                } else if (!rank.priority.reused) {
++                    // A proven write-back spends history without repeat demand before older
++                    // demanded history, whatever grade the soft target left that history.
++                    const auto held = proven_demand(program, combined, cursor, view);
++                    if (held.reused) { rank.priority = held; }
++                }
+                 std::size_t snapshot_order = 0;
+                 for (std::size_t snapshot = 0; snapshot < later_snapshots.size(); ++snapshot) {
+                     if (contains(combined, later_snapshots[snapshot])) {
+@@ -1455,7 +1731,9 @@ private:
+     std::vector<WaitingSource> waiting_;
+     static constexpr std::size_t kDemandCapacity = 256;
+     std::vector<Demand> demand_;
+-    std::uint64_t clock_   = 0;
+-    std::uint64_t ordinal_ = 0;
++    mutable WritebackCounters writeback_;
++    std::uint64_t clock_    = 0;
++    std::uint64_t ordinal_  = 0;
++    std::uint64_t activity_ = 0;
+ };
+ } // namespace ninfer::runtime
+diff --git a/src/runtime/engine/engine_core.h b/src/runtime/engine/engine_core.h
+index 94f3254..8bd3349 100644
+--- a/src/runtime/engine/engine_core.h
++++ b/src/runtime/engine/engine_core.h
+@@ -1215,6 +1215,7 @@ private:
+         if (instance_.program->has_context_transaction()) { return; }
+         bool started = instance_.program->start_capture(*request->sequence);
+         if (!started) {
++            ++cumulative_stats_.context_capture_skipped;
+             instance_.program->skip_capture(*request->sequence);
+             request->capture_pending = false;
+             return;
+@@ -1246,12 +1247,21 @@ private:
+             }
+             const auto usage = instance_.program->physical_usage();
+             if (capture->host_bytes && capture->host_bytes <= usage.capacity.host_bytes) {
+-                if (capture->host_bytes > usage.capacity.host_bytes - usage.occupied.host_bytes) {
++                if (capture->host_bytes > usage.capacity.host_bytes - usage.occupied.host_bytes ||
++                    !instance_.program->host_placeable_bytes(capture->host_bytes)) {
+                     (void)instance_.program->release_redundant_host({}, request->sequence);
+                 }
++                // Free bytes with no hole for the image are not room (#378): take victims
++                // for the whole image.
++                const bool unplaceable =
++                    !instance_.program->host_placeable_bytes(capture->host_bytes);
++                const auto room = instance_.program->physical_usage();
++                cumulative_stats_.context_capture_unplaceable +=
++                    unplaceable && room.capacity.host_bytes - room.occupied.host_bytes >=
++                                       capture->host_bytes;
+                 if (const auto victims = resources_.host_victims(
+                         *instance_.program, capture->host_bytes, std::nullopt, {}, {}, admission,
+-                        &decision->reclaim)) {
++                        &decision->reclaim, {}, unplaceable)) {
+                     resources_.commit_host_victims(*instance_.program, *victims, decision->reclaim);
+                     if (!victims->empty()) { scheduler_.capacity_released(); }
+                     if (const auto retry = instance_.program->prepare_capture(*request->sequence);
+@@ -1265,6 +1275,7 @@ private:
+                 resources_.reclaim(*instance_.program, capture->shortage, {}, decision->reclaim);
+             if (progress == ReclaimProgress::Transferring) { return false; }
+             if (progress == ReclaimProgress::Changed) { continue; }
++            ++cumulative_stats_.context_capture_skipped;
+             instance_.program->skip_capture(*request->sequence);
+             decision.reset();
+         }
+@@ -1605,6 +1616,7 @@ private:
+                                             &call.failed_timing())) {
+             return false;
+         }
++        cumulative_stats_.pause_snapshots_requested += save_snapshot;
+         call.finish(call.failed_timing());
+         if (!request->is_replaying()) { request->resume_phase = request->model_state; }
+         request->model_state = EngineRequestState::Pausing;
+diff --git a/src/runtime/engine/engine_metrics.inl b/src/runtime/engine/engine_metrics.inl
+index fdfc096..e0b8e0b 100644
+--- a/src/runtime/engine/engine_metrics.inl
++++ b/src/runtime/engine/engine_metrics.inl
+@@ -180,6 +180,21 @@ void EngineCore<Instance>::publish_runtime_stats() {
+     snapshot.host_kv_occupied_bytes           = physical.host_kv_bytes;
+     snapshot.host_context_reserved_bytes      = physical.host_reserved_bytes;
+     snapshot.host_context_peak_occupied_bytes = physical.host_peak_occupied_bytes;
++    const auto& writeback = resources_.writeback_counters();
++    snapshot.context_writeback_proven_admitted = writeback.proven_admitted;
++    snapshot.context_writeback_proven_demoted = writeback.proven_demoted;
++    snapshot.context_writeback_proven_downgraded = writeback.proven_downgraded;
++    snapshot.context_writeback_proven_unrecorded = writeback.proven_unrecorded;
++    snapshot.context_writeback_proven_victimless = writeback.proven_victimless;
++    snapshot.context_writeback_newer_unprivileged = writeback.newer_unprivileged;
++    snapshot.context_writeback_release_deferred = writeback.release_deferred;
++    snapshot.context_writeback_proven_released = writeback.proven_released;
++    snapshot.context_writeback_demanded_evicted = writeback.demanded_evicted;
++    snapshot.context_writeback_unplaceable_victims = writeback.unplaceable_victims;
++    snapshot.context_writeback_demote_failed = writeback.demote_failed;
++    snapshot.context_writeback_release_after_failed_demote = writeback.release_after_failed_demote;
++    snapshot.context_writeback_stale_evicted = writeback.stale_evicted;
++    snapshot.context_writeback_stale_writer_refused = writeback.stale_writer_refused;
+     snapshot.materializing_requests           = materializing_.has_value() ? 1U : 0U;
+     for (std::uint32_t lane = 0; lane < max_concurrency_; ++lane) {
+         if (slots_[lane] == nullptr) { continue; }
+@@ -213,6 +228,8 @@ void EngineCore<Instance>::record_context_work(
+     cumulative_stats_.state_restores += op.state_restores;
+     cumulative_stats_.pressure_spill_pages += op.pressure_spill_pages;
+     cumulative_stats_.partial_tail_cow_pages += op.partial_tail_cow_pages;
++    cumulative_stats_.pause_backup_failures += op.pause_backup_failures;
++    cumulative_stats_.pause_backup_image_failures += op.pause_backup_image_failures;
+     for (const auto& transfer : progress.transfers) {
+         const auto direction = static_cast<std::size_t>(transfer.direction);
+         std::array<std::uint64_t*, 3> bytes{}, units{};
+diff --git a/src/serve/metrics.cpp b/src/serve/metrics.cpp
+index e98568c..dfc78c1 100644
+--- a/src/serve/metrics.cpp
++++ b/src/serve/metrics.cpp
+@@ -243,6 +243,44 @@ std::string Metrics::render(const RuntimeStats& stats, bool ready) const {
+     TRANSFER("backend_kv", backend_kv, h2d);
+     TRANSFER("backend_kv", backend_kv, d2d);
+ #undef TRANSFER
++    header("context_writeback_total", "counter",
++           "Host write-back and demotion decisions (proven repeat demand; placement; recency: "
++           "stale_evicted counts victim sets holding stale content).");
++    const auto writeback = [&](const char* event, std::uint64_t current, std::uint64_t baseline) {
++        out << "ninfer_context_writeback_total{event=\"" << event << "\"} " << current - baseline
++            << '\n';
++    };
++#define WRITEBACK(name)                                                                            \
++    writeback(#name, stats.context_writeback_##name, baseline_.context_writeback_##name)
++    WRITEBACK(proven_admitted);
++    WRITEBACK(proven_demoted);
++    WRITEBACK(proven_downgraded);
++    WRITEBACK(proven_unrecorded);
++    WRITEBACK(proven_victimless);
++    WRITEBACK(newer_unprivileged);
++    WRITEBACK(release_deferred);
++    WRITEBACK(proven_released);
++    WRITEBACK(demanded_evicted);
++    WRITEBACK(unplaceable_victims);
++    WRITEBACK(demote_failed);
++    WRITEBACK(release_after_failed_demote);
++    WRITEBACK(stale_evicted);
++    WRITEBACK(stale_writer_refused);
++#undef WRITEBACK
++    counter("context_capture_unplaceable_total", stats.context_capture_unplaceable,
++            baseline_.context_capture_unplaceable,
++            "Capture Host image writes whose free bytes sufficed but no hole fit (#378).");
++    counter("pause_snapshots_requested_total", stats.pause_snapshots_requested,
++            baseline_.pause_snapshots_requested, "Pauses that asked to keep a snapshot.");
++    counter("pause_backup_failed_total", stats.pause_backup_failures,
++            baseline_.pause_backup_failures,
++            "Pause snapshot backups that could not reserve their Host destination.");
++    counter("pause_backup_image_failed_total", stats.pause_backup_image_failures,
++            baseline_.pause_backup_image_failures,
++            "Pause snapshot backups refused for want of one state-image hole.");
++    counter("context_capture_skipped_total", stats.context_capture_skipped,
++            baseline_.context_capture_skipped,
++            "Checkpoint captures skipped for want of Device or Host room.");
+     counter("context_transfer_seconds_total", stats.actual_context_transfer_seconds,
+             baseline_.actual_context_transfer_seconds,
+             "Accumulated context transfer operation time.");
+diff --git a/tests/cmake/CoreTests.cmake b/tests/cmake/CoreTests.cmake
+index 86aed6b..a579f98 100644
+--- a/tests/cmake/CoreTests.cmake
++++ b/tests/cmake/CoreTests.cmake
+@@ -41,6 +41,11 @@ ninfer_add_test(ninfer_host_context_arena_test
+   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_host_context_arena.cpp"
+   LIBRARIES ninfer_core)
+ 
++# GPU-free: the real first-fit arena over an unpinned stand-in buffer, no ninfer_core.
++ninfer_add_test(ninfer_host_extent_runs_test
++  SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_host_extent_runs.cpp"
++          "${PROJECT_SOURCE_DIR}/src/core/host_context_arena.cpp")
++
+ ninfer_add_test(ninfer_state_store_test
+   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../test_state_store.cpp"
+   LIBRARIES ninfer_core)
+diff --git a/tests/cmake/RuntimeTests.cmake b/tests/cmake/RuntimeTests.cmake
+index ccf0908..df47e7d 100644
+--- a/tests/cmake/RuntimeTests.cmake
++++ b/tests/cmake/RuntimeTests.cmake
+@@ -10,6 +10,10 @@ ninfer_add_test(ninfer_resource_manager_test
+   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../runtime/test_resource_manager.cpp"
+   LIBRARIES ninfer_runtime_support)
+ 
++ninfer_add_test(ninfer_resource_manager_replay_test
++  SOURCES "${CMAKE_CURRENT_LIST_DIR}/../runtime/test_resource_manager_replay.cpp"
++  LIBRARIES ninfer_runtime_support)
++
+ ninfer_add_test(ninfer_kv_capacity_test
+   SOURCES "${CMAKE_CURRENT_LIST_DIR}/../runtime/test_kv_capacity.cpp"
+   LIBRARIES ninfer_runtime_support)
+diff --git a/tests/runtime/test_resource_manager.cpp b/tests/runtime/test_resource_manager.cpp
+index 8d3ad03..5ee1666 100644
+--- a/tests/runtime/test_resource_manager.cpp
++++ b/tests/runtime/test_resource_manager.cpp
+@@ -1,4 +1,5 @@
+ #include "runtime/engine/context_cache/resource_manager.h"
++#include "core/host_extent_runs.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -78,12 +79,15 @@ struct Program {
+         std::uint32_t main_pages = 1;
+         std::optional<std::uint32_t> demotion_page_limit;
+         std::optional<std::size_t> demotion_bytes;
++        std::optional<std::size_t> state_bytes;
++        std::size_t mtp_bytes = 0;
+         Role role = Role::SharedPrefix;
+     };
+ 
+     struct HostBlock {
+         std::size_t bytes;
+         bool external_reference;
++        std::size_t offset = 0;
+     };
+ 
+     struct Metadata {
+@@ -113,14 +117,113 @@ struct Program {
+     std::vector<Handle> demoted;
+     std::vector<std::vector<Handle>> demotion_submissions;
+     std::uint32_t main_capacity    = 1024;
++    std::uint32_t state_capacity   = 64;
+     bool transfer_in_progress      = false;
+     bool combined_demotion_blocked = false;
++    // First-fit extents as in HostContextArena: a write needs one hole per extent, and a KV
++    // demotion tiles its pages by halving the extent like start_demote does.
++    bool contiguous             = true;
++    std::size_t placement_fails = 0;
++    bool trace_placement        = false;
++
++    template <class Plan>
++    void trace_fail(const Plan& plan) const {
++        if (!trace_placement) { return; }
++        std::cout << "    start_demote placement failed:";
++        for (const auto& [handle, pages] : plan.main_parts) {
++            std::cout << " KV #" << handle.index << "@" << contents[handle.index].tokens.size()
++                      << " pages=" << pages;
++        }
++        if (plan.main_parts.empty()) {
++            std::cout << " STATE #" << plan.handle.index << "@"
++                      << contents[plan.handle.index].tokens.size();
++        }
++        const auto usage = physical_usage();
++        std::cout << " bytes=" << plan.host_bytes / 1e6 << "MB free="
++                  << (usage.capacity.host_bytes - usage.occupied.host_bytes) / 1e6
++                  << "MB largest_hole=" << largest_hole() / 1e6 << "MB\n";
++    }
+ 
+-    std::size_t host_block(std::size_t bytes, bool external_reference = false) {
+-        blocks.push_back({bytes, external_reference});
++    [[nodiscard]] bool block_live(std::size_t block) const {
++        return blocks[block].external_reference ||
++               std::any_of(contents.begin(), contents.end(),
++                           [&](const auto& content) { return references(content, block); });
++    }
++
++    [[nodiscard]] std::vector<std::pair<std::size_t, std::size_t>> live_extents() const {
++        std::vector<std::pair<std::size_t, std::size_t>> live;
++        for (std::size_t block = 0; block < blocks.size(); ++block) {
++            if (block_live(block)) { live.emplace_back(blocks[block].offset, blocks[block].bytes); }
++        }
++        std::sort(live.begin(), live.end());
++        return live;
++    }
++
++    static std::optional<std::size_t>
++    first_fit(const std::vector<std::pair<std::size_t, std::size_t>>& live, std::size_t capacity,
++              std::size_t bytes) {
++        std::size_t cursor = 0;
++        for (const auto& [offset, size] : live) {
++            if (offset >= cursor && offset - cursor >= bytes) { return cursor; }
++            cursor = std::max(cursor, offset + size);
++        }
++        return capacity >= cursor && capacity - cursor >= bytes ? std::optional(cursor)
++                                                                : std::nullopt;
++    }
++
++    [[nodiscard]] std::optional<std::size_t> host_hole(std::size_t bytes) const {
++        return first_fit(live_extents(), host_capacity, bytes);
++    }
++
++    [[nodiscard]] std::size_t largest_hole() const {
++        const auto live     = live_extents();
++        std::size_t cursor  = 0;
++        std::size_t largest = 0;
++        for (const auto& [offset, size] : live) {
++            if (offset > cursor) { largest = std::max(largest, offset - cursor); }
++            cursor = std::max(cursor, offset + size);
++        }
++        return std::max(largest, host_capacity - std::min(cursor, host_capacity));
++    }
++
++    std::optional<std::size_t> try_host_block(std::size_t bytes, bool external_reference = false) {
++        std::size_t offset = 0;
++        if (contiguous) {
++            const auto hole = host_hole(bytes);
++            if (!hole) { return std::nullopt; }
++            offset = *hole;
++        }
++        blocks.push_back({bytes, external_reference, offset});
+         return blocks.size() - 1;
+     }
+ 
++    std::size_t host_block(std::size_t bytes, bool external_reference = false) {
++        const auto block = try_host_block(bytes, external_reference);
++        require(block.has_value(), "fixture has no contiguous Host hole for a block");
++        return *block;
++    }
++
++    // Reserve `pages` extents for one KV part the way start_demote's halving loop does:
++    // the largest placeable power-of-two run first, never a partial page. Pure: returns the
++    // offsets or nothing.
++    [[nodiscard]] std::optional<std::vector<std::pair<std::size_t, std::size_t>>>
++    tile_pages(std::vector<std::pair<std::size_t, std::size_t>>& live, std::uint32_t pages,
++               std::size_t stride) const {
++        std::vector<std::pair<std::size_t, std::size_t>> placed;
++        const bool ok = ninfer::reserve_halving_runs(
++            pages,
++            [&](std::size_t, std::size_t count) {
++                return first_fit(live, host_capacity, stride * count);
++            },
++            [&](std::size_t, std::size_t count, std::size_t hole) {
++                live.emplace_back(hole, stride * count);
++                std::sort(live.begin(), live.end());
++                placed.emplace_back(hole, stride * count);
++            });
++        if (!ok) { return std::nullopt; }
++        return placed;
++    }
++
+     Handle add(Key tokens, std::vector<std::size_t> host_blocks = {},
+                Role role = Role::SharedPrefix) {
+         const Handle handle{static_cast<std::uint32_t>(contents.size())};
+@@ -178,7 +281,7 @@ struct Program {
+     }
+ 
+     [[nodiscard]] PhysicalUsage physical_usage() const {
+-        PhysicalUsage result{.capacity = {.state_slots      = 64,
++        PhysicalUsage result{.capacity = {.state_slots      = state_capacity,
+                                           .main_kv_pages    = main_capacity,
+                                           .backend_kv_pages = 1024,
+                                           .host_bytes       = host_capacity}};
+@@ -333,7 +436,9 @@ struct Program {
+             if (!units) { continue; }
+             result.push_back(
+                 {handle,
+-                 *content.demotion_bytes * units,
++                 (released.state_slots ? content.state_bytes.value_or(*content.demotion_bytes)
++                                       : *content.demotion_bytes) *
++                     units,
+                  {handle},
+                  released,
+                  released.main_kv_pages
+@@ -491,6 +596,23 @@ struct Program {
+                    : 0;
+     }
+ 
++    // Whether start_demote could reserve this write in the current free extents.
++    [[nodiscard]] bool host_placeable(const Demotion& plan) const {
++        if (!plan.host_bytes) { return true; }
++        if (!contiguous) {
++            const auto usage = physical_usage();
++            return plan.host_bytes <= usage.capacity.host_bytes - usage.occupied.host_bytes;
++        }
++        if (plan.main_parts.empty()) { return host_hole(plan.host_bytes).has_value(); }
++        auto live = live_extents();
++        for (const auto& [handle, pages] : plan.main_parts) {
++            const auto& content = contents.at(handle.index);
++            if (!tile_pages(live, pages, *content.demotion_bytes)) { return false; }
++            if (content.mtp_bytes && !tile_pages(live, pages, content.mtp_bytes)) { return false; }
++        }
++        return true;
++    }
++
+     bool start_demote(const Demotion& plan) {
+         if ((combined_demotion_blocked && plan.main_parts.size() > 1) ||
+             std::any_of(plan.sources.begin(), plan.sources.end(),
+@@ -502,16 +624,57 @@ struct Program {
+             return false;
+         }
+         if (!plan.main_parts.empty()) {
+-            for (const auto& [handle, pages] : plan.main_parts) {
+-                auto& content    = contents.at(handle.index);
+-                const auto bytes = *content.demotion_bytes * pages;
+-                if (bytes) { content.host_blocks.push_back(host_block(bytes)); }
++            // Every destination is reserved before any page moves; a failed reservation
++            // unwinds without side effects, as in ProgramImpl::start_demote.
++            std::vector<std::vector<std::pair<std::size_t, std::size_t>>> placements;
++            if (contiguous) {
++                auto live = live_extents();
++                for (const auto& [handle, pages] : plan.main_parts) {
++                    const auto& content = contents.at(handle.index);
++                    auto main           = tile_pages(live, pages, *content.demotion_bytes);
++                    if (!main) {
++                        ++placement_fails;
++                        trace_fail(plan);
++                        return false;
++                    }
++                    if (content.mtp_bytes) {
++                        auto mtp = tile_pages(live, pages, content.mtp_bytes);
++                        if (!mtp) {
++                            ++placement_fails;
++                            trace_fail(plan);
++                            return false;
++                        }
++                        main->insert(main->end(), mtp->begin(), mtp->end());
++                    }
++                    placements.push_back(std::move(*main));
++                }
++            }
++            for (std::size_t part = 0; part < plan.main_parts.size(); ++part) {
++                const auto& [handle, pages] = plan.main_parts[part];
++                auto& content               = contents.at(handle.index);
++                if (contiguous) {
++                    for (const auto& [offset, bytes] : placements[part]) {
++                        blocks.push_back({bytes, false, offset});
++                        content.host_blocks.push_back(blocks.size() - 1);
++                    }
++                } else {
++                    const auto bytes = *content.demotion_bytes * pages;
++                    if (bytes) { content.host_blocks.push_back(host_block(bytes)); }
++                }
+                 content.main_pages -= pages;
+                 demoted.push_back(handle);
+             }
+         } else {
+             auto& content = contents.at(plan.handle.index);
+-            if (plan.host_bytes) { content.host_blocks.push_back(host_block(plan.host_bytes)); }
++            if (plan.host_bytes) {
++                const auto block = try_host_block(plan.host_bytes);
++                if (!block) {
++                    ++placement_fails;
++                    trace_fail(plan);
++                    return false;
++                }
++                content.host_blocks.push_back(*block);
++            }
+             if (plan.released.state_slots) { content.device_state = false; }
+             demoted.push_back(plan.handle);
+         }
+@@ -1874,8 +2037,482 @@ void test_consuming_rewind_resets_proven_progress_to_the_adopted_prefix() {
+             "an abandoned deep branch remained the proof after a consuming rewind");
+ }
+ 
++
++using Progress = ninfer::runtime::ReclaimProgress;
++
++struct Dialogue {
++    Fixture::Token owner;
++    Handle replay;
++    Handle endpoint;
++};
++
++// Turn 1 publishes E@turn1 (consumed by turn 2); turn 2 publishes R@input and E@end.
++// The adopt-time demand record therefore sits at turn1, a position with no checkpoint.
++Dialogue continued_once(Fixture& f, std::uint32_t turn1, std::uint32_t input, std::uint32_t end,
++                        std::uint32_t first, std::uint32_t replay_pages = 1) {
++    const auto predecessor = f.program.add(tokens(turn1, first), {}, Role::Continuation);
++    const auto owner       = f.publish(predecessor);
++    const Base next{.tokens = tokens(end, first)};
++    auto choice = f.source(next, predecessor);
++    require(choice.take_over && choice.source.consume_source, "turn 2 did not take over turn 1");
++    require(f.program.release_checkpoint(predecessor), "fixture consume failed");
++    require(f.cache.adopt(f.program, choice, next, ++f.next_order, {}, {&predecessor, 1}) == owner,
++            "turn 2 did not continue its owner");
++    const auto replay   = f.program.add(tokens(input, first), {}, Role::InputReplay);
++    const auto endpoint = f.program.add(tokens(end, first), {}, Role::Continuation);
++    f.program.contents[replay.index].main_pages     = replay_pages;
++    f.program.contents[replay.index].demotion_bytes = 32;
++    f.cache.publish(f.program, owner, replay);
++    f.cache.publish(f.program, owner, endpoint);
++    f.cache.finish(f.program, owner, next, f.next_order);
++    return {owner, replay, endpoint};
++}
++
++Handle host_only(Fixture& f, std::uint32_t count, std::uint32_t first, std::size_t bytes = 32) {
++    const auto handle = f.program.add(tokens(count, first), {f.program.host_block(bytes)},
++                                      Role::Continuation);
++    f.program.contents[handle.index].device_state = false;
++    f.program.contents[handle.index].main_pages   = 0;
++    f.publish(handle);
++    return handle;
++}
++
++bool demoted(const Fixture& f, Handle handle) {
++    return std::find(f.program.demoted.begin(), f.program.demoted.end(), handle) !=
++           f.program.demoted.end();
++}
++
++// Old content no write may take. It keeps a small fixture's writer inside the recency window
++// (less than 3/4 of the Host newer than it), where the round-1..3 rules apply unchanged.
++void ballast(Fixture& f, std::size_t bytes) {
++    const auto handle = host_only(f, 8, 990000, bytes);
++    f.program.contents[handle.index].evictable = false;
++}
++
++void test_full_host_moves_a_continued_dialogue_over_longer_single_use_history() {
++    Fixture f(128);
++    std::vector<Handle> fills;
++    for (std::uint32_t i = 0; i < 4; ++i) { fills.push_back(host_only(f, 60, 1000 * (i + 1))); }
++    const auto target = continued_once(f, 30, 38, 44, 50000);
++    require(f.cache.retention(target.owner).reused, "fixture target is not reused");
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
++                    !demoted(f, target.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    const auto lost = std::count_if(fills.begin(), fills.end(),
++                                    [&](auto h) { return !f.program.valid_checkpoint(h); });
++    require(f.program.valid_checkpoint(target.replay) && demoted(f, target.replay) && lost == 1,
++            "a full Host deleted a continued dialogue instead of one single-use history");
++}
++
++void test_downgraded_continued_dialogue_is_moved_not_deleted() {
++    Fixture f(128);
++    f.program.main_capacity = 40;
++    std::vector<Handle> fills;
++    for (std::uint32_t i = 0; i < 4; ++i) { fills.push_back(host_only(f, 60, 1000 * (i + 1))); }
++    const auto target = continued_once(f, 30, 38, 44, 50000, 8);
++    const auto push0  = continued_once(f, 90, 92, 94, 60000, 12);
++    const auto push1  = continued_once(f, 90, 92, 94, 70000, 12);
++    require(!f.cache.retention(target.owner).reused && f.cache.retention(push1.owner).reused,
++            "fixture did not downgrade the oldest reused dialogue");
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
++                    !demoted(f, target.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    const auto lost = std::count_if(fills.begin(), fills.end(),
++                                    [&](auto h) { return !f.program.valid_checkpoint(h); });
++    require(f.program.valid_checkpoint(target.replay) && demoted(f, target.replay) && lost == 1 &&
++                f.program.valid_checkpoint(push0.replay) &&
++                f.program.valid_checkpoint(push1.replay),
++            "a downgraded continued dialogue was deleted although a cold Host victim existed");
++}
++
++void test_moved_dialogue_cannot_displace_a_more_recently_demanded_one() {
++    Fixture f(128);
++    ballast(f, 64);
++    f.program.main_capacity = 40;
++    const auto oldest = continued_once(f, 30, 38, 44, 40000, 8);
++    const auto older  = continued_once(f, 30, 38, 44, 50000, 8);
++    const auto newer  = continued_once(f, 20, 22, 24, 60000, 8);
++    for (const std::uint32_t first : {70000U, 80000U}) {
++        const auto push = continued_once(f, 90, 92, 94, first, 12);
++        f.program.contents[push.replay.index].demotion_bytes.reset();
++    }
++    require(!f.cache.retention(oldest.owner).reused && !f.cache.retention(older.owner).reused &&
++                !f.cache.retention(newer.owner).reused,
++            "fixture did not downgrade all three dialogues");
++    require(f.cache.erase(f.program, newer.endpoint), "fixture could not drop newer suffix");
++    auto& moved        = f.program.contents[newer.replay.index];
++    moved.device_state = false;
++    moved.main_pages   = 0;
++    moved.host_blocks.push_back(f.program.host_block(32));
++    const auto cold = host_only(f, 60, 90000);
++    f.program.contents[oldest.replay.index].device_state = false;
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(older.replay) && !demoted(f, older.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    require(demoted(f, older.replay) && !f.program.valid_checkpoint(cold) &&
++                f.program.valid_checkpoint(newer.replay),
++            "a write-back displaced a more recently demanded dialogue instead of cold history");
++    f.program.contents[oldest.replay.index].device_state = true;
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(oldest.replay) &&
++                    !demoted(f, oldest.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    require(f.program.valid_checkpoint(older.replay) && !f.program.valid_checkpoint(newer.replay) &&
++                demoted(f, oldest.replay),
++            "a write-back did not displace newer-demand content it out-recovers");
++    const auto kept_oldest = f.program.valid_checkpoint(oldest.replay);
++    for (int i = 0; i < 6; ++i) { (void)f.cache.reclaim(f.program, {.state_slots = 1}); }
++    require(f.program.valid_checkpoint(older.replay) &&
++                f.program.valid_checkpoint(oldest.replay) == kept_oldest,
++            "Host residents kept displacing each other without new demand");
++}
++
++void test_newer_writeback_evicts_cold_history_before_an_older_demanded_dialogue() {
++    Fixture f(64);
++    f.program.main_capacity = 40;
++    const auto older = continued_once(f, 30, 38, 44, 50000, 8);
++    for (const std::uint32_t first : {70000U, 80000U}) {
++        const auto push = continued_once(f, 90, 92, 94, first, 12);
++        f.program.contents[push.replay.index].demotion_bytes.reset();
++    }
++    require(!f.cache.retention(older.owner).reused, "fixture did not downgrade the older dialogue");
++    require(f.cache.erase(f.program, older.endpoint), "fixture could not drop older suffix");
++    auto& moved        = f.program.contents[older.replay.index];
++    moved.device_state = false;
++    moved.main_pages   = 0;
++    moved.host_blocks.push_back(f.program.host_block(32));
++    const auto cold  = host_only(f, 60, 90000);
++    const auto newer = continued_once(f, 40, 48, 50, 60000, 8);
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(newer.replay) && !demoted(f, newer.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    require(demoted(f, newer.replay) && !f.program.valid_checkpoint(cold) &&
++                f.program.valid_checkpoint(older.replay),
++            "a newer write-back evicted an older demanded dialogue before cold history");
++}
++
++void test_capture_host_write_evicts_cold_history_before_a_demanded_dialogue() {
++    Fixture f(64);
++    f.program.main_capacity = 40;
++    const auto older = continued_once(f, 30, 38, 44, 50000, 8);
++    for (const std::uint32_t first : {70000U, 80000U}) {
++        const auto push = continued_once(f, 90, 92, 94, first, 12);
++        f.program.contents[push.replay.index].demotion_bytes.reset();
++    }
++    require(!f.cache.retention(older.owner).reused, "fixture did not downgrade the older dialogue");
++    require(f.cache.erase(f.program, older.endpoint), "fixture could not drop older suffix");
++    auto& moved        = f.program.contents[older.replay.index];
++    moved.device_state = false;
++    moved.main_pages   = 0;
++    moved.host_blocks.push_back(f.program.host_block(32));
++    const auto cold = host_only(f, 60, 90000);
++    const Base incoming{.tokens = tokens(90, 60000), .captures = {90}};
++    const auto admission = f.cache.capture_admission(f.program, 0, incoming, 90, true);
++    auto cursor          = f.cache.begin_reclaim(f.program, admission);
++    const auto victims =
++        f.cache.host_victims(f.program, 32, std::nullopt, {}, {}, admission, &cursor);
++    require(victims && std::ranges::find(*victims, cold) != victims->end() && std::ranges::find(*victims, older.replay) == victims->end(),
++            "a capture's Host write evicted a demanded dialogue before cold history");
++}
++
++void test_kv_shortage_moves_a_continued_dialogue_over_longer_single_use_history() {
++    Fixture f(128);
++    f.program.main_capacity = 40;
++    std::vector<Handle> fills;
++    for (std::uint32_t i = 0; i < 4; ++i) { fills.push_back(host_only(f, 60, 1000 * (i + 1))); }
++    const auto target = continued_once(f, 30, 38, 44, 50000, 4);
++    f.program.contents[target.replay.index].device_state   = false;
++    f.program.contents[target.endpoint.index].device_state = false;
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
++                    !demoted(f, target.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.main_kv_pages = 2});
++    }
++    require(f.program.valid_checkpoint(target.replay) && demoted(f, target.replay),
++            "a main-KV shortage deleted a continued dialogue instead of moving it");
++}
++
++void test_older_large_dialogue_still_out_recovers_newer_small_ones() {
++    Fixture f(128);
++    ballast(f, 64);
++    f.program.main_capacity = 40;
++    const auto parent = continued_once(f, 90, 92, 94, 40000, 8);
++    const auto childA = continued_once(f, 20, 22, 24, 50000, 8);
++    const auto childB = continued_once(f, 20, 22, 24, 60000, 8);
++    for (const std::uint32_t first : {70000U, 80000U}) {
++        const auto push = continued_once(f, 90, 92, 94, first, 12);
++        f.program.contents[push.replay.index].demotion_bytes.reset();
++    }
++    require(!f.cache.retention(parent.owner).reused && !f.cache.retention(childA.owner).reused &&
++                !f.cache.retention(childB.owner).reused,
++            "fixture did not downgrade all three dialogues");
++    for (const auto& child : {childA, childB}) {
++        require(f.cache.erase(f.program, child.endpoint), "fixture could not drop child suffix");
++        auto& moved        = f.program.contents[child.replay.index];
++        moved.device_state = false;
++        moved.main_pages   = 0;
++        moved.host_blocks.push_back(f.program.host_block(32));
++    }
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(parent.replay) &&
++                    !demoted(f, parent.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    const auto children = f.program.valid_checkpoint(childA.replay) +
++                          f.program.valid_checkpoint(childB.replay);
++    require(demoted(f, parent.replay) && children == 1,
++            "an older orchestrator was deleted instead of displacing one smaller child");
++}
++
++void test_proven_writeback_displaces_newer_single_use_history() {
++    Fixture f(64);
++    ballast(f, 32);
++    const auto target = continued_once(f, 30, 38, 44, 50000);
++    const auto fresh  = host_only(f, 60, 1000);
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
++                    !demoted(f, target.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    require(demoted(f, target.replay) && !f.program.valid_checkpoint(fresh),
++            "pinned trade-off changed: turn-1 history was kept over a proven dialogue");
++}
++
++void test_covered_unproven_suffix_cannot_displace_single_use_history() {
++    Fixture f(32);
++    const auto fill   = host_only(f, 60, 1000);
++    const auto target = continued_once(f, 30, 38, 44, 50000);
++    f.program.contents[target.endpoint.index].demotion_bytes = 32;
++    f.program.contents[target.replay.index].device_state     = false;
++    require(f.cache.reclaim(f.program, {.state_slots = 1}) == Progress::Changed &&
++                !f.program.valid_checkpoint(target.endpoint) &&
++                f.program.valid_checkpoint(target.replay) && f.program.valid_checkpoint(fill),
++            "an unproven suffix covered by its own replay point displaced other history");
++}
++
++void test_aged_out_demand_record_falls_back_to_recovery_economics() {
++    Fixture f(128);
++    // The fills are newer than the target, so recency gives the target no right over them.
++    // Older single-use fills now yield to a newer write by design (R4-U1, R4-U4).
++    const auto target = continued_once(f, 30, 38, 44, 50000);
++    std::vector<Handle> fills;
++    for (std::uint32_t i = 0; i < 4; ++i) { fills.push_back(host_only(f, 60, 1000 * (i + 1))); }
++    for (std::uint32_t i = 0; i < 300; ++i) {
++        const Base other{.tokens = tokens(4, 200000 + 8 * i), .captures = {4}};
++        f.cache.observe_committed(other, 1000 + i, 0, 4);
++    }
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
++                    !demoted(f, target.replay);
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    require(!f.program.valid_checkpoint(target.replay) &&
++                std::all_of(fills.begin(), fills.end(),
++                            [&](auto h) { return f.program.valid_checkpoint(h); }),
++            "an evicted demand record still granted work-set replacement");
++}
++
++// #378 at the Host ceiling: free bytes exceed the KV write, yet no run of holes places its
++// pages (start_demote halves the extent down to one page and still finds no hole). The
++// victimless demotion must not fall through to deleting the proven dialogue; it spends a
++// cold Host victim and moves on the next pass.
++void test_unplaceable_kv_demotion_spends_a_cold_victim_instead_of_the_proven_dialogue() {
++    Fixture f(100);
++    f.program.contiguous = true;
++    // Page = 10 bytes. Live Host: cold fill [0,40), pinned [55,68) and [85,100).
++    // Holes: [40,55) = 15 and [68,85) = 17: 32 free bytes for a 30-byte write, but the
++    // halving tiling places only 1 + 1 pages.
++    const auto cold = host_only(f, 60, 90000, 40);
++    f.program.blocks.push_back({13, true, 55});
++    f.program.blocks.push_back({15, true, 85});
++    const auto target = continued_once(f, 30, 38, 44, 50000, 3);
++    f.program.contents[target.replay.index].demotion_bytes = 10;
++    require(f.cache.retention(target.owner).reused, "fixture target is not reused");
++    require(f.program.physical_usage().occupied.host_bytes == 68 &&
++                !f.program.host_hole(30).has_value(),
++            "fixture Host is not at the fragmented ceiling");
++    for (int i = 0; i < 4 && f.program.valid_checkpoint(target.replay) &&
++                    f.program.contents[target.replay.index].main_pages;
++         ++i) {
++        (void)f.cache.reclaim(f.program, {.main_kv_pages = 3});
++    }
++    require(f.program.valid_checkpoint(target.replay) && demoted(f, target.replay) &&
++                f.program.contents[target.replay.index].main_pages == 0 &&
++                !f.program.valid_checkpoint(cold),
++            "an unplaceable victimless KV demotion deleted the proven dialogue instead of "
++            "spending the cold Host victim");
++}
++
++// #378 on the capture path (Device state slots full, so the capture writes its image straight
++// to the Host): free bytes cover the image but no hole fits it. The engine marks the write
++// unplaceable, so the capture takes a cold victim for its whole size instead of being skipped.
++template <class Cache, class Admission, class Cursor>
++std::optional<std::vector<Handle>> capture_victims(Cache& cache, Program& program,
++                                                   std::size_t bytes, const Admission& admission,
++                                                   Cursor& cursor) {
++    const bool unplaceable = !program.host_hole(bytes).has_value();
++    if constexpr (requires {
++                      cache.host_victims(program, bytes, std::nullopt, std::span<const Handle>{},
++                                         std::span<const Handle>{}, admission, &cursor,
++                                         decltype(cursor.rights){}, true);
++                  }) {
++        return cache.host_victims(program, bytes, std::nullopt, {}, {}, admission, &cursor, {},
++                                  unplaceable);
++    } else {
++        return cache.host_victims(program, bytes, std::nullopt, {}, {}, admission, &cursor);
++    }
++}
++
++void test_unplaceable_capture_image_spends_a_cold_victim_instead_of_being_skipped() {
++    Fixture f(100);
++    // Live Host: cold fill [0,40), pinned [55,68) and [85,100). 32 bytes free in holes of 15
++    // and 17, but the 30-byte image needs one hole.
++    const auto cold = host_only(f, 60, 90000, 40);
++    f.program.blocks.push_back({13, true, 55});
++    f.program.blocks.push_back({15, true, 85});
++    require(!f.program.host_hole(30).has_value() &&
++                f.program.physical_usage().occupied.host_bytes == 68,
++            "fixture Host is not at the fragmented ceiling");
++    const Base incoming{.tokens = tokens(90, 60000), .captures = {90}};
++    const auto admission = f.cache.capture_admission(f.program, 0, incoming, 90, true);
++    auto cursor          = f.cache.begin_reclaim(f.program, admission);
++    const auto victims   = capture_victims(f.cache, f.program, 30, admission, cursor);
++    if (victims && !victims->empty()) { f.cache.commit_host_victims(f.program, *victims, cursor); }
++    require(victims && std::ranges::find(*victims, cold) != victims->end() &&
++                f.program.host_hole(30).has_value(),
++            "an unplaceable capture image found no victims although a cold one would make room");
++}
++
+ } // namespace
+ 
++
++// Round 4: Host-tier recency. A proven dialogue parked on the Host (suffix dropped).
++Dialogue parked(Fixture& f, std::uint32_t turn1, std::uint32_t input, std::uint32_t end,
++                std::uint32_t first, std::size_t bytes = 32) {
++    auto d = continued_once(f, turn1, input, end, first);
++    require(f.cache.erase(f.program, d.endpoint), "fixture could not drop the suffix");
++    auto& moved        = f.program.contents[d.replay.index];
++    moved.device_state = false;
++    moved.main_pages   = 0;
++    moved.host_blocks.push_back(f.program.host_block(bytes));
++    return d;
++}
++
++// A fresh single-use turn 1 on the Device.
++Handle turn_one(Fixture& f, std::uint32_t count, std::uint32_t first) {
++    const auto handle = f.program.add(tokens(count, first), {}, Role::Continuation);
++    f.program.contents[handle.index].demotion_bytes = 32;
++    f.publish(handle);
++    return handle;
++}
++
++bool settle(Fixture& f, Handle handle) {
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(handle) && !demoted(f, handle); ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    return demoted(f, handle);
++}
++
++// Live growth (2026-10-11): B1 was deleted because the Host was full of older, larger proven
++// dialogues. The oldest quarter of the Host yields to a newer write, proven or not.
++void test_fresh_turn_one_displaces_stale_proven_history() {
++    Fixture f(128);
++    std::vector<Dialogue> old;
++    for (std::uint32_t i = 0; i < 4; ++i) { old.push_back(parked(f, 50, 60, 64, 10000 * (i + 1))); }
++    const auto fresh = turn_one(f, 40, 90000);
++    require(settle(f, fresh) && !f.program.valid_checkpoint(old[0].replay) &&
++                std::all_of(old.begin() + 1, old.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "a fresh turn 1 was deleted instead of displacing the stalest proven history");
++}
++
++// D took single-use content first; a fresh turn 1 (the reviewer's) now outranks stale history.
++void test_stale_history_goes_before_a_fresh_turn_one() {
++    Fixture f(128);
++    std::vector<Dialogue> old;
++    for (std::uint32_t i = 0; i < 3; ++i) { old.push_back(parked(f, 50, 60, 64, 10000 * (i + 1))); }
++    const auto fresh  = host_only(f, 40, 80000);
++    const auto writer = continued_once(f, 30, 38, 44, 90000);
++    require(settle(f, writer.replay) && f.program.valid_checkpoint(fresh) &&
++                !f.program.valid_checkpoint(old[0].replay) &&
++                f.program.valid_checkpoint(old[1].replay) &&
++                f.program.valid_checkpoint(old[2].replay),
++            "a proven write-back evicted a fresh turn 1 before stale history");
++}
++
++// Recency is no right for an older write: Host history newer than the writer keeps the soft-B
++// and recovery rules, so residents cannot start displacing each other.
++void test_recency_gives_an_older_write_no_right_over_newer_history() {
++    Fixture f(128);
++    const auto writer = continued_once(f, 10, 12, 14, 90000);
++    std::vector<Dialogue> newer;
++    for (std::uint32_t i = 0; i < 4; ++i) {
++        newer.push_back(parked(f, 50, 60, 64, 10000 * (i + 1)));
++    }
++    (void)settle(f, writer.replay);
++    require(std::all_of(newer.begin(), newer.end(),
++                        [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "an older write used recency to displace newer Host history");
++}
++
++// Pinned choice (user, round 4): beyond the window the stale tier is plain LRU, so a single run
++// that overflows the window loses its idle orchestrator before a newer, cheaper child. Chosen
++// over cost order because several concurrent sessions are the normal load (agent2 replay).
++void test_pinned_choice_stale_tier_spends_the_least_recent_conversation_first() {
++    Fixture f(384);
++    const auto orchestrator = parked(f, 80, 90, 94, 10000, 64);
++    const auto child        = parked(f, 20, 24, 26, 20000, 32);
++    std::vector<Dialogue> current;
++    for (std::uint32_t i = 0; i < 9; ++i) {
++        current.push_back(parked(f, 50, 60, 64, 30000 + 1000 * i));
++    }
++    const auto writer = continued_once(f, 30, 38, 44, 90000);
++    require(settle(f, writer.replay) && !f.program.valid_checkpoint(orchestrator.replay) &&
++                f.program.valid_checkpoint(child.replay) &&
++                std::all_of(current.begin(), current.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "pinned trade-off changed: the stale tier no longer spends the least recently active "
++            "conversation first (LRU was chosen over cost order for concurrent sessions)");
++}
++
++// Upstream's soft target grades only proven owners: an old proven dialogue behind newer
++// single-use history keeps its grade. Beyond the window it still yields to a newer write.
++void test_stale_proven_history_yields_although_still_graded() {
++    Fixture f(128);
++    const auto old = parked(f, 50, 60, 64, 10000);
++    std::vector<Handle> newer;
++    for (std::uint32_t i = 0; i < 3; ++i) { newer.push_back(host_only(f, 60, 20000 + 1000 * i)); }
++    require(f.cache.retention(old.owner).reused, "fixture downgraded the old dialogue");
++    const auto fresh = turn_one(f, 40, 90000);
++    require(settle(f, fresh) && !f.program.valid_checkpoint(old.replay) &&
++                std::all_of(newer.begin(), newer.end(),
++                            [&](auto h) { return f.program.valid_checkpoint(h); }),
++            "graded stale history refused a newer write");
++}
++
++// Review M1: a proven writer past the window (an orchestrator idle behind newer runs) is the
++// stalest content asking for room. It may not delete a newer single-use turn 1 through D.
++void test_writer_past_the_window_cannot_delete_a_newer_turn_one() {
++    Fixture f(384);
++    const auto orchestrator = continued_once(f, 80, 90, 94, 10000);
++    std::vector<Dialogue> newer;
++    for (std::uint32_t i = 0; i < 11; ++i) {
++        newer.push_back(parked(f, 50, 60, 64, 30000 + 1000 * i));
++    }
++    const auto fresh = host_only(f, 40, 90000);
++    (void)settle(f, orchestrator.replay);
++    require(f.program.valid_checkpoint(fresh) &&
++                std::all_of(newer.begin(), newer.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "a writer past the recency window deleted newer Host history");
++}
+ int main() {
+     try {
+         test_demotion_competes_with_its_actual_host_recovery_loss();
+@@ -1930,6 +2567,24 @@ int main() {
+         test_reclaim_cursor_keeps_host_writeback_permissions();
+         test_failed_demotion_keeps_scanning_independent_history();
+         test_failed_demotion_reports_prior_host_release();
++        test_full_host_moves_a_continued_dialogue_over_longer_single_use_history();
++        test_downgraded_continued_dialogue_is_moved_not_deleted();
++        test_moved_dialogue_cannot_displace_a_more_recently_demanded_one();
++        test_newer_writeback_evicts_cold_history_before_an_older_demanded_dialogue();
++        test_capture_host_write_evicts_cold_history_before_a_demanded_dialogue();
++        test_kv_shortage_moves_a_continued_dialogue_over_longer_single_use_history();
++        test_older_large_dialogue_still_out_recovers_newer_small_ones();
++        test_proven_writeback_displaces_newer_single_use_history();
++        test_covered_unproven_suffix_cannot_displace_single_use_history();
++        test_aged_out_demand_record_falls_back_to_recovery_economics();
++        test_unplaceable_kv_demotion_spends_a_cold_victim_instead_of_the_proven_dialogue();
++        test_unplaceable_capture_image_spends_a_cold_victim_instead_of_being_skipped();
++        test_fresh_turn_one_displaces_stale_proven_history();
++        test_stale_history_goes_before_a_fresh_turn_one();
++        test_recency_gives_an_older_write_no_right_over_newer_history();
++        test_pinned_choice_stale_tier_spends_the_least_recent_conversation_first();
++        test_stale_proven_history_yields_although_still_graded();
++        test_writer_past_the_window_cannot_delete_a_newer_turn_one();
+         std::cout << "ok\n";
+         return 0;
+     } catch (const std::exception& error) {
+diff --git a/tests/runtime/test_resource_manager_replay.cpp b/tests/runtime/test_resource_manager_replay.cpp
+new file mode 100644
+index 0000000..60400d6
+--- /dev/null
++++ b/tests/runtime/test_resource_manager_replay.cpp
+@@ -0,0 +1,704 @@
++// Replays the 2026-10-11 host-admit runs against the ResourceManager with a first-fit Host
++// arena of the live geometry. 1 fixture token = 1 main KV page = 64 real tokens.
++#define main original_test_main
++#include "test_resource_manager.cpp"
++#undef main
++
++#include <cstdlib>
++#include <cstring>
++#include <string>
++#include <type_traits>
++
++namespace {
++
++constexpr std::size_t kImage       = 153'954'304;
++constexpr std::size_t kMainPage    = 2'113'536;
++constexpr std::size_t kMtpPage     = 132'096;
++constexpr std::size_t kCapacity    = 18'350'080'000;
++constexpr std::uint32_t kDevice    = 3653; // 233,792 / 64
++constexpr std::uint32_t kChunk     = 32;   // --prefill-chunk 2048 / 64
++constexpr std::uint32_t kFill      = 941;  // ~60,173 tokens
++constexpr std::uint32_t kTarget    = 469;  // ~29,988 tokens
++constexpr std::uint32_t kTargetAdd = 9;    // turn 2 adds ~530 tokens
++constexpr std::uint32_t kPush      = 1439; // ~92,062 tokens
++constexpr std::uint32_t kPushAdd   = 8;
++// One sweep point. Device images 0 is the faithful live setting: every new image went to the Host.
++struct Point {
++    std::uint32_t fill_delta    = 0;
++    std::uint32_t push_delta    = 0;
++    bool live_sizes             = false;
++    std::uint32_t device_images = 0;
++};
++Point g_point;
++
++// The same source builds against 81c8ce09, the deployed #239 patch and the fix.
++template <class Cache>
++auto counters_of(const Cache& cache) {
++    if constexpr (requires { cache.writeback_counters(); }) {
++        return cache.writeback_counters();
++    } else {
++        return 0;
++    }
++}
++
++using Progress = ninfer::runtime::ReclaimProgress;
++
++struct Convo {
++    Fixture::Token owner = 0;
++    std::uint32_t first  = 0;
++    std::uint32_t prompt = 0;          // pages of the latest turn's prompt
++    std::optional<Handle> replay;      // R@prompt, holds the KV pages
++    std::optional<Handle> endpoint;    // E@prompt+1, image only (the covered suffix)
++    bool reported = false;
++};
++
++struct Replay {
++    Fixture f{kCapacity};
++    std::uint32_t running    = 0;
++    std::uint32_t next_first = 1;
++    std::size_t skipped_captures = 0;
++    std::size_t blocked      = 0;
++    bool verbose             = std::getenv("REPLAY_VERBOSE") != nullptr;
++
++    Replay() {
++        f.program.contiguous     = true;
++        f.program.main_capacity  = kDevice;
++        f.program.state_capacity = 7;
++        f.program.trace_placement = verbose;
++    }
++
++    [[nodiscard]] std::uint32_t device_used() const {
++        std::uint32_t used = running;
++        for (const auto& content : f.program.contents) {
++            if (content.alive) { used += content.main_pages; }
++        }
++        return used;
++    }
++
++    [[nodiscard]] std::size_t host_used() const {
++        return f.program.physical_usage().occupied.host_bytes;
++    }
++
++    // Companion images die with their page holder, as the production holder group would.
++    void sweep(std::vector<Convo*> dialogues) {
++        for (auto* d : dialogues) {
++            if (d->replay && !f.program.valid_checkpoint(*d->replay) && !d->reported) {
++                d->reported = true;
++                if (verbose) {
++                    std::cout << "    LOST: dialogue first=" << d->first << " prompt=" << d->prompt
++                              << " (R#" << d->replay->index << ")\n";
++                }
++            }
++            if (d->replay && !f.program.valid_checkpoint(*d->replay) && d->endpoint &&
++                f.program.valid_checkpoint(*d->endpoint)) {
++                (void)f.cache.erase(f.program, *d->endpoint);
++            }
++        }
++    }
++
++    // One prefill chunk after another: the scheduler's reserve_units -> reclaim loop.
++    void need_device(std::uint32_t pages) {
++        for (std::uint32_t done = 0; done < pages;) {
++            const auto chunk = std::min(kChunk, pages - done);
++            int guard        = 0;
++            while (kDevice - device_used() < chunk) {
++                const auto shortage = chunk - (kDevice - device_used());
++                const auto progress =
++                    f.cache.reclaim(f.program, {.main_kv_pages = shortage});
++                if (progress == Progress::Blocked) {
++                    ++blocked;
++                    throw std::runtime_error("device reclaim blocked");
++                }
++                require(++guard < 100000, "reclaim did not converge");
++            }
++            running += chunk;
++            done += chunk;
++        }
++    }
++
++    [[nodiscard]] std::uint32_t device_images() const {
++        std::uint32_t used = 0;
++        for (const auto& content : f.program.contents) {
++            if (content.alive && content.device_state) { ++used; }
++        }
++        return used;
++    }
++
++    Handle publish_point(Fixture::Token token, const Base& base, std::uint32_t frontier,
++                         std::uint32_t pages, Role role, std::optional<std::size_t> block) {
++        const auto handle = f.program.add(*base.prefix_shortlist_key(frontier),
++                                          block ? std::vector<std::size_t>{*block}
++                                                : std::vector<std::size_t>{},
++                                          role);
++        auto& content          = f.program.contents[handle.index];
++        content.device_state   = !block;
++        content.main_pages     = pages;
++        content.demotion_bytes = kMainPage;
++        content.state_bytes    = kImage;
++        content.mtp_bytes      = kMtpPage;
++        f.cache.publish(f.program, token, handle);
++        return handle;
++    }
++
++    // prepare_semantic_capture: a free Device image slot, else a direct Host image write
++    // (victims by bytes), else reclaim one Device state slot and retry; otherwise the capture
++    // is skipped.
++    std::optional<Handle> capture(Fixture::Token token, const Base& base, std::uint32_t frontier,
++                                  std::uint32_t pages, Role role) {
++        const auto admission = f.cache.capture_admission(f.program, token, base, frontier, true);
++        auto cursor          = f.cache.begin_reclaim(f.program, admission);
++        for (int round = 0; round < 64; ++round) {
++            if (device_images() < g_point.device_images) {
++                return publish_point(token, base, frontier, pages, role, std::nullopt);
++            }
++            if (auto block = f.program.try_host_block(kImage)) {
++                return publish_point(token, base, frontier, pages, role, block);
++            }
++            // Engine-side part of the fix: an image write the arena cannot place asks for
++            // victims of its whole size (engine_core.h prepare_semantic_capture).
++            const bool unplaceable = !f.program.host_hole(kImage).has_value();
++            if (kCapacity - host_used() < kImage || unplaceable) {
++                const auto victims = [&](auto& cache) {
++                    using Rights = decltype(cursor.rights);
++                    if constexpr (requires { cache.host_victims(f.program, kImage, std::nullopt, std::span<const Handle>{}, std::span<const Handle>{}, admission, &cursor, Rights{}, true); }) {
++                        return cache.host_victims(f.program, kImage, std::nullopt, {}, {}, admission, &cursor, {}, unplaceable);
++                    } else {
++                        return cache.host_victims(f.program, kImage, std::nullopt, {}, {}, admission, &cursor);
++                    }
++                }(f.cache);
++                if (victims && !victims->empty()) {
++                    if (verbose) {
++                        std::cout << "    capture victims:";
++                        for (const auto v : *victims) {
++                            std::cout << " #" << v.index << "("
++                                      << f.program.contents[v.index].tokens.size() << ","
++                                      << f.program.host_bytes_released({&v, 1}) / 1e6 << "MB)";
++                        }
++                        std::cout << "\n";
++                    }
++                    f.cache.commit_host_victims(f.program, *victims, cursor);
++                    if (auto block = f.program.try_host_block(kImage)) {
++                        return publish_point(token, base, frontier, pages, role, block);
++                    }
++                }
++            }
++            const auto progress = f.cache.reclaim(f.program, {.state_slots = 1}, {}, cursor);
++            if (progress == Progress::Blocked) { break; }
++        }
++        ++skipped_captures;
++        if (verbose) {
++            std::cout << "    skipped capture frontier=" << frontier << " role="
++                      << static_cast<int>(role) << " free=" << (kCapacity - host_used()) / 1e6
++                      << "MB largest_hole=" << f.program.largest_hole() / 1e6 << "MB\n";
++        }
++        return std::nullopt;
++    }
++
++    Convo root(std::uint32_t prompt, const char* label) {
++        Convo d;
++        d.first = next_first;
++        next_first += 100000;
++        d.prompt = prompt;
++        const Base base{.tokens = tokens(prompt + 1, d.first)};
++        auto choice = f.source(base, std::nullopt);
++        d.owner     = f.cache.adopt(f.program, choice, base, ++f.next_order);
++        need_device(prompt);
++        d.replay = capture(d.owner, base, prompt, running, Role::InputReplay);
++        running  = 0;
++        d.endpoint = capture(d.owner, base, prompt + 1, 0, Role::Continuation);
++        f.cache.finish(f.program, d.owner, base, f.next_order);
++        note(label, d);
++        return d;
++    }
++
++    // Returns the pages the continuation found cached (0 = served as root).
++    std::uint32_t continue_turn(Convo& d, std::uint32_t added, const char* label) {
++        const auto prompt = d.prompt + added;
++        const Base base{.tokens = tokens(prompt + 1, d.first)};
++        std::uint32_t cached = 0;
++        auto choices         = f.cache.candidates(f.program, base, UINT32_MAX);
++        require(!choices.empty(), "no candidates");
++        auto& choice = choices.front();
++        if (choice.source.checkpoint) {
++            cached            = choice.source.reused_tokens;
++            const auto handle = *choice.source.checkpoint;
++            // The consumed checkpoint's history becomes the running sequence; Host copies of
++            // its pages are restored and then dropped as redundant.
++            std::uint32_t carried = 0;
++            for (const auto& point : f.cache.points(choice.owner)) {
++                if (!f.program.valid_checkpoint(point)) { continue; }
++                auto& content = f.program.contents[point.index];
++                carried += content.main_pages;
++                content.main_pages = 0;
++            }
++            running = carried;
++            need_device(cached - carried);
++            require(f.program.release_checkpoint(handle), "consume failed");
++            const auto owner =
++                f.cache.adopt(f.program, choice, base, ++f.next_order, {}, {&handle, 1});
++            require(owner == d.owner, "continuation did not keep its owner");
++        } else {
++            running = 0;
++            d.owner = f.cache.adopt(f.program, choice, base, ++f.next_order);
++        }
++        need_device(prompt - cached);
++        d.prompt = prompt;
++        d.replay = capture(d.owner, base, prompt, running, Role::InputReplay);
++        running  = 0;
++        d.endpoint = capture(d.owner, base, prompt + 1, 0, Role::Continuation);
++        f.cache.finish(f.program, d.owner, base, f.next_order);
++        note(label, d, cached);
++        return cached;
++    }
++
++    void note(const char* label, const Convo& d, std::optional<std::uint32_t> cached = {}) {
++        if (!verbose) { return; }
++        std::cout << "  " << label << " prompt=" << d.prompt
++                  << (cached ? " cached=" + std::to_string(*cached) : std::string{})
++                  << " host=" << host_used() / 1e9 << "GB device=" << device_used()
++                  << " largest_hole=" << f.program.largest_hole() / 1e6 << "MB"
++                  << " reused=" << f.cache.retention(d.owner).reused
++                  << " dev_images=" << device_images()
++                  << " place_fails=" << f.program.placement_fails << "\n";
++    }
++
++};
++
++// Counter deltas when the build has them (fix and #239); empty on 81c8ce09.
++template <class C>
++std::string deltas(const C& before, const C& after) {
++    if constexpr (std::is_integral_v<C>) {
++        return "";
++    } else {
++        std::string out;
++        const auto add = [&](const char* name, std::uint64_t a, std::uint64_t b) {
++            out += std::string(" ") + name + "=" + std::to_string(b - a);
++        };
++        add("proven_admitted", before.proven_admitted, after.proven_admitted);
++        add("proven_demoted", before.proven_demoted, after.proven_demoted);
++        add("proven_downgraded", before.proven_downgraded, after.proven_downgraded);
++        add("proven_released", before.proven_released, after.proven_released);
++        add("release_deferred", before.release_deferred, after.release_deferred);
++        add("demanded_evicted", before.demanded_evicted, after.demanded_evicted);
++        add("proven_victimless", before.proven_victimless, after.proven_victimless);
++        add("newer_unprivileged", before.newer_unprivileged, after.newer_unprivileged);
++        add("proven_unrecorded", before.proven_unrecorded, after.proven_unrecorded);
++        if constexpr (requires { after.unplaceable_victims; }) {
++            add("unplaceable_victims", before.unplaceable_victims, after.unplaceable_victims);
++            add("demote_failed", before.demote_failed, after.demote_failed);
++            add("release_after_failed_demote", before.release_after_failed_demote,
++                after.release_after_failed_demote);
++        }
++        if constexpr (requires { after.stale_evicted; }) {
++            add("stale_evicted", before.stale_evicted, after.stale_evicted);
++        }
++        if constexpr (requires { after.stale_writer_refused; }) {
++            add("stale_writer_refused", before.stale_writer_refused, after.stale_writer_refused);
++        }
++        return out;
++    }
++}
++
++// Returns target3's cached pages (0 = lost).
++std::uint32_t host_admit(Replay& r, bool fill_to_threshold, const char* tag) {
++    const bool live_sizes = g_point.live_sizes;
++    // 2026-10-11 full run, pages of 64 tokens, rounded up
++    const std::uint32_t fill_pages[]  = {941, 939, 938, 941, 941, 941, 941, 941};
++    const std::uint32_t push1_pages[] = {1439, 1442, 1438, 1436};
++    const std::uint32_t push2_add[]   = {8, 8, 9, 9};
++    const auto fill_delta = g_point.fill_delta;
++    const auto push_delta = g_point.push_delta;
++    std::vector<Convo> fills;
++    int n = 0;
++    do {
++        const auto pages = (live_sizes && fill_to_threshold ? fill_pages[std::min(n, 7)] : kFill) + fill_delta;
++        fills.push_back(r.root(pages, ("fill" + std::to_string(++n)).c_str()));
++        if (r.verbose) { std::cout << "  " << tag << " fill " << n << ": host=" << r.host_used() / 1e9 << " GB\n"; }
++    } while (fill_to_threshold && r.host_used() < kCapacity * 9 / 10 && n < 40);
++    auto target = r.root(kTarget, "target1");
++    const auto t2 = r.continue_turn(target, kTargetAdd, "target2");
++    const auto sweep_all = [&](std::vector<Convo>& pushes) {
++        std::vector<Convo*> all{&target};
++        for (auto& p : pushes) { all.push_back(&p); }
++        for (auto& fl : fills) { all.push_back(&fl); }
++        r.sweep(all);
++    };
++    require(t2 >= kTarget, "target turn 2 was not cached from the Device");
++    const auto before = counters_of(r.f.cache);
++    std::vector<Convo> pushes;
++    for (int i = 0; i < 4; ++i) {
++        const auto p1 = (live_sizes && fill_to_threshold ? push1_pages[i] : kPush) + push_delta;
++        const auto p2 = live_sizes && fill_to_threshold ? push2_add[i] : kPushAdd;
++        pushes.push_back(r.root(p1, ("push" + std::to_string(i) + "1").c_str()));
++        sweep_all(pushes);
++        const auto cached =
++            r.continue_turn(pushes.back(), p2, ("push" + std::to_string(i) + "2").c_str());
++        require(cached >= p1, "push turn 2 was not cached");
++        sweep_all(pushes);
++    }
++    const auto after = counters_of(r.f.cache);
++    const bool replay_alive = target.replay && r.f.program.valid_checkpoint(*target.replay);
++    const auto cached       = r.continue_turn(target, kPushAdd, "target3");
++    std::cout << "  " << tag << ": target3 cached=" << cached << "/" << kTarget + kTargetAdd
++              << " placement_fails=" << r.f.program.placement_fails
++              << " skipped_captures=" << r.skipped_captures << " push-phase" << deltas(before, after)
++              << "\n";
++    return replay_alive ? cached : 0;
++}
++
++// Concurrent turns: a turn holds its running pages from begin to end, so the turns in flight
++// compete for the Device the way the live lanes do.
++struct Flight {
++    Convo* d               = nullptr;
++    std::uint32_t prompt   = 0;
++    std::uint32_t previous = 0;
++    std::uint32_t cached   = 0;
++    std::uint32_t restored = 0; // pages that came back from the Host
++    std::uint64_t order    = 0;
++    const char* fate       = "";
++    Base base;
++};
++
++Flight begin_turn(Replay& r, Convo& d, std::uint32_t added) {
++    Flight flight{.d = &d, .prompt = d.prompt + added, .previous = d.prompt};
++    flight.base = Base{.tokens = tokens(flight.prompt + 1, d.first)};
++    auto& f     = r.f;
++    if (d.prompt && !d.replay) { flight.fate = " (its capture was skipped)"; }
++    if (d.replay && !f.program.valid_checkpoint(*d.replay)) {
++        flight.fate = demoted(f, *d.replay) ? " (moved to the Host, then deleted there)"
++                                            : " (deleted from the Device, never moved)";
++    }
++    if (!d.owner) {
++        auto choice  = f.source(flight.base, std::nullopt);
++        flight.order = ++f.next_order;
++        d.owner      = f.cache.adopt(f.program, choice, flight.base, flight.order);
++        r.need_device(flight.prompt);
++        return flight;
++    }
++    auto choices = f.cache.candidates(f.program, flight.base, UINT32_MAX);
++    require(!choices.empty(), "no candidates");
++    auto& choice = choices.front();
++    flight.order = ++f.next_order;
++    if (choice.source.checkpoint) {
++        flight.cached         = choice.source.reused_tokens;
++        const auto handle     = *choice.source.checkpoint;
++        std::uint32_t carried = 0;
++        for (const auto& point : f.cache.points(choice.owner)) {
++            if (!f.program.valid_checkpoint(point)) { continue; }
++            auto& content = f.program.contents[point.index];
++            carried += content.main_pages;
++            content.main_pages = 0;
++        }
++        r.running += carried;
++        require(f.program.release_checkpoint(handle), "consume failed");
++        const auto owner =
++            f.cache.adopt(f.program, choice, flight.base, flight.order, {}, {&handle, 1});
++        require(owner == d.owner, "continuation did not keep its owner");
++        flight.restored = flight.cached - carried;
++        r.need_device(flight.restored);
++    } else {
++        d.owner = f.cache.adopt(f.program, choice, flight.base, flight.order);
++    }
++    r.need_device(flight.prompt - flight.cached);
++    return flight;
++}
++
++// Returns whether a continued turn found its whole previous prompt cached.
++bool end_turn(Replay& r, Flight& flight, const char* label, std::size_t& lost) {
++    auto& d = *flight.d;
++    r.running -= flight.prompt;
++    d.prompt   = flight.prompt;
++    d.replay   = r.capture(d.owner, flight.base, flight.prompt, flight.prompt, Role::InputReplay);
++    d.endpoint = r.capture(d.owner, flight.base, flight.prompt + 1, 0, Role::Continuation);
++    r.f.cache.finish(r.f.program, d.owner, flight.base, flight.order);
++    const bool kept = !flight.previous || flight.cached >= flight.previous;
++    if (!kept) { ++lost; }
++    if (r.verbose || !kept) {
++        std::cout << "    " << label << " prompt=" << flight.prompt << " cached=" << flight.cached
++                  << " from_host=" << flight.restored << (kept ? "" : " RECOMPUTED") << (kept ? "" : flight.fate) << " host=" << r.host_used() / 1e9 << "GB\n";
++    }
++    return kept;
++}
++
++Convo fresh(Replay& r) {
++    Convo d;
++    d.first = r.next_first;
++    r.next_first += 100000;
++    return d;
++}
++
++// The live pause run's Host residue: one cold fill and three cold ~96k requests.
++void pause_shape(Replay& r) {
++    (void)r.root(kFill, "pause-fill");
++    for (int i = 0; i < 3; ++i) { (void)r.root(1499, "pause"); }
++}
++
++// --test growth on 2026-10-11 (r3-growth.log): A, B and C in flight together, six turns,
++// 40,000 tokens growing by ~7,450 per turn. Live, B2 recomputed B1 (39,942 tokens).
++std::size_t growth(Replay& r, const char* tag) {
++    const auto before = counters_of(r.f.cache);
++    std::array<Convo, 3> convos{fresh(r), fresh(r), fresh(r)};
++    std::size_t lost = 0;
++    for (std::uint32_t turn = 1; turn <= 6; ++turn) {
++        std::vector<Flight> flights;
++        for (auto& d : convos) { flights.push_back(begin_turn(r, d, turn == 1 ? 625 : 117)); }
++        for (std::size_t i = 0; i < flights.size(); ++i) {
++            const auto label = std::string(tag) + " " + char('A' + i) + std::to_string(turn);
++            (void)end_turn(r, flights[i], label.c_str(), lost);
++        }
++    }
++    std::cout << "  " << tag << ": growth recomputed turns=" << lost << " host=" << r.host_used() / 1e9
++              << "GB" << deltas(before, counters_of(r.f.cache)) << "\n";
++    return lost;
++}
++
++// The agentic run: an orchestrator, three multi-turn children, and a reviewer that starts
++// while the children finish and then grows past the Device alone. Everything continued must
++// come back from the Device or the Host.
++// One agent run as a sequence of phases, so two runs can interleave (review M2).
++struct AgentRun {
++    std::string tag;
++    Convo orchestrator, reviewer;
++    std::array<Convo, 3> children;
++    int phase = 0;
++    std::size_t lost_o = 0, lost_c = 0, lost_r = 0;
++    bool big = false; // orchestrator ~99k, children ~49k: a run of ~12 GB
++
++    AgentRun(Replay& r, std::string name, bool large = false)
++        : tag(std::move(name)), big(large), orchestrator(fresh(r)), reviewer(fresh(r)),
++          children{fresh(r), fresh(r), fresh(r)} {}
++
++    [[nodiscard]] bool done() const { return phase > 11; }
++    [[nodiscard]] std::size_t lost() const { return lost_o + lost_c + lost_r; }
++
++    std::string label(const char* who, int turn) const {
++        return tag + " " + who + std::to_string(turn);
++    }
++
++    void one(Replay& r, Convo& d, std::uint32_t added, const char* who, int turn,
++             std::size_t& lost) {
++        auto flight = begin_turn(r, d, added);
++        (void)end_turn(r, flight, label(who, turn).c_str(), lost);
++    }
++
++    void kids(Replay& r, std::uint32_t added, int turn, std::optional<std::uint32_t> review = {},
++              bool review_first = false) {
++        std::vector<Flight> flights;
++        if (review && review_first) { flights.push_back(begin_turn(r, reviewer, *review)); }
++        for (auto& c : children) { flights.push_back(begin_turn(r, c, added)); }
++        if (review && !review_first) { flights.push_back(begin_turn(r, reviewer, *review)); }
++        for (auto& flight : flights) {
++            if (flight.d == &reviewer) {
++                (void)end_turn(r, flight, label("R", review_first ? 1 : 2).c_str(), lost_r);
++            } else {
++                const auto who = "c" + std::to_string(flight.d - children.data());
++                (void)end_turn(r, flight, label(who.c_str(), turn).c_str(), lost_c);
++            }
++        }
++    }
++
++    // Phases: O1, O2, children 1, children 2, O3, R1 with children 3, children 4 then R2,
++    // R3-R5 (to ~100k), O4, children 5.
++    void step(Replay& r) {
++        switch (phase++) {
++        case 0: one(r, orchestrator, big ? 1200 : 781, "O", 1, lost_o); break; // ~77k or ~50k
++        case 1: one(r, orchestrator, 157, "O", 2, lost_o); break;
++        case 2: kids(r, big ? 500 : 313, 1); break;
++        case 3: kids(r, 47, 2); break;
++        case 4: one(r, orchestrator, 156, "O", 3, lost_o); break; // ~70k tokens
++        // The reviewer starts (R1, ~60k) while the children run their last turns; the
++        // children's turn 4 (reading files) starts first and pushes R1 off the Device.
++        case 5: kids(r, 47, 3, 938, true); break;
++        case 6: kids(r, 150, 4, 156, false); break;
++        case 7: one(r, reviewer, 156, "R", 3, lost_r); break;
++        case 8: one(r, reviewer, 156, "R", 4, lost_r); break;
++        case 9: one(r, reviewer, 156, "R", 5, lost_r); break;
++        case 10: one(r, orchestrator, 31, "O", 4, lost_o); break;
++        case 11:
++            for (std::size_t i = 0; i < children.size(); ++i) {
++                one(r, children[i], 16, ("c" + std::to_string(i)).c_str(), 5, lost_c);
++            }
++            break;
++        default: break;
++        }
++    }
++};
++
++std::size_t agent_run(Replay& r, const char* tag) {
++    const auto before = counters_of(r.f.cache);
++    AgentRun run(r, tag);
++    while (!run.done()) { run.step(r); }
++    std::cout << "  " << tag << ": agent run recomputed turns=" << run.lost()
++              << " host=" << r.host_used() / 1e9 << "GB" << deltas(before, counters_of(r.f.cache))
++              << "\n";
++    return run.lost();
++}
++
++// Two sessions on one engine: run b starts after run a's orchestrator dispatched its reviewer
++// and the two then alternate phase by phase. Together they hold more than the window.
++std::array<AgentRun, 2> agent_pair(Replay& r, const std::string& tag) {
++    const auto before = counters_of(r.f.cache);
++    std::array<AgentRun, 2> runs{AgentRun(r, tag + "a", true), AgentRun(r, tag + "b", true)};
++    while (runs[0].phase < 5) { runs[0].step(r); }
++    while (!runs[0].done() || !runs[1].done()) {
++        for (auto& run : runs) {
++            if (!run.done()) { run.step(r); }
++        }
++    }
++    for (const auto& run : runs) {
++        std::cout << "  " << run.tag << ": recomputed orchestrator=" << run.lost_o
++                  << " children=" << run.lost_c << " reviewer=" << run.lost_r << "\n";
++    }
++    std::cout << "  " << tag << ": pair host=" << r.host_used() / 1e9 << "GB"
++              << deltas(before, counters_of(r.f.cache)) << "\n";
++    return runs;
++}
++
++// The live day before --test growth: empty and full host-admit, then the pause run.
++bool run_growth(const Point& point) {
++    g_point = point;
++    std::cout << "growth (host-admit empty + full, pause, growth) fill+" << point.fill_delta
++              << " push+" << point.push_delta << (point.live_sizes ? " live-sizes" : "")
++              << " device_images=" << point.device_images << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        pause_shape(r);
++        const auto lost = growth(r, "growth");
++        std::cout << (lost ? "FAIL" : "PASS") << "\n";
++        return !lost;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++// Steady state: the Host is full of proven dialogues from earlier runs, then three agent runs.
++bool run_agent(const Point& point) {
++    g_point = point;
++    std::cout << "agent (host-admit empty + full, three agent runs) fill+" << point.fill_delta
++              << " push+" << point.push_delta << (point.live_sizes ? " live-sizes" : "")
++              << " device_images=" << point.device_images << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        std::size_t lost = 0;
++        for (const char* tag : {"run1", "run2", "run3"}) { lost += agent_run(r, tag); }
++        std::cout << (lost ? "FAIL" : "PASS") << "\n";
++        return !lost;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++// Steady state with two sessions: one agent run alone, then two overlapping pairs.
++bool run_agent2(const Point& point) {
++    g_point = point;
++    std::cout << "agent2 (host-admit empty + full, one run, two overlapping pairs) fill+"
++              << point.fill_delta << " push+" << point.push_delta
++              << (point.live_sizes ? " live-sizes" : "") << " device_images=" << point.device_images
++              << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        bool pass = agent_run(r, "solo") == 0;
++        for (const char* tag : {"pair1", "pair2"}) {
++            const auto runs = agent_pair(r, tag);
++            // Every run keeps everything: LRU spends the finished pair before either live run.
++            pass = pass && runs[0].lost() + runs[1].lost() == 0;
++        }
++        std::cout << (pass ? "PASS" : "FAIL") << "\n";
++        return pass;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++// The live day: an empty-tier run leaves residue, then the full-tier run.
++bool run_point(const Point& point) {
++    g_point = point;
++    std::cout << "point fill+" << point.fill_delta << " push+" << point.push_delta
++              << (point.live_sizes ? " live-sizes" : "") << " device_images=" << point.device_images
++              << "\n";
++    try {
++        Replay r;
++        const auto empty = host_admit(r, false, "empty");
++        const auto full  = host_admit(r, true, "full");
++        const bool pass  = empty && full;
++        std::cout << (pass ? "PASS" : "FAIL") << "\n";
++        return pass;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++} // namespace
++
++// Default: 12 points (fill +0/+3/+4 pages, push +0/+10, both size sets) that include the
++// live counter signature. REPLAY_SWEEP=full runs all 156 (fill +0..5, push +0..12).
++int main() {
++    const bool full = std::getenv("REPLAY_SWEEP") && std::string(std::getenv("REPLAY_SWEEP")) == "full";
++    std::vector<Point> points;
++    for (const bool live : {false, true}) {
++        if (full) {
++            for (std::uint32_t fd = 0; fd <= 5; ++fd) {
++                for (std::uint32_t pd = 0; pd <= 12; ++pd) { points.push_back({fd, pd, live}); }
++            }
++        } else {
++            for (const std::uint32_t fd : {0U, 3U, 4U}) {
++                for (const std::uint32_t pd : {0U, 10U}) { points.push_back({fd, pd, live}); }
++            }
++        }
++    }
++    const std::string only = std::getenv("REPLAY_ONLY") ? std::getenv("REPLAY_ONLY") : "";
++    // REPLAY_SHARD=i/n keeps every n-th point from i, for a parallel manual sweep.
++    const auto shard = [](std::vector<Point> all) {
++        const char* spec = std::getenv("REPLAY_SHARD");
++        if (!spec || !std::strchr(spec, '/')) { return all; }
++        const auto index = std::strtoul(spec, nullptr, 10);
++        const auto count = std::strtoul(std::strchr(spec, '/') + 1, nullptr, 10);
++        std::vector<Point> mine;
++        for (std::size_t i = index; i < all.size(); i += count) { mine.push_back(all[i]); }
++        return mine;
++    };
++    const auto host_points = shard(points);
++    std::size_t failed = 0;
++    if (only.empty() || only == "host") {
++        for (const auto& point : host_points) { failed += run_point(point) ? 0 : 1; }
++        std::cout << "replay: " << host_points.size() - failed << "/" << host_points.size()
++                  << " points kept the target\n";
++    }
++    // Each scenario runs with 0, 3 and 7 Device image slots for new captures (every route by
++    // which the deployed patch lost a turn); the full sweep cycles them over its perturbations.
++    std::vector<Point> scenario_points;
++    const std::uint32_t images[] = {0, 3, 7};
++    if (full) {
++        for (std::size_t i = 0; i < points.size(); ++i) {
++            scenario_points.push_back(points[i]);
++            scenario_points.back().device_images = images[i % 3];
++        }
++    } else {
++        for (const auto count : images) { scenario_points.push_back({.device_images = count}); }
++    }
++    scenario_points = shard(scenario_points);
++    std::size_t growth_failed = 0, agent_failed = 0, agent2_failed = 0;
++    for (const auto& point : scenario_points) {
++        if (only.empty() || only == "growth") { growth_failed += run_growth(point) ? 0 : 1; }
++        if (only.empty() || only == "agent") { agent_failed += run_agent(point) ? 0 : 1; }
++        if (only.empty() || only == "agent2") { agent2_failed += run_agent2(point) ? 0 : 1; }
++    }
++    const auto ran = [&](const char* name, std::size_t lost) {
++        if (!only.empty() && only != name) { return std::string{}; }
++        return " " + std::string(name) + " " + std::to_string(scenario_points.size() - lost) + "/" +
++               std::to_string(scenario_points.size());
++    };
++    std::cout << "scenarios:" << ran("growth", growth_failed) << ran("agent", agent_failed) << ran("agent2", agent2_failed)
++              << " points kept every continued turn\n";
++    return failed || growth_failed || agent_failed || agent2_failed ? 1 : 0;
++}
+diff --git a/tests/test_host_extent_runs.cpp b/tests/test_host_extent_runs.cpp
+new file mode 100644
+index 0000000..b1f8bed
+--- /dev/null
++++ b/tests/test_host_extent_runs.cpp
+@@ -0,0 +1,215 @@
++// Pause backup and demotion reservation policy against the real first-fit HostContextArena,
++// GPU-free: PinnedHostBuffer is replaced by an unreserved mapping, and nothing else from
++// ninfer_core is linked.
++#include "core/arena.h"
++#include "core/host_context_arena.h"
++#include "core/host_extent_runs.h"
++
++#include <sys/mman.h>
++
++#include <cstdint>
++#include <cstdio>
++#include <optional>
++#include <random>
++#include <stdexcept>
++#include <vector>
++
++namespace ninfer {
++PinnedHostBuffer::PinnedHostBuffer(std::size_t size_bytes) {
++    void* ptr = mmap(nullptr, size_bytes, PROT_READ | PROT_WRITE,
++                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
++    if (ptr == MAP_FAILED) { throw std::runtime_error("mmap"); }
++    data_ = ptr;
++    size_ = size_bytes;
++}
++PinnedHostBuffer::~PinnedHostBuffer() {
++    if (data_) { munmap(data_, size_); }
++}
++void* PinnedHostBuffer::data() const noexcept { return data_; }
++std::size_t PinnedHostBuffer::size() const noexcept { return size_; }
++} // namespace ninfer
++
++namespace {
++using ninfer::HostContextAllocation;
++using ninfer::HostContextArena;
++
++constexpr std::size_t kCapacity     = 18'350'080'000ULL;
++constexpr std::size_t kState        = 153'954'304ULL;
++constexpr std::size_t kMain         = 2'113'536ULL;
++constexpr std::size_t kMtp          = 132'096ULL;
++constexpr std::uint32_t kPageTokens = 64;
++
++int failures = 0;
++void expect(bool ok, const char* what) {
++    std::printf("%s %s\n", ok ? "ok  " : "FAIL", what);
++    if (!ok) { ++failures; }
++}
++
++std::uint32_t pages_for(std::uint32_t tokens) { return (tokens + kPageTokens - 1) / kPageTokens; }
++
++std::vector<HostContextAllocation> write_entry(HostContextArena& arena, std::uint32_t tokens) {
++    std::vector<HostContextAllocation> parts;
++    const auto pages = pages_for(tokens);
++    for (const auto bytes : {kState, kMain * pages, kMtp * pages}) {
++        auto allocation = arena.allocate(bytes);
++        if (!allocation) { throw std::logic_error("fixture entry does not place"); }
++        parts.push_back(std::move(*allocation));
++    }
++    return parts;
++}
++
++// pause.cpp's collect for one address space, with the policy under test.
++std::optional<std::vector<HostContextAllocation>> backup(HostContextArena& arena, std::size_t pages,
++                                                         std::size_t stride, bool halving) {
++    std::vector<HostContextAllocation> runs;
++    if (!halving) {
++        auto run = arena.allocate(stride * pages);
++        if (!run) { return std::nullopt; }
++        runs.push_back(std::move(*run));
++        return runs;
++    }
++    const bool placed = ninfer::reserve_halving_runs(
++        pages, [&](std::size_t, std::size_t count) { return arena.allocate(stride * count); },
++        [&](std::size_t, std::size_t, HostContextAllocation run) { runs.push_back(std::move(run)); });
++    if (!placed) { return std::nullopt; }
++    return runs;
++}
++
++// Live 2026-10-11 pause: retained dialogues interleaved with released fills whose holes were
++// partly re-used by pressure spill, so free bytes cover the snapshot but no hole holds its
++// 2.23 GB main-KV run.
++void test_fragmented_full_tier_pause_backup() {
++    HostContextArena arena(kCapacity, kMtp);
++    std::vector<std::vector<HostContextAllocation>> kept;
++    kept.push_back(write_entry(arena, 92'160));
++    auto fill1 = write_entry(arena, 59'900);
++    kept.push_back(write_entry(arena, 76'900));
++    auto fill2 = write_entry(arena, 59'900);
++    kept.push_back(write_entry(arena, 30'500));
++    auto fill3 = write_entry(arena, 59'900);
++    kept.push_back(write_entry(arena, 92'160));
++    fill1.clear();
++    fill2.clear();
++    fill3.clear();
++    std::vector<HostContextAllocation> spill;
++    for (const std::size_t pages : {400, 700, 700}) {
++        auto run = arena.allocate(kMain * pages);
++        if (!run) { throw std::logic_error("fixture spill does not place"); }
++        spill.push_back(std::move(*run));
++    }
++    const auto pages = pages_for(67'584);
++    const auto need  = kState + (kMain + kMtp) * pages;
++    expect(arena.free_bytes() >= need, "free bytes cover the snapshot (no Host victims are taken)");
++    const auto occupied = arena.occupied_bytes();
++    expect(!backup(arena, pages, kMain, false).has_value(),
++           "81c8ce09 one-shot main-KV backup does not place (the live replay)");
++    expect(arena.occupied_bytes() == occupied, "a failed one-shot backup leaves the arena unchanged");
++    auto state = arena.allocate(kState);
++    auto main  = backup(arena, pages, kMain, true);
++    auto mtp   = backup(arena, pages, kMtp, true);
++    expect(state && main && mtp, "halving backup places the whole snapshot");
++    std::size_t bytes = 0;
++    for (const auto* runs : {&*main, &*mtp}) {
++        for (const auto& run : *runs) { bytes += run.bytes(); }
++    }
++    expect(main && mtp && bytes == (kMain + kMtp) * pages, "halving runs cover every page once");
++}
++
++// A Host with no hole of one page: the policy fails and its partial runs unwind.
++void test_unplaceable_backup_unwinds() {
++    HostContextArena arena(kMain * 8, kMtp);
++    std::vector<HostContextAllocation> halves;
++    for (int i = 0; i < 16; ++i) { halves.push_back(std::move(*arena.allocate(kMain / 2))); }
++    for (std::size_t i = 0; i < halves.size(); i += 2) { (void)halves[i].release(); }
++    const auto occupied = arena.occupied_bytes();
++    expect(arena.free_bytes() >= kMain * 2, "fixture leaves at least two pages free in bytes");
++    expect(!backup(arena, 2, kMain, true).has_value(), "no one-page hole: backup fails");
++    expect(arena.occupied_bytes() == occupied, "a failed halving backup unwinds every run");
++}
++
++// The helper is the demotion's own loop (reclaim.cpp start_demote): same runs on random arenas.
++void test_matches_demotion_loop() {
++    std::mt19937 random(20261011);
++    bool same = true;
++    for (int trial = 0; trial < 200 && same; ++trial) {
++        const std::size_t page = 16;
++        HostContextArena a(page * 256, 1), b(page * 256, 1);
++        std::vector<HostContextAllocation> keep_a, keep_b;
++        for (int i = 0; i < 40; ++i) {
++            const auto bytes = (random() % 24 + 1) * 4;
++            const bool keep  = random() % 3 != 0;
++            auto x           = a.allocate(bytes);
++            auto y           = b.allocate(bytes);
++            if (!x || !y) { break; }
++            if (keep) {
++                keep_a.push_back(std::move(*x));
++                keep_b.push_back(std::move(*y));
++            }
++        }
++        const std::size_t pages = random() % 40 + 1;
++        std::vector<std::pair<std::size_t, std::size_t>> mine, theirs;
++        std::vector<HostContextAllocation> held_a, held_b;
++        const bool ok_mine = ninfer::reserve_halving_runs(
++            pages, [&](std::size_t, std::size_t count) { return a.allocate(page * count); },
++            [&](std::size_t offset, std::size_t count, HostContextAllocation run) {
++                mine.emplace_back(offset, count);
++                held_a.push_back(std::move(run));
++            });
++        bool ok_theirs     = true;
++        std::size_t offset = 0;
++        while (offset < pages) {
++            auto count = pages - offset;
++            std::optional<HostContextAllocation> destination;
++            while (count) {
++                auto reservation = b.allocate(page * count);
++                if (reservation) {
++                    destination.emplace(std::move(*reservation));
++                    break;
++                }
++                count /= 2;
++            }
++            if (!destination) {
++                ok_theirs = false;
++                break;
++            }
++            theirs.emplace_back(offset, count);
++            held_b.push_back(std::move(*destination));
++            offset += count;
++        }
++        same = ok_mine == ok_theirs && mine == theirs;
++    }
++    expect(same, "reserve_halving_runs reserves exactly the runs start_demote's loop does");
++}
++// can_place_runs predicts exactly what the halving reservation then does, without mutating.
++void test_can_place_runs_predicts_reservation() {
++    std::mt19937 random(378);
++    bool agrees = true;
++    for (int trial = 0; trial < 500 && agrees; ++trial) {
++        const std::size_t page = 16;
++        HostContextArena arena(page * 256, 1);
++        std::vector<HostContextAllocation> kept;
++        for (int i = 0; i < 40; ++i) {
++            const auto bytes = (random() % 24 + 1) * 4;
++            const bool keep  = random() % 3 != 0;
++            auto allocation  = arena.allocate(bytes);
++            if (!allocation) { break; }
++            if (keep) { kept.push_back(std::move(*allocation)); }
++        }
++        const std::size_t pages = random() % 40 + 1;
++        const auto occupied     = arena.occupied_bytes();
++        const bool predicted    = arena.can_place_runs(page, pages);
++        agrees = arena.occupied_bytes() == occupied &&
++                 predicted == backup(arena, pages, page, true).has_value();
++    }
++    expect(agrees, "can_place_runs agrees with the halving reservation on 500 random arenas");
++}
++
++} // namespace
++
++int main() {
++    test_can_place_runs_predicts_reservation();
++    test_fragmented_full_tier_pause_backup();
++    test_unplaceable_backup_unwinds();
++    test_matches_demotion_loop();
++    return failures ? 1 : 0;
++}
