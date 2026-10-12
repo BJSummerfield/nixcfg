@@ -18,7 +18,10 @@ GAUGES = ("running", "waiting", "paused", "preemptions_total", "snapshot_restore
 COUNTERS = ("preemptions_total", "snapshot_restores_total", "replay_restores_total", "replayed_tokens_total",
             "ram_restores_total", "ram_kv_h2d_bytes_total", "spill_pages_total", "kv_d2h_bytes_total", "kv_h2d_bytes_total")
 WB_EVENTS = ("proven_admitted", "proven_demoted", "proven_downgraded", "proven_unrecorded", "proven_victimless",
-             "newer_unprivileged", "release_deferred", "proven_released", "demanded_evicted")
+             "newer_unprivileged", "release_deferred", "proven_released", "demanded_evicted",
+             "unplaceable_victims", "demote_failed", "release_after_failed_demote")
+ENGINE_COUNTERS = ("context_capture_unplaceable", "context_capture_skipped", "pause_snapshots_requested",
+                   "pause_backup_failed", "pause_backup_image_failed")
 GIB = 2 ** 30
 
 
@@ -32,6 +35,7 @@ def http(url, body=None, timeout=30):
 def read_metrics(base):
     out = dict.fromkeys(GAUGES, 0.0)
     out.update(("wb_" + e, 0.0) for e in WB_EVENTS)
+    out.update(("ec_" + e, 0.0) for e in ENGINE_COUNTERS)
     for line in http(base + "/ops/metrics", timeout=5).splitlines():
         if line.startswith("ninfer_"):
             name, _, val = line.rpartition(" ")
@@ -50,6 +54,8 @@ def read_metrics(base):
             out["kv_h2d_bytes_total"] += float(val)
         elif name.startswith('ninfer_context_writeback_total{event="'):
             out["wb_" + name.split('"')[1]] = float(val)
+        elif name.startswith("ninfer_") and name.endswith("_total") and name[7:-6] in ENGINE_COUNTERS:
+            out["ec_" + name[7:-6]] = float(val)
     return out
 
 
@@ -249,7 +255,9 @@ def test_pause(ctx, m0):
             time.sleep(0.3)
         results = [f.result() for f in futs]
     time.sleep(2)
-    d = delta(m0, read_metrics(ctx.base))
+    m1 = read_metrics(ctx.base)
+    d = delta(m0, m1)
+    route = hint("pause", m0, m1)
     ctx.attach(results, results[0]["t0"])
     replayed = d["replayed_tokens_total"] + sum(rec(r, "replayed", 0) for r in results if r["ok"])
     if d["snapshot_restores_total"] > 0 and replayed == 0:
@@ -263,7 +271,7 @@ def test_pause(ctx, m0):
     errs = [r for r in results if not r["ok"]]
     ok = not errs and d["preemptions_total"] >= 1 and not (a.expect_snapshot and mode != "snapshot")
     why = "%d/%d completed, preemptions=%g, resume=%s" % (len(results) - len(errs), len(results), d["preemptions_total"], mode)
-    return ("PASS" if ok else "FAIL"), why, fills + results, {"resume_mode": mode, "host_full": msg}
+    return ("PASS" if ok else "FAIL"), why, fills + results, {"resume_mode": mode, "host_full": msg, "route_pause": route}
 
 
 def test_growth(ctx, m0):
@@ -302,7 +310,8 @@ def test_growth(ctx, m0):
                 bad.append("%s cached %d < prev prompt %d" % (r["label"], r["cached"], prev["prompt"]))
     short = [c for c in "ABCDEFGH"[:a.growth_convs] if sum(1 for r in rows if r["conv"] == c) < a.growth_turns]
     bad += ["%s incomplete" % c for c in short]
-    return ("FAIL" if bad else "PASS"), ("; ".join(bad[:6]) if bad else "%d turns, every follow-up reused its prior prompt" % len(rows)), rows, {}
+    route = hint("growth", m0, read_metrics(ctx.base))
+    return ("FAIL" if bad else "PASS"), ("; ".join(bad[:6]) if bad else "%d turns, every follow-up reused its prior prompt" % len(rows)), rows, {"route_growth": route}
 
 
 def push_count(a, ctx):
@@ -326,8 +335,14 @@ def reused_convo(ctx, tag, tokens, results):
     return msgs, None
 
 
-def wb_delta(a, b):
-    return {k[3:]: b.get(k, 0) - a.get(k, 0) for k in b if k.startswith("wb_")}
+def wb_delta(a, b, prefix="wb_"):
+    return {k[len(prefix):]: b.get(k, 0) - a.get(k, 0) for k in b if k.startswith(prefix)}
+
+
+def hint(label, a, b):
+    d = {**wb_delta(a, b), **wb_delta(a, b, "ec_")}
+    print("  route hints %s: %s" % (label, " ".join("%s=%g" % kv for kv in sorted(d.items()))))
+    return d
 
 
 def test_host(ctx, m0):
@@ -351,15 +366,14 @@ def test_host(ctx, m0):
     mC = read_metrics(ctx.base)
     extra = {"host_gib_before_push": mB["host_context_bytes"] / GIB, "host_gib_after_push": mC["host_context_bytes"] / GIB,
              "push_convs": k, "push_tokens": per, "d2h_bytes_during_push": mC["kv_d2h_bytes_total"] - mB["kv_d2h_bytes_total"],
-             "wb_push": wb_delta(mB, mC)}
+             "wb_push": hint("push", mB, mC)}
     t3 = ctx.chat("target3", msgs, 16)
     results.append(t3)
     time.sleep(2)
     mE = read_metrics(ctx.base)
     restores = mE["ram_restores_total"] - mC["ram_restores_total"]
     h2d = mE["kv_h2d_bytes_total"] - mC["kv_h2d_bytes_total"]
-    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB, wb_target3=wb_delta(mC, mE))
-    print("  route hints " + " | ".join("%s: %s" % (ph, " ".join("%s=%g" % kv for kv in sorted(extra["wb_" + ph].items()))) for ph in ("push", "target3")))
+    extra.update(ram_restores_delta=restores, ram_h2d_bytes_delta=h2d, host_gib_after_target3=mE["host_context_bytes"] / GIB, wb_target3=hint("target3", mC, mE))
     print("  target3: ram_restores +%g, host->gpu +%.2f GiB, host %.2f GiB" % (restores, h2d / GIB, mE["host_context_bytes"] / GIB))
     if not t3["ok"]:
         return "FAIL", "target turn 3 failed: %s" % t3["err"], results, extra
