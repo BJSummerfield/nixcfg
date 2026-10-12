@@ -23,6 +23,22 @@
     }
   '';
 
+  environment.etc."wireplumber/wireplumber.conf.d/52-prefer-hdmi.conf".text = ''
+    monitor.alsa.rules = [
+      {
+        matches = [
+          { node.name = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__HDMI1__sink" }
+        ]
+        actions = {
+          update-props = {
+            priority.session = 3000
+            priority.driver = 3000
+          }
+        }
+      }
+    ]
+  '';
+
   mine = {
     system = {
       hostName = "elitebook";
