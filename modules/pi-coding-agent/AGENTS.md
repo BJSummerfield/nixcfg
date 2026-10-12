@@ -8,10 +8,12 @@ the repository.
 ## Model and thinking
 
 Every role's thinking level is set in nix (`agentOverrides`); all roles share
-one model and one output limit. A dispatch never needs `model:`; single-agent
-dispatch has no such field, and omitting it is correct. Chain and parallel steps
-do take a `model` field: leave it out. Setting it makes the call site the origin
-and the role's nix settings are silently ignored.
+one model entry and one output limit. That entry has a larger context window
+than this session's. A dispatch never needs `model`, even though the tool takes
+one at the top level (it applies to every child of a chain or parallel dispatch)
+and the tool description invites an exact `provider/id`: leave it out. Setting it makes the call site the
+origin, and the role's nix settings, the wider window included, are silently
+ignored.
 
 Reasoning and answer share one output budget, so a long deliverable at a high
 level can spend it all thinking and return `stopReason: "length"` with nothing
