@@ -65,8 +65,13 @@ in
   description = "NInfer server (${name}) on ${endpoint}";
   after = [ "network-online.target" ];
   wants = [ "network-online.target" ];
+  environment.CUDA_CACHE_PATH = "/var/lib/ninfer/cuda-cache";
   serviceConfig = {
     Type = "exec";
+    DynamicUser = true;
+    User = "ninfer";
+    StateDirectory = "ninfer";
+    ProtectHome = true;
     EnvironmentFile = "-/var/lib/ninfer.env";
     ExecStart = start;
     ExecStartPost = waitHealthy;

@@ -47,8 +47,6 @@ let
   '';
 in
 {
-  systemd.tmpfiles.rules = [ "d ${stateDir} 0755 root root -" ];
-
   systemd.services.ninfer = ninferService // wanted;
 
   systemd.services.ninfer-watchdog = {
@@ -83,6 +81,8 @@ in
       Restart = "on-failure";
       RestartSec = 5;
       DynamicUser = true;
+      User = "ninfer";
+      StateDirectory = "ninfer";
       ProtectSystem = "strict";
       ProtectHome = true;
       PrivateTmp = true;
