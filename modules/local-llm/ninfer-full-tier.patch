@@ -1,8 +1,8 @@
 diff --git a/include/ninfer/types.h b/include/ninfer/types.h
-index a96b1fe..b12a785 100644
+index a96b1fe..d1b1d99 100644
 --- a/include/ninfer/types.h
 +++ b/include/ninfer/types.h
-@@ -1057,6 +1057,23 @@ struct RuntimeStats {
+@@ -1057,6 +1057,25 @@ struct RuntimeStats {
      double backend_kv_d2d_seconds      = 0.0;
  
      std::uint64_t pressure_spill_pages             = 0;
@@ -18,6 +18,8 @@ index a96b1fe..b12a785 100644
 +    std::uint64_t context_writeback_unplaceable_victims = 0;
 +    std::uint64_t context_writeback_demote_failed = 0;
 +    std::uint64_t context_writeback_release_after_failed_demote = 0;
++    std::uint64_t context_writeback_stale_evicted = 0;
++    std::uint64_t context_writeback_stale_writer_refused = 0;
 +    std::uint64_t context_capture_unplaceable = 0;
 +    std::uint64_t pause_snapshots_requested = 0;
 +    std::uint64_t pause_backup_failures = 0;
@@ -282,10 +284,10 @@ index b640b96..e378374 100644
  
  struct SequenceCapacityCurve {
 diff --git a/src/runtime/engine/context_cache/resource_manager.h b/src/runtime/engine/context_cache/resource_manager.h
-index db4456d..b538638 100644
+index db4456d..d851193 100644
 --- a/src/runtime/engine/context_cache/resource_manager.h
 +++ b/src/runtime/engine/context_cache/resource_manager.h
-@@ -39,8 +39,28 @@ public:
+@@ -39,8 +39,30 @@ public:
          std::uint32_t frontier = 0;
          std::optional<Handle> checkpoint;
          std::vector<Handle> sources;
@@ -305,6 +307,8 @@ index db4456d..b538638 100644
 +        std::uint64_t unplaceable_victims = 0;
 +        std::uint64_t demote_failed       = 0;
 +        std::uint64_t release_after_failed_demote = 0;
++        std::uint64_t stale_evicted               = 0;
++        std::uint64_t stale_writer_refused        = 0;
 +    };
 +
 +    [[nodiscard]] const WritebackCounters& writeback_counters() const noexcept {
@@ -314,7 +318,15 @@ index db4456d..b538638 100644
      struct ReclaimCursor {
          struct Victim {
              Handle handle;
-@@ -493,21 +513,24 @@ public:
+@@ -326,6 +348,7 @@ public:
+         }
+         auto* owner              = find_owner(token);
+         owner->active            = true;
++        owner->active_at         = ++activity_;
+         owner->publication_order = publication_order;
+         replace_points(program, *owner, carried);
+         prune(program);
+@@ -493,22 +516,32 @@ public:
                   std::span<const Handle> later_snapshots = {},
                   std::span<const Handle> excluded        = {},
                   std::optional<Admission> admission      = std::nullopt,
@@ -338,11 +350,29 @@ index db4456d..b538638 100644
  
      void commit_host_victims(Program& program, std::span<const Handle> handles,
                               ReclaimCursor& cursor) {
-+        if (proven_demand(program, handles, cursor, {}).reused) { ++writeback_.demanded_evicted; }
-         commit_release(program, handles, cursor);
+-        commit_release(program, handles, cursor);
++        Evaluation evaluation;
++        auto view = recency_view(program, evaluation, std::nullopt);
++        if (proven_demand(program, handles, cursor, view).reused) { ++writeback_.demanded_evicted; }
++        if (std::ranges::any_of(handles, [&](auto h) { return stale_handle(h, view); })) {
++            ++writeback_.stale_evicted;
++        }
++        ActionFacts facts;
++        facts.kept = surviving(program, handles);
++        commit_release(program, handles, cursor, action_loss(program, handles, facts, view));
      }
  
-@@ -567,9 +590,15 @@ public:
+     bool erase(Program& program, Handle handle, ReclaimRights rights = {}) {
+@@ -549,7 +582,7 @@ public:
+                 host_victims_in_order(program, shortage.host_bytes, std::nullopt, {}, excluded,
+                                       cursor.admission, cursor, evaluation, true);
+             if (!victims) { return ReclaimProgress::Blocked; }
+-            commit_release(program, *victims, cursor);
++            commit_host_victims(program, *victims, cursor);
+             return victims->empty() ? ReclaimProgress::Blocked : ReclaimProgress::Changed;
+         }
+         auto plans = program.plan_reclaim(allowed, excluded, shortage);
+@@ -567,9 +600,15 @@ public:
  
          const auto usage     = program.physical_usage();
          const auto free_host = usage.capacity.host_bytes - usage.occupied.host_bytes;
@@ -360,7 +390,7 @@ index db4456d..b538638 100644
          const bool existing_host_destination =
              std::any_of(plans.demotions.begin(), plans.demotions.end(),
                          [](const auto& plan) { return plan.host_bytes == 0; });
-@@ -581,6 +610,7 @@ public:
+@@ -581,6 +620,7 @@ public:
          }
  
          std::vector<Action> actions;
@@ -368,7 +398,7 @@ index db4456d..b538638 100644
          actions.reserve(plans.demotions.size() + plans.releases.size());
          for (auto& plan : plans.demotions) {
              const auto units = useful(plan.released, shortage);
-@@ -592,12 +622,18 @@ public:
+@@ -592,15 +632,30 @@ public:
              auto protected_sources = std::vector<Handle>(excluded.begin(), excluded.end());
              protected_sources.insert(protected_sources.end(), plan.sources.begin(),
                                       plan.sources.end());
@@ -382,18 +412,32 @@ index db4456d..b538638 100644
 +            auto preservation = preservation_admission(program, plan.sources, cursor,
 +                                                       facts.priority, evaluation, &unrecorded);
 +            if (unrecorded && !preservation.proven) { ++writeback_.proven_unrecorded; }
++            // Host victims are judged and charged in the writer's recency view. A writer past the
++            // window keeps no proven right (A) and may take only content older than itself.
++            auto host_view = recency_view(program, evaluation, plan.sources);
++            if (host_view.stale_writer && preservation.proven) {
++                preservation.proven   = false;
++                preservation.demand   = {};
++                preservation.priority = facts.priority;
++            }
 +            auto victims = host_victims_in_order(program, plan.host_bytes, preservation.checkpoint,
 +                                                 {}, protected_sources, preservation, cursor,
 +                                                 evaluation, unplaceable(plan));
 +            if (!victims) {
 +                writeback_.proven_victimless += preservation.proven;
++                writeback_.stale_writer_refused += host_view.stale_writer;
 +                continue;
 +            }
 +            if (preservation.proven && !victims->empty()) { ++writeback_.proven_admitted; }
              auto rank       = rank_action(program, plan.sources, facts, units, evaluation, true);
-             auto host_facts = action_facts(program, *victims, cursor, evaluation);
-             const auto host_rank = rank_action(program, *victims, host_facts, units, evaluation);
-@@ -624,6 +660,19 @@ public:
+-            auto host_facts = action_facts(program, *victims, cursor, evaluation);
+-            const auto host_rank = rank_action(program, *victims, host_facts, units, evaluation);
++            auto host_facts      = action_facts(program, *victims, cursor, host_view);
++            const auto host_rank = rank_action(program, *victims, host_facts, units, host_view);
+             rank.loss            = host_rank.loss;
+             rank.waiting         = host_rank.waiting;
+             rank.order           = std::max(rank.order, host_rank.order);
+@@ -624,6 +679,19 @@ public:
              auto rank = rank_action(program, plan.sources, facts, units, evaluation);
              actions.push_back({.release = std::move(plan), .rank = rank});
          }
@@ -413,7 +457,7 @@ index db4456d..b538638 100644
          std::stable_sort(actions.begin(), actions.end(),
                           [](const auto& a, const auto& b) { return less_rank(a.rank, b.rank); });
          for (std::size_t index = 0; index < actions.size(); ++index) {
-@@ -671,19 +720,38 @@ public:
+@@ -671,19 +739,43 @@ public:
                  auto protected_sources = std::vector<Handle>(excluded.begin(), excluded.end());
                  protected_sources.insert(protected_sources.end(), plan.sources.begin(),
                                           plan.sources.end());
@@ -427,8 +471,13 @@ index db4456d..b538638 100644
 +                const bool proven = action.preservation->proven && !action.host_victims.empty();
 +                const bool downgraded =
 +                    proven && !action_priority(program, plan.sources, cursor, evaluation).reused;
-+                if (proven_demand(program, action.host_victims, cursor, evaluation).reused) {
++                const auto view = recency_view(program, evaluation, plan.sources);
++                if (proven_demand(program, action.host_victims, cursor, view).reused) {
 +                    ++writeback_.demanded_evicted;
++                }
++                if (std::ranges::any_of(action.host_victims,
++                                        [&](auto h) { return stale_handle(h, view); })) {
++                    ++writeback_.stale_evicted;
 +                }
                  commit_release(program, action.host_victims, cursor, action.rank.loss);
                  if (program.start_demote(plan)) {
@@ -453,7 +502,147 @@ index db4456d..b538638 100644
              commit_release(program, action.release->sources, cursor, action.rank.loss);
              return ReclaimProgress::Changed;
          }
-@@ -1151,6 +1219,50 @@ private:
+@@ -819,6 +911,7 @@ private:
+         std::uint32_t proven_frontier   = 0;
+         std::uint64_t retained_at       = 0;
+         std::uint64_t publication_order = 0;
++        std::uint64_t active_at         = 0;
+         bool active                     = false;
+         std::optional<SessionKey> session;
+         std::vector<Point> points;
+@@ -1047,8 +1140,105 @@ private:
+     struct Evaluation {
+         const NativeReclaimPlan* native = nullptr;
+         std::optional<std::vector<Handle>> retained;
++        // Host-tier recency (round 4): inactive owners with at least a window of newer Host
++        // content, and the activity of the write asking for room. Set only on a Host view.
++        std::optional<std::vector<std::pair<OwnerToken, std::uint64_t>>> beyond_window;
++        std::optional<std::uint64_t> writer;
++        bool stale_writer = false;
+     };
+ 
++    // Content a plain LRU of 3/4 of the Host would already have dropped (the soft target
++    // balance_reused applies to the reused segment), measured by owner activity.
++    [[nodiscard]] Evaluation
++    recency_view(Program& program, Evaluation& evaluation,
++                 std::optional<std::span<const Handle>> writer_sources) const {
++        if (!evaluation.beyond_window) {
++            evaluation.beyond_window.emplace();
++            const auto limit = program.physical_usage().capacity.host_bytes / 4 * 3;
++            std::vector<const Owner*> order;
++            for (const auto& owner : owners_) { order.push_back(&owner); }
++            std::sort(order.begin(), order.end(), [](const Owner* a, const Owner* b) {
++                if (a->active != b->active) { return a->active; }
++                if (a->active_at != b->active_at) { return a->active_at > b->active_at; }
++                return a->token > b->token;
++            });
++            std::uint64_t newer = 0;
++            std::vector<Handle> points;
++            for (const auto* owner : order) {
++                if (limit && !owner->active && newer >= limit) {
++                    evaluation.beyond_window->emplace_back(owner->token, owner->active_at);
++                }
++                points.clear();
++                for (const auto& point : owner->points) {
++                    if (program.valid_checkpoint(point.handle)) { points.push_back(point.handle); }
++                }
++                if (!points.empty()) { newer += program.checkpoint_footprint(points).host_bytes; }
++            }
++        }
++        std::uint64_t writer = UINT64_MAX;
++        if (writer_sources && !writer_sources->empty()) {
++            writer = 0;
++            for (const auto& owner : owners_) {
++                if (std::none_of(owner.points.begin(), owner.points.end(), [&](const auto& p) {
++                        return contains(*writer_sources, p.handle);
++                    })) {
++                    continue;
++                }
++                writer = std::max(writer, owner.active ? UINT64_MAX : owner.active_at);
++            }
++            if (!writer) { writer = UINT64_MAX; }
++        }
++        auto view   = evaluation;
++        view.writer = writer;
++        // A writer past the window is the stalest content asking for room: it has no right
++        // over anything newer than itself.
++        view.stale_writer =
++            writer != UINT64_MAX &&
++            std::any_of(evaluation.beyond_window->begin(), evaluation.beyond_window->end(),
++                        [&](const auto& entry) { return entry.second == writer; });
++        return view;
++    }
++
++    [[nodiscard]] bool stale_owner(OwnerToken token, const Evaluation& evaluation) const {
++        if (!evaluation.writer || !evaluation.beyond_window) { return false; }
++        return std::any_of(evaluation.beyond_window->begin(), evaluation.beyond_window->end(),
++                           [&](const auto& entry) {
++                               return entry.first == token && entry.second < *evaluation.writer;
++                           });
++    }
++
++    [[nodiscard]] std::uint64_t last_activity(std::span<const Handle> handles) const {
++        std::uint64_t newest = 0;
++        for (const auto& owner : owners_) {
++            if (std::any_of(owner.points.begin(), owner.points.end(),
++                            [&](const auto& p) { return contains(handles, p.handle); })) {
++                newest = std::max(newest, owner.active_at);
++            }
++        }
++        return newest;
++    }
++
++    // Stale content has every holder stale: no shared entry, no waiting request.
++    [[nodiscard]] bool stale_handle(Handle handle, const Evaluation& evaluation) const {
++        if (!evaluation.writer) { return false; }
++        bool held = false;
++        for (const auto& owner : owners_) {
++            if (std::none_of(owner.points.begin(), owner.points.end(),
++                             [&](const auto& p) { return p.handle == handle; })) {
++                continue;
++            }
++            if (!stale_owner(owner.token, evaluation)) { return false; }
++            held = true;
++        }
++        if (!held) { return false; }
++        if (std::any_of(shared_.begin(), shared_.end(),
++                        [&](const auto& entry) { return entry.handle == handle; })) {
++            return false;
++        }
++        return std::none_of(waiting_.begin(), waiting_.end(),
++                            [&](const auto& waiting) { return contains(waiting.held, handle); });
++    }
++
+     struct ActionFacts {
+         CacheRetentionPriority priority;
+         std::size_t order = 0;
+@@ -1087,9 +1277,14 @@ private:
+     [[nodiscard]] std::uint64_t action_loss(Program& program, std::span<const Handle> sources,
+                                             ActionFacts& facts, Evaluation& evaluation) const {
+         if (!facts.loss) {
+-            facts.loss = sources.empty()
++            // Stale content costs a newer write nothing; it still is no fallback for the rest.
++            std::vector<Handle> current;
++            for (const auto handle : sources) {
++                if (!stale_handle(handle, evaluation)) { current.push_back(handle); }
++            }
++            facts.loss = current.empty()
+                              ? 0
+-                             : recovery_loss(program, sources,
++                             : recovery_loss(program, current,
+                                              action_survivors(program, sources, facts, evaluation),
+                                              evaluation);
+         }
+@@ -1117,7 +1312,7 @@ private:
+             if (!private_owner) { include(victim.priority); }
+         }
+         for (const auto& proof : cursor.owners) {
+-            if (!proof.priority.reused) { continue; }
++            if (!proof.priority.reused || stale_owner(proof.owner, evaluation)) { continue; }
+             const auto* owner = find_owner(proof.owner);
+             bool affected     = false;
+             bool covered      = owner != nullptr;
+@@ -1151,6 +1346,50 @@ private:
          return priority;
      }
  
@@ -464,7 +653,7 @@ index db4456d..b538638 100644
 +                                                       bool* unrecorded = nullptr) const {
 +        CacheRetentionPriority result;
 +        for (const auto& proof : cursor.owners) {
-+            if (!proof.proven_frontier) { continue; }
++            if (!proof.proven_frontier || stale_owner(proof.owner, evaluation)) { continue; }
 +            const auto* owner = find_owner(proof.owner);
 +            if (!owner) { continue; }
 +            std::optional<Handle> holder;
@@ -504,7 +693,23 @@ index db4456d..b538638 100644
      [[nodiscard]] ActionFacts action_facts(Program& program, std::span<const Handle> sources,
                                             const ReclaimCursor& cursor,
                                             const Evaluation& evaluation) const {
-@@ -1199,7 +1311,9 @@ private:
+@@ -1169,6 +1408,7 @@ private:
+         std::uint64_t units   = 0;
+         std::size_t order     = 0;
+         std::uint64_t waiting = 0;
++        bool stale            = false;
+     };
+ 
+     [[nodiscard]] ActionRank rank_action(Program& program, std::span<const Handle> sources,
+@@ -1184,6 +1424,7 @@ private:
+     static bool less_rank(const ActionRank& left, const ActionRank& right) {
+         if (bool(left.waiting) != bool(right.waiting)) { return !left.waiting; }
+         if (left.waiting != right.waiting) { return left.waiting > right.waiting; }
++        if (left.stale != right.stale) { return left.stale; }
+         if (left.priority.reused != right.priority.reused) { return !left.priority.reused; }
+         if (left.priority.reused && left.priority.last_demand != right.priority.last_demand) {
+             return left.priority.last_demand < right.priority.last_demand;
+@@ -1199,7 +1440,9 @@ private:
      [[nodiscard]] Admission preservation_admission(Program& program,
                                                     std::span<const Handle> sources,
                                                     const ReclaimCursor& cursor,
@@ -515,7 +720,7 @@ index db4456d..b538638 100644
          Admission result{.priority = priority,
                           .sources  = std::vector<Handle>(sources.begin(), sources.end())};
          std::uint32_t deepest = 0;
-@@ -1219,6 +1333,10 @@ private:
+@@ -1219,6 +1462,10 @@ private:
                  result.demand = demand;
              }
          }
@@ -526,7 +731,7 @@ index db4456d..b538638 100644
          if (result.demand.reused) { result.priority = result.demand; }
          return result;
      }
-@@ -1262,7 +1380,15 @@ private:
+@@ -1262,7 +1509,15 @@ private:
                                    loss >= *cursor.gain_limit - cursor.sacrificed)) {
              return false;
          }
@@ -543,7 +748,7 @@ index db4456d..b538638 100644
          const auto kept = preserving ? retained(program, evaluation)
                                       : action_survivors(program, removed, facts, evaluation);
          return recovery_gain(program, *admission, kept, evaluation) > loss;
-@@ -1302,7 +1428,7 @@ private:
+@@ -1302,7 +1557,7 @@ private:
          if (!admission && incoming) {
              admission = preservation_admission(
                  program, {&*incoming, 1}, cursor,
@@ -552,31 +757,68 @@ index db4456d..b538638 100644
          }
          std::vector<Handle> allowed;
          for (const auto& victim : cursor.victims) {
-@@ -1346,8 +1472,14 @@ private:
-                     !admits(program, combined, facts, cursor.admission, cursor, evaluation)) {
+@@ -1322,6 +1577,12 @@ private:
+                 }
+             }
+         }
++        // Victims are judged in the writer's recency view: content beyond the window and
++        // older than the writer has no grade, no proof and no recovery cost against it.
++        auto view    = recency_view(program, evaluation,
++                                 admission && !admission->sources.empty()
++                                        ? std::optional<std::span<const Handle>>(admission->sources)
++                                        : std::nullopt);
+         auto actions = program.plan_releases(allowed, excluded, {.host_bytes = required});
+         std::vector<Handle> selected;
+         std::size_t released = 0;
+@@ -1338,16 +1599,31 @@ private:
+                 }
+                 const auto amount = program.host_bytes_released(combined);
+                 if (amount <= released) { continue; }
+-                auto facts = action_facts(program, combined, cursor, evaluation);
++                const bool stale = std::ranges::all_of(
++                    combined, [&](auto handle) { return stale_handle(handle, view); });
++                if (view.stale_writer && !stale) { continue; }
++                auto facts = action_facts(program, combined, cursor, view);
+                 // A migration must satisfy both its own preservation rights and the
+                 // optional capture that requested space. Source heat cannot grant the
+                 // outer capture permission to erase unrelated hot Host history.
+-                if (!admits(program, combined, facts, admission, cursor, evaluation) ||
+-                    !admits(program, combined, facts, cursor.admission, cursor, evaluation)) {
++                if (!admits(program, combined, facts, admission, cursor, view) ||
++                    !admits(program, combined, facts, cursor.admission, cursor, view)) {
                      continue;
                  }
 -                const auto rank            = rank_action(program, combined, facts,
 -                                                         std::min<std::size_t>(amount, required), evaluation);
-+                auto rank = rank_action(program, combined, facts,
-+                                        std::min<std::size_t>(amount, required), evaluation);
-+                // A proven write-back spends history without repeat demand before older
-+                // demanded history, whatever grade the soft target left that history.
-+                if (!rank.priority.reused) {
-+                    const auto held = proven_demand(program, combined, cursor, evaluation);
++                auto rank  = rank_action(program, combined, facts,
++                                         std::min<std::size_t>(amount, required), view);
++                rank.stale = stale;
++                if (rank.stale) {
++                    // Stale content goes first, least recently active first (plain LRU).
++                    rank.priority = {};
++                    rank.loss     = 0;
++                    rank.order    = last_activity(combined);
++                } else if (!rank.priority.reused) {
++                    // A proven write-back spends history without repeat demand before older
++                    // demanded history, whatever grade the soft target left that history.
++                    const auto held = proven_demand(program, combined, cursor, view);
 +                    if (held.reused) { rank.priority = held; }
 +                }
                  std::size_t snapshot_order = 0;
                  for (std::size_t snapshot = 0; snapshot < later_snapshots.size(); ++snapshot) {
                      if (contains(combined, later_snapshots[snapshot])) {
-@@ -1455,6 +1587,7 @@ private:
+@@ -1455,7 +1731,9 @@ private:
      std::vector<WaitingSource> waiting_;
      static constexpr std::size_t kDemandCapacity = 256;
      std::vector<Demand> demand_;
+-    std::uint64_t clock_   = 0;
+-    std::uint64_t ordinal_ = 0;
 +    mutable WritebackCounters writeback_;
-     std::uint64_t clock_   = 0;
-     std::uint64_t ordinal_ = 0;
++    std::uint64_t clock_    = 0;
++    std::uint64_t ordinal_  = 0;
++    std::uint64_t activity_ = 0;
  };
+ } // namespace ninfer::runtime
 diff --git a/src/runtime/engine/engine_core.h b/src/runtime/engine/engine_core.h
 index 94f3254..8bd3349 100644
 --- a/src/runtime/engine/engine_core.h
@@ -630,10 +872,10 @@ index 94f3254..8bd3349 100644
          if (!request->is_replaying()) { request->resume_phase = request->model_state; }
          request->model_state = EngineRequestState::Pausing;
 diff --git a/src/runtime/engine/engine_metrics.inl b/src/runtime/engine/engine_metrics.inl
-index fdfc096..1e26e7b 100644
+index fdfc096..e0b8e0b 100644
 --- a/src/runtime/engine/engine_metrics.inl
 +++ b/src/runtime/engine/engine_metrics.inl
-@@ -180,6 +180,19 @@ void EngineCore<Instance>::publish_runtime_stats() {
+@@ -180,6 +180,21 @@ void EngineCore<Instance>::publish_runtime_stats() {
      snapshot.host_kv_occupied_bytes           = physical.host_kv_bytes;
      snapshot.host_context_reserved_bytes      = physical.host_reserved_bytes;
      snapshot.host_context_peak_occupied_bytes = physical.host_peak_occupied_bytes;
@@ -650,10 +892,12 @@ index fdfc096..1e26e7b 100644
 +    snapshot.context_writeback_unplaceable_victims = writeback.unplaceable_victims;
 +    snapshot.context_writeback_demote_failed = writeback.demote_failed;
 +    snapshot.context_writeback_release_after_failed_demote = writeback.release_after_failed_demote;
++    snapshot.context_writeback_stale_evicted = writeback.stale_evicted;
++    snapshot.context_writeback_stale_writer_refused = writeback.stale_writer_refused;
      snapshot.materializing_requests           = materializing_.has_value() ? 1U : 0U;
      for (std::uint32_t lane = 0; lane < max_concurrency_; ++lane) {
          if (slots_[lane] == nullptr) { continue; }
-@@ -213,6 +226,8 @@ void EngineCore<Instance>::record_context_work(
+@@ -213,6 +228,8 @@ void EngineCore<Instance>::record_context_work(
      cumulative_stats_.state_restores += op.state_restores;
      cumulative_stats_.pressure_spill_pages += op.pressure_spill_pages;
      cumulative_stats_.partial_tail_cow_pages += op.partial_tail_cow_pages;
@@ -663,15 +907,16 @@ index fdfc096..1e26e7b 100644
          const auto direction = static_cast<std::size_t>(transfer.direction);
          std::array<std::uint64_t*, 3> bytes{}, units{};
 diff --git a/src/serve/metrics.cpp b/src/serve/metrics.cpp
-index e98568c..c437b09 100644
+index e98568c..dfc78c1 100644
 --- a/src/serve/metrics.cpp
 +++ b/src/serve/metrics.cpp
-@@ -243,6 +243,41 @@ std::string Metrics::render(const RuntimeStats& stats, bool ready) const {
+@@ -243,6 +243,44 @@ std::string Metrics::render(const RuntimeStats& stats, bool ready) const {
      TRANSFER("backend_kv", backend_kv, h2d);
      TRANSFER("backend_kv", backend_kv, d2d);
  #undef TRANSFER
 +    header("context_writeback_total", "counter",
-+           "Host write-back and demotion decisions (proven repeat demand; placement).");
++           "Host write-back and demotion decisions (proven repeat demand; placement; recency: "
++           "stale_evicted counts victim sets holding stale content).");
 +    const auto writeback = [&](const char* event, std::uint64_t current, std::uint64_t baseline) {
 +        out << "ninfer_context_writeback_total{event=\"" << event << "\"} " << current - baseline
 +            << '\n';
@@ -690,6 +935,8 @@ index e98568c..c437b09 100644
 +    WRITEBACK(unplaceable_victims);
 +    WRITEBACK(demote_failed);
 +    WRITEBACK(release_after_failed_demote);
++    WRITEBACK(stale_evicted);
++    WRITEBACK(stale_writer_refused);
 +#undef WRITEBACK
 +    counter("context_capture_unplaceable_total", stats.context_capture_unplaceable,
 +            baseline_.context_capture_unplaceable,
@@ -740,7 +987,7 @@ index ccf0908..df47e7d 100644
    SOURCES "${CMAKE_CURRENT_LIST_DIR}/../runtime/test_kv_capacity.cpp"
    LIBRARIES ninfer_runtime_support)
 diff --git a/tests/runtime/test_resource_manager.cpp b/tests/runtime/test_resource_manager.cpp
-index 8d3ad03..6d73535 100644
+index 8d3ad03..5ee1666 100644
 --- a/tests/runtime/test_resource_manager.cpp
 +++ b/tests/runtime/test_resource_manager.cpp
 @@ -1,4 +1,5 @@
@@ -988,7 +1235,7 @@ index 8d3ad03..6d73535 100644
              if (plan.released.state_slots) { content.device_state = false; }
              demoted.push_back(plan.handle);
          }
-@@ -1874,6 +2037,347 @@ void test_consuming_rewind_resets_proven_progress_to_the_adopted_prefix() {
+@@ -1874,8 +2037,482 @@ void test_consuming_rewind_resets_proven_progress_to_the_adopted_prefix() {
              "an abandoned deep branch remained the proof after a consuming rewind");
  }
  
@@ -1037,6 +1284,13 @@ index 8d3ad03..6d73535 100644
 +           f.program.demoted.end();
 +}
 +
++// Old content no write may take. It keeps a small fixture's writer inside the recency window
++// (less than 3/4 of the Host newer than it), where the round-1..3 rules apply unchanged.
++void ballast(Fixture& f, std::size_t bytes) {
++    const auto handle = host_only(f, 8, 990000, bytes);
++    f.program.contents[handle.index].evictable = false;
++}
++
 +void test_full_host_moves_a_continued_dialogue_over_longer_single_use_history() {
 +    Fixture f(128);
 +    std::vector<Handle> fills;
@@ -1078,7 +1332,8 @@ index 8d3ad03..6d73535 100644
 +}
 +
 +void test_moved_dialogue_cannot_displace_a_more_recently_demanded_one() {
-+    Fixture f(64);
++    Fixture f(128);
++    ballast(f, 64);
 +    f.program.main_capacity = 40;
 +    const auto oldest = continued_once(f, 30, 38, 44, 40000, 8);
 +    const auto older  = continued_once(f, 30, 38, 44, 50000, 8);
@@ -1187,7 +1442,8 @@ index 8d3ad03..6d73535 100644
 +}
 +
 +void test_older_large_dialogue_still_out_recovers_newer_small_ones() {
-+    Fixture f(64);
++    Fixture f(128);
++    ballast(f, 64);
 +    f.program.main_capacity = 40;
 +    const auto parent = continued_once(f, 90, 92, 94, 40000, 8);
 +    const auto childA = continued_once(f, 20, 22, 24, 50000, 8);
@@ -1218,7 +1474,8 @@ index 8d3ad03..6d73535 100644
 +}
 +
 +void test_proven_writeback_displaces_newer_single_use_history() {
-+    Fixture f(32);
++    Fixture f(64);
++    ballast(f, 32);
 +    const auto target = continued_once(f, 30, 38, 44, 50000);
 +    const auto fresh  = host_only(f, 60, 1000);
 +    for (int i = 0; i < 8 && f.program.valid_checkpoint(target.replay) &&
@@ -1244,9 +1501,11 @@ index 8d3ad03..6d73535 100644
 +
 +void test_aged_out_demand_record_falls_back_to_recovery_economics() {
 +    Fixture f(128);
++    // The fills are newer than the target, so recency gives the target no right over them.
++    // Older single-use fills now yield to a newer write by design (R4-U1, R4-U4).
++    const auto target = continued_once(f, 30, 38, 44, 50000);
 +    std::vector<Handle> fills;
 +    for (std::uint32_t i = 0; i < 4; ++i) { fills.push_back(host_only(f, 60, 1000 * (i + 1))); }
-+    const auto target = continued_once(f, 30, 38, 44, 50000);
 +    for (std::uint32_t i = 0; i < 300; ++i) {
 +        const Base other{.tokens = tokens(4, 200000 + 8 * i), .captures = {4}};
 +        f.cache.observe_committed(other, 1000 + i, 0, 4);
@@ -1335,8 +1594,131 @@ index 8d3ad03..6d73535 100644
 +
  } // namespace
  
++
++// Round 4: Host-tier recency. A proven dialogue parked on the Host (suffix dropped).
++Dialogue parked(Fixture& f, std::uint32_t turn1, std::uint32_t input, std::uint32_t end,
++                std::uint32_t first, std::size_t bytes = 32) {
++    auto d = continued_once(f, turn1, input, end, first);
++    require(f.cache.erase(f.program, d.endpoint), "fixture could not drop the suffix");
++    auto& moved        = f.program.contents[d.replay.index];
++    moved.device_state = false;
++    moved.main_pages   = 0;
++    moved.host_blocks.push_back(f.program.host_block(bytes));
++    return d;
++}
++
++// A fresh single-use turn 1 on the Device.
++Handle turn_one(Fixture& f, std::uint32_t count, std::uint32_t first) {
++    const auto handle = f.program.add(tokens(count, first), {}, Role::Continuation);
++    f.program.contents[handle.index].demotion_bytes = 32;
++    f.publish(handle);
++    return handle;
++}
++
++bool settle(Fixture& f, Handle handle) {
++    for (int i = 0; i < 8 && f.program.valid_checkpoint(handle) && !demoted(f, handle); ++i) {
++        (void)f.cache.reclaim(f.program, {.state_slots = 1});
++    }
++    return demoted(f, handle);
++}
++
++// Live growth (2026-10-11): B1 was deleted because the Host was full of older, larger proven
++// dialogues. The oldest quarter of the Host yields to a newer write, proven or not.
++void test_fresh_turn_one_displaces_stale_proven_history() {
++    Fixture f(128);
++    std::vector<Dialogue> old;
++    for (std::uint32_t i = 0; i < 4; ++i) { old.push_back(parked(f, 50, 60, 64, 10000 * (i + 1))); }
++    const auto fresh = turn_one(f, 40, 90000);
++    require(settle(f, fresh) && !f.program.valid_checkpoint(old[0].replay) &&
++                std::all_of(old.begin() + 1, old.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "a fresh turn 1 was deleted instead of displacing the stalest proven history");
++}
++
++// D took single-use content first; a fresh turn 1 (the reviewer's) now outranks stale history.
++void test_stale_history_goes_before_a_fresh_turn_one() {
++    Fixture f(128);
++    std::vector<Dialogue> old;
++    for (std::uint32_t i = 0; i < 3; ++i) { old.push_back(parked(f, 50, 60, 64, 10000 * (i + 1))); }
++    const auto fresh  = host_only(f, 40, 80000);
++    const auto writer = continued_once(f, 30, 38, 44, 90000);
++    require(settle(f, writer.replay) && f.program.valid_checkpoint(fresh) &&
++                !f.program.valid_checkpoint(old[0].replay) &&
++                f.program.valid_checkpoint(old[1].replay) &&
++                f.program.valid_checkpoint(old[2].replay),
++            "a proven write-back evicted a fresh turn 1 before stale history");
++}
++
++// Recency is no right for an older write: Host history newer than the writer keeps the soft-B
++// and recovery rules, so residents cannot start displacing each other.
++void test_recency_gives_an_older_write_no_right_over_newer_history() {
++    Fixture f(128);
++    const auto writer = continued_once(f, 10, 12, 14, 90000);
++    std::vector<Dialogue> newer;
++    for (std::uint32_t i = 0; i < 4; ++i) {
++        newer.push_back(parked(f, 50, 60, 64, 10000 * (i + 1)));
++    }
++    (void)settle(f, writer.replay);
++    require(std::all_of(newer.begin(), newer.end(),
++                        [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "an older write used recency to displace newer Host history");
++}
++
++// Pinned choice (user, round 4): beyond the window the stale tier is plain LRU, so a single run
++// that overflows the window loses its idle orchestrator before a newer, cheaper child. Chosen
++// over cost order because several concurrent sessions are the normal load (agent2 replay).
++void test_pinned_choice_stale_tier_spends_the_least_recent_conversation_first() {
++    Fixture f(384);
++    const auto orchestrator = parked(f, 80, 90, 94, 10000, 64);
++    const auto child        = parked(f, 20, 24, 26, 20000, 32);
++    std::vector<Dialogue> current;
++    for (std::uint32_t i = 0; i < 9; ++i) {
++        current.push_back(parked(f, 50, 60, 64, 30000 + 1000 * i));
++    }
++    const auto writer = continued_once(f, 30, 38, 44, 90000);
++    require(settle(f, writer.replay) && !f.program.valid_checkpoint(orchestrator.replay) &&
++                f.program.valid_checkpoint(child.replay) &&
++                std::all_of(current.begin(), current.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "pinned trade-off changed: the stale tier no longer spends the least recently active "
++            "conversation first (LRU was chosen over cost order for concurrent sessions)");
++}
++
++// Upstream's soft target grades only proven owners: an old proven dialogue behind newer
++// single-use history keeps its grade. Beyond the window it still yields to a newer write.
++void test_stale_proven_history_yields_although_still_graded() {
++    Fixture f(128);
++    const auto old = parked(f, 50, 60, 64, 10000);
++    std::vector<Handle> newer;
++    for (std::uint32_t i = 0; i < 3; ++i) { newer.push_back(host_only(f, 60, 20000 + 1000 * i)); }
++    require(f.cache.retention(old.owner).reused, "fixture downgraded the old dialogue");
++    const auto fresh = turn_one(f, 40, 90000);
++    require(settle(f, fresh) && !f.program.valid_checkpoint(old.replay) &&
++                std::all_of(newer.begin(), newer.end(),
++                            [&](auto h) { return f.program.valid_checkpoint(h); }),
++            "graded stale history refused a newer write");
++}
++
++// Review M1: a proven writer past the window (an orchestrator idle behind newer runs) is the
++// stalest content asking for room. It may not delete a newer single-use turn 1 through D.
++void test_writer_past_the_window_cannot_delete_a_newer_turn_one() {
++    Fixture f(384);
++    const auto orchestrator = continued_once(f, 80, 90, 94, 10000);
++    std::vector<Dialogue> newer;
++    for (std::uint32_t i = 0; i < 11; ++i) {
++        newer.push_back(parked(f, 50, 60, 64, 30000 + 1000 * i));
++    }
++    const auto fresh = host_only(f, 40, 90000);
++    (void)settle(f, orchestrator.replay);
++    require(f.program.valid_checkpoint(fresh) &&
++                std::all_of(newer.begin(), newer.end(),
++                            [&](const auto& d) { return f.program.valid_checkpoint(d.replay); }),
++            "a writer past the recency window deleted newer Host history");
++}
  int main() {
-@@ -1930,6 +2434,18 @@ int main() {
+     try {
+         test_demotion_competes_with_its_actual_host_recovery_loss();
+@@ -1930,6 +2567,24 @@ int main() {
          test_reclaim_cursor_keeps_host_writeback_permissions();
          test_failed_demotion_keeps_scanning_independent_history();
          test_failed_demotion_reports_prior_host_release();
@@ -1352,15 +1734,21 @@ index 8d3ad03..6d73535 100644
 +        test_aged_out_demand_record_falls_back_to_recovery_economics();
 +        test_unplaceable_kv_demotion_spends_a_cold_victim_instead_of_the_proven_dialogue();
 +        test_unplaceable_capture_image_spends_a_cold_victim_instead_of_being_skipped();
++        test_fresh_turn_one_displaces_stale_proven_history();
++        test_stale_history_goes_before_a_fresh_turn_one();
++        test_recency_gives_an_older_write_no_right_over_newer_history();
++        test_pinned_choice_stale_tier_spends_the_least_recent_conversation_first();
++        test_stale_proven_history_yields_although_still_graded();
++        test_writer_past_the_window_cannot_delete_a_newer_turn_one();
          std::cout << "ok\n";
          return 0;
      } catch (const std::exception& error) {
 diff --git a/tests/runtime/test_resource_manager_replay.cpp b/tests/runtime/test_resource_manager_replay.cpp
 new file mode 100644
-index 0000000..959fbd6
+index 0000000..60400d6
 --- /dev/null
 +++ b/tests/runtime/test_resource_manager_replay.cpp
-@@ -0,0 +1,383 @@
+@@ -0,0 +1,704 @@
 +// Replays the 2026-10-11 host-admit runs against the ResourceManager with a first-fit Host
 +// arena of the live geometry. 1 fixture token = 1 main KV page = 64 real tokens.
 +#define main original_test_main
@@ -1368,6 +1756,7 @@ index 0000000..959fbd6
 +#undef main
 +
 +#include <cstdlib>
++#include <cstring>
 +#include <string>
 +#include <type_traits>
 +
@@ -1651,6 +2040,12 @@ index 0000000..959fbd6
 +            add("release_after_failed_demote", before.release_after_failed_demote,
 +                after.release_after_failed_demote);
 +        }
++        if constexpr (requires { after.stale_evicted; }) {
++            add("stale_evicted", before.stale_evicted, after.stale_evicted);
++        }
++        if constexpr (requires { after.stale_writer_refused; }) {
++            add("stale_writer_refused", before.stale_writer_refused, after.stale_writer_refused);
++        }
 +        return out;
 +    }
 +}
@@ -1702,6 +2097,279 @@ index 0000000..959fbd6
 +    return replay_alive ? cached : 0;
 +}
 +
++// Concurrent turns: a turn holds its running pages from begin to end, so the turns in flight
++// compete for the Device the way the live lanes do.
++struct Flight {
++    Convo* d               = nullptr;
++    std::uint32_t prompt   = 0;
++    std::uint32_t previous = 0;
++    std::uint32_t cached   = 0;
++    std::uint32_t restored = 0; // pages that came back from the Host
++    std::uint64_t order    = 0;
++    const char* fate       = "";
++    Base base;
++};
++
++Flight begin_turn(Replay& r, Convo& d, std::uint32_t added) {
++    Flight flight{.d = &d, .prompt = d.prompt + added, .previous = d.prompt};
++    flight.base = Base{.tokens = tokens(flight.prompt + 1, d.first)};
++    auto& f     = r.f;
++    if (d.prompt && !d.replay) { flight.fate = " (its capture was skipped)"; }
++    if (d.replay && !f.program.valid_checkpoint(*d.replay)) {
++        flight.fate = demoted(f, *d.replay) ? " (moved to the Host, then deleted there)"
++                                            : " (deleted from the Device, never moved)";
++    }
++    if (!d.owner) {
++        auto choice  = f.source(flight.base, std::nullopt);
++        flight.order = ++f.next_order;
++        d.owner      = f.cache.adopt(f.program, choice, flight.base, flight.order);
++        r.need_device(flight.prompt);
++        return flight;
++    }
++    auto choices = f.cache.candidates(f.program, flight.base, UINT32_MAX);
++    require(!choices.empty(), "no candidates");
++    auto& choice = choices.front();
++    flight.order = ++f.next_order;
++    if (choice.source.checkpoint) {
++        flight.cached         = choice.source.reused_tokens;
++        const auto handle     = *choice.source.checkpoint;
++        std::uint32_t carried = 0;
++        for (const auto& point : f.cache.points(choice.owner)) {
++            if (!f.program.valid_checkpoint(point)) { continue; }
++            auto& content = f.program.contents[point.index];
++            carried += content.main_pages;
++            content.main_pages = 0;
++        }
++        r.running += carried;
++        require(f.program.release_checkpoint(handle), "consume failed");
++        const auto owner =
++            f.cache.adopt(f.program, choice, flight.base, flight.order, {}, {&handle, 1});
++        require(owner == d.owner, "continuation did not keep its owner");
++        flight.restored = flight.cached - carried;
++        r.need_device(flight.restored);
++    } else {
++        d.owner = f.cache.adopt(f.program, choice, flight.base, flight.order);
++    }
++    r.need_device(flight.prompt - flight.cached);
++    return flight;
++}
++
++// Returns whether a continued turn found its whole previous prompt cached.
++bool end_turn(Replay& r, Flight& flight, const char* label, std::size_t& lost) {
++    auto& d = *flight.d;
++    r.running -= flight.prompt;
++    d.prompt   = flight.prompt;
++    d.replay   = r.capture(d.owner, flight.base, flight.prompt, flight.prompt, Role::InputReplay);
++    d.endpoint = r.capture(d.owner, flight.base, flight.prompt + 1, 0, Role::Continuation);
++    r.f.cache.finish(r.f.program, d.owner, flight.base, flight.order);
++    const bool kept = !flight.previous || flight.cached >= flight.previous;
++    if (!kept) { ++lost; }
++    if (r.verbose || !kept) {
++        std::cout << "    " << label << " prompt=" << flight.prompt << " cached=" << flight.cached
++                  << " from_host=" << flight.restored << (kept ? "" : " RECOMPUTED") << (kept ? "" : flight.fate) << " host=" << r.host_used() / 1e9 << "GB\n";
++    }
++    return kept;
++}
++
++Convo fresh(Replay& r) {
++    Convo d;
++    d.first = r.next_first;
++    r.next_first += 100000;
++    return d;
++}
++
++// The live pause run's Host residue: one cold fill and three cold ~96k requests.
++void pause_shape(Replay& r) {
++    (void)r.root(kFill, "pause-fill");
++    for (int i = 0; i < 3; ++i) { (void)r.root(1499, "pause"); }
++}
++
++// --test growth on 2026-10-11 (r3-growth.log): A, B and C in flight together, six turns,
++// 40,000 tokens growing by ~7,450 per turn. Live, B2 recomputed B1 (39,942 tokens).
++std::size_t growth(Replay& r, const char* tag) {
++    const auto before = counters_of(r.f.cache);
++    std::array<Convo, 3> convos{fresh(r), fresh(r), fresh(r)};
++    std::size_t lost = 0;
++    for (std::uint32_t turn = 1; turn <= 6; ++turn) {
++        std::vector<Flight> flights;
++        for (auto& d : convos) { flights.push_back(begin_turn(r, d, turn == 1 ? 625 : 117)); }
++        for (std::size_t i = 0; i < flights.size(); ++i) {
++            const auto label = std::string(tag) + " " + char('A' + i) + std::to_string(turn);
++            (void)end_turn(r, flights[i], label.c_str(), lost);
++        }
++    }
++    std::cout << "  " << tag << ": growth recomputed turns=" << lost << " host=" << r.host_used() / 1e9
++              << "GB" << deltas(before, counters_of(r.f.cache)) << "\n";
++    return lost;
++}
++
++// The agentic run: an orchestrator, three multi-turn children, and a reviewer that starts
++// while the children finish and then grows past the Device alone. Everything continued must
++// come back from the Device or the Host.
++// One agent run as a sequence of phases, so two runs can interleave (review M2).
++struct AgentRun {
++    std::string tag;
++    Convo orchestrator, reviewer;
++    std::array<Convo, 3> children;
++    int phase = 0;
++    std::size_t lost_o = 0, lost_c = 0, lost_r = 0;
++    bool big = false; // orchestrator ~99k, children ~49k: a run of ~12 GB
++
++    AgentRun(Replay& r, std::string name, bool large = false)
++        : tag(std::move(name)), big(large), orchestrator(fresh(r)), reviewer(fresh(r)),
++          children{fresh(r), fresh(r), fresh(r)} {}
++
++    [[nodiscard]] bool done() const { return phase > 11; }
++    [[nodiscard]] std::size_t lost() const { return lost_o + lost_c + lost_r; }
++
++    std::string label(const char* who, int turn) const {
++        return tag + " " + who + std::to_string(turn);
++    }
++
++    void one(Replay& r, Convo& d, std::uint32_t added, const char* who, int turn,
++             std::size_t& lost) {
++        auto flight = begin_turn(r, d, added);
++        (void)end_turn(r, flight, label(who, turn).c_str(), lost);
++    }
++
++    void kids(Replay& r, std::uint32_t added, int turn, std::optional<std::uint32_t> review = {},
++              bool review_first = false) {
++        std::vector<Flight> flights;
++        if (review && review_first) { flights.push_back(begin_turn(r, reviewer, *review)); }
++        for (auto& c : children) { flights.push_back(begin_turn(r, c, added)); }
++        if (review && !review_first) { flights.push_back(begin_turn(r, reviewer, *review)); }
++        for (auto& flight : flights) {
++            if (flight.d == &reviewer) {
++                (void)end_turn(r, flight, label("R", review_first ? 1 : 2).c_str(), lost_r);
++            } else {
++                const auto who = "c" + std::to_string(flight.d - children.data());
++                (void)end_turn(r, flight, label(who.c_str(), turn).c_str(), lost_c);
++            }
++        }
++    }
++
++    // Phases: O1, O2, children 1, children 2, O3, R1 with children 3, children 4 then R2,
++    // R3-R5 (to ~100k), O4, children 5.
++    void step(Replay& r) {
++        switch (phase++) {
++        case 0: one(r, orchestrator, big ? 1200 : 781, "O", 1, lost_o); break; // ~77k or ~50k
++        case 1: one(r, orchestrator, 157, "O", 2, lost_o); break;
++        case 2: kids(r, big ? 500 : 313, 1); break;
++        case 3: kids(r, 47, 2); break;
++        case 4: one(r, orchestrator, 156, "O", 3, lost_o); break; // ~70k tokens
++        // The reviewer starts (R1, ~60k) while the children run their last turns; the
++        // children's turn 4 (reading files) starts first and pushes R1 off the Device.
++        case 5: kids(r, 47, 3, 938, true); break;
++        case 6: kids(r, 150, 4, 156, false); break;
++        case 7: one(r, reviewer, 156, "R", 3, lost_r); break;
++        case 8: one(r, reviewer, 156, "R", 4, lost_r); break;
++        case 9: one(r, reviewer, 156, "R", 5, lost_r); break;
++        case 10: one(r, orchestrator, 31, "O", 4, lost_o); break;
++        case 11:
++            for (std::size_t i = 0; i < children.size(); ++i) {
++                one(r, children[i], 16, ("c" + std::to_string(i)).c_str(), 5, lost_c);
++            }
++            break;
++        default: break;
++        }
++    }
++};
++
++std::size_t agent_run(Replay& r, const char* tag) {
++    const auto before = counters_of(r.f.cache);
++    AgentRun run(r, tag);
++    while (!run.done()) { run.step(r); }
++    std::cout << "  " << tag << ": agent run recomputed turns=" << run.lost()
++              << " host=" << r.host_used() / 1e9 << "GB" << deltas(before, counters_of(r.f.cache))
++              << "\n";
++    return run.lost();
++}
++
++// Two sessions on one engine: run b starts after run a's orchestrator dispatched its reviewer
++// and the two then alternate phase by phase. Together they hold more than the window.
++std::array<AgentRun, 2> agent_pair(Replay& r, const std::string& tag) {
++    const auto before = counters_of(r.f.cache);
++    std::array<AgentRun, 2> runs{AgentRun(r, tag + "a", true), AgentRun(r, tag + "b", true)};
++    while (runs[0].phase < 5) { runs[0].step(r); }
++    while (!runs[0].done() || !runs[1].done()) {
++        for (auto& run : runs) {
++            if (!run.done()) { run.step(r); }
++        }
++    }
++    for (const auto& run : runs) {
++        std::cout << "  " << run.tag << ": recomputed orchestrator=" << run.lost_o
++                  << " children=" << run.lost_c << " reviewer=" << run.lost_r << "\n";
++    }
++    std::cout << "  " << tag << ": pair host=" << r.host_used() / 1e9 << "GB"
++              << deltas(before, counters_of(r.f.cache)) << "\n";
++    return runs;
++}
++
++// The live day before --test growth: empty and full host-admit, then the pause run.
++bool run_growth(const Point& point) {
++    g_point = point;
++    std::cout << "growth (host-admit empty + full, pause, growth) fill+" << point.fill_delta
++              << " push+" << point.push_delta << (point.live_sizes ? " live-sizes" : "")
++              << " device_images=" << point.device_images << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        pause_shape(r);
++        const auto lost = growth(r, "growth");
++        std::cout << (lost ? "FAIL" : "PASS") << "\n";
++        return !lost;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++// Steady state: the Host is full of proven dialogues from earlier runs, then three agent runs.
++bool run_agent(const Point& point) {
++    g_point = point;
++    std::cout << "agent (host-admit empty + full, three agent runs) fill+" << point.fill_delta
++              << " push+" << point.push_delta << (point.live_sizes ? " live-sizes" : "")
++              << " device_images=" << point.device_images << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        std::size_t lost = 0;
++        for (const char* tag : {"run1", "run2", "run3"}) { lost += agent_run(r, tag); }
++        std::cout << (lost ? "FAIL" : "PASS") << "\n";
++        return !lost;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
++// Steady state with two sessions: one agent run alone, then two overlapping pairs.
++bool run_agent2(const Point& point) {
++    g_point = point;
++    std::cout << "agent2 (host-admit empty + full, one run, two overlapping pairs) fill+"
++              << point.fill_delta << " push+" << point.push_delta
++              << (point.live_sizes ? " live-sizes" : "") << " device_images=" << point.device_images
++              << "\n";
++    try {
++        Replay r;
++        (void)host_admit(r, false, "empty");
++        (void)host_admit(r, true, "full");
++        bool pass = agent_run(r, "solo") == 0;
++        for (const char* tag : {"pair1", "pair2"}) {
++            const auto runs = agent_pair(r, tag);
++            // Every run keeps everything: LRU spends the finished pair before either live run.
++            pass = pass && runs[0].lost() + runs[1].lost() == 0;
++        }
++        std::cout << (pass ? "PASS" : "FAIL") << "\n";
++        return pass;
++    } catch (const std::exception& error) {
++        std::cout << "FAIL (" << error.what() << ")\n";
++        return false;
++    }
++}
++
 +// The live day: an empty-tier run leaves residue, then the full-tier run.
 +bool run_point(const Point& point) {
 +    g_point = point;
@@ -1739,10 +2407,51 @@ index 0000000..959fbd6
 +            }
 +        }
 +    }
++    const std::string only = std::getenv("REPLAY_ONLY") ? std::getenv("REPLAY_ONLY") : "";
++    // REPLAY_SHARD=i/n keeps every n-th point from i, for a parallel manual sweep.
++    const auto shard = [](std::vector<Point> all) {
++        const char* spec = std::getenv("REPLAY_SHARD");
++        if (!spec || !std::strchr(spec, '/')) { return all; }
++        const auto index = std::strtoul(spec, nullptr, 10);
++        const auto count = std::strtoul(std::strchr(spec, '/') + 1, nullptr, 10);
++        std::vector<Point> mine;
++        for (std::size_t i = index; i < all.size(); i += count) { mine.push_back(all[i]); }
++        return mine;
++    };
++    const auto host_points = shard(points);
 +    std::size_t failed = 0;
-+    for (const auto& point : points) { failed += run_point(point) ? 0 : 1; }
-+    std::cout << "replay: " << points.size() - failed << "/" << points.size() << " points kept the target\n";
-+    return failed ? 1 : 0;
++    if (only.empty() || only == "host") {
++        for (const auto& point : host_points) { failed += run_point(point) ? 0 : 1; }
++        std::cout << "replay: " << host_points.size() - failed << "/" << host_points.size()
++                  << " points kept the target\n";
++    }
++    // Each scenario runs with 0, 3 and 7 Device image slots for new captures (every route by
++    // which the deployed patch lost a turn); the full sweep cycles them over its perturbations.
++    std::vector<Point> scenario_points;
++    const std::uint32_t images[] = {0, 3, 7};
++    if (full) {
++        for (std::size_t i = 0; i < points.size(); ++i) {
++            scenario_points.push_back(points[i]);
++            scenario_points.back().device_images = images[i % 3];
++        }
++    } else {
++        for (const auto count : images) { scenario_points.push_back({.device_images = count}); }
++    }
++    scenario_points = shard(scenario_points);
++    std::size_t growth_failed = 0, agent_failed = 0, agent2_failed = 0;
++    for (const auto& point : scenario_points) {
++        if (only.empty() || only == "growth") { growth_failed += run_growth(point) ? 0 : 1; }
++        if (only.empty() || only == "agent") { agent_failed += run_agent(point) ? 0 : 1; }
++        if (only.empty() || only == "agent2") { agent2_failed += run_agent2(point) ? 0 : 1; }
++    }
++    const auto ran = [&](const char* name, std::size_t lost) {
++        if (!only.empty() && only != name) { return std::string{}; }
++        return " " + std::string(name) + " " + std::to_string(scenario_points.size() - lost) + "/" +
++               std::to_string(scenario_points.size());
++    };
++    std::cout << "scenarios:" << ran("growth", growth_failed) << ran("agent", agent_failed) << ran("agent2", agent2_failed)
++              << " points kept every continued turn\n";
++    return failed || growth_failed || agent_failed || agent2_failed ? 1 : 0;
 +}
 diff --git a/tests/test_host_extent_runs.cpp b/tests/test_host_extent_runs.cpp
 new file mode 100644

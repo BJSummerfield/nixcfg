@@ -29,8 +29,9 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   };
 
   # Own fix: full Host tier deletes continued conversations and pause snapshots (#378 placement +
-  # write-back retention). Drop the placement parts when upstream fixes #378, the retention parts
-  # when upstream records proven demand for write-backs: bump pin, run the fail-first tests unpatched.
+  # write-back retention + Host recency window). Drop the placement parts when upstream fixes #378,
+  # the retention parts when upstream records proven demand for write-backs: bump pin, run the
+  # fail-first tests unpatched.
   patches = [ ./ninfer-full-tier.patch ];
 
   nativeBuildInputs = [
