@@ -7,11 +7,11 @@ the repository.
 
 ## Model and thinking
 
-Every role's model, output budget and thinking level are set in nix
-(`agentOverrides`). A dispatch never needs `model:`; single-agent dispatch has
-no such field, and omitting it is correct. Chain and parallel steps do take a
-`model` field: leave it out. Setting it makes the call site the origin and the
-role's nix pin is silently ignored.
+Every role's thinking level is set in nix (`agentOverrides`); all roles share
+one model and one output limit. A dispatch never needs `model:`; single-agent
+dispatch has no such field, and omitting it is correct. Chain and parallel steps
+do take a `model` field: leave it out. Setting it makes the call site the origin
+and the role's nix settings are silently ignored.
 
 Reasoning and answer share one output budget, so a long deliverable at a high
 level can spend it all thinking and return `stopReason: "length"` with nothing
@@ -21,11 +21,10 @@ evidence) so truncation loses only tail evidence.
 ## Context limits
 
 `clampMaxTokensToContext` caps a turn at `contextWindow - context - 4096`, so
-the output budget shrinks as the transcript grows: **98,304 minus whatever the
-prompt already costs**, floored at 1 token. That (not `maxModelLen`) is what
-produces `length` deaths, and it is why a long session's replies get shorter
-before they stop entirely. A session that reaches the floor cannot self-recover
-— auto-compaction's summary call overflows identically. Resume from a fork.
+replies get less output room as the transcript grows. Compaction makes no model
+call: earlier turns are replaced by a resume card (task, plan files, modified
+files, last message) and their reasoning is gone. Keep decisions in the plan
+files; that is what survives.
 
 - Fork only a child that needs your working context; dispatch self-contained
   briefs fresh. A fork of a large parent burns its budget in the inherited
@@ -96,8 +95,6 @@ later request fails with
 ```
 400 BadRequestError: At most @imageBudget@ image(s) may be provided in one prompt.
 ```
-
-including the compaction that would have evicted them.
 
 **Do not read images in this session.** Dispatch a child to look and report in
 prose; a child that overruns kills only its own run. `At most N image(s)` means
