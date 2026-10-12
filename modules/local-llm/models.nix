@@ -64,7 +64,7 @@
           file = "qwen3_8_27b_nvfp4.ninfer";
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
-        maxContext = 102400;
+        maxContext = 163840;
         kvCapacity = "auto";
         maxConcurrency = 4;
         kvDtype = "fp8";

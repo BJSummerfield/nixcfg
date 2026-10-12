@@ -525,7 +525,7 @@ def main():
     p.add_argument("--seed", type=int, help="fixes prefixes; reuse shares cache with the prior run")
     p.add_argument("--tolerance", type=int, default=512, help="cached-token slack for reuse checks")
     p.add_argument("--tokens-per-word", type=float, default=1.589, help="dry-run value; calibrated live otherwise")
-    p.add_argument("--max-context", type=int, default=102400)
+    p.add_argument("--max-context", type=int, default=163840)
     p.add_argument("--kv-capacity", type=int, default=233792)
     p.add_argument("--pause-n", type=int, default=3)
     p.add_argument("--pause-frac", type=float, default=0.94)

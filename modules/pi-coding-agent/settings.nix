@@ -8,30 +8,68 @@ let
     input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
   };
 
+  narrowWindow = m: m.maxModelLen - m.headroom;
+  wideWindow = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
+
   mkModel =
+    { window, label }:
     id: m:
     {
       inherit id;
-      name = m.displayName;
+      name = m.displayName + label;
       inherit (m) reasoning;
-      contextWindow = m.maxModelLen - m.headroom;
+      contextWindow = window m;
       inherit (m) maxTokens;
     }
     // thinkingMapOf m
     // inputsOf m;
 
-  redtruckModels = map (name: mkModel name llm.models.${name}) llm.enabled;
+  narrowProvider = llm.provider;
+  wideProvider = "${llm.provider}-wide";
 
-  qualified = id: "${llm.provider}/${id}";
+  modelsFor = variant: map (name: mkModel variant name llm.models.${name}) llm.enabled;
+
+  mkProvider = models: {
+    inherit (llm) baseUrl;
+    api = "openai-completions";
+    apiKey = "dummy";
+    compat = {
+      supportsDeveloperRole = false;
+      supportsStrictMode = false;
+      supportsReasoningEffort = true;
+      thinkingFormat = "chat-template";
+      chatTemplateKwargs = {
+        enable_thinking = {
+          "$var" = "thinking.enabled";
+        };
+        reasoning_effort = {
+          "$var" = "thinking.effort";
+          omitWhenOff = true;
+        };
+        preserve_thinking = true;
+      };
+      supportsThinkingTokenBudget = false;
+    };
+    inherit models;
+  };
+
+  qualified = provider: id: "${provider}/${id}";
 in
 {
   settings = {
     theme = "dark";
+    tuiMode = "regular";
+    extensions = [
+      "-builtin:mcp"
+      "-builtin:llama.cpp"
+      "-builtin:codemode"
+      "-builtin:tool-search"
+    ];
     model = {
-      inherit (llm) provider;
+      provider = narrowProvider;
       model = llm.default;
     };
-    defaultProvider = llm.provider;
+    defaultProvider = narrowProvider;
     defaultModel = llm.default;
     defaultThinkingLevel = "medium";
     cacheWarming = "off";
@@ -41,6 +79,7 @@ in
     compaction.reserveTokens = 20480;
 
     subagents = {
+      defaultModel = qualified wideProvider llm.default;
       maxThinking = "xhigh";
       agentOverrides = {
         scout = {
@@ -79,29 +118,14 @@ in
 
   models = {
     providers = {
-      ${llm.provider} = {
-        inherit (llm) baseUrl;
-        api = "openai-completions";
-        apiKey = "dummy";
-        compat = {
-          supportsDeveloperRole = false;
-          supportsStrictMode = false;
-          supportsReasoningEffort = true;
-          thinkingFormat = "chat-template";
-          chatTemplateKwargs = {
-            enable_thinking = {
-              "$var" = "thinking.enabled";
-            };
-            reasoning_effort = {
-              "$var" = "thinking.effort";
-              omitWhenOff = true;
-            };
-            preserve_thinking = true;
-          };
-          supportsThinkingTokenBudget = false;
-        };
-        models = redtruckModels;
-      };
+      ${narrowProvider} = mkProvider (modelsFor {
+        window = narrowWindow;
+        label = "";
+      });
+      ${wideProvider} = mkProvider (modelsFor {
+        window = wideWindow;
+        label = " [wide]";
+      });
     };
   };
 
@@ -120,7 +144,7 @@ in
       "parallel-mcp"
     ];
     curatorTimeoutSeconds = 20;
-    summaryModel = qualified llm.default;
+    summaryModel = qualified narrowProvider llm.default;
     toolActivation = "eager";
   };
 

@@ -120,6 +120,14 @@ in
         assertion = ninferSelected -> ninferAvailable;
         message = "local-llm: cuda.engine = \"ninfer\" but models.nix has no `ninfer` block for ${catalog.default} (it needs its own .ninfer artifact; vLLM's safetensors will not load)";
       }
+      {
+        assertion =
+          let
+            m = catalog.models.${catalog.default};
+          in
+          (cudaEnabled && !ninferSelected) -> (m.ninfer.maxContext or 0) <= m.maxModelLen;
+        message = "local-llm: cuda.engine = \"vllm\" but ${catalog.default}'s ninfer.maxContext exceeds maxModelLen; pi's subagent window follows ninfer.maxContext and would outgrow vLLM's cap";
+      }
     ];
 
     hardware.graphics = {
