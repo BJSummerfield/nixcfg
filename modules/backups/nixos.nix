@@ -60,7 +60,7 @@ in
         window (03:00-05:00) closes, so an upgrade reboot cannot cut a run
         short, and is the hour stop-strategy containers (jellyfin, teamspeak,
         stalwart) may be down; dump-strategy services only need their own
-        timers to have fired earlier (vikunja 00:00, immich 02:00).
+        timers to have fired earlier (immich 02:00).
       '';
     };
 

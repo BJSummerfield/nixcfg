@@ -13,10 +13,6 @@
     intel-gpu-tools
   ];
 
-  sops.secrets.vikunja-jwt-secret = {
-    sopsFile = ../../secrets/hosts/paynefield.yaml;
-    mode = "0400";
-  };
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
