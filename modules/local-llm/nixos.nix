@@ -30,7 +30,6 @@ let
   metricsPort = 5801;
 
   catalog = import ./models.nix;
-  weightsOf = import ./weights.nix { inherit lib pkgs; };
   artifactOf = import ./artifact.nix { inherit pkgs; };
   ninfer = pkgs.callPackage ./ninfer-package.nix { };
 
