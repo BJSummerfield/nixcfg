@@ -52,10 +52,6 @@
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
-      openssh.inbound = {
-        enable = true;
-        openOnExternalInterface = true;
-      };
       stalwart-server = {
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
@@ -68,10 +64,11 @@
         enable = true;
         sopsFile = ../../secrets/hosts/vps.yaml;
       };
+      # One-time manual activation (remoteAccess wires the daemon + sshd only, it
+      # never runs `tailscale up` — see the design manual-activation policy):
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
-      tailscale = {
+      remoteAccess = {
         enable = true;
-        ssh = true;
       };
       teamspeak-server = {
         enable = true;
@@ -85,12 +82,6 @@
       b2EnvFile = config.sops.secrets.restic-b2-env.path;
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "redtruck"
-      "t495"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = {
