@@ -60,10 +60,6 @@
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      photoform = {
-        enable = true;
-        sopsFile = ../../secrets/hosts/vps.yaml;
-      };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       tailscale = {
         enable = true;
