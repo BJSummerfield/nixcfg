@@ -1,7 +1,6 @@
-{ engine }:
 { config, lib, ... }:
 {
-  imports = lib.optional (engine == "ninfer") ./ninfer.nix;
+  imports = [ ./ninfer.nix ];
 
   services.tailscale.enable = true;
 

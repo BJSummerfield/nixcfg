@@ -11,9 +11,6 @@
 # A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
 # /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
 # Later flags win, except the booleans (--lm-head-draft, --vision).
-#
-# engine = "vllm" runs on the host in podman; its serve rule then points at
-# http://192.168.100.24:5800.
 
 {
   lib,
@@ -26,11 +23,7 @@ let
 
   nvidiaEnabled = config.mine.system.nvidia.enable;
   cudaEnabled = cfg.cuda.enable;
-  engine = cfg.cuda.engine;
-  ninferSelected = cudaEnabled && engine == "ninfer";
-  vllmSelected = cudaEnabled && engine == "vllm";
 
-  vllmImage = "docker.io/vllm/vllm-openai:nightly-dc36fcce902a63eab06c1b93a5c4a5ee178a0c56";
   hostAddress = "192.168.100.24";
   localAddress = "192.168.100.25";
   enginePort = 5800;
@@ -40,18 +33,6 @@ let
   weightsOf = import ./weights.nix { inherit lib pkgs; };
   artifactOf = import ./artifact.nix { inherit pkgs; };
   ninfer = pkgs.callPackage ./ninfer-package.nix { };
-
-  vllmService = import ./vllm-service.nix {
-    inherit
-      lib
-      pkgs
-      catalog
-      weightsOf
-      vllmImage
-      hostAddress
-      ;
-    port = enginePort;
-  };
 
   ninferAvailable = catalog.models.${catalog.default} ? ninfer;
 
@@ -76,14 +57,6 @@ in
     enable = lib.mkEnableOption "Enable Local LLM container";
     cuda = {
       enable = lib.mkEnableOption "Serve NVFP4 models on the CUDA/Blackwell card";
-      engine = lib.mkOption {
-        type = lib.types.enum [
-          "ninfer"
-          "vllm"
-        ];
-        default = "ninfer";
-        description = "Which engine is built: NInfer inside the container, or vLLM on the host in podman.";
-      };
       autoStart = lib.mkOption {
         type = lib.types.bool;
         default = true;
@@ -114,19 +87,11 @@ in
         assertion = builtins.all (n: builtins.match "[A-Za-z0-9][A-Za-z0-9_.-]*" n != null) (
           builtins.attrNames catalog.models
         );
-        message = "local-llm: model names must match [A-Za-z0-9][A-Za-z0-9_.-]* (podman container names and --served-model-name)";
+        message = "local-llm: model names must match [A-Za-z0-9][A-Za-z0-9_.-]* (--served-model-name)";
       }
       {
-        assertion = ninferSelected -> ninferAvailable;
-        message = "local-llm: cuda.engine = \"ninfer\" but models.nix has no `ninfer` block for ${catalog.default} (it needs its own .ninfer artifact; vLLM's safetensors will not load)";
-      }
-      {
-        assertion =
-          let
-            m = catalog.models.${catalog.default};
-          in
-          (cudaEnabled && !ninferSelected) -> (m.ninfer.maxContext or 0) <= m.maxModelLen;
-        message = "local-llm: cuda.engine = \"vllm\" but ${catalog.default}'s ninfer.maxContext exceeds maxModelLen; pi's subagent window follows ninfer.maxContext and would outgrow vLLM's cap";
+        assertion = cudaEnabled -> ninferAvailable;
+        message = "local-llm: models.nix has no `ninfer` block for ${catalog.default} (it needs its own .ninfer artifact)";
       }
     ];
 
@@ -142,11 +107,11 @@ in
     };
 
     system.activationScripts.local-llm-dirs = ''
-      mkdir -p /var/lib/local-llm/vllm-cache /var/lib/local-llm/ninfer
+      mkdir -p /var/lib/local-llm/ninfer
       chmod 755 /var/lib/local-llm
     '';
 
-    mine.allowedUnfree = lib.mkIf ninferSelected [
+    mine.allowedUnfree = lib.mkIf cudaEnabled [
       "libnvvm"
       "cuda_crt"
       "cuda_cccl"
@@ -154,28 +119,6 @@ in
       "cuda_cudart"
       "cuda_nvcc"
     ];
-
-    virtualisation.podman.enable = lib.mkIf vllmSelected true;
-    hardware.nvidia-container-toolkit.enable = lib.mkIf vllmSelected true;
-
-    systemd.services.vllm = lib.mkIf vllmSelected (
-      vllmService // lib.optionalAttrs cfg.cuda.autoStart { wantedBy = [ "multi-user.target" ]; }
-    );
-
-    networking.firewall.interfaces."ve-local-llm" = lib.mkIf vllmSelected {
-      allowedTCPPorts = [ enginePort ];
-    };
-
-    systemd.services.vllm-image-pull = lib.mkIf vllmSelected {
-      description = "pull the pinned vLLM OCI image";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "exec";
-        ExecStart = "${pkgs.podman}/bin/podman pull ${vllmImage}";
-      };
-    };
 
     containers.local-llm = {
       autoStart = false;
@@ -188,7 +131,7 @@ in
           node = "/dev/net/tun";
         }
       ]
-      ++ lib.optionals ninferSelected gpuDevices;
+      ++ lib.optionals cudaEnabled gpuDevices;
 
       bindMounts = {
         "/dev/net/tun" = {
@@ -200,7 +143,7 @@ in
           isReadOnly = false;
         };
       }
-      // lib.optionalAttrs ninferSelected (
+      // lib.optionalAttrs cudaEnabled (
         gpuMounts
         // {
           "/run/opengl-driver" = {
@@ -211,7 +154,7 @@ in
       );
 
       config = {
-        imports = [ (import ./container.nix { engine = if ninferSelected then "ninfer" else "none"; }) ];
+        imports = [ (import ./container.nix) ];
         _module.args = {
           inherit
             catalog
