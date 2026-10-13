@@ -39,17 +39,16 @@
           popups = 9;
         };
       };
-      tailscale = {
+      remoteAccess = {
         enable = true;
-        ssh = true;
+        authorizedKeys = [
+          "onepassword"
+          "redtruck"
+          "mac"
+        ];
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "redtruck"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = {
