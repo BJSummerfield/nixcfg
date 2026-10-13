@@ -105,17 +105,16 @@
       printing.enable = true;
       theme.enable = true;
       steam.enable = true;
-      tailscale = {
+      remoteAccess = {
         enable = true;
-        ssh = true;
+        authorizedKeys = [
+          "onepassword"
+          "t495"
+          "mac"
+        ];
       };
       teamspeak-client.enable = true;
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "t495"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = { config, ... }: {
