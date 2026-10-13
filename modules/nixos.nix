@@ -4,7 +4,6 @@
     ./_1password/nixos.nix
     ./avahi/nixos.nix
     ./backups/nixos.nix
-    ./caddy/nixos.nix
     ./dns-server/nixos.nix
     ./docker/nixos.nix
     ./filesystems

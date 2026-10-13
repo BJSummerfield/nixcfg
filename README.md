@@ -40,7 +40,7 @@ nix flake check                               # everything below
 ```
 
 `nix flake check` evaluates every host, runs the formatter/statix/deadnix gates,
-builds the flake packages, and adapts each Caddy host's real Caddyfile.
+and builds the flake packages.
 
 ## Conventions
 

@@ -60,10 +60,6 @@
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      caddy = {
-        enable = true;
-        acmeEmail = "brianjsummerfield@gmail.com";
-      };
       photoform = {
         enable = true;
         sopsFile = ../../secrets/hosts/vps.yaml;

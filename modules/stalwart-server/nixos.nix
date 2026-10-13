@@ -47,8 +47,8 @@ in
       25
       465
       993
-    ]
-    ++ lib.optional (!config.mine.system.caddy.enable) 443;
+      443
+    ];
 
     networking.nat = {
       enable = true;
@@ -70,8 +70,6 @@ in
           destination = "192.168.100.41:993";
           proto = "tcp";
         }
-      ]
-      ++ lib.optionals (!config.mine.system.caddy.enable) [
         {
           sourcePort = 443;
           destination = "192.168.100.41:443";
@@ -83,14 +81,6 @@ in
     mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ hostStateDir ];
       stopContainers = [ "stalwart" ];
-    };
-
-    mine.system.caddy = lib.mkIf config.mine.system.caddy.enable {
-      routes.mail = {
-        hostnames = [ "mx1.brianjs.com" ];
-        mode = "tcp";
-        target = "192.168.100.41:443";
-      };
     };
 
     containers.stalwart = {

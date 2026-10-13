@@ -136,20 +136,3 @@ evalAll "nixos" inputs.self.nixosConfigurations
 // nixpkgs.lib.mapAttrs' (
   name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
 ) inputs.self.packages.x86_64-linux
-//
-  nixpkgs.lib.mapAttrs'
-    (
-      name: cfg:
-      nixpkgs.lib.nameValuePair "caddyfile-${name}" (
-        pkgs.runCommand "caddyfile-${name}"
-          {
-            nativeBuildInputs = [ cfg.config.services.caddy.package ];
-          }
-          ''
-            HOME=$TMPDIR caddy adapt \
-              --config ${cfg.config.services.caddy.configFile} \
-              --adapter caddyfile > $out
-          ''
-      )
-    )
-    (nixpkgs.lib.filterAttrs (_: cfg: cfg.config.services.caddy.enable) inputs.self.nixosConfigurations)
