@@ -73,7 +73,6 @@ buildNpmPackage (finalAttrs: {
   postInstall = ''
     local nm="$out/lib/node_modules/pi-monorepo/node_modules"
 
-    # Replace workspace deps needed at runtime with real copies
     for ws in @earendil-works/chord:packages/chord \
               @earendil-works/pi-ai:packages/ai \
               @earendil-works/pi-agent-core:packages/agent \
@@ -86,7 +85,6 @@ buildNpmPackage (finalAttrs: {
       cp -r "$src" "$nm/$pkg"
     done
 
-    # Delete remaining workspace symlinks
     find "$nm" -type l -lname '*/packages/*' -delete
 
     # Clean up now-dangling .bin symlinks
