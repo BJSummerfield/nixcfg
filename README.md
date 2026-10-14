@@ -37,7 +37,7 @@ buildable package rather than a `mine.*` toggle. The overlaid package stays in
 the store and remains buildable or installable on its own:
 
 ```sh
-nix build github:…#onePassword   # or a programs.*-style install
+nix build .#onePassword   # or a programs.*-style install
 ```
 
 A repo-wide `*_overlay` option only exists to apply that override to every
