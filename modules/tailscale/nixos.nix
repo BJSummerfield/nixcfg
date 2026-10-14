@@ -26,7 +26,7 @@ in
     mine.system.openssh.inbound.enable = lib.mkIf cfg.ssh true;
 
     networking.firewall.interfaces = lib.mkIf cfg.ssh {
-      "tailscale0".allowedTCPPorts = [ 22 ];
+      "tailscale0".allowedTCPPorts = config.services.openssh.ports;
     };
   };
 }
