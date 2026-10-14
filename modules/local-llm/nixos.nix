@@ -6,7 +6,7 @@
 # The serve rules must be re-run by hand after a rebuild; they do not follow nix.
 #
 # Nothing starts at boot: `nixos-container start local-llm` brings the container
-# and the engine up together (cuda.autoStart = false to start the engine by hand).
+# and the engine up together.
 #
 # A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
 # /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
@@ -56,11 +56,6 @@ in
     enable = lib.mkEnableOption "Enable Local LLM container";
     cuda = {
       enable = lib.mkEnableOption "Serve NVFP4 models on the CUDA/Blackwell card";
-      autoStart = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = "Start the engine whenever its container starts. The container itself never autostarts, so the card stays idle at boot either way.";
-      };
     };
   };
 
@@ -162,7 +157,7 @@ in
             enginePort
             metricsPort
             ;
-          inherit (cfg.cuda) autoStart;
+          autoStart = true;
         };
       };
     };
