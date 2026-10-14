@@ -1,5 +1,4 @@
 cursor {
-    // xcursor-theme "Vanilla-DMZ"
     xcursor-size 32
 }
 hotkey-overlay {
@@ -36,7 +35,6 @@ layout {
 }
 prefer-no-csd
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-// Visual and blur
 blur {
     off
 }

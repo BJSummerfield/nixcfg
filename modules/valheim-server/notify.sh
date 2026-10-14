@@ -196,8 +196,6 @@ cmd_parse() {
   done
 }
 
-# --- watch --------------------------------------------------------------
-
 handle_up() {
   local version="$1"
   local last_stop last_version msg
@@ -357,8 +355,6 @@ cmd_watch() {
     fi
   done
 }
-
-# --- stopped (ExecStopPost) ----------------------------------------------
 
 crash_throttled() {
   local last
