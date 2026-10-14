@@ -49,7 +49,6 @@
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
-      terraria-server.enable = false;
       valheim-server = {
         enable = true;
         notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;

@@ -68,7 +68,6 @@
       teamspeak-server = {
         enable = true;
         publicAccess = true;
-        tailscaleAccess = false;
       };
     };
     backups = {

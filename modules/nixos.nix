@@ -5,7 +5,6 @@
     ./avahi/nixos.nix
     ./backups/nixos.nix
     ./dns-server/nixos.nix
-    ./docker/nixos.nix
     ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
@@ -28,7 +27,6 @@
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix
     ./teamspeak-server/nixos.nix
-    ./terraria-server/nixos.nix
     ./theme/nixos.nix
     ./unfree/nixos.nix
     ./users/nixos.nix
