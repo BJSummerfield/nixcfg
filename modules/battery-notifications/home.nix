@@ -22,16 +22,16 @@ in
           while true; do
             battery=$(get_battery)
             if [ "$battery" -gt 50 ]; then
-                sleep 600   # 10 minutes when battery > 50%
+                sleep 600
             elif [ "$battery" -gt 20 ]; then
                 notify-send -t 5000 -u normal "Battery Status" "Battery status: $battery%"
-                sleep 600   # 10 minutes when battery is between 21% and 50%
+                sleep 600
             elif [ "$battery" -gt 10 ]; then
                 notify-send -t 8000 -u normal "Battery Warning" "Battery low: $battery%"
-                sleep 120   # 2 minutes when battery is between 11% and 20%
+                sleep 120
             else
                 notify-send -t 15000 -u critical "Battery Critical" "Battery critically low: $battery%"
-                sleep 60    # 1 minute when battery is 10% or lower
+                sleep 60
             fi
           done
         '';
