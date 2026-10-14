@@ -52,18 +52,6 @@ in
       '';
     };
 
-    schedule = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ "05:15" ];
-      description = ''
-        systemd OnCalendar times. 05:15 sits after the auto-upgrade reboot
-        window (03:00-05:00) closes, so an upgrade reboot cannot cut a run
-        short, and is the hour stop-strategy containers (jellyfin, teamspeak,
-        stalwart) may be down; dump-strategy services only need their own
-        timers to have fired earlier (immich 02:00).
-      '';
-    };
-
     paths = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -109,7 +97,7 @@ in
       environmentFile = cfg.b2EnvFile;
       inherit (cfg) paths;
       timerConfig = {
-        OnCalendar = cfg.schedule;
+        OnCalendar = [ "05:15" ];
         Persistent = true;
       };
       backupPrepareCommand =

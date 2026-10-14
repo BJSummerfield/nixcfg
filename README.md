@@ -29,6 +29,20 @@ disks are declared with disko, and every host is on the same tailnet.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
 - `docs/streamer.md` — building, flashing and bringing up the Raspberry Pi streamer.
 
+## Overlays and packages
+
+When a package needs a source override — the 1Password GUI, whose upstream
+release hash drifts from the nixpkgs pin — the override is expressed as a
+buildable package rather than a `mine.*` toggle. The overlaid package stays in
+the store and remains buildable or installable on its own:
+
+```sh
+nix build github:…#onePassword   # or a programs.*-style install
+```
+
+A repo-wide `*_overlay` option only exists to apply that override to every
+derivation in this repo. If you don't use the overlay you don't need the option.
+
 ## Working on it
 
 ```sh

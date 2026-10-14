@@ -53,12 +53,6 @@ in
           "extlinux" is for U-Boot boards such as the Raspberry Pi.
         '';
       };
-
-      partitionUuid = mkOption {
-        type = types.nullOr types.str;
-        default = null;
-        description = "The UUID of the encrypted LUKS root partition.";
-      };
     };
   };
 
@@ -148,11 +142,6 @@ in
         "d /root/.aws 0700 root root -"
         "L+ /root/.aws/credentials - - - - ${config.sops.templates."nix-cache-b2.ini".path}"
       ];
-    })
-
-    (mkIf (bootCfg.partitionUuid != null) {
-      boot.initrd.luks.devices."luks-${bootCfg.partitionUuid}".device =
-        "/dev/disk/by-uuid/${bootCfg.partitionUuid}";
     })
 
     (mkIf (bootCfg.mode == "systemd-boot") {

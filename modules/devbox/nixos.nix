@@ -136,20 +136,6 @@ in
             '';
             example = "192.168.100.27";
           };
-
-          gitIdentity = {
-            name = mkOption {
-              type = types.str;
-              default = "BJSummerfield";
-              description = "git user.name inside the container.";
-            };
-
-            email = mkOption {
-              type = types.str;
-              default = "brianjsummerfield@gmail.com";
-              description = "git user.email inside the container.";
-            };
-          };
         };
       }
     );
@@ -233,7 +219,7 @@ in
       config.imports = [
         (import ./container.nix {
           inherit inputs;
-          inherit (box) tailnetHostname gitIdentity;
+          inherit (box) tailnetHostname;
           signCommits = box.signingKeyFile != null;
         })
       ];

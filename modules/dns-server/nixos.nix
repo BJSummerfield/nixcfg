@@ -19,26 +19,14 @@ in
 {
   options.mine.system.dns-server = {
     enable = lib.mkEnableOption "Enable AdGuard Home + Unbound DNS container";
-
-    lanPort = lib.mkOption {
-      type = lib.types.port;
-      default = 53;
-      description = "Port exposed on the LAN for DNS queries";
-    };
-
-    webPort = lib.mkOption {
-      type = lib.types.port;
-      default = 3000;
-      description = "AdGuard Home admin UI port";
-    };
   };
 
   config = lib.mkIf cfg.enable {
     networking.firewall.allowedTCPPorts = [
-      cfg.lanPort
-      cfg.webPort
+      53
+      3000
     ];
-    networking.firewall.allowedUDPPorts = [ cfg.lanPort ];
+    networking.firewall.allowedUDPPorts = [ 53 ];
 
     networking.nat = {
       enable = true;
@@ -46,18 +34,18 @@ in
       externalInterface = config.mine.system.externalInterface;
       forwardPorts = [
         {
-          sourcePort = cfg.lanPort;
-          destination = "192.168.100.15:${toString cfg.lanPort}";
+          sourcePort = 53;
+          destination = "192.168.100.15:53";
           proto = "tcp";
         }
         {
-          sourcePort = cfg.lanPort;
-          destination = "192.168.100.15:${toString cfg.lanPort}";
+          sourcePort = 53;
+          destination = "192.168.100.15:53";
           proto = "udp";
         }
         {
-          sourcePort = cfg.webPort;
-          destination = "192.168.100.15:${toString cfg.webPort}";
+          sourcePort = 3000;
+          destination = "192.168.100.15:3000";
           proto = "tcp";
         }
       ];
@@ -166,11 +154,11 @@ in
             openFirewall = false;
             mutableSettings = true;
             host = "0.0.0.0";
-            port = cfg.webPort;
+            port = 3000;
             settings = {
               dns = {
                 bind_hosts = [ "0.0.0.0" ];
-                port = cfg.lanPort;
+                port = 53;
                 upstream_dns = [ "127.0.0.1:5335" ];
                 bootstrap_dns = [
                   "9.9.9.9"
@@ -198,11 +186,11 @@ in
             firewall = {
               enable = true;
               allowedTCPPorts = [
-                cfg.lanPort
-                cfg.webPort
+                53
+                3000
               ];
               allowedUDPPorts = [
-                cfg.lanPort
+                53
                 config.services.tailscale.port
               ];
               trustedInterfaces = [ "tailscale0" ];
