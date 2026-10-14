@@ -5,13 +5,12 @@
   ...
 }:
 let
-  inherit (lib) mkEnableOption mkIf optional;
+  inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.html;
 in
 {
   options.mine.user.helix.lsp.html = {
     enable = mkEnableOption "Enable HTML, Templates (Askama/Jinja), and HTMX support";
-    enableTailwind = mkEnableOption "Enable Tailwind CSS Intellisense";
   };
 
   config = mkIf cfg.enable {
@@ -21,17 +20,13 @@ in
           command = "superhtml";
           args = [ "lsp" ];
         };
-
-        tailwindcss-language-server = mkIf cfg.enableTailwind {
-          command = "tailwindcss-language-server";
-        };
       };
 
       languages.language = [
         {
           name = "html";
 
-          language-servers = [ "superhtml" ] ++ optional cfg.enableTailwind "tailwindcss-language-server";
+          language-servers = [ "superhtml" ];
 
           formatter = {
             command = "superhtml";
@@ -44,12 +39,9 @@ in
         }
       ];
 
-      extraPackages =
-        with pkgs;
-        [
-          superhtml
-        ]
-        ++ optional cfg.enableTailwind tailwindcss-language-server;
+      extraPackages = with pkgs; [
+        superhtml
+      ];
     };
   };
 }
