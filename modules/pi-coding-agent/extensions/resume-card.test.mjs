@@ -169,8 +169,7 @@ const basePreparation = (overrides) => ({
   }
 }
 
-// 9. A-1: the first user message in branchEntries becomes a Task block,
-// verbatim.
+// 9. the first user message in branchEntries becomes a Task block, verbatim.
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
@@ -238,7 +237,7 @@ const basePreparation = (overrides) => ({
   assert.doesNotMatch(result.compaction.summary, /Task \(first user message/);
 }
 
-// 14. A-3: a bare ".plans/<slug>" directory reference (no file extension,
+// 14. a bare ".plans/<slug>" directory reference (no file extension,
 // e.g. from `ls .plans/<slug>`) is never listed as a file to re-read itself;
 // only the existing standard files under it are.
 {

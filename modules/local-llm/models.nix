@@ -42,21 +42,6 @@
         maxPixels = 4000000;
       };
 
-      vllm = {
-        gpuMemoryUtilization = 0.95;
-        cpuOffload = {
-          gb = 0.9;
-          params = [ "visual" ];
-        };
-        maxNumSeqs = 3;
-        maxNumBatchedTokens = 2048;
-        kvCacheDtype = "fp8";
-        speculativeTokens = 3;
-        toolCallParser = "qwen3_xml";
-        reasoningParser = "qwen3";
-        enablePrefixCaching = true;
-      };
-
       ninfer = {
         artifact = {
           repo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
@@ -113,14 +98,6 @@
         temperature = 0.6;
       };
 
-      vllm = {
-        gpuMemoryUtilization = 0.95;
-        maxNumSeqs = 3;
-        maxNumBatchedTokens = 2048;
-        kvCacheDtype = "fp8";
-        toolCallParser = "qwen3_xml";
-        reasoningParser = "qwen3";
-      };
     };
 
     "Qwen3.6-35B-A3B-NVFP4" = {
@@ -154,14 +131,6 @@
         temperature = 0.6;
       };
 
-      vllm = {
-        gpuMemoryUtilization = 0.95;
-        maxNumSeqs = 2;
-        maxNumBatchedTokens = 2048;
-        kvCacheDtype = "auto";
-        toolCallParser = "qwen3_xml";
-        reasoningParser = "qwen3";
-      };
     };
   };
 

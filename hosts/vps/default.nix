@@ -56,21 +56,8 @@
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
-      caddy = {
-        enable = true;
-        acmeEmail = "brianjsummerfield@gmail.com";
-      };
-      photoform = {
-        enable = true;
-        sopsFile = ../../secrets/hosts/vps.yaml;
-      };
-      # One-time manual activation: once this host enables the remoteAccess module,
-      # tailscale inbound access activates only by running `tailscale up` once;
-      # nothing is activated implicitly.
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
-      remoteAccess = {
-        enable = true;
-      };
+      remoteAccess.enable = true;
       teamspeak-server = {
         enable = true;
         publicAccess = true;
