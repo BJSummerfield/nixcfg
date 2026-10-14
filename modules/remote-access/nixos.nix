@@ -8,8 +8,8 @@ in
     enable = lib.mkEnableOption ''
       the host remote-access posture: tailscale + tailscale-SSH + the sshd exposure
       posture + the default authorizedKeys set. Wires the existing tailscale and
-      openssh modules; never activates tailscale (activation stays a one-time manual
-      `tailscale up`, see the design manual-activation policy).
+      openssh modules; never activates tailscale — activation stays a one-time manual
+      `tailscale up`, and nothing is activated implicitly.
     '';
 
     lanAccess = lib.mkOption {
@@ -29,9 +29,10 @@ in
       default = false;
       description = ''
         Open SSH (22) on the external interface even though it is a public NIC.
-        vps-class only; OFF by default and NOT set by the wave-4 migration (Variant A:
-        tailscale-only). Key-only auth is guaranteed by modules/openssh/nixos.nix
-        (password auth off, PermitRootLogin no). Mutually exclusive with lanAccess.
+        vps-class only; OFF by default — the default posture is tailscale-only, and no
+        host currently sets this. Key-only auth is guaranteed by
+        modules/openssh/nixos.nix (password auth off, PermitRootLogin no). Mutually
+        exclusive with lanAccess.
       '';
     };
 

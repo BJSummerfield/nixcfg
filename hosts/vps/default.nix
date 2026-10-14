@@ -64,8 +64,9 @@
         enable = true;
         sopsFile = ../../secrets/hosts/vps.yaml;
       };
-      # One-time manual activation (remoteAccess wires the daemon + sshd only, it
-      # never runs `tailscale up` — see the design manual-activation policy):
+      # One-time manual activation: once this host enables the remoteAccess module,
+      # tailscale inbound access activates only by running `tailscale up` once;
+      # nothing is activated implicitly.
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       remoteAccess = {
         enable = true;
