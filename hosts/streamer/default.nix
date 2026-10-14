@@ -35,6 +35,7 @@
       externalInterface = "end0";
       autoUpgrade.enable = true;
       fish.enable = true;
+      # sudo tailscale up
       remoteAccess = {
         enable = true;
         lanAccess = true;
