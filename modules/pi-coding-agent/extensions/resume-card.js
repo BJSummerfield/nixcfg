@@ -15,6 +15,8 @@ const TASK_MAX_CHARS = 1500;
 const LEDGER_NAMES = ["state.json", "tasks.json", "PAUSE.md", "plan.md"];
 const PLANS_IN_BASH = /(?:^|[\s'"=(])((?:[^\s'"()<>|;&]*\/)?\.plans\/[^\s'"()<>|;&]+)/g;
 const MODEL_TAGS = /<\/?(?:think|tool_call|tool_response)>/g;
+const OUTPUT_BLOCK_MARKER = "\n\n---\n**Output:**\n";
+const OUTPUT_BLOCK_MAX_CHARS = 800;
 const COMPACTION_SUMMARY_PREFIXES = [
   "The conversation history before this point was compacted into the following summary:",
   "The following is a summary of a branch that this conversation came back from:",
@@ -165,9 +167,22 @@ function excerptOf(dropped) {
   return "(no assistant text in the removed span)";
 }
 
+function splitOutputBlock(text) {
+  const at = text ? text.lastIndexOf(OUTPUT_BLOCK_MARKER) : -1;
+  if (at < 0) return { brief: text, output: undefined };
+  return {
+    brief: text.slice(0, at),
+    output: text.slice(at + OUTPUT_BLOCK_MARKER.length).slice(0, OUTPUT_BLOCK_MAX_CHARS),
+  };
+}
+
 function render({ taskText, latestText, ledgerLines, modifiedLines, excerpt, transcript }) {
+  const { brief, output } = splitOutputBlock(taskText);
   const taskBlock = taskText
-    ? [`Task (first user message, verbatim, truncated):`, '"""', capChars(taskText), '"""']
+    ? [`Task (first user message, verbatim, truncated):`, '"""', capChars(brief), '"""']
+    : [];
+  const outputBlock = output
+    ? ["Output for this run (verbatim from the task; still binding):", '"""', output, '"""']
     : [];
   const latestBlock =
     latestText && latestText !== taskText
@@ -176,6 +191,7 @@ function render({ taskText, latestText, ledgerLines, modifiedLines, excerpt, tra
   return [
     "Earlier turns were removed to free context; their reasoning and tool output are gone.",
     ...taskBlock,
+    ...outputBlock,
     ...latestBlock,
     "Before your next action, re-read these files (they are the source of truth):",
     ledgerLines,

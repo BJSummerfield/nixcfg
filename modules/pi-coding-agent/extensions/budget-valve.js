@@ -27,7 +27,8 @@ const OUTPUT_LIMIT_FINAL =
   "Your reply was cut off by the output limit a second time. Do not retry the same step. " +
   "Save anything not yet on disk in small writes (at most about 150 lines per call), then reply with " +
   "a message whose first line starts with `FAILED: output limit`, followed by what is incomplete and " +
-  "where your partial work is.";
+  "where your partial work is. If you already wrote to the output path your task names, first put that " +
+  "same `FAILED: output limit` line at the top of that file.";
 
 const THRASH =
   "This run has compacted three times without an edit or write, so it is not converging. " +
