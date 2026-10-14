@@ -35,7 +35,6 @@
         fontSizes = {
           applications = 10;
           terminal = 11;
-          desktop = 10;
           popups = 9;
         };
       };
