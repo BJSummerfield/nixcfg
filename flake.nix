@@ -52,15 +52,7 @@
 
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
-      packages = forAllSystems (
-        system:
-        import ./packages {
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "1password" ];
-          };
-        }
-      );
+      packages = forAllSystems (system: import ./packages { pkgs = nixpkgs.legacyPackages.${system}; });
 
       checks.x86_64-linux = import ./checks {
         inherit nixpkgs inputs;
