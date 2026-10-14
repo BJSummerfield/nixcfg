@@ -7,6 +7,15 @@ in
   options.mine.system.openssh = {
     inbound = {
       enable = lib.mkEnableOption "Accept incoming SSH connections (sshd)";
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 22;
+        description = ''
+          The TCP port sshd listens on (sets services.openssh.ports, upstream
+          reworked it from a single `port` to a list of ports).
+          The external-interface firewall rule follows this port.
+        '';
+      };
       openOnExternalInterface = lib.mkOption {
         type = lib.types.bool;
         default = false;
@@ -35,6 +44,7 @@ in
 
       services.openssh = {
         enable = true;
+        ports = [ cfg.inbound.port ];
         openFirewall = false;
         settings = {
           PermitRootLogin = "no";
@@ -44,7 +54,7 @@ in
         };
       };
       networking.firewall.interfaces = lib.mkIf cfg.inbound.openOnExternalInterface {
-        ${externalInterface}.allowedTCPPorts = [ 22 ];
+        ${externalInterface}.allowedTCPPorts = [ cfg.inbound.port ];
       };
     })
     (lib.mkIf cfg.outbound.enable {

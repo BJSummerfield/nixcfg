@@ -16,7 +16,8 @@ in
       type = lib.types.bool;
       default = false;
       description = ''
-        Open SSH (22) on mine.system.externalInterface because it is a trusted-LAN NIC.
+        Open SSH on mine.system.externalInterface (on port `port`, default 22)
+        because it is a trusted-LAN NIC.
         Set on: elitebook, paynefield, streamer.
 
         Supersedes the existing mine.system.openssh.inbound.openOnExternalInterface
@@ -28,10 +29,27 @@ in
       type = lib.types.bool;
       default = false;
       description = ''
-        Open SSH (22) on the external interface even though it is a public NIC.
+        Open SSH on the external interface (on port `port`, default 22) even
+        though it is a public NIC.
         vps-class only; OFF by default and NOT set by the wave-4 migration (Variant A:
         tailscale-only). Key-only auth is guaranteed by modules/openssh/nixos.nix
         (password auth off, PermitRootLogin no). Mutually exclusive with lanAccess.
+      '';
+    };
+
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 22;
+      description = ''
+        The TCP port sshd listens on (sets mine.system.openssh.inbound.port, i.e.
+        services.openssh.ports — upstream reworked the option from a single
+        `port` to a list). The tailnet path follows the same port because
+        sshd listens on a single port — the tailscale0 firewall rule tracks
+        services.openssh.ports.
+
+        Supersedes the existing mine.system.openssh.inbound.port for hosts that use
+        this module: setting both to different values produces a definition
+        conflict — set it here (both must agree if both are set).
       '';
     };
 
@@ -60,8 +78,8 @@ in
 
   config = lib.mkIf cfg.enable {
     # Reuses the existing tailscale module as-is (modules/tailscale/nixos.nix): it
-    # enables the tailscaled daemon, force-enables openssh.inbound and allows 22 on
-    # tailscale0. NOT wired (manual-activation policy): no auth key, no up-flags — the
+    # enables the tailscaled daemon, force-enables openssh.inbound and allows the
+    # sshd port on tailscale0. NOT wired (manual-activation policy): no auth key, no up-flags — the
     # module owns daemon enable+ssh only; the one-time `tailscale up [flags]` is a
     # documented per-host step.
     mine.system.tailscale = {
@@ -71,6 +89,7 @@ in
 
     mine.system.openssh.inbound = {
       enable = true;
+      inherit (cfg) port;
       openOnExternalInterface = cfg.lanAccess || cfg.publicAccess;
     };
 
