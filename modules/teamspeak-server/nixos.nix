@@ -64,8 +64,6 @@ in
           firewall = {
             enable = true;
 
-            trustedInterfaces = [ ];
-
             allowedUDPPorts = lib.optionals cfg.publicAccess [ 9987 ];
 
             allowedTCPPorts = lib.optionals cfg.publicAccess [ 30033 ];
