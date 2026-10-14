@@ -20,11 +20,10 @@ let
   valheimNotify = pkgs.callPackage ../modules/valheim-server/notify-package.nix { };
 
   # No annotations in the lines themselves (systemd journal lines never have
-  # any): the base sample from the plan (a join, a death, a respawn, a
-  # version-mismatch failed join, a leave), plus a second player who
-  # actually joins after the first player's respawn, to prove the "a
-  # respawn of an already-joined name is ignored" rule doesn't also
-  # swallow a genuine later join.
+  # any): the sample covers a join, a death, a respawn, a version-mismatch
+  # failed join and a leave, plus a second player who actually joins after the
+  # first player's respawn, to prove the "a respawn of an already-joined name
+  # is ignored" rule doesn't also swallow a genuine later join.
   valheimNotifySample = pkgs.writeText "valheim-notify-sample.txt" ''
     09/10/2026 21:14:02: Player history entry with index 0:  infestedmrt (Steam_76561198044411510, 4C8BF26B49A14417)
     09/10/2026 21:14:03: Player history entry with index 1:  Bjorn Ironside (Steam_76561198044411999, 5D9CF37C5AB25528)

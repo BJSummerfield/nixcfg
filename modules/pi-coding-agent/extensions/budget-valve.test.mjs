@@ -108,12 +108,12 @@ const assistant = (usage, stopReason = "stop", content) => ({
   assert.equal(h.sent.length, 0);
 }
 
-// R1: a "length" stop that pi would also treat as recoverable overflow
+// A "length" stop that pi would also treat as recoverable overflow
 // (output short of the model's unclamped maxTokens, near a full window) is
 // already covered by the state-0 headroom gate above: a queued valve message
 // drains before agent_end, so whichever of the two acts first simply
 // pre-empts the other, and there is no double handling to guard against. A
-// real-shaped ctx (contextWindow and tokens close to full, as #220's clamp
+// near-full ctx (contextWindow and tokens close to full, as the clamp
 // produces) confirms state 0 sends nothing here, same as the plain
 // near-full-window case already covered.
 {

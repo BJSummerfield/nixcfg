@@ -44,12 +44,12 @@ in
     programs.fish = {
       enable = true;
       interactiveShellInit = ''
-        set fish_greeting # Disable greeting
+        set fish_greeting
         set -x NIX_PATH nixpkgs=channel:nixos-unstable
         fish_config theme choose fish-theme
       '';
       loginShellInit = ''
-        set fish_greeting # Disable greeting
+        set fish_greeting
       '';
     };
   };
