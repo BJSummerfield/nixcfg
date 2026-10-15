@@ -13,7 +13,6 @@
     ./git/home.nix
     ./helix/home.nix
     ./hyprlax/home.nix
-    ./jellybox/home.nix
     ./keybase/home.nix
     ./lazygit/home.nix
     ./mako/home.nix

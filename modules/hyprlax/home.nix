@@ -9,8 +9,6 @@ let
     mkEnableOption
     mkIf
     mkMerge
-    mkOption
-    types
     ;
   cfg = config.mine.user.hyprlax;
   niriCfg = config.mine.user.niri;
@@ -18,15 +16,10 @@ in
 {
   options.mine.user.hyprlax = {
     enable = mkEnableOption "Enable hyprlax config";
-    scene = mkOption {
-      type = types.enum [ "pixel-city" ];
-      default = "pixel-city";
-      description = "Which parallax scene to use from ./scenes";
-    };
   };
   config = mkIf cfg.enable (mkMerge [
     {
-      home.file.".config/hyprlax".source = ./scenes/${cfg.scene};
+      home.file.".config/hyprlax".source = ./scenes/pixel-city;
       systemd.user.services.hyprlax = {
         Unit = {
           Description = "Hyprlax Parallax Wallpaper Service";

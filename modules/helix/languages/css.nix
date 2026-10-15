@@ -5,13 +5,12 @@
   ...
 }:
 let
-  inherit (lib) mkEnableOption mkIf optional;
+  inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.helix.lsp.css;
 in
 {
   options.mine.user.helix.lsp.css = {
     enable = mkEnableOption "Enable CSS LSP support";
-    enableTailwind = mkEnableOption "Enable Tailwind CSS intellisense for CSS files";
   };
 
   config = mkIf cfg.enable {
@@ -36,10 +35,6 @@ in
             };
           };
         };
-
-        tailwindcss-language-server = mkIf cfg.enableTailwind {
-          command = "tailwindcss-language-server";
-        };
       };
 
       languages.language = [
@@ -49,8 +44,7 @@ in
           language-servers = [
             "vscode-css-language-server"
             "biome"
-          ]
-          ++ optional cfg.enableTailwind "tailwindcss-language-server";
+          ];
 
           formatter = {
             command = "prettier";
@@ -63,13 +57,10 @@ in
         }
       ];
 
-      extraPackages =
-        with pkgs;
-        [
-          vscode-langservers-extracted
-          prettier
-        ]
-        ++ optional cfg.enableTailwind tailwindcss-language-server;
+      extraPackages = with pkgs; [
+        vscode-langservers-extracted
+        prettier
+      ];
     };
   };
 }
