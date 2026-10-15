@@ -15,8 +15,6 @@
     helix
   ];
 
-  boot.initrd.systemd.enable = true;
-
   mine = {
     system = {
       hostName = "t495";
