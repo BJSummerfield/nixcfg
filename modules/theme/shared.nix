@@ -18,7 +18,6 @@ in
     fontSizes = {
       applications = mkSize "applications" defaults.fonts.sizes.applications;
       terminal = mkSize "terminal emulators" defaults.fonts.sizes.terminal;
-      desktop = mkSize "the desktop" defaults.fonts.sizes.desktop;
       popups = mkSize "popups" defaults.fonts.sizes.popups;
     };
 
