@@ -15,7 +15,6 @@ let
       nixpkgs.lib.nameValuePair checkName (evalOnly checkName cfg.config.system.build.toplevel.drvPath)
     );
   lintSrc = pkgs.lib.cleanSource ../.;
-  hwConfigGlob = "hosts/*/hardware-configuration.nix";
 
   valheimNotify = pkgs.callPackage ../modules/valheim-server/notify-package.nix { };
 
@@ -90,7 +89,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
       }
       ''
         cd ${lintSrc}
-        deadnix --fail . --exclude ${hwConfigGlob}
+        deadnix --fail .
         touch $out
       '';
   # The valve gives a subagent one more turn when its reply is cut off. Its input

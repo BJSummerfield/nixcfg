@@ -1,13 +1,25 @@
 { pkgs, ... }:
 {
   imports = [
-    ./hardware-configuration.nix
     ./disko.nix
     ../../modules/nixos.nix
     ../../users/waktu.nix
     ../../users/sumriri.nix
     ../../users/sword.nix
   ];
+
+  nixpkgs.hostPlatform = "x86_64-linux";
+  hardware.enableRedistributableFirmware = true;
+  hardware.cpu.amd.updateMicrocode = true;
+  boot.initrd.availableKernelModules = [
+    "nvme"
+    "ehci_pci"
+    "xhci_pci"
+    "usb_storage"
+    "sd_mod"
+    "rtsx_pci_sdmmc"
+  ];
+  boot.kernelModules = [ "kvm-amd" ];
 
   environment.systemPackages = with pkgs; [
     bottom

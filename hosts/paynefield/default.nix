@@ -1,10 +1,36 @@
 { pkgs, config, ... }:
 {
   imports = [
-    ./hardware-configuration.nix
     ../../modules/nixos.nix
     ../../users/waktu.nix
   ];
+
+  nixpkgs.hostPlatform = "x86_64-linux";
+  hardware.enableRedistributableFirmware = true;
+  hardware.cpu.intel.updateMicrocode = true;
+  boot.initrd.availableKernelModules = [
+    "xhci_pci"
+    "ahci"
+    "nvme"
+    "usbhid"
+    "usb_storage"
+    "sd_mod"
+  ];
+  boot.kernelModules = [ "kvm-intel" ];
+
+  fileSystems."/" = {
+    device = "/dev/disk/by-uuid/a377bf35-5dce-4665-aa91-38d02916c3ac";
+    fsType = "ext4";
+  };
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-uuid/062A-92E8";
+    fsType = "vfat";
+    options = [
+      "fmask=0077"
+      "dmask=0077"
+    ];
+  };
+  swapDevices = [ { device = "/dev/disk/by-uuid/c3e85ef5-7f56-460c-aba9-99cc1cc6ec47"; } ];
 
   environment.systemPackages = with pkgs; [
     bottom

@@ -1,7 +1,6 @@
 { pkgs, ... }:
 {
   imports = [
-    ./hardware-configuration.nix
     ./disko.nix
     ../../modules/nixos.nix
     ../../users/waktu.nix
@@ -9,6 +8,19 @@
     ../../users/sword.nix
     ../../users/jellyuser.nix
   ];
+
+  nixpkgs.hostPlatform = "x86_64-linux";
+  hardware.enableRedistributableFirmware = true;
+  hardware.cpu.intel.updateMicrocode = true;
+  boot.initrd.availableKernelModules = [
+    "xhci_pci"
+    "thunderbolt"
+    "vmd"
+    "nvme"
+    "usb_storage"
+    "sd_mod"
+  ];
+  boot.kernelModules = [ "kvm-intel" ];
 
   environment.systemPackages = with pkgs; [
     bottom

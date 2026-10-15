@@ -19,7 +19,7 @@ disks are declared with disko, and every host is on the same tailnet.
 ## Layout
 
 - `flake.nix` — inputs and the `nixosConfigurations` / `darwinConfigurations` outputs.
-- `hosts/<name>/` — per-host config, `hardware-configuration.nix`, and `disko.nix`.
+- `hosts/<name>/` — per-host config and `disko.nix`.
 - `modules/` — the `mine.*` option modules, split into `nixos.nix` / `home.nix` / `darwin.nix` per feature.
 - `users/` — per-user definitions.
 - `packages/` — flake packages.
@@ -48,4 +48,4 @@ and builds the flake packages.
   commands a human still has to run by hand (`tailscale up`, `tailscale serve`,
   container first-run). Everything else is said in code.
 - `statix`'s `repeated_keys` lint is disabled repo-wide; see `statix.toml`.
-- Generated `hosts/*/hardware-configuration.nix` files are excluded from deadnix.
+- Hosts carry no `hardware-configuration.nix`: put the facts a machine needs (kernel modules, microcode, platform) straight into its `default.nix`.
