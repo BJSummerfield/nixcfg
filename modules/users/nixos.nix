@@ -59,11 +59,6 @@ in
             '';
           };
 
-          shell = mkOption {
-            type = types.package;
-            default = config.users.defaultUserShell;
-          };
-
           home-modules = mkOption {
             type = types.listOf types.attrs;
             default = [ ];
@@ -99,9 +94,9 @@ in
       inherit (user)
         description
         hashedPasswordFile
-        shell
         uid
         ;
+      shell = config.users.defaultUserShell;
       extraGroups = [ "networkmanager" ] ++ lib.optional user.isSuperUser "wheel";
       openssh.authorizedKeys.keys = map (keyName: user.sshKeys.${keyName}) user.authorizedKeys;
     }) cfg;
