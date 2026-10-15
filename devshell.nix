@@ -9,8 +9,9 @@ pkgs.mkShell {
 
   shellHook = ''
     if git rev-parse --git-dir >/dev/null 2>&1 \
-      && [ "$(git config --get core.hooksPath)" != ".githooks" ]; then
-      git config core.hooksPath .githooks
+      && [ "$(git config --get core.hooksPath 2>/dev/null)" = ".githooks" ]; then
+      git config --local --unset core.hooksPath 2>/dev/null || true
+      git config --file "$(git rev-parse --git-common-dir)/config" --unset core.hooksPath 2>/dev/null || true
     fi
   '';
 }
