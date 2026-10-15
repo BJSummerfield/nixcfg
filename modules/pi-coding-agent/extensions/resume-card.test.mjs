@@ -6,7 +6,7 @@
  * were verified by reading the installed 0.86.1 source instead.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import resumeCard, { buildCard } from "./resume-card.js";
@@ -65,19 +65,22 @@ const basePreparation = (overrides) => ({
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  mkdirSync(join(cwd, ".plans", "foo"), { recursive: true });
-  mkdirSync(join(cwd, ".plans", "bar"), { recursive: true });
-  writeFileSync(join(cwd, ".plans", "foo", "state.json"), "{}");
-  writeFileSync(join(cwd, ".plans", "foo", "tasks.json"), "{}");
-  writeFileSync(join(cwd, ".plans", "bar", "PAUSE.md"), "x");
+  const plansRoot = join(tmpdir(), "pi-plans");
+  mkdirSync(join(plansRoot, "rc-test-foo"), { recursive: true });
+  mkdirSync(join(plansRoot, "rc-test-bar"), { recursive: true });
+  writeFileSync(join(plansRoot, "rc-test-foo", "state.json"), "{}");
+  writeFileSync(join(plansRoot, "rc-test-foo", "tasks.json"), "{}");
+  writeFileSync(join(plansRoot, "rc-test-bar", "PAUSE.md"), "x");
   const branchEntries = [
-    entry("read", { path: ".plans/foo/state.json" }),
-    entry("bash", { command: "cat > .plans/bar/PAUSE.md" }),
+    entry("read", { path: join(plansRoot, "rc-test-foo", "state.json") }),
+    entry("bash", { command: `cat > ${join(plansRoot, "rc-test-bar", "PAUSE.md")}` }),
   ];
   const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
   const card = result.compaction.summary;
-  assert.match(card, /\.plans\/bar\/PAUSE\.md/);
+  assert.match(card, /pi-plans\/rc-test-bar\/PAUSE\.md/);
   assert.equal(result.compaction.details.ledger.length <= 2 * 4, true);
+  rmSync(join(plansRoot, "rc-test-foo"), { recursive: true, force: true });
+  rmSync(join(plansRoot, "rc-test-bar"), { recursive: true, force: true });
 }
 
 // 3. modified files cover write/edit from all branchEntries, sorted,
@@ -243,13 +246,15 @@ const basePreparation = (overrides) => ({
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  mkdirSync(join(cwd, ".plans", "2026-09-26-scene-gen-v3"), { recursive: true });
-  writeFileSync(join(cwd, ".plans", "2026-09-26-scene-gen-v3", "tasks.json"), "{}");
-  const branchEntries = [entry("bash", { command: "ls .plans/2026-09-26-scene-gen-v3" })];
+  const plansRoot = join(tmpdir(), "pi-plans");
+  mkdirSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true });
+  writeFileSync(join(plansRoot, "rc-test-scene-gen-v3", "tasks.json"), "{}");
+  const branchEntries = [entry("bash", { command: `ls ${join(plansRoot, "rc-test-scene-gen-v3")}` })];
   const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
   const ledger = result.compaction.details.ledger;
-  assert.ok(!ledger.includes(".plans/2026-09-26-scene-gen-v3"), "the bare directory itself must not be listed");
+  assert.ok(!ledger.includes(join(plansRoot, "rc-test-scene-gen-v3")), "the bare directory itself must not be listed");
   assert.ok(ledger.some((p) => p.endsWith("tasks.json")));
+  rmSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true, force: true });
 }
 
 // 15. pi-subagents' output block survives the task cap: a long brief ending in

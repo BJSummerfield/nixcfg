@@ -4,7 +4,8 @@
 // every session, the interactive one and every child alike.
 
 import { existsSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 const CARD_MAX_CHARS = 6000;
 const MAX_PATH_CHARS = 200;
@@ -13,7 +14,15 @@ const MAX_PLAN_UNITS = 2;
 const EXCERPT_WORDS = 300;
 const TASK_MAX_CHARS = 1500;
 const LEDGER_NAMES = ["state.json", "tasks.json", "PAUSE.md", "plan.md"];
-const PLANS_IN_BASH = /(?:^|[\s'"=(])((?:[^\s'"()<>|;&]*\/)?\.plans\/[^\s'"()<>|;&]+)/g;
+// Plan root, per the #267 convention: $TMPDIR/pi-plans/<task-id>/. os.tmpdir()
+// honors $TMPDIR, so this follows the same environment pi-subagents' temp root
+// does. Resolved once at module load (pi loads the extension once per process;
+// TMPDIR is fixed for that process).
+const PLANS_ROOT = join(tmpdir(), "pi-plans");
+const PLANS_ROOT_RE = PLANS_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const PLANS_IN_BASH = new RegExp(`(?:^|[\\s'"=(])(${PLANS_ROOT_RE}/[^\\s'"()<>|;&]+)`, "g");
+const PLAN_PATH_RE = new RegExp(`^(${PLANS_ROOT_RE}/)([^/]+)(/.*)?$`);
+
 const MODEL_TAGS = /<\/?(?:think|tool_call|tool_response)>/g;
 const OUTPUT_BLOCK_MARKER = "\n\n---\n**Output:**\n";
 const OUTPUT_BLOCK_MAX_CHARS = 800;
@@ -41,11 +50,12 @@ function toolCalls(entries) {
   return out;
 }
 
-function planUnit(p) {
-  const m = p.match(/^(.*?\.plans\/)([^/]+)(\/.*)?$/);
+function planUnit(cwd, p) {
+  const abs = resolve(cwd, p);
+  const m = abs.match(PLAN_PATH_RE);
   if (!m) return undefined;
   if (m[3]) return { dir: m[1] + m[2] };
-  return /\.\w+$/.test(m[2]) ? { file: p } : { dir: m[1] + m[2] };
+  return /\.\w+$/.test(m[2]) ? { file: abs } : { dir: m[1] + m[2] };
 }
 
 function touchedPlanPaths(calls) {
@@ -63,16 +73,16 @@ function touchedPlanPaths(calls) {
 }
 
 function ledgerOf(calls, cwd) {
-  const touched = touchedPlanPaths(calls).filter((t) => t.path.includes(".plans/"));
+  const touched = touchedPlanPaths(calls);
   const unitKeyOf = (p) => {
-    const unit = planUnit(p);
+    const unit = planUnit(cwd, p);
     if (!unit) return undefined;
     return unit.dir ? `dir:${unit.dir}` : `file:${unit.file}`;
   };
   const lastIndexByUnit = new Map();
   const unitByKey = new Map();
   for (const t of touched) {
-    const unit = planUnit(t.path);
+    const unit = planUnit(cwd, t.path);
     if (!unit) continue;
     const key = unitKeyOf(t.path);
     unitByKey.set(key, unit);
