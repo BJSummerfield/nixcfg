@@ -11,7 +11,7 @@
 # If `pi remove` fails, manually rm ~/.pi/agent/npm/node_modules/<name>.
 {
   piPackages = [
-    "npm:pi-subagents@0.77.0"
-    "npm:pi-web-access@0.35.0"
+    "npm:pi-subagents@0.78.0"
+    "npm:pi-web-access@0.40.0"
   ];
 }

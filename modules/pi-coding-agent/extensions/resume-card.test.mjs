@@ -252,4 +252,23 @@ const basePreparation = (overrides) => ({
   assert.ok(ledger.some((p) => p.endsWith("tasks.json")));
 }
 
+// 15. pi-subagents' output block survives the task cap: a long brief ending in
+// "---\n**Output:**" keeps the output path in its own block; no block without it.
+{
+  const h = harness();
+  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
+  const longTask = `${"z".repeat(3000)}\n\n---\n**Output:**\nWrite your findings to exactly this path: /x/worker.md\nThis path is authoritative for this run.`;
+  const result = await h.compact({ preparation: basePreparation(), branchEntries: [userEntry(longTask)] }, ctxFor(cwd));
+  const card = result.compaction.summary;
+  assert.match(card, /Output for this run/);
+  assert.match(card, /Write your findings to exactly this path: \/x\/worker\.md/);
+  assert.ok(card.includes(`${"z".repeat(1500)}…`));
+
+  const plain = await h.compact(
+    { preparation: basePreparation(), branchEntries: [userEntry("Fix the flaky test")] },
+    ctxFor(cwd),
+  );
+  assert.doesNotMatch(plain.compaction.summary, /Output for this run/);
+}
+
 console.log("resume-card: all assertions passed");

@@ -72,8 +72,9 @@ Tool access (frontmatter `tools:` is the source of truth):
 | researcher | `read/write` + web tools |
 
 Give shell steps to a `worker` rather than running them yourself. A child
-lacking a tool escalates mid-run via `subagent_supervisor`
-(list/send/ask/reply/pending/status — plain `subagent` has no `pending`).
+lacking a tool escalates mid-run via `contact_supervisor`; you answer with
+`subagent_supervisor` (list/send/ask/reply/pending/status — plain `subagent`
+has no `pending`). `contact_supervisor` in your own tool list only errors.
 
 `workflow` is plugin API and moves between releases; the plugin's guide is
 the reference, not this file. What holds regardless of version:
@@ -86,7 +87,12 @@ the reference, not this file. What holds regardless of version:
   and copy to a stable location before a dependent stage.
 - Run status `failed` ≠ work failed: a child can finish and die emitting its
   report. Read the on-disk result before re-dispatching.
-- A reply whose first line starts with `FAILED:` is a failed task even when the run says `completed`.
+- Every role saves its report to a file and the notice carries only the path,
+  never the reply. A report whose first line starts with `FAILED:` is a failed
+  task even when the run says `completed`: read the file.
+- A `resume`, or a steer that revives a finished child, without its own
+  `output` saves to a new file beside the original (`review.<run id>.md`);
+  read the path its notice names, not the old report.
 
 ## Images
 
