@@ -18,11 +18,6 @@ let
 in
 {
   options.mine.system.nas = {
-    host = mkOption {
-      type = types.str;
-      default = "192.168.1.234";
-    };
-
     shares = mkOption {
       type = types.attrsOf (
         types.submodule (
@@ -168,7 +163,7 @@ in
     fileSystems = mapAttrs' (_: share: {
       name = share.mountPoint;
       value = {
-        device = "${cfg.host}:${share.remotePath}";
+        device = "192.168.1.234:${share.remotePath}";
         fsType = "nfs";
         options = [
           "x-systemd.automount"

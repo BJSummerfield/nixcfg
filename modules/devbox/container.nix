@@ -1,7 +1,6 @@
 {
   inputs,
   tailnetHostname,
-  gitIdentity,
   signCommits,
 }:
 {
@@ -124,7 +123,8 @@ in
           enable = true;
           settings = {
             user = {
-              inherit (gitIdentity) name email;
+              name = "BJSummerfield";
+              email = "brianjsummerfield@gmail.com";
             }
             // lib.optionalAttrs signCommits {
               signingkey = "/run/secrets/signing-key";
