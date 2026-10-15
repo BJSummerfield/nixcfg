@@ -35,26 +35,16 @@
       externalInterface = "end0";
       autoUpgrade.enable = true;
       fish.enable = true;
-      openssh.inbound = {
-        enable = true;
-        openOnExternalInterface = true;
-      };
       # sudo tailscale up
-      tailscale = {
+      remoteAccess = {
         enable = true;
-        ssh = true;
+        lanAccess = true;
       };
       streamer = {
         enable = true;
         usbId = "2972:0099";
       };
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "redtruck"
-      "t495"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = {

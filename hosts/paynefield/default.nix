@@ -39,13 +39,9 @@
       autoUpgrade.enable = true;
       dns-server.enable = true;
       fish.enable = true;
-      openssh.inbound = {
+      remoteAccess = {
         enable = true;
-        openOnExternalInterface = true;
-      };
-      tailscale = {
-        enable = true;
-        ssh = true;
+        lanAccess = true;
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
@@ -69,12 +65,6 @@
       repoPasswordFile = config.sops.secrets.restic-repo-password.path;
       notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "redtruck"
-      "t495"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = {

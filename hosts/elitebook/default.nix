@@ -49,22 +49,12 @@
       jellybox.enable = true;
       steam.enable = true;
       steambox.enable = true;
-      openssh.inbound = {
-        enable = true;
-        openOnExternalInterface = true;
-      };
       pipewire.enable = true;
-      tailscale = {
+      remoteAccess = {
         enable = true;
-        ssh = true;
+        lanAccess = true;
       };
     };
-    users.waktu.authorizedKeys = [
-      "onepassword"
-      "redtruck"
-      "t495"
-      "mac"
-    ];
   };
   home-manager.users = {
     waktu = {
