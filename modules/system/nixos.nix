@@ -9,6 +9,20 @@ let
     ;
   cfg = config.mine.system;
   bootCfg = cfg.boot;
+  containerAddresses = lib.concatLists (
+    lib.mapAttrsToList (
+      name: container:
+      map (address: { inherit name address; }) (
+        lib.filter (address: address != null) [
+          container.hostAddress
+          container.localAddress
+        ]
+      )
+    ) config.containers
+  );
+  sharedAddresses = lib.filter (
+    address: lib.count (entry: entry.address == address) containerAddresses > 1
+  ) (lib.unique (map (entry: entry.address) containerAddresses));
 in
 {
   options.mine.system = {
@@ -58,6 +72,22 @@ in
 
   config = mkMerge [
     {
+      assertions = [
+        {
+          assertion = sharedAddresses == [ ];
+          message = "Containers share an address: ${
+            lib.concatMapStringsSep "; " (
+              address:
+              "${address} (${
+                lib.concatMapStringsSep ", " (entry: entry.name) (
+                  lib.filter (entry: entry.address == address) containerAddresses
+                )
+              })"
+            ) sharedAddresses
+          }";
+        }
+      ];
+
       boot.consoleLogLevel = 3;
 
       system.stateVersion = "26.05";
