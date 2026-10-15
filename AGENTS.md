@@ -28,23 +28,24 @@ final response.** The runtime persists that message to the output path; a short
 answer is the whole deliverable, lost. Your run-time instructions say which
 case you are in and override this file.
 
-## Planning artifacts go in `.plans/`
+## Planning artifacts go to the temp dir
 
-Write the plan, the task breakdown and any delegation records to `.plans/` as
-you go: `.plans/<slug>.md` for a single plan, or `.plans/<slug>/` holding
-`plan.md`, `tasks.md` and `delegations/` when the work fans out to sub-agents.
-`mkdir -p` it; it will not already exist.
+Write the plan, the task breakdown and any delegation records to a task
+directory under the system temp directory as you go, e.g.
+`$TMPDIR/pi-plans/<task-id>/` — `mkdir -p` it; it will not already exist.
+The temp dir is on disk, so these survive a reboot, and it is
+periodically cleaned up; never treat the files as durable and never
+`git add` anything under them.
 
-`.plans/` is untracked and is **not** in `.gitignore` — that is deliberate, so
-the files stay visible in a git status viewer. Never `git add` anything under
-it. The `.githooks/pre-commit` hook unstages `.plans/` (aborting the commit
-only if that was the sole staged change), so a stray `git add .` is recovered
-rather than fatal, but do not rely on it. Nothing in `.plans/` is durable:
-`git clean -fd` removes it, and the
-directory dies with the worktree.
+The **GitHub issue is the task and acceptance tracker** for the flow: keep
+the issue's task list and acceptance notes up to date instead of a
+per-flow ledger file — a ledger file is no longer needed.
 
 ## Coding workflow (user preference, 2026-10-12)
 
+- The plan goes to the task directory under the system temp directory as
+  described in "Planning artifacts go to the temp dir" above — not to a
+  repo-local `plans/` dir and not to a bare path in `/tmp`.
 - Code-editing work follows a loop: scout (find and highlight the problem)
   → planner (a subagent reviews the findings and proposes a plan) →
   implementer (a worker executes the plan) → reviewer → fix-up round, looped
