@@ -269,7 +269,10 @@ const basePreparation = (overrides) => ({
   const branchEntries = [entry("read", { path: statePath })];
   const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
   const ledger = result.compaction.details.ledger;
-  assert.ok(!ledger.includes(statePath), "a plan-like path outside the temp-dir root must not be listed");
+  // Strict check: the ledger must be empty. A path under the session cwd would
+  // be listed in relative form (show() relativizes), so an exact absolute-string
+  // membership test could never fail here; emptiness pins the exclusion either way.
+  assert.equal(ledger.length, 0, "a plan-like path outside the temp-dir root must not be listed");
   rmSync(nonRootPlan, { recursive: true, force: true });
 }
 
