@@ -21,10 +21,17 @@ the security boundary; no sandbox wraps your commands.
 - The one writable exception: claude's per-project `memory/` directory under
   `CLAUDE_CONFIG_DIR` survives rebuilds and sessions. pi has no writable
   counterpart.
-- `/tmp` is a RAM tmpfs, wiped on reboot, capacity is memory. `/var/tmp` and
-  the checkouts are disk and survive. Never put anything large or needed later
-  (a `CARGO_TARGET_DIR`, a build tree) in `/tmp`; ENOSPC there kills builds and
-  running processes alike.
+- `/tmp` is a RAM tmpfs, wiped on reboot, capacity is memory. It is scratch —
+  fine to lose on reboot. The checkouts are disk and survive. Never put
+  anything large or needed later (a `CARGO_TARGET_DIR`, a build tree) in `/tmp`;
+  ENOSPC there kills builds and running processes alike.
+- The agents' temp dir is `/var/tmp` (disk, durable): agent scratch and
+  `$TMPDIR` land here. It is aged **20 days** by systemd-tmpfiles, so old files
+  are auto-cleaned over time.
+- `/var/tmp` is on `/`, mounted **noatime**, so tmpfiles ages entries by
+  **write** time only — reads do **not** refresh age. Active flows (which write
+  as they go) are safe, but a plan with no write for the 20-day window is
+  reaped; nothing is kept alive by merely reading it.
 - Missing tools: `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (the store
   is shared with the host, so anything it has costs no download). npm/pip/cargo
   also work. There is no sudo and you will never need it.
