@@ -268,7 +268,7 @@ host:
 
 ```nix
 sshKeys = {
-  onepassword = "ssh-ed25519 AAAAC3...";
+  mac = "ssh-ed25519 AAAAC3...brian@mac.local";
   t495 = "ssh-ed25519 AAAAC3...waktu@t495";
   redtruck = "ssh-ed25519 AAAAC3newkeyhere waktu@redtruck";  # updated
 };

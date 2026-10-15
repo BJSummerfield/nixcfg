@@ -108,7 +108,6 @@
       remoteAccess = {
         enable = true;
         authorizedKeys = [
-          "onepassword"
           "t495"
           "mac"
         ];
