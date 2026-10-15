@@ -6,7 +6,7 @@
  * were verified by reading the installed 0.86.1 source instead.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import resumeCard, { buildCard } from "./resume-card.js";
@@ -65,19 +65,22 @@ const basePreparation = (overrides) => ({
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  mkdirSync(join(cwd, ".plans", "foo"), { recursive: true });
-  mkdirSync(join(cwd, ".plans", "bar"), { recursive: true });
-  writeFileSync(join(cwd, ".plans", "foo", "state.json"), "{}");
-  writeFileSync(join(cwd, ".plans", "foo", "tasks.json"), "{}");
-  writeFileSync(join(cwd, ".plans", "bar", "PAUSE.md"), "x");
+  const plansRoot = join(tmpdir(), "pi-plans");
+  mkdirSync(join(plansRoot, "rc-test-foo"), { recursive: true });
+  mkdirSync(join(plansRoot, "rc-test-bar"), { recursive: true });
+  writeFileSync(join(plansRoot, "rc-test-foo", "state.json"), "{}");
+  writeFileSync(join(plansRoot, "rc-test-foo", "tasks.json"), "{}");
+  writeFileSync(join(plansRoot, "rc-test-bar", "PAUSE.md"), "x");
   const branchEntries = [
-    entry("read", { path: ".plans/foo/state.json" }),
-    entry("bash", { command: "cat > .plans/bar/PAUSE.md" }),
+    entry("read", { path: join(plansRoot, "rc-test-foo", "state.json") }),
+    entry("bash", { command: `cat > ${join(plansRoot, "rc-test-bar", "PAUSE.md")}` }),
   ];
   const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
   const card = result.compaction.summary;
-  assert.match(card, /\.plans\/bar\/PAUSE\.md/);
+  assert.match(card, /pi-plans\/rc-test-bar\/PAUSE\.md/);
   assert.equal(result.compaction.details.ledger.length <= 2 * 4, true);
+  rmSync(join(plansRoot, "rc-test-foo"), { recursive: true, force: true });
+  rmSync(join(plansRoot, "rc-test-bar"), { recursive: true, force: true });
 }
 
 // 3. modified files cover write/edit from all branchEntries, sorted,
@@ -237,22 +240,43 @@ const basePreparation = (overrides) => ({
   assert.doesNotMatch(result.compaction.summary, /Task \(first user message/);
 }
 
-// 14. a bare ".plans/<slug>" directory reference (no file extension,
-// e.g. from `ls .plans/<slug>`) is never listed as a file to re-read itself;
-// only the existing standard files under it are.
+// 14. a bare pi-plans/<task-id> directory reference (no file extension,
+// e.g. from `ls $TMPDIR/pi-plans/<task-id>`) is never listed as a file to
+// re-read itself; only the existing standard files under it are.
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  mkdirSync(join(cwd, ".plans", "2026-09-26-scene-gen-v3"), { recursive: true });
-  writeFileSync(join(cwd, ".plans", "2026-09-26-scene-gen-v3", "tasks.json"), "{}");
-  const branchEntries = [entry("bash", { command: "ls .plans/2026-09-26-scene-gen-v3" })];
+  const plansRoot = join(tmpdir(), "pi-plans");
+  mkdirSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true });
+  writeFileSync(join(plansRoot, "rc-test-scene-gen-v3", "tasks.json"), "{}");
+  const branchEntries = [entry("bash", { command: `ls ${join(plansRoot, "rc-test-scene-gen-v3")}` })];
   const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
   const ledger = result.compaction.details.ledger;
-  assert.ok(!ledger.includes(".plans/2026-09-26-scene-gen-v3"), "the bare directory itself must not be listed");
+  assert.ok(!ledger.includes(join(plansRoot, "rc-test-scene-gen-v3")), "the bare directory itself must not be listed");
   assert.ok(ledger.some((p) => p.endsWith("tasks.json")));
+  rmSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true, force: true });
 }
 
-// 15. pi-subagents' output block survives the task cap: a long brief ending in
+// 15. a plan-like file read outside the temp-dir plan root (e.g. under cwd)
+// is never listed; ledger detection is pinned to the temp-dir root.
+{
+  const h = harness();
+  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
+  const nonRootPlan = join(cwd, "plans", "x");
+  mkdirSync(nonRootPlan, { recursive: true });
+  const statePath = join(nonRootPlan, "state.json");
+  writeFileSync(statePath, "{}");
+  const branchEntries = [entry("read", { path: statePath })];
+  const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
+  const ledger = result.compaction.details.ledger;
+  // Strict check: the ledger must be empty. A path under the session cwd would
+  // be listed in relative form (show() relativizes), so an exact absolute-string
+  // membership test could never fail here; emptiness pins the exclusion either way.
+  assert.equal(ledger.length, 0, "a plan-like path outside the temp-dir root must not be listed");
+  rmSync(nonRootPlan, { recursive: true, force: true });
+}
+
+// 16. pi-subagents' output block survives the task cap: a long brief ending in
 // "---\n**Output:**" keeps the output path in its own block; no block without it.
 {
   const h = harness();
