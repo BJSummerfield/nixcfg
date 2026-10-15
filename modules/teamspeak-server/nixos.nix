@@ -1,5 +1,4 @@
 # sudo nixos-container root-login teamspeak
-# tailscale up --hostname=teamspeak-public --advertise-tags=tag:solo-node
 # sudo nixos-container run teamspeak -- journalctl -u teamspeak3-server --no-page | grep token
 
 { lib, config, ... }:
@@ -9,16 +8,10 @@ in
 {
   options.mine.system.teamspeak-server = {
     enable = lib.mkEnableOption "Enable TeamSpeak server container";
-    tailscaleAccess = lib.mkEnableOption "Enable Tailscale access (private network)";
     publicAccess = lib.mkEnableOption "Enable public access (port forwarding)";
   };
 
   config = lib.mkIf cfg.enable {
-    system.activationScripts.teamspeak-dirs = lib.mkIf cfg.tailscaleAccess ''
-      mkdir -p /var/lib/tailscale-teamspeak
-      chmod 700 /var/lib/tailscale-teamspeak
-    '';
-
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-teamspeak" ];
@@ -54,32 +47,13 @@ in
         }
       ];
 
-      allowedDevices = lib.mkIf cfg.tailscaleAccess [
-        {
-          modifier = "rwm";
-          node = "/dev/net/tun";
-        }
-      ];
-
-      bindMounts = lib.mkIf cfg.tailscaleAccess {
-        "/dev/net/tun" = {
-          hostPath = "/dev/net/tun";
-          isReadOnly = false;
-        };
-        "/var/lib/tailscale" = {
-          hostPath = "/var/lib/tailscale-teamspeak";
-          isReadOnly = false;
-        };
-      };
-
-      config = { config, lib, ... }: {
+      config = { lib, ... }: {
         nixpkgs.config.allowUnfreePredicate =
           pkg:
           builtins.elem (lib.getName pkg) [
             "teamspeak-server"
           ];
 
-        services.tailscale.enable = cfg.tailscaleAccess;
         services.teamspeak3.enable = true;
 
         networking = {
@@ -90,11 +64,7 @@ in
           firewall = {
             enable = true;
 
-            trustedInterfaces = lib.mkIf cfg.tailscaleAccess [ "tailscale0" ];
-
-            allowedUDPPorts =
-              (lib.optionals cfg.tailscaleAccess [ config.services.tailscale.port ])
-              ++ (lib.optionals cfg.publicAccess [ 9987 ]);
+            allowedUDPPorts = lib.optionals cfg.publicAccess [ 9987 ];
 
             allowedTCPPorts = lib.optionals cfg.publicAccess [ 30033 ];
           };

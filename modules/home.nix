@@ -22,7 +22,6 @@
     ./paseo-desktop/home.nix
     ./polkit_kde/home.nix
     ./steambox/home.nix
-    ./swaybg/home.nix
     ./swayidle/home.nix
     ./swaylock/home.nix
     ./unfree/home.nix
