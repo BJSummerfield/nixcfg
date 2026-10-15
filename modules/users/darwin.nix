@@ -11,7 +11,7 @@
 
   config = {
     mine.allowedUnfree = lib.concatLists (
-      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree or [ ]) config.home-manager.users
+      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree) config.home-manager.users
     );
 
     home-manager = {

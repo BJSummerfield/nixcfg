@@ -1,5 +1,4 @@
 {
-  lib,
   pkgs,
   modulesPath,
   ...
@@ -15,7 +14,7 @@
 
   mine.system.boot.mode = "extlinux";
   sdImage.compressImage = false;
-  boot.supportedFilesystems.zfs = lib.mkForce false;
+  boot.supportedFilesystems.zfs = false;
 
   zramSwap = {
     enable = true;
