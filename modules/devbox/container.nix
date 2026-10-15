@@ -90,6 +90,8 @@ in
   environment.sessionVariables = {
     CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
     DISABLE_AUTOUPDATER = "1";
+    PI_SUBAGENTS_TEMP_ROOT = "/var/tmp/pi-subagents";
+    TMPDIR = "/var/tmp";
   };
 
   home-manager = {
@@ -161,6 +163,8 @@ in
       CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
       DISABLE_AUTOUPDATER = "1";
       PASEO_WEB_UI_ENABLED = "true";
+      PI_SUBAGENTS_TEMP_ROOT = "/var/tmp/pi-subagents";
+      TMPDIR = "/var/tmp";
     };
   };
 
@@ -197,6 +201,9 @@ in
   systemd.tmpfiles.rules = [
     "d /home/agent/projects 0755 agent users -"
     "d /var/lib/paseo/worktrees 0755 agent users -"
+    "d /var/tmp/pi-plans 0755 agent users 20d"
+    "d /var/tmp/pi-subagents 0755 agent users 20d"
+    "d /var/tmp/claude-1500 0755 agent users 20d"
   ];
 
   system.stateVersion = "26.05";
