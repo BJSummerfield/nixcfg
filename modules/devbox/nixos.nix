@@ -17,8 +17,6 @@ let
     types
     ;
   cfg = config.mine.system.devboxes;
-  addresses =
-    mapAttrsToList (_: box: box.hostAddress) cfg ++ mapAttrsToList (_: box: box.localAddress) cfg;
 in
 {
   options.mine.system.devboxes = mkOption {
@@ -158,16 +156,7 @@ in
           characters, because the veth interface "ve-${name}" must fit
           Linux's 15-character interface name limit.
         '';
-      }) cfg
-      ++ [
-        {
-          assertion = lib.length (lib.unique addresses) == lib.length addresses;
-          message = ''
-            mine.system.devboxes: hostAddress and localAddress must be unique
-            across every instance. Got: ${lib.concatStringsSep ", " addresses}
-          '';
-        }
-      ];
+      }) cfg;
 
     networking.nat = {
       enable = true;
