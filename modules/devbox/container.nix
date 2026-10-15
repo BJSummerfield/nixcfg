@@ -72,8 +72,6 @@ in
   ];
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.settings.nix-path = [ "nixpkgs=flake:nixpkgs" ];
-  nix.settings.max-jobs = 2;
-  nix.settings.cores = 8;
 
   mine.allowedUnfree = [ "claude-code" ];
 
