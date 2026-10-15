@@ -240,9 +240,9 @@ const basePreparation = (overrides) => ({
   assert.doesNotMatch(result.compaction.summary, /Task \(first user message/);
 }
 
-// 14. a bare ".plans/<slug>" directory reference (no file extension,
-// e.g. from `ls .plans/<slug>`) is never listed as a file to re-read itself;
-// only the existing standard files under it are.
+// 14. a bare pi-plans/<task-id> directory reference (no file extension,
+// e.g. from `ls $TMPDIR/pi-plans/<task-id>`) is never listed as a file to
+// re-read itself; only the existing standard files under it are.
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
@@ -257,7 +257,23 @@ const basePreparation = (overrides) => ({
   rmSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true, force: true });
 }
 
-// 15. pi-subagents' output block survives the task cap: a long brief ending in
+// 15. a plan-like file read outside the temp-dir plan root (e.g. under cwd)
+// is never listed; ledger detection is pinned to the temp-dir root.
+{
+  const h = harness();
+  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
+  const nonRootPlan = join(cwd, "plans", "x");
+  mkdirSync(nonRootPlan, { recursive: true });
+  const statePath = join(nonRootPlan, "state.json");
+  writeFileSync(statePath, "{}");
+  const branchEntries = [entry("read", { path: statePath })];
+  const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
+  const ledger = result.compaction.details.ledger;
+  assert.ok(!ledger.includes(statePath), "a plan-like path outside the temp-dir root must not be listed");
+  rmSync(nonRootPlan, { recursive: true, force: true });
+}
+
+// 16. pi-subagents' output block survives the task cap: a long brief ending in
 // "---\n**Output:**" keeps the output path in its own block; no block without it.
 {
   const h = harness();
