@@ -12,7 +12,8 @@ rotating the user SSH key on the new host afterward.
 - A **target** machine booted from a NixOS minimal installer USB with SSH
   reachable on the local network.
 - The flake already contains a host module for the new machine (including
-  a working `disko.nix`) and the host is added to `flake.nix` outputs.
+  a working `disko.nix`, and an import of `./hardware-configuration.nix`,
+  which step 8 generates) and the host is added to `flake.nix` outputs.
 
 The builder and target can be any two machines — the only requirements
 are that the builder can push commits to the flake repo and reach the
@@ -25,28 +26,24 @@ actually let you back in afterward. Getting these wrong doesn't stop
 the install from completing, but does lock you out until you get
 physical access.
 
-**Inbound SSH must be enabled in the target host's config.** With this
-repo's abstractions, that's:
+**Remote access must be enabled in the target host's config:**
 
 ```nix
-mine.system.openssh = {
-  inbound = {
-    enable = true;
-    openOnExternalInterface = true;  # only if on a trusted LAN
-  };
-  outbound.enable = true;
+mine.system.remoteAccess = {
+  enable = true;
+  lanAccess = true;  # only if on a trusted LAN
 };
 ```
 
-`inbound.enable = true` runs sshd. Without it, `nixos-anywhere`'s
-post-install verification fails and the host is unreachable except via
-console/keyboard.
+This runs sshd, reachable over Tailscale once the host has run
+`tailscale up`, and on the LAN only with `lanAccess`. Without
+`lanAccess`, the first login after install is at the console, to run
+`sudo tailscale up`.
 
-**A working `authorizedKeys` entry** for the user you'll log in as. The
-`sshKeys` attrset in `users/waktu.nix` should include at least one key
-whose *private half you currently hold* — typically the builder's user
-key, or a 1Password-managed key. Password auth is disabled by the
-inbound module, so key auth is the only way in.
+**A key you hold.** By default every key in the `sshKeys` attrset in
+`users/waktu.nix` is authorized, so it must include at least one whose
+*private half you currently hold*, typically the builder's user key.
+Password auth is disabled, so key auth is the only way in over SSH.
 
 **A LUKS passphrase you can type.** disko will prompt for it during
 partitioning; if the config uses random encryption for swap only and
@@ -190,9 +187,18 @@ sudo passwd nixos
 ```fish
 nix run github:nix-community/nixos-anywhere -- \
   --flake .#$host \
+  --generate-hardware-config nixos-generate-config ./hosts/$host/hardware-configuration.nix \
   --extra-files $workdir \
   --target-host nixos@<installer-ip>
 ```
+
+`--generate-hardware-config` runs `nixos-generate-config
+--no-filesystems` on the target (disko owns the disks), writes the
+result into the flake at that path, and stages it in git before the
+build. Commit it once the host is up. Treat it as generated output:
+regenerate it rather than editing it, and put host-specific tweaks in
+the host's `default.nix`. Cloud VMs that import the `qemu-guest` profile
+(like `vps`) can drop the flag and the import.
 
 Use the LAN IP from step 6 — Tailscale hostnames won't work here because
 Tailscale isn't running in the installer.
@@ -217,8 +223,9 @@ ssh-keygen -R $host
 ssh-keygen -R <host-ip>
 ```
 
-Confirm the host is up and sops decrypted secrets. Since inbound sshd
-uses `PermitRootLogin = "no"`, log in as your user:
+Confirm the host is up and sops decrypted secrets. sshd uses
+`PermitRootLogin = "no"`, so log in as your user (over the LAN with
+`lanAccess`, otherwise at the console):
 
 ```fish
 ssh waktu@<host-ip>
