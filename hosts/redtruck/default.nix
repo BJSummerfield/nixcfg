@@ -9,6 +9,18 @@
 
   boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
+  nix.settings = {
+    max-jobs = 2;
+    cores = 8;
+  };
+
+  systemd.services.nix-daemon.serviceConfig = {
+    MemoryHigh = "8G";
+    MemoryMax = "10G";
+    MemorySwapMax = "2G";
+    OOMPolicy = "continue";
+  };
+
   environment.systemPackages = with pkgs; [
     bottom
     git
