@@ -55,3 +55,8 @@ directory dies with the worktree.
   report.
 - Dispatch as many independent read-only tasks in parallel as the work
   allows.
+
+## Review and PR conventions (user preference, 2026-10-14)
+
+- Every code change gets an adversarial review by a fresh reviewer before its PR is opened: the reviewer reads the full diff and reports verdict first (verdict, then findings with file:line, then evidence). Findings get a fix-up round and a fresh re-review until the verdict is clean.
+- PR titles, bodies, comments, and commit messages are plain English that a human understands on their own — no internal task, wave, tranche, or agent terminology.
