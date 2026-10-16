@@ -287,11 +287,15 @@ cmd_stage() {
     branch_args=(-branch "$resolved_branch")
   fi
 
-  # Pinned in the order check recorded them, not sorted.
-  local depot_args=() depot manifest_id
+  # Pinned in the order check recorded them, not sorted. DepotDownloader
+  # reads only the values after the first -depot and the first -manifest,
+  # so each takes the whole list, paired by position.
+  local depots=() manifests=() depot manifest_id
   while read -r depot manifest_id; do
-    depot_args+=(-depot "$depot" -manifest "$manifest_id")
+    depots+=("$depot")
+    manifests+=("$manifest_id")
   done < <(tail -n +2 "$REMOTE_FILE")
+  local depot_args=(-depot "${depots[@]}" -manifest "${manifests[@]}")
 
   local log_file="$LOG_DIR/stage-$slot.log"
   if ! run_as_valheim timeout "${VALHEIM_STAGE_TIMEOUT_MIN}m" \
