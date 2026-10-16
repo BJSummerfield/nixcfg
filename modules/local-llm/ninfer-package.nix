@@ -32,7 +32,11 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   # write-back retention + Host recency window). Drop the placement parts when upstream fixes #378,
   # the retention parts when upstream records proven demand for write-backs: bump pin, run the
   # fail-first tests unpatched.
-  patches = [ ./ninfer-full-tier.patch ];
+  # Own fix: DFlash graph allowance over-reserves ~3 GiB at 4 lanes; drop when upstream fixes #385.
+  patches = [
+    ./ninfer-full-tier.patch
+    ./ninfer-graph-allowance.patch
+  ];
 
   nativeBuildInputs = [
     cmake
@@ -66,12 +70,13 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     "ninfer_resource_manager_test"
     "ninfer_resource_manager_replay_test"
     "ninfer_host_extent_runs_test"
+    "ninfer_serve_options_test"
   ];
 
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    ctest --output-on-failure --no-tests=error -R "^ninfer_(resource_manager|resource_manager_replay|host_extent_runs)_test$"
+    ctest --output-on-failure --no-tests=error -R "^ninfer_(resource_manager|resource_manager_replay|host_extent_runs|serve_options)_test$"
     runHook postCheck
   '';
 

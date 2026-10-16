@@ -57,6 +57,7 @@
         spec = "dflash2";
         draftTokens = 7;
         lmHeadDraft = true;
+        cudaGraphAllowanceMib = 512;
         deviceStateSlots = 3;
         hostContextMib = 17500;
         pendingTimeoutMs = 600000;
