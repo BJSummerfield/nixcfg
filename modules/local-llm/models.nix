@@ -58,7 +58,7 @@
         draftTokens = 3;
         lmHeadDraft = true;
         deviceStateSlots = 3;
-        hostContextMib = 17500;
+        hostContextMib = 26624;
         pendingTimeoutMs = 600000;
         defaultMaxTokens = 8192;
         vision = true;
