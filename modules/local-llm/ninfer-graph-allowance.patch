@@ -1,0 +1,277 @@
+diff --git a/include/ninfer/types.h b/include/ninfer/types.h
+index d1b1d998..c7c6b207 100644
+--- a/include/ninfer/types.h
++++ b/include/ninfer/types.h
+@@ -162,6 +162,8 @@ struct EngineOptions {
+     std::uint32_t media_preprocess_threads = 0;
+     bool enable_vision                     = false;
+     bool use_cuda_graph                    = true;
++    // Replaces the computed total CUDA graph allowance when set.
++    std::optional<std::size_t> cuda_graph_allowance_bytes;
+     ContextCacheOptions context_cache;
+     ContextCostOptions context_cost;
+     StartupObserver startup_observer;
+diff --git a/src/models/qwen3_5/program/planning/startup.cpp b/src/models/qwen3_5/program/planning/startup.cpp
+index 9f238f08..3de256c7 100644
+--- a/src/models/qwen3_5/program/planning/startup.cpp
++++ b/src/models/qwen3_5/program/planning/startup.cpp
+@@ -819,26 +819,27 @@ std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlannin
+     if (main_page_groups == 0) {
+         throw std::invalid_argument("Main KV physical page count must be positive");
+     }
+-    auto impl                  = std::make_unique<SequencePlanImpl>();
+-    impl->parameters           = inputs.parameters;
+-    impl->capacity             = inputs.capacity;
+-    impl->main_page_groups     = main_page_groups;
+-    impl->kv_capacity          = static_cast<std::uint32_t>(checked_i32(
++    auto impl                        = std::make_unique<SequencePlanImpl>();
++    impl->parameters                 = inputs.parameters;
++    impl->capacity                   = inputs.capacity;
++    impl->main_page_groups           = main_page_groups;
++    impl->kv_capacity                = static_cast<std::uint32_t>(checked_i32(
+         static_cast<std::uint64_t>(main_page_groups) * static_cast<std::uint32_t>(kPagedKVPageSize),
+         "resolved Paged KV capacity exceeds int32"));
+-    impl->max_concurrency      = inputs.max_concurrency;
+-    impl->prefill_chunk        = inputs.prefill_chunk;
+-    impl->draft_window         = inputs.draft_window;
+-    impl->speculative_backend  = inputs.speculative_backend;
+-    impl->proposal_head        = inputs.proposal_head;
+-    impl->features             = inputs.features;
+-    impl->use_cuda_graph       = inputs.use_cuda_graph;
+-    impl->causal_scoring       = inputs.causal_scoring;
+-    impl->device               = inputs.device;
+-    impl->multiprocessor_count = inputs.multiprocessor_count;
+-    impl->context_cache        = inputs.context_cache;
+-    impl->kv_storage           = inputs.kv_storage;
+-    impl->persistent           = persistent_layout(*impl);
++    impl->max_concurrency            = inputs.max_concurrency;
++    impl->prefill_chunk              = inputs.prefill_chunk;
++    impl->draft_window               = inputs.draft_window;
++    impl->speculative_backend        = inputs.speculative_backend;
++    impl->proposal_head              = inputs.proposal_head;
++    impl->features                   = inputs.features;
++    impl->use_cuda_graph             = inputs.use_cuda_graph;
++    impl->cuda_graph_allowance_bytes = inputs.cuda_graph_allowance_bytes;
++    impl->causal_scoring             = inputs.causal_scoring;
++    impl->device                     = inputs.device;
++    impl->multiprocessor_count       = inputs.multiprocessor_count;
++    impl->context_cache              = inputs.context_cache;
++    impl->kv_storage                 = inputs.kv_storage;
++    impl->persistent                 = persistent_layout(*impl);
+     if (!impl->context_cache.host_capacity_bytes) {
+         // Default Host capacity covers 8 GiB of KV bytes plus eight complete StateImages.
+         impl->context_cache.host_capacity_bytes =
+@@ -848,7 +849,9 @@ std::unique_ptr<SequencePlanImpl> build_sequence_candidate(const SequencePlannin
+                         "Host context default overflow");
+     }
+     impl->workspace = build_workspace_plan(*impl);
+-    if (impl->use_cuda_graph) {
++    if (impl->use_cuda_graph && impl->cuda_graph_allowance_bytes) {
++        impl->graph_allowance_bytes = *impl->cuda_graph_allowance_bytes;
++    } else if (impl->use_cuda_graph) {
+         // Definitions remain per execution profile, but only one executable is instantiated for
+         // each reachable node-topology class. These bounds cover the largest profile installed in
+         // each class and the driver/module state materialized while qualifying all definitions.
+@@ -903,20 +906,21 @@ make_sequence_planner_impl(const execution::Parameters& parameters, DeviceContex
+                            const EngineOptions& options) {
+     validate_target_options(parameters, device, options);
+     SequencePlanningInputs inputs{
+-        .parameters           = &parameters,
+-        .capacity             = options.max_context,
+-        .max_concurrency      = options.max_concurrency,
+-        .prefill_chunk        = std::min(options.prefill_chunk, options.max_context),
+-        .draft_window         = options.speculative.draft_tokens,
+-        .speculative_backend  = options.speculative.backend,
+-        .kv_storage           = options.kv_cache,
+-        .proposal_head        = options.speculative.proposal_head,
+-        .features             = models::load_options(options),
+-        .use_cuda_graph       = options.use_cuda_graph,
+-        .causal_scoring       = options.purpose == EnginePurpose::CausalScoring,
+-        .device               = options.device,
+-        .multiprocessor_count = device.multiprocessor_count(),
+-        .context_cache        = options.context_cache,
++        .parameters                 = &parameters,
++        .capacity                   = options.max_context,
++        .max_concurrency            = options.max_concurrency,
++        .prefill_chunk              = std::min(options.prefill_chunk, options.max_context),
++        .draft_window               = options.speculative.draft_tokens,
++        .speculative_backend        = options.speculative.backend,
++        .kv_storage                 = options.kv_cache,
++        .proposal_head              = options.speculative.proposal_head,
++        .features                   = models::load_options(options),
++        .use_cuda_graph             = options.use_cuda_graph,
++        .causal_scoring             = options.purpose == EnginePurpose::CausalScoring,
++        .device                     = options.device,
++        .multiprocessor_count       = device.multiprocessor_count(),
++        .context_cache              = options.context_cache,
++        .cuda_graph_allowance_bytes = options.cuda_graph_allowance_bytes,
+     };
+     const std::uint32_t logical_pages = page_count(inputs.capacity);
+     const std::uint32_t minimum_pages = std::max(logical_pages, inputs.max_concurrency);
+diff --git a/src/models/qwen3_5/program/planning/startup.h b/src/models/qwen3_5/program/planning/startup.h
+index dfceeaf4..fd52e45a 100644
+--- a/src/models/qwen3_5/program/planning/startup.h
++++ b/src/models/qwen3_5/program/planning/startup.h
+@@ -85,6 +85,7 @@ struct SequencePlanningInputs {
+     int device                        = 0;
+     std::int32_t multiprocessor_count = 0;
+     ContextCacheOptions context_cache;
++    std::optional<std::size_t> cuda_graph_allowance_bytes;
+ };
+ 
+ struct SequencePlanImpl {
+@@ -104,6 +105,7 @@ struct SequencePlanImpl {
+     int device                        = 0;
+     std::int32_t multiprocessor_count = 0;
+     ContextCacheOptions context_cache;
++    std::optional<std::size_t> cuda_graph_allowance_bytes;
+     PersistentLayout persistent;
+     WorkspacePlan workspace;
+     std::size_t graph_allowance_bytes    = 0;
+diff --git a/src/serve/generation_service.cpp b/src/serve/generation_service.cpp
+index 39066659..b981994c 100644
+--- a/src/serve/generation_service.cpp
++++ b/src/serve/generation_service.cpp
+@@ -304,25 +304,26 @@ private:
+ GenerationService::GenerationService(ServeOptions options, StartupObserver startup_observer)
+     : options_(std::move(options)) {
+     ninfer::EngineOptions engine_options;
+-    engine_options.artifact_path            = options_.artifact_path;
+-    engine_options.chat_template_path       = options_.chat_template_path;
+-    engine_options.device                   = options_.device;
+-    engine_options.max_context              = options_.max_context;
+-    engine_options.kv_capacity              = options_.kv_capacity;
+-    engine_options.max_concurrency          = options_.max_concurrency;
+-    engine_options.max_pending_requests     = options_.max_pending_requests;
+-    engine_options.pending_timeout_ms       = options_.pending_timeout_ms;
+-    engine_options.prefill_chunk            = options_.prefill_chunk;
+-    engine_options.kv_cache                 = options_.kv_cache;
+-    engine_options.enable_vision            = options_.enable_vision;
+-    engine_options.use_cuda_graph           = options_.use_cuda_graph;
+-    engine_options.speculative              = options_.speculative;
+-    engine_options.context_cache            = options_.context_cache;
+-    engine_options.context_cost.preset_path = options_.context_cost_presets;
+-    engine_options.media_cache_bytes        = options_.media_cache_bytes;
+-    engine_options.media_live_bytes         = options_.media_live_bytes;
+-    engine_options.media_preprocess_threads = options_.media_preprocess_threads;
+-    engine_options.startup_observer         = std::move(startup_observer);
++    engine_options.artifact_path              = options_.artifact_path;
++    engine_options.chat_template_path         = options_.chat_template_path;
++    engine_options.device                     = options_.device;
++    engine_options.max_context                = options_.max_context;
++    engine_options.kv_capacity                = options_.kv_capacity;
++    engine_options.max_concurrency            = options_.max_concurrency;
++    engine_options.max_pending_requests       = options_.max_pending_requests;
++    engine_options.pending_timeout_ms         = options_.pending_timeout_ms;
++    engine_options.prefill_chunk              = options_.prefill_chunk;
++    engine_options.kv_cache                   = options_.kv_cache;
++    engine_options.enable_vision              = options_.enable_vision;
++    engine_options.use_cuda_graph             = options_.use_cuda_graph;
++    engine_options.cuda_graph_allowance_bytes = options_.cuda_graph_allowance_bytes;
++    engine_options.speculative                = options_.speculative;
++    engine_options.context_cache              = options_.context_cache;
++    engine_options.context_cost.preset_path   = options_.context_cost_presets;
++    engine_options.media_cache_bytes          = options_.media_cache_bytes;
++    engine_options.media_live_bytes           = options_.media_live_bytes;
++    engine_options.media_preprocess_threads   = options_.media_preprocess_threads;
++    engine_options.startup_observer           = std::move(startup_observer);
+     engine_           = std::make_unique<ninfer::Engine>(std::move(engine_options));
+     request_capacity_ = std::make_shared<RequestCapacity>(
+         static_cast<std::size_t>(options_.max_concurrency) + options_.max_pending_requests);
+diff --git a/src/serve/serve_options.cpp b/src/serve/serve_options.cpp
+index 94db898e..01c4ffbb 100644
+--- a/src/serve/serve_options.cpp
++++ b/src/serve/serve_options.cpp
+@@ -126,7 +126,7 @@ std::string serve_usage_text(const char* argv0) {
+            "[--response-store-max-records N] [--response-store-max-mib N] "
+            "[--kv-dtype bf16|int8|fp8|nvfp4|k8v4] [--spec mtp|dflash|dflash2 --draft-tokens N] "
+            "[--default-max-tokens N] [--default-thinking-budget N] "
+-           "[--vision] [--no-cuda-graph] [--no-prefix-reuse] "
++           "[--vision] [--no-cuda-graph] [--cuda-graph-allowance-mib N] [--no-prefix-reuse] "
+            "[--chat-template FILE] [--lm-head-draft] [--no-thinking] [--preserve-thinking] "
+            "[--cors] "
+            "[--temperature F] [--top-p F] [--top-k N] [--min-p F] [--presence-penalty F] "
+@@ -146,6 +146,7 @@ std::string serve_usage_text(const char* argv0) {
+            "default\n"
+            "       --log-stats-interval-ms defaults to 5000; 0 disables periodic throughput logs\n"
+            "       --vision enables media and loads the fixed Vision GPU allocations\n"
++           "       --cuda-graph-allowance-mib replaces the computed total CUDA graph reservation\n"
+            "       --kv-capacity auto leaves " +
+            std::to_string(kDefaultKvCapacityHeadroomBytes / (1024ULL * 1024ULL)) +
+            " MiB of sizing headroom\n"
+@@ -306,6 +307,13 @@ ServeOptions parse_serve_options(int argc, char** argv) {
+             options.enable_vision = true;
+         } else if (arg == "--no-cuda-graph") {
+             options.use_cuda_graph = false;
++        } else if (arg == "--cuda-graph-allowance-mib") {
++            const std::uint64_t mib =
++                parse_u64(require_value("--cuda-graph-allowance-mib"), "cuda-graph-allowance-mib");
++            if (mib > std::numeric_limits<std::size_t>::max() / (1ULL << 20)) {
++                throw std::invalid_argument("--cuda-graph-allowance-mib is out of range");
++            }
++            options.cuda_graph_allowance_bytes = static_cast<std::size_t>(mib << 20);
+         } else if (arg == "--no-prefix-reuse") {
+             options.allow_prefix_reuse = false;
+         } else if (arg == "--lm-head-draft") {
+@@ -374,6 +382,9 @@ ServeOptions parse_serve_options(int argc, char** argv) {
+     if (options.prefill_chunk == 0 || options.prefill_chunk % 128 != 0) {
+         throw std::invalid_argument("--prefill-chunk must be a positive multiple of 128");
+     }
++    if (options.cuda_graph_allowance_bytes && !options.use_cuda_graph) {
++        throw std::invalid_argument("--cuda-graph-allowance-mib requires CUDA graphs");
++    }
+     product::validate_speculative_cli_options(options.speculative);
+     if (default_max_tokens_explicit) {
+         if (options.default_max_tokens <= 0) {
+diff --git a/src/serve/serve_options.h b/src/serve/serve_options.h
+index c8c1e1ea..897b5d5e 100644
+--- a/src/serve/serve_options.h
++++ b/src/serve/serve_options.h
+@@ -49,6 +49,7 @@ struct ServeOptions {
+     bool enable_vision      = false;
+     bool use_cuda_graph     = true;
+     bool allow_prefix_reuse = true;
++    std::optional<std::size_t> cuda_graph_allowance_bytes;
+     std::optional<bool> enable_thinking;
+     std::optional<bool> preserve_thinking;
+     std::optional<std::uint32_t> default_thinking_budget;
+diff --git a/tests/test_serve_options.cpp b/tests/test_serve_options.cpp
+index 77ac44ec..2955a869 100644
+--- a/tests/test_serve_options.cpp
++++ b/tests/test_serve_options.cpp
+@@ -419,6 +419,35 @@ int main() {
+     failures += check(!secret_present, "startup argv retained the API key");
+     failures += check(redaction_present, "startup argv omitted the API-key redaction marker");
+ 
++    failures += check(!defaults.cuda_graph_allowance_bytes,
++                      "CUDA graph allowance override is set by default");
++    const ServeOptions graph_allowance =
++        parse({"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "512"});
++    failures += check(graph_allowance.cuda_graph_allowance_bytes == 512ULL * 1024 * 1024,
++                      "--cuda-graph-allowance-mib did not resolve to bytes");
++    const ServeOptions zero_graph_allowance =
++        parse({"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "0"});
++    failures += check(zero_graph_allowance.cuda_graph_allowance_bytes == 0,
++                      "--cuda-graph-allowance-mib 0 did not preserve a zero override");
++    failures += check(serve_usage_text("ninfer-serve").find("--cuda-graph-allowance-mib") !=
++                          std::string::npos,
++                      "serve help omits --cuda-graph-allowance-mib");
++    for (const std::vector<std::string>& arguments : std::vector<std::vector<std::string>>{
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "-1"},
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "12x"},
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", ""},
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "18446744073709551615"},
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib"},
++             {"ninfer-serve", "model.ninfer", "--cuda-graph-allowance-mib", "512",
++              "--no-cuda-graph"},
++         }) {
++        bool rejected = false;
++        try {
++            (void)parse(arguments);
++        } catch (const std::invalid_argument&) { rejected = true; }
++        failures += check(rejected, "invalid --cuda-graph-allowance-mib was accepted");
++    }
++
+     if (failures == 0) { std::cout << "ok\n"; }
+     return failures == 0 ? 0 : 1;
+ }

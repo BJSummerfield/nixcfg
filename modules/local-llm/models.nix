@@ -52,11 +52,12 @@
         maxContext = 163840;
         kvCapacity = "auto";
         maxConcurrency = 4;
-        kvDtype = "fp8";
+        kvDtype = "k8v4";
         prefillChunk = 2048;
-        spec = "mtp";
-        draftTokens = 3;
+        spec = "dflash2";
+        draftTokens = 7;
         lmHeadDraft = true;
+        cudaGraphAllowanceMib = 512;
         deviceStateSlots = 3;
         hostContextMib = 17500;
         pendingTimeoutMs = 600000;
