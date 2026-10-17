@@ -18,6 +18,50 @@ let
   hwConfigGlob = "hosts/*/hardware-configuration.nix";
 
   valheimNotify = pkgs.callPackage ../modules/valheim-server/notify-package.nix { };
+  piSubagents = pkgs.callPackage ../modules/pi-coding-agent/pi-subagents-patched.nix { };
+  piSubagentsGroupKillCheck = pkgs.writeText "pi-subagents-group-kill-check.mjs" ''
+    import { spawn, execFileSync } from "node:child_process";
+    import { createOwnedProcessTreeController } from "./owned-process-tree.js";
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const alive = (pid) => {
+      try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+    };
+    // Topology of a timed-out background run: the runner is a detached process-
+    // group leader; its bash tool is a detached child in its own group, with the
+    // probe as a grandchild in that group. terminate(runner) must kill all of it.
+    // The whole tree is pure node (no system shell): runner.mjs spawns the
+    // detached "bash" (bash.mjs), which spawns the "probe" in its own group.
+    const runner = spawn(process.execPath, [ "runner.mjs", "bash.mjs" ], { detached: true, stdio: "ignore" });
+    await sleep(800);
+    const rows = execFileSync("ps", [ "-axo", "pid=,ppid=,pgid=,comm=" ], { encoding: "utf8" })
+      .trim().split("\n").map((l) => l.trim().split(/\s+/));
+    const bashRow = rows.find((r) => r[1] === String(runner.pid) && r[0] !== String(runner.pid));
+    if (!bashRow) { console.error("no detached bash child of the runner"); process.exit(1); }
+    const bashPid = Number(bashRow[0]);
+    const probeRows = rows.filter((r) => r[2] === String(bashRow[2]) && r[0] !== String(bashPid));
+    const outcome = await createOwnedProcessTreeController(runner.pid, { termGraceMs: 300, killVerifyMs: 500 })
+      .terminate();
+    await sleep(300);
+    const survivors = [ runner.pid, bashPid, ...probeRows.map((r) => Number(r[0])) ].filter(alive);
+    if (survivors.length > 0) { console.error("survivors:", survivors, outcome); process.exit(1); }
+    if (outcome.state !== "observed") { console.error("unverified outcome:", outcome); process.exit(1); }
+  '';
+
+  piSubagentsGroupKillRunner = pkgs.writeText "pi-subagents-group-kill-runner.mjs" ''
+    import { spawn } from "node:child_process";
+    // The detached "bash tool": a child in its own process group, exactly like
+    // the pi bash tool. Its path is passed as argv[2] so no system shell or
+    // absolute path is needed in the build sandbox.
+    spawn(process.execPath, [ process.argv[2] ], { detached: true, stdio: "ignore" });
+    setInterval(() => {}, 1000);
+  '';
+  piSubagentsGroupKillBash = pkgs.writeText "pi-subagents-group-kill-bash.mjs" ''
+    import { spawn } from "node:child_process";
+    // The probe: a grandchild in this process group (not detached), mirroring
+    // the probe/node the bash tool would leave running.
+    spawn(process.execPath, [ "-e", "setInterval(() => {}, 1000)" ], { stdio: "ignore" });
+    setInterval(() => {}, 1000);
+  '';
 
   # No annotations in the lines themselves (systemd journal lines never have
   # any): the sample covers a join, a death, a respawn, a version-mismatch
@@ -119,6 +163,29 @@ evalAll "nixos" inputs.self.nixosConfigurations
         cp ${../modules/pi-coding-agent/extensions/resume-card.js} resume-card.js
         cp ${../modules/pi-coding-agent/extensions/resume-card.test.mjs} resume-card.test.mjs
         node resume-card.test.mjs
+        touch $out
+      '';
+  # pi-subagents 0.78.0 leaves a run's detached bash tool tree orphaned when the
+  # run ends on its deadline (scene_gen #153). The vendored package patches the
+  # runner to terminate its whole process group; this check runs the patched
+  # controller against that exact topology. Baseline before the patch: the
+  # outcome was unknown/verification-failed and the bash tree survived.
+  pi-subagents-group-kill =
+    pkgs.runCommand "pi-subagents-group-kill-check"
+      {
+        # procps provides the ps the check uses to read pid/ppid/pgid in the
+        # build sandbox, where /bin and the host process tools are absent.
+        nativeBuildInputs = [
+          pkgs.nodejs
+          pkgs.procps
+        ];
+      }
+      ''
+        cp ${piSubagents}/src/runs/background/owned-process-tree.js .
+        cp ${piSubagentsGroupKillCheck} group-kill-check.mjs
+        cp ${piSubagentsGroupKillRunner} runner.mjs
+        cp ${piSubagentsGroupKillBash} bash.mjs
+        node group-kill-check.mjs
         touch $out
       '';
   valheim-notify-parser =

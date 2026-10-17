@@ -1,0 +1,104 @@
+diff -Nur a/src/runs/background/owned-process-tree.js b/src/runs/background/owned-process-tree.js
+--- a/src/runs/background/owned-process-tree.js	2026-10-17 01:18:29.919139814 -0500
++++ b/src/runs/background/owned-process-tree.js	2026-10-17 01:18:41.078139557 -0500
+@@ -94,6 +94,11 @@
+             if (term !== "sent" && term !== "absent") {
+                 return { state: "unknown", reason: "signal-failed", diagnostic: term.diagnostic };
+             }
++            // Detached descendants (for example a shell tool spawned with its own
++            // process group) never receive a signal aimed at the group, so kill
++            // each of their groups alongside the main group.
++            for (const detachedPid of detached)
++                signalProcess(-detachedPid, "SIGKILL");
+             const termExit = await waitUntilGroupTerminal(pid, options.termGraceMs ?? DEFAULT_TERM_GRACE_MS);
+             if (termExit === false)
+                 return observedUnlessLiveDetached(pid, detached);
+diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagent-runner.js
+--- a/src/runs/background/subagent-runner.js	2026-10-17 01:18:29.917984706 -0500
++++ b/src/runs/background/subagent-runner.js	2026-10-17 01:18:41.078139557 -0500
+@@ -12,6 +12,7 @@
+ import { performance } from "node:perf_hooks";
+ import { pathToFileURL } from "node:url";
+ import { installRunnerHttpDispatcher } from "./runner-http-dispatcher.js";
++import { createOwnedProcessTreeController } from "./owned-process-tree.js";
+ import { writeAtomicJson } from "../../shared/atomic-json.js";
+ import { withResultRunLease, writeAsyncResultFile, writePendingAsyncResultFile } from "./result-files.js";
+ import { createFileCoalescer } from "../../shared/file-coalescer.js";
+@@ -3099,6 +3100,48 @@
+         });
+         writeStatusPayload();
+     }, config.deadlineAt);
++    // The detached runner is its own process-group leader, and every bash tool
++    // tree in the run is a descendant of it — in its own group when the tool
++    // spawned detached. A run that ends on its deadline or on a stop must not
++    // leave those trees behind: the session abort normally reaches each tool's
++    // own process-group kill, but a hung abort or an externally-sent SIGTERM
++    // orphans the detached trees (scene_gen #153: "deadlines must kill the
++    // process group"). Both hooks below run only after the terminal status
++    // payload is durably written, and reuse the verified posix group
++    // termination from createOwnedProcessTreeController (TERM → grace →
++    // KILL, ps-proven), extended there to cover detached descendant groups.
++    const TERMINAL_GROUP_BACKSTOP_MS = 30_000;
++    const RUNNER_TERM_GRACE_MS = 3_000;
++    const ownsOwnProcessGroup = () => process.platform !== "win32" && process.getpgrp() === process.pid;
++    let groupTermination;
++    const terminateOwnProcessGroup = () => {
++        if (!ownsOwnProcessGroup() || groupTermination)
++            return;
++        groupTermination = createOwnedProcessTreeController(process.pid, { termGraceMs: RUNNER_TERM_GRACE_MS })
++            .terminate()
++            .then((outcome) => {
++            if (outcome.state !== "observed")
++                console.error(`[pi-subagents] runner process-group termination unverified: ${JSON.stringify(outcome)}`);
++        }, (error) => {
++            console.error("[pi-subagents] runner process-group termination failed:", error);
++        });
++    };
++    let groupBackstopTimer;
++    const armGroupBackstop = () => {
++        if (!ownsOwnProcessGroup() || groupBackstopTimer)
++            return;
++        groupBackstopTimer = setTimeout(() => {
++            groupBackstopTimer = undefined;
++            terminateOwnProcessGroup();
++        }, TERMINAL_GROUP_BACKSTOP_MS);
++        groupBackstopTimer.unref?.();
++    };
++    if (ownsOwnProcessGroup())
++        process.on("SIGTERM", () => {
++            // An externally-sent SIGTERM must not exit while the run's
++            // descendant trees are still alive: terminate the group first.
++            terminateOwnProcessGroup();
++        });
+     const interruptRunner = () => {
+         consumeInterruptRequest(asyncDir);
+         if (interrupted || statusPayload.state !== "running")
+@@ -3164,6 +3207,7 @@
+         stopAbortController.abort();
+         stopNestedAsyncDescendants();
+         stopActiveChildren();
++        armGroupBackstop();
+     };
+     const timeoutRunner = () => {
+         if (timedOut || stopped || interrupted || statusPayload.state !== "running")
+@@ -3200,6 +3244,7 @@
+         timeoutAbortController.abort();
+         timeoutNestedAsyncDescendants();
+         timeoutActiveChildren();
++        armGroupBackstop();
+     };
+     process.on(ASYNC_INTERRUPT_SIGNAL, interruptRunner);
+     // Portable control inbox: the parent drops control request files here when
+@@ -4873,6 +4918,12 @@
+             console.error(`Failed to write process-terminal candidate for '${id}':`, error);
+         }
+     }
++    if (statusPayload.timedOut || statusPayload.stopped) {
++        // Terminal run: kill every descendant that outlived the session abort.
++        // All terminal artifacts are durable at this point, so the group may
++        // be killed; the runner itself ends with the group.
++        terminateOwnProcessGroup();
++    }
+ }
+ /** Heavy execution entry loaded by the bootstrap only after startup commits. */
+ export async function runConfiguredSubagentExecution(config, options) {
