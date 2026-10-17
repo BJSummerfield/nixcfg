@@ -106,6 +106,16 @@ in
           output = "review.md";
           outputMode = "file-only";
           thinking = "xhigh";
+          tools = [
+            "read"
+            "grep"
+            "find"
+            "ls"
+            "bash"
+            "write"
+            "contact_supervisor"
+          ];
+          systemPrompt = builtins.readFile ./agents/reviewer.md;
         };
         oracle = {
           output = "oracle.md";
