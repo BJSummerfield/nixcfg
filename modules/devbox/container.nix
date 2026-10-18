@@ -170,6 +170,8 @@ in
 
   systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/paseo-password";
 
+  systemd.services.paseo.serviceConfig.OOMPolicy = "continue";
+
   systemd.services.paseo.serviceConfig.ExecStartPre = [
     (
       "+"
