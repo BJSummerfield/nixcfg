@@ -47,6 +47,78 @@ let
     if (outcome.state !== "observed") { console.error("unverified outcome:", outcome); process.exit(1); }
   '';
 
+  # Runs the runner's OWN group-ownership code (the gate of the group-backstop
+  # and SIGTERM hooks) as extracted from the built patched runner, inside a
+  # real detached child (a process-group leader -> expects true) and a plain
+  # child (not a leader -> expects false). A module-load check would be green
+  # over the pre-fix runner: the crash only happens when the function is
+  # called, and it threw `TypeError: process.getpgrp is not a function` there.
+  piSubagentsGroupKillOwnershipCheck = pkgs.writeText "pi-subagents-group-kill-ownership-check.mjs" ''
+    import { spawn } from "node:child_process";
+    const runChild = (opts) =>
+      new Promise((resolve) => {
+        const child = spawn(process.execPath, [ "ownership-child.mjs" ], {
+          stdio: [ "ignore", "pipe", "inherit" ],
+          ...opts,
+        });
+        let out = "";
+        child.stdout.on("data", (d) => (out += d));
+        child.on("close", (code) => resolve({ code, out: out.trim() }));
+      });
+    const detached = await runChild({ detached: true });
+    if (detached.code !== 0 || detached.out !== "true") {
+      console.error("detached child expected ownership true, got:", detached);
+      process.exit(1);
+    }
+    const plain = await runChild({});
+    if (plain.code !== 0 || plain.out !== "false") {
+      console.error("plain child expected ownership false, got:", plain);
+      process.exit(1);
+    }
+    console.log("ownership check: detached child owns its process group (true), plain child does not (false); no TypeError");
+  '';
+  # Runs in a child of the ownership check: extracts the ownsOwnProcessGroup
+  # arrow function from the built patched runner source (brace-balanced; the
+  # body contains no braces in strings or comments) and executes it in this
+  # process. Prints "true"/"false" or fails with the thrown error.
+  piSubagentsGroupKillOwnershipChild = pkgs.writeText "pi-subagents-group-kill-ownership-child.mjs" ''
+    import * as fs from "node:fs";
+    import { fileURLToPath } from "node:url";
+    const src = fs.readFileSync(fileURLToPath(new URL("./subagent-runner.js", import.meta.url)), "utf8");
+    const anchor = "const ownsOwnProcessGroup = ";
+    const start = src.indexOf(anchor);
+    if (start === -1) {
+      console.error("ownsOwnProcessGroup not found in the built runner");
+      process.exit(1);
+    }
+    const body = src.slice(start + anchor.length);
+    let depth = 0;
+    let end = -1;
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i];
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i + 1;
+          break;
+        }
+      }
+    }
+    if (end === -1) {
+      console.error("unbalanced braces in ownsOwnProcessGroup");
+      process.exit(1);
+    }
+    const own = new Function("fs", "process", "return " + body.slice(0, end) + ";");
+    try {
+      const owns = own(fs, process)();
+      console.log(owns === true ? "true" : "false");
+    } catch (error) {
+      console.error(String(error));
+      process.exit(2);
+    }
+  '';
+
   piSubagentsGroupKillRunner = pkgs.writeText "pi-subagents-group-kill-runner.mjs" ''
     import { spawn } from "node:child_process";
     // The detached "bash tool": a child in its own process group, exactly like
@@ -167,9 +239,14 @@ evalAll "nixos" inputs.self.nixosConfigurations
       '';
   # pi-subagents 0.78.0 leaves a run's detached bash tool tree orphaned when the
   # run ends on its deadline (scene_gen #153). The vendored package patches the
-  # runner to terminate its whole process group; this check runs the patched
-  # controller against that exact topology. Baseline before the patch: the
-  # outcome was unknown/verification-failed and the bash tree survived.
+  # runner to terminate its whole process group. This check runs the patched
+  # controller against that exact topology, and separately executes the
+  # runner's ownsOwnProcessGroup gate (the group-backstop and SIGTERM hooks)
+  # inside a real detached child and a plain child — a module-load check
+  # would be green over the pre-fix runner, whose crash only happened when
+  # that function was called. Baseline before the patch: the outcome was
+  # unknown/verification-failed, the bash tree survived, and the ownership
+  # function threw `TypeError: process.getpgrp is not a function`.
   pi-subagents-group-kill =
     pkgs.runCommand "pi-subagents-group-kill-check"
       {
@@ -182,10 +259,14 @@ evalAll "nixos" inputs.self.nixosConfigurations
       }
       ''
         cp ${piSubagents}/src/runs/background/owned-process-tree.js .
+        cp ${piSubagents}/src/runs/background/subagent-runner.js .
         cp ${piSubagentsGroupKillCheck} group-kill-check.mjs
         cp ${piSubagentsGroupKillRunner} runner.mjs
         cp ${piSubagentsGroupKillBash} bash.mjs
+        cp ${piSubagentsGroupKillOwnershipCheck} ownership-check.mjs
+        cp ${piSubagentsGroupKillOwnershipChild} ownership-child.mjs
         node group-kill-check.mjs
+        node ownership-check.mjs
         touch $out
       '';
   valheim-notify-parser =

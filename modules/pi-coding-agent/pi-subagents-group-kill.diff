@@ -24,7 +24,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
  import { writeAtomicJson } from "../../shared/atomic-json.js";
  import { withResultRunLease, writeAsyncResultFile, writePendingAsyncResultFile } from "./result-files.js";
  import { createFileCoalescer } from "../../shared/file-coalescer.js";
-@@ -3099,6 +3100,48 @@
+@@ -3099,6 +3100,58 @@
          });
          writeStatusPayload();
      }, config.deadlineAt);
@@ -40,7 +40,17 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
 +    // KILL, ps-proven), extended there to cover detached descendant groups.
 +    const TERMINAL_GROUP_BACKSTOP_MS = 30_000;
 +    const RUNNER_TERM_GRACE_MS = 3_000;
-+    const ownsOwnProcessGroup = () => process.platform !== "win32" && process.getpgrp() === process.pid;
++    const ownsOwnProcessGroup = () => {
++        if (process.platform === "win32") return false;
++        try {
++            const s = fs.readFileSync("/proc/self/stat", "utf8");
++            // comm can contain spaces/parens -> anchor on the LAST ')'
++            const rest = s.slice(s.lastIndexOf(")") + 1).trim().split(/\s+/);
++            return parseInt(rest[2], 10) === process.pid; // rest[0]=state,[1]=ppid,[2]=pgrp
++        } catch {
++            return false; // can't determine pgrp -> skip the backstop (safe)
++        }
++    };
 +    let groupTermination;
 +    const terminateOwnProcessGroup = () => {
 +        if (!ownsOwnProcessGroup() || groupTermination)
@@ -73,7 +83,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      const interruptRunner = () => {
          consumeInterruptRequest(asyncDir);
          if (interrupted || statusPayload.state !== "running")
-@@ -3164,6 +3207,7 @@
+@@ -3164,6 +3217,7 @@
          stopAbortController.abort();
          stopNestedAsyncDescendants();
          stopActiveChildren();
@@ -81,7 +91,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      };
      const timeoutRunner = () => {
          if (timedOut || stopped || interrupted || statusPayload.state !== "running")
-@@ -3200,6 +3244,7 @@
+@@ -3200,6 +3254,7 @@
          timeoutAbortController.abort();
          timeoutNestedAsyncDescendants();
          timeoutActiveChildren();
@@ -89,7 +99,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      };
      process.on(ASYNC_INTERRUPT_SIGNAL, interruptRunner);
      // Portable control inbox: the parent drops control request files here when
-@@ -4873,6 +4918,12 @@
+@@ -4873,6 +4928,12 @@
              console.error(`Failed to write process-terminal candidate for '${id}':`, error);
          }
      }
