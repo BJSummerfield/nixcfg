@@ -12,7 +12,9 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  envContract = ./ENVIRONMENT.md;
+  envContract = pkgs.replaceVars ./ENVIRONMENT.md {
+    imageBudget = toString (import ../pi-coding-agent/settings.nix).imageBudget;
+  };
 
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
@@ -204,6 +206,8 @@ in
     "d /var/tmp/pi-plans 0755 agent users 20d"
     "d /var/tmp/pi-subagents 0755 agent users 20d"
     "d /var/tmp/claude-1500 0755 agent users 20d"
+    "d /var/tmp/pi-plans/locks 0755 agent users -"
+    "x /var/tmp/pi-plans/locks"
   ];
 
   system.stateVersion = "26.05";

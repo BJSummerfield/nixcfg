@@ -54,6 +54,122 @@ let
   };
 
   qualified = provider: id: "${provider}/${id}";
+
+  prompt = role: builtins.readFile ./agents/common.md + "\n" + builtins.readFile ./agents/${role}.md;
+
+  roles = {
+    planner = {
+      description = "Writes the plan and task specs, the next interview round, or the issue drafts from gathered facts";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "write"
+      ];
+      thinking = "xhigh";
+      output = "plan.md";
+    };
+    scout = {
+      description = "Finds facts in a repository and reports them with file and line evidence";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "write"
+      ];
+      thinking = "medium";
+      output = "scout.md";
+    };
+    researcher = {
+      description = "Answers a question from web and primary sources with labelled evidence";
+      tools = [
+        "read"
+        "write"
+        "web_search"
+        "fetch_content"
+        "get_search_content"
+        "source_check"
+      ];
+      thinking = "medium";
+      output = "research.md";
+    };
+    synthesizer = {
+      description = "Merges raw findings into one cited synthesis";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "write"
+      ];
+      thinking = "medium";
+      output = "synthesis.md";
+    };
+    implementer = {
+      description = "Executes one task spec in its own worktree; with a brief, prepares branches, merges and writes PR text";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "edit"
+        "write"
+        "contact_supervisor"
+      ];
+      thinking = "medium";
+      output = "result.md";
+      frontmatter.acceptanceRole = "writer";
+    };
+    reviewer = {
+      description = "Reviews a diff, plan or deliverable, verdict first, and runs the check itself";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "write"
+      ];
+      thinking = "xhigh";
+      output = "review.md";
+    };
+  };
+
+  yaml =
+    v:
+    if builtins.isBool v then
+      (if v then "true" else "false")
+    else if builtins.isString v then
+      builtins.toJSON v
+    else
+      toString v;
+
+  agentFile =
+    name: role:
+    let
+      front = {
+        inherit name;
+        inherit (role) description;
+        systemPromptMode = "replace";
+        inheritProjectContext = true;
+        inheritSkills = false;
+        defaultContext = "fresh";
+        defaultProgress = false;
+      }
+      // (role.frontmatter or { });
+      lines = builtins.attrValues (builtins.mapAttrs (k: v: "${k}: ${yaml v}") front);
+    in
+    "---\n" + builtins.concatStringsSep "\n" lines + "\n---\n\n" + prompt name;
+
+  override = _: role: {
+    inherit (role) tools thinking output;
+    outputMode = "file-only";
+  };
 in
 {
   settings = {
@@ -81,17 +197,7 @@ in
     subagents = {
       defaultModel = qualified wideProvider llm.default;
       maxThinking = "xhigh";
-      agentOverrides = {
-        scout = {
-          output = "context.md";
-          outputMode = "file-only";
-          thinking = "medium";
-        };
-        researcher = {
-          output = "research.md";
-          outputMode = "file-only";
-          thinking = "medium";
-        };
+      agentOverrides = builtins.mapAttrs override roles // {
         worker = {
           output = "worker.md";
           outputMode = "file-only";
@@ -102,21 +208,6 @@ in
           outputMode = "file-only";
           thinking = "medium";
         };
-        reviewer = {
-          output = "review.md";
-          outputMode = "file-only";
-          thinking = "xhigh";
-          tools = [
-            "read"
-            "grep"
-            "find"
-            "ls"
-            "bash"
-            "write"
-            "contact_supervisor"
-          ];
-          systemPrompt = builtins.readFile ./agents/reviewer.md;
-        };
         oracle = {
           output = "oracle.md";
           outputMode = "file-only";
@@ -125,6 +216,8 @@ in
       };
     };
   };
+
+  agentFiles = builtins.mapAttrs agentFile roles;
 
   models = {
     providers = {

@@ -38,17 +38,18 @@ in
     # reference is plain text and would not pull the path into the closure.
     home.packages = [ piSubagents ];
 
-    home.file.".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-
-    home.file.".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
-
-    home.file.".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
-
-    home.file.".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
-
-    home.file.".pi/agent/AGENTS.md".source = pkgs.replaceVars ./AGENTS.md {
-      imageBudget = toString data.imageBudget;
-    };
+    home.file = {
+      ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
+      ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
+      ".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
+      ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
+      ".pi/agent/AGENTS.md".text =
+        builtins.replaceStrings [ "@wideModel@" ] [ data.settings.subagents.defaultModel ]
+          (builtins.readFile ./agents/core.md + "\n" + builtins.readFile ./AGENTS.md);
+    }
+    // lib.mapAttrs' (
+      name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }
+    ) data.agentFiles;
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
       run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"

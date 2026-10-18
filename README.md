@@ -44,8 +44,5 @@ and builds the flake packages.
 
 ## Conventions
 
-- Comments in `.nix` files are reserved for manual, out-of-band setup steps — the
-  commands a human still has to run by hand (`tailscale up`, `tailscale serve`,
-  container first-run). Everything else is said in code.
-- `statix`'s `repeated_keys` lint is disabled repo-wide; see `statix.toml`.
-- Generated `hosts/*/hardware-configuration.nix` files are excluded from deadnix.
+Conventions, the light and heavy checks, and the changes agents may not make are in
+`AGENTS.md`, which people and agents both read.
