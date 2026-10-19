@@ -25,6 +25,20 @@ def post(url, body, timeout):
         return json.load(r)
 
 
+def wire_messages(messages):
+    """OpenAI chat wants tool-call arguments as a JSON string; the corpus keeps them as objects."""
+    out = []
+    for m in messages:
+        if m.get("tool_calls"):
+            m = dict(m, tool_calls=[
+                dict(c, function=dict(c["function"], arguments=c["function"]["arguments"]
+                                      if isinstance(c["function"]["arguments"], str)
+                                      else json.dumps(c["function"]["arguments"], ensure_ascii=False)))
+                for c in m["tool_calls"]])
+        out.append(m)
+    return out
+
+
 def cmd_run(args):
     if os.path.exists(args.out):
         sys.exit(f"{args.out} exists; pick a new name")
@@ -35,7 +49,7 @@ def cmd_run(args):
         for n, p in enumerate(prompts, 1):
             body = {
                 "model": args.model,
-                "messages": p["messages"],
+                "messages": wire_messages(p["messages"]),
                 "temperature": 0,
                 "max_tokens": args.max_tokens,
                 "chat_template_kwargs": {"enable_thinking": True, "reasoning_effort": args.effort or p.get("effort", "medium"), "preserve_thinking": True},
