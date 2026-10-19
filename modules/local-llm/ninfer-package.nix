@@ -67,6 +67,7 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   ninjaFlags = [
     "ninfer"
     "ninfer-serve"
+    "ninfer-perplexity"
     "ninfer_resource_manager_test"
     "ninfer_resource_manager_replay_test"
     "ninfer_host_extent_runs_test"
@@ -81,10 +82,10 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   '';
 
   # Upstream has no install target, by design ("run NInfer from its source
-  # build tree"), so the two product binaries are installed by hand.
+  # build tree"), so the product binaries are installed by hand.
   installPhase = ''
     runHook preInstall
-    install -Dm755 apps/ninfer apps/ninfer-serve -t "$out/bin"
+    install -Dm755 apps/ninfer apps/ninfer-serve apps/ninfer-perplexity -t "$out/bin"
     runHook postInstall
   '';
 
