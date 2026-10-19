@@ -6,5 +6,6 @@
     ninfer-pi-corpus
     ninfer-greedy-check
     ninfer-eval-harness
+    ninfer-bfcl-pair
     ;
 }

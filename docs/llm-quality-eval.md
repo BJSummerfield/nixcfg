@@ -63,9 +63,20 @@ ninfer-ppl-compare <bf16 dir> <fp8 dir> <k8v4 dir>
 
 The upstream corpus has four domains: English reference text, English long
 form, Chinese, and `ninfer` (C++/CUDA code). The pi corpus has
-`pi_orchestrator` and `pi_subagent`. Read the k8v4 change next to the fp8
-change: fp8 is the loss you were already accepting. `--quick` scores one
-stream per domain for a fast first look.
+`pi_orchestrator` and `pi_subagent`. Pass the fp8 report first to read
+k8v4 directly against the format it replaced; bf16 is not a clean ceiling
+(fp8 and k8v4 both beat it by about 2% on two English reference streams).
+`--quick` scores one stream per domain for a fast first look.
+
+Known issue: on the pi corpus, some 2,048-token stretches score a mean NLL of
+10-17 under every KV format, bf16 included, while neighbouring stretches of
+the same kind of text (nixpkgs modules, GitHub API JSON) score 0.3-2. Commit
+hashes explain some of them, not all; it is not the window layout (a single
+147,456-token window per stream gives the same numbers) and not the chat
+control tokens. Until that is explained, the pi corpus averages are dominated
+by those stretches and say nothing reliable about the KV format. To profile
+one stream, score it with `--text FILE --context 4096 --stride 2048` and read
+`.streams[0].windows[].mean_nll` from the report.
 
 ## 2. Greedy identity check (devbox, engine running)
 
@@ -136,8 +147,21 @@ suite is `modules/local-llm/eval/agentic-suite.yaml`.
 SUITE=~/projects/nixcfg/modules/local-llm/eval/agentic-suite.yaml
 mkdir -p ~/ninfer-eval/harness && cd ~/ninfer-eval/harness
 nix run ~/projects/nixcfg#ninfer-eval-harness -- run --config $SUITE --suite smoke
+nix run ~/projects/nixcfg#ninfer-eval-harness -- run --config $SUITE --suite spec_ab
 nix run ~/projects/nixcfg#ninfer-eval-harness -- run --config $SUITE --suite agentic
 ```
+
+`spec_ab` is the 200 BFCL multi-turn base tasks at temperature 0 and medium
+effort: about 15 minutes with DFlash2 and 40 without speculation. Compare
+runs task by task, baseline first:
+
+```sh
+nix run ~/projects/nixcfg#ninfer-bfcl-pair -- nospec runs/<dir> dflash2 runs/<dir> mtp3 runs/<dir>
+```
+
+Runs that are equally good still trade a dozen tasks each way, because a
+near-tie flip early in a task changes the whole trajectory. Judge them by the
+net change and the McNemar p-value, not by the raw lost count.
 
 Run `agentic` once per engine config, switching configs the same way as in
 section 2. Each run gets its own directory under `runs/`, and `summarize --run

@@ -17,6 +17,10 @@ in
     flakeIgnore = [ "E501" ];
   } (builtins.readFile ./ninfer_greedy_check.py);
 
+  ninfer-bfcl-pair = pkgs.writers.writePython3Bin "ninfer-bfcl-pair" {
+    flakeIgnore = [ "E501" ];
+  } (builtins.readFile ./ninfer_bfcl_pair.py);
+
   ninfer-eval-harness = pkgs.writeShellApplication {
     name = "ninfer-eval-harness";
     runtimeInputs = [
