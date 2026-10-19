@@ -32,21 +32,25 @@ let
     "--default-max-tokens ${num n.defaultMaxTokens}"
     "--request-log-jsonl ${requestLog}"
   ]
-  ++ lib.optionals (n.spec != null) [
-    "--spec ${n.spec}"
-    "--draft-tokens ${num n.draftTokens}"
-  ]
-  ++ lib.optional (n.spec != null && n.lmHeadDraft) "--lm-head-draft"
   ++ lib.optional n.vision "--vision"
   ++ lib.optional (
     n.cudaGraphAllowanceMib != null
   ) "--cuda-graph-allowance-mib ${num n.cudaGraphAllowanceMib}"
   ++ n.extraArgs;
 
-  # NINFER_EXTRA_ARGS is appended last so its flags win; deliberately unquoted.
+  specArgs =
+    lib.optionals (n.spec != null) [
+      "--spec ${n.spec}"
+      "--draft-tokens ${num n.draftTokens}"
+    ]
+    ++ lib.optional (n.spec != null && n.lmHeadDraft) "--lm-head-draft";
+
+  # NINFER_SPEC_ARGS replaces the speculation flags (empty turns speculation off);
+  # NINFER_EXTRA_ARGS is appended last so its flags win. Both deliberately unquoted.
   # shellcheck disable=SC2086
   start = pkgs.writeShellScript "ninfer-start" ''
     exec ${lib.getExe' ninfer "ninfer-serve"} ${lib.concatStringsSep " \\\n  " serveArgs} \
+      ''${NINFER_SPEC_ARGS-${lib.concatStringsSep " " specArgs}} \
       ''${NINFER_EXTRA_ARGS-}
   '';
 

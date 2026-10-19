@@ -72,24 +72,27 @@ stream per domain for a fast first look.
 Every config runs the same prompts at temperature 0, one at a time. Stop agent
 traffic first: other requests batch with these and change the numerics.
 
-Switch configs without a rebuild by writing one line on redtruck and restarting
-the engine:
+Switch configs without a rebuild by writing the engine's env file on
+redtruck and restarting the engine. `NINFER_SPEC_ARGS` replaces the
+speculation flags (empty turns speculation off); `NINFER_EXTRA_ARGS` adds
+flags that override the configured ones.
 
 ```sh
-echo 'NINFER_EXTRA_ARGS=--kv-dtype fp8 --spec mtp --draft-tokens 3' | sudo tee /var/lib/local-llm/ninfer.env
+printf '%s\n' 'NINFER_SPEC_ARGS=--spec mtp --draft-tokens 3 --lm-head-draft' | sudo tee /var/lib/local-llm/ninfer.env
 sudo nixos-container run local-llm -- systemctl restart ninfer
 ```
 
-| Label | `NINFER_EXTRA_ARGS` |
+| Label | Env file lines |
 |---|---|
-| `k8v4-dflash2` | (empty: the deployed config) |
-| `k8v4-mtp3` | `--spec mtp --draft-tokens 3` |
-| `fp8-dflash2` | `--kv-dtype fp8` |
-| `fp8-mtp3` | `--kv-dtype fp8 --spec mtp --draft-tokens 3` (the config before #290) |
+| `k8v4-dflash2` | (empty file: the deployed config) |
+| `k8v4-mtp3` | `NINFER_SPEC_ARGS=--spec mtp --draft-tokens 3 --lm-head-draft` |
+| `k8v4-nospec` | `NINFER_SPEC_ARGS=` (the reference both should reproduce) |
+| `fp8-dflash2` | `NINFER_EXTRA_ARGS=--kv-dtype fp8` |
+| `fp8-mtp3` | both lines above combined (the config before #290) |
 
-`--lm-head-draft` and `--cuda-graph-allowance-mib 512` stay on in every row,
-as they were for MTP before #290. If an MTP row fails to start on the graph
-allowance, add `--cuda-graph-allowance-mib 1024` to that line.
+`--cuda-graph-allowance-mib 512` stays on in every row. If a row fails to
+start on the graph allowance, add `NINFER_EXTRA_ARGS=--cuda-graph-allowance-mib 1024`.
+`/ops/health` shows the running `speculative` mode and full `argv`.
 
 For each config, restart the engine, wait for `/ops/health`, then run the
 check. Run the deployed config twice in a row: the second run is the noise
@@ -108,8 +111,9 @@ nix run ~/projects/nixcfg#ninfer-greedy-check -- compare k8v4-dflash2.jsonl k8v4
 
 How to read it:
 
-- **dflash2 vs mtp3, same KV**: should match about as well as the repeat run.
-  If they match clearly worse, one of them is not lossless.
+- **dflash2 and mtp3 vs nospec, same KV**: each should match the no-speculation
+  run about as well as a repeat run matches itself. One that matches clearly
+  worse is changing outputs.
 - **fp8 vs k8v4, same spec**: shows how often the KV format changes the
   agent's next action. A different action is not necessarily a worse one; the
   perplexity runs say which way the change goes.

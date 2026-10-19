@@ -8,9 +8,11 @@
 # Nothing starts at boot: `nixos-container start local-llm` brings the container
 # and the engine up together.
 #
-# A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
-# /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
-# Later flags win, except the booleans (--lm-head-draft, --vision).
+# A throwaway A/B needs no rebuild: NINFER_EXTRA_ARGS=... and/or
+# NINFER_SPEC_ARGS=... lines in /var/lib/local-llm/ninfer.env, then restart
+# the unit inside the container. Later flags win, except the booleans
+# (--lm-head-draft, --vision). NINFER_SPEC_ARGS replaces the speculation
+# flags; an empty NINFER_SPEC_ARGS= turns speculation off.
 
 {
   lib,
