@@ -45,6 +45,24 @@ suites:
           judge_strategy: rule
           dataset_hub: modelscope
 
+  spec_ab:
+    jobs:
+      - id: bfcl_multi_turn_base
+        backend: evalscope
+        dataset: bfcl_v4
+        target: redtruck
+        generation:
+          temperature: 0
+          max_tokens: 8192
+          extra_body:
+            chat_template_kwargs:
+              reasoning_effort: medium
+        backend_args:
+          subset_list:
+            - multi_turn_base
+          is_fc_model: true
+          underscore_to_dot: true
+
   agentic:
     jobs:
       - id: bfcl_multi_turn
