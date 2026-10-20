@@ -9,6 +9,11 @@
 //   verdict <review.md>            {asked, sound, clean, verdict}
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
+//   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
+//                                  plan directory -> {ok, tasks:[{id, owns, reads,
+//                                  check, depends, thinking, est}], oversize:[id],
+//                                  overlaps:[[a, b, file]], missing:[text],
+//                                  cycles:[[id, ...]]}
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -22,6 +27,45 @@
 // ignored. `angles` reads the whole file. `gaps` reads only the bullets under
 // a `## Open gaps` heading of a review, up to the next heading, and also
 // returns the review's verdict, so one call reads both.
+//
+// Plan directory, the contract between the plan skill and the implement skill:
+//
+//   <dir>/plan.md         problem (one paragraph), approach, tasks in merge
+//                         order, heavy checks to run once at the end, changes
+//                         the plan avoids, open risks
+//   <dir>/tasks/<id>.md   one per task
+//
+// A task file starts with a header of `key: value` lines, in any order, with
+// only blank lines before them; the header ends at the first line that is not
+// one of these keys, and the rest of the file is the task body:
+//
+//   id: <id>          letters, digits, `-` or `_`; equals the file name
+//   owns: a, b        repository paths the task may change; at least one
+//   reads: c, d       repository paths it must read; may be `none`
+//   check: <command>  one light check, the rest of the line
+//   depends: x, y     ids of tasks that must merge first; may be `none`
+//   thinking: medium | xhigh
+//
+// Paths are relative to --repo (default: the working directory), separated by
+// commas, backticks stripped, `./` prefixes and trailing slashes removed; a
+// directory counts all the files below it, and owning a directory overlaps
+// any task that owns a path inside it. Each task in the output carries the
+// path of its task file as `file`.
+//
+// Each estimate comes from the implementer entry of the sizing file, which
+// holds measured costs once enough runs exist and shipped defaults before:
+// base + k_read * (bytes of owns and reads) / 4 + growth_p90. A file that does
+// not exist counts 0, because the task creates it. --sizing defaults to
+// $HOME/.pi/agent/recipes/sizing.json, and to base 7000, k_read 1 and
+// growth_p90 10000 when that file is absent. --limit defaults to 100000
+// tokens, under half of the 221184-token window. `oversize` lists the ids
+// whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
+// owning the same file, or a directory and a path inside it. `missing` has
+// one line per problem: plan.md absent, no tasks, a task whose id is not its
+// file name, owns empty, check empty, thinking invalid, a depends id with no
+// task, or a reads path that neither exists nor is owned by a task.
+// `cycles` has one id path per dependency loop, first id repeated at the end.
+// ok is true only when all four are empty.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -209,11 +253,153 @@ function gaps(file) {
   return { ok: v.verdict !== "invalid", angles: angleBullets(section.join("\n")), ...v };
 }
 
+const PLAN_LIMIT = 100000;
+const SIZING_FALLBACK = { base: 7000, k_read: 1, growth_p90: 10000 };
+const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "thinking"];
+const TASK_HEADER = new RegExp(`^(${TASK_KEYS.join("|")}):[ \\t]*(.*?)\\s*$`);
+const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+function implementerCost(flags) {
+  const explicit = flags.sizing !== undefined;
+  const file = explicit ? flags.sizing : path.join(process.env.HOME ?? "", ".pi/agent/recipes/sizing.json");
+  const text = explicit ? fs.readFileSync(file, "utf8") : readIfExists(file);
+  if (text === null) return SIZING_FALLBACK;
+  const entry = JSON.parse(text).roles?.implementer ?? {};
+  return {
+    base: entry.base ?? SIZING_FALLBACK.base,
+    k_read: entry.k_read ?? SIZING_FALLBACK.k_read,
+    growth_p90: entry.growth_p90 ?? SIZING_FALLBACK.growth_p90,
+  };
+}
+
+function repoPath(item) {
+  const clean = path.posix.normalize(item.replace(/\\/g, "/")).replace(/^(\.\/)+/, "").replace(/\/+$/, "");
+  return clean === "." ? "" : clean;
+}
+
+function within(a, b) {
+  return a === b || b.startsWith(a + "/") || a.startsWith(b + "/");
+}
+
+function pathList(raw, normalize = false) {
+  const list = [];
+  for (const part of (raw ?? "").split(",")) {
+    const bare = part.trim().replace(/^`+|`+$/g, "").trim();
+    const item = normalize && bare.toLowerCase() !== "none" ? repoPath(bare) : bare;
+    if (item && item.toLowerCase() !== "none" && !list.includes(item)) list.push(item);
+  }
+  return list;
+}
+
+function parseTask(text) {
+  const header = {};
+  let started = false;
+  for (const line of text.split("\n")) {
+    if (!line.trim() && !started) continue;
+    const m = line.match(TASK_HEADER);
+    if (!m) break;
+    started = true;
+    if (!(m[1] in header)) header[m[1]] = m[2];
+  }
+  return header;
+}
+
+function pathBytes(repo, rel) {
+  try {
+    const full = path.resolve(repo, rel);
+    const st = fs.statSync(full);
+    return st.isDirectory() ? dirBytes(full) : st.size;
+  } catch (err) {
+    if (["ENOENT", "ENOTDIR", "ENAMETOOLONG"].includes(err.code)) return 0;
+    throw err;
+  }
+}
+
+function findCycles(tasks) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const state = new Map();
+  const cycles = [];
+  const visit = (id, trail) => {
+    state.set(id, 1);
+    for (const dep of byId.get(id).depends) {
+      if (!byId.has(dep)) continue;
+      if (state.get(dep) === 1) cycles.push([...trail.slice(trail.indexOf(dep)), dep]);
+      else if (!state.has(dep)) visit(dep, [...trail, dep]);
+    }
+    state.set(id, 2);
+  };
+  for (const t of tasks) if (!state.has(t.id)) visit(t.id, [t.id]);
+  return cycles;
+}
+
+function plan(dir, flags) {
+  const repo = flags.repo ?? process.cwd();
+  const limit = intFlag(flags, "limit", PLAN_LIMIT);
+  const cost = implementerCost(flags);
+  const missing = [];
+  if (readIfExists(path.join(dir, "plan.md")) === null) missing.push("plan.md");
+
+  let names = [];
+  try {
+    names = fs.readdirSync(path.join(dir, "tasks")).filter((n) => n.endsWith(".md")).sort();
+  } catch (err) {
+    if (!["ENOENT", "ENOTDIR"].includes(err.code)) throw err;
+  }
+  if (names.length === 0) missing.push("no tasks");
+
+  const tasks = names.map((name) => {
+    const stem = name.slice(0, -3);
+    const h = parseTask(fs.readFileSync(path.join(dir, "tasks", name), "utf8"));
+    if (h.id !== stem || !TASK_ID.test(stem)) missing.push(`${stem}: id must be the file name`);
+    const task = {
+      id: stem,
+      file: path.join(dir, "tasks", name),
+      owns: pathList(h.owns, true),
+      reads: pathList(h.reads, true),
+      check: h.check ?? "",
+      depends: pathList(h.depends),
+      thinking: h.thinking ?? "",
+    };
+    if (task.owns.length === 0) missing.push(`${stem}: owns`);
+    if (!task.check) missing.push(`${stem}: check`);
+    if (task.thinking !== "medium" && task.thinking !== "xhigh") missing.push(`${stem}: thinking must be medium or xhigh`);
+    return task;
+  });
+
+  const ids = new Set(tasks.map((t) => t.id));
+  const owned = tasks.flatMap((t) => t.owns);
+  const overlaps = [];
+  for (let i = 0; i < tasks.length; i++) {
+    for (let j = i + 1; j < tasks.length; j++) {
+      for (const a of tasks[i].owns) {
+        for (const b of tasks[j].owns) {
+          if (within(a, b)) overlaps.push([tasks[i].id, tasks[j].id, a.length >= b.length ? a : b]);
+        }
+      }
+    }
+  }
+
+  const oversize = [];
+  for (const t of tasks) {
+    for (const dep of t.depends) if (!ids.has(dep)) missing.push(`${t.id}: depends on unknown task ${dep}`);
+    for (const file of t.reads) {
+      if (!owned.some((o) => within(o, file)) && !fs.existsSync(path.resolve(repo, file))) missing.push(`${t.id}: reads ${file}, which does not exist`);
+    }
+    const bytes = [...new Set([...t.owns, ...t.reads])].reduce((sum, f) => sum + pathBytes(repo, f), 0);
+    t.est = Math.ceil(cost.base + (cost.k_read * bytes) / 4 + cost.growth_p90);
+    if (t.est > limit) oversize.push(t.id);
+  }
+
+  const cycles = findCycles(tasks);
+  const ok = oversize.length === 0 && overlaps.length === 0 && cycles.length === 0 && missing.length === 0;
+  return { ok, tasks, oversize, overlaps, missing, cycles };
+}
+
 function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|plan <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -227,6 +413,8 @@ function run(argv) {
       return angles(target);
     case "gaps":
       return gaps(target);
+    case "plan":
+      return plan(target, flags);
     default:
       throw new Usage(`unknown subcommand ${cmd}`);
   }

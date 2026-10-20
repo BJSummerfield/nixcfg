@@ -259,6 +259,17 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node recipe-gate.test.mjs
         touch $out
       '';
+  pi-recipe-plan =
+    pkgs.runCommand "pi-recipe-plan"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/agent-recipes/plan/workflow.js} workflow.js
+        cp ${../modules/agent-recipes/plan/workflow.test.mjs} workflow.test.mjs
+        node workflow.test.mjs
+        touch $out
+      '';
   pi-recipe-research =
     pkgs.runCommand "pi-recipe-research"
       {

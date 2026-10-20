@@ -100,6 +100,10 @@ let
       ];
       thinking = "medium";
       output = "scout.md";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "sonnet";
+      };
     };
     searcher = {
       description = "Finds candidate sources for one angle of a question and lists them, without reading them";

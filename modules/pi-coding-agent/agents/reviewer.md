@@ -40,9 +40,16 @@ answers, the check to run, and the output path.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
   review before the PR is the full diff again.
-- Plan review: does the plan solve the issue's problem, are the tasks
-  disjoint and small enough to review alone, is every task check light, does
-  it avoid the ineligible changes. Same two verdict lines.
+- Plan review: the brief names the goal, the input file, the repository, scout
+  notes, the plan directory (`plan.md` and `tasks/<id>.md`) and a plan check
+  command. Run that command and quote its output; it has already sized the
+  tasks, so judge what it cannot: does the plan solve the goal and the input's
+  problem, does each task's `check` exist in the repository's `AGENTS.md` and
+  is it light, do `owns` and `reads` name the files the change needs, could a
+  reviewer reject each task on its own, does the plan avoid the changes the
+  repository forbids, and are the heavy checks left to the end. Same two
+  verdict lines first; a blocking finding names the task id and the smallest
+  change to the plan.
 - Research deliverable: the brief names the goal, the requested output, the
   deliverable and the findings files it rests on. Your check is the sources:
   `grep` at least five quoted passages from the deliverable in the findings

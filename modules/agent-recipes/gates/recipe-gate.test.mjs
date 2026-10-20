@@ -229,5 +229,122 @@ const gate = (...args) => {
   assert.equal(gate("gaps", path.join(tmp, "absent.md")).json.ok, false);
 }
 
+// plan: tasks parsed from their headers, estimates from the sizing file, and
+// the oversize, overlap, cycle and missing findings.
+{
+  const repo = dir();
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src/a.txt"), "x".repeat(4000));
+  fs.writeFileSync(path.join(repo, "src/b.txt"), "y".repeat(8000));
+  const sizing = write("sizing.json", JSON.stringify({ roles: { implementer: { base: 1000, k_read: 2, growth_p90: 500 } } }));
+  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none", thinking: "medium" };
+  const header = (h) =>
+    Object.entries(h)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n");
+  const task = (h, body = "Change it.\n") => `${header(h)}\n\n# Body\n${body}`;
+  const mkPlan = (files, withPlan = true) => {
+    const d = dir();
+    if (withPlan) fs.writeFileSync(path.join(d, "plan.md"), "# Plan\n");
+    fs.mkdirSync(path.join(d, "tasks"));
+    for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(d, "tasks", `${name}.md`), text);
+    return d;
+  };
+  const planGate = (d, ...extra) => gate("plan", d, "--repo", repo, "--sizing", sizing, ...extra);
+
+  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", thinking: "xhigh" };
+  const cleanDir = mkPlan({ t1: task(base), t2: task(t2) });
+  const clean = planGate(cleanDir);
+  assert.equal(clean.status, 0);
+  assert.deepEqual(clean.json, {
+    ok: true,
+    tasks: [
+      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], thinking: "medium", est: 7500 },
+      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], thinking: "xhigh", est: 5500 },
+    ],
+    oversize: [],
+    overlaps: [],
+    missing: [],
+    cycles: [],
+  });
+
+  const over = planGate(mkPlan({ t1: task(base), t2: task(t2) }), "--limit", "7000");
+  assert.deepEqual(over.json.oversize, ["t1"]);
+  assert.equal(over.json.ok, false);
+  assert.deepEqual(planGate(mkPlan({ t1: task(base) }), "--limit", "7500").json.oversize, []);
+  assert.equal(gate("plan", mkPlan({ t1: task(base) }), "--limit", "x").status, 2);
+
+  const same = planGate(mkPlan({ t1: task(base), t2: task({ ...t2, owns: "new/c.txt, src/a.txt" }) }));
+  assert.deepEqual(same.json.overlaps, [["t1", "t2", "src/a.txt"]]);
+  assert.equal(same.json.ok, false);
+
+  const nested = planGate(mkPlan({ t1: task({ ...base, owns: "src/" }), t2: task({ ...t2, owns: "./src/a.txt" }) }));
+  assert.deepEqual(nested.json.overlaps, [["t1", "t2", "src/a.txt"]]);
+  assert.deepEqual(nested.json.tasks.map((t) => t.owns), [["src"], ["src/a.txt"]]);
+  const siblings = planGate(mkPlan({ t1: task({ ...base, owns: "src/a.txt" }), t2: task({ ...t2, owns: "src/a.txt.bak" }) }));
+  assert.deepEqual(siblings.json.overlaps, []);
+  const readsOwnedDir = planGate(mkPlan({ t1: task({ ...base, owns: "gen" }), t2: task({ ...t2, reads: "gen/out.txt" }) }));
+  assert.deepEqual(readsOwnedDir.json.missing, []);
+
+  const loop = planGate(mkPlan({ t1: task({ ...base, depends: "t2" }), t2: task({ ...t2, depends: "t1" }) }));
+  assert.deepEqual(loop.json.cycles, [["t1", "t2", "t1"]]);
+  assert.equal(loop.json.ok, false);
+  assert.deepEqual(planGate(mkPlan({ t1: task({ ...base, depends: "t1" }) })).json.cycles, [["t1", "t1"]]);
+
+  const unknown = planGate(mkPlan({ t1: task({ ...base, depends: "t9" }) }));
+  assert.deepEqual(unknown.json.missing, ["t1: depends on unknown task t9"]);
+  assert.deepEqual(unknown.json.cycles, []);
+  assert.equal(unknown.json.ok, false);
+
+  const { check: _check, ...noCheck } = base;
+  const nc = planGate(mkPlan({ t1: task(noCheck) }));
+  assert.deepEqual(nc.json.missing, ["t1: check"]);
+  assert.equal(nc.json.tasks[0].check, "");
+  assert.equal(nc.json.ok, false);
+  assert.deepEqual(planGate(mkPlan({ t1: task({ ...base, check: "" }) })).json.missing, ["t1: check"]);
+
+  const wrong = planGate(
+    mkPlan({
+      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`", thinking: "high" }),
+      t2: task({ ...t2, reads: "new/c.txt" }),
+    }),
+  );
+  assert.deepEqual(wrong.json.missing, [
+    "t1: id must be the file name",
+    "t1: owns",
+    "t1: thinking must be medium or xhigh",
+    "t1: reads src/nope.txt, which does not exist",
+  ]);
+
+  const created = planGate(mkPlan({ t1: task({ ...base, owns: "brand/new.txt", reads: "none" }) }));
+  assert.equal(created.json.tasks[0].est, 1500);
+  assert.deepEqual(created.json.tasks[0].reads, []);
+  assert.equal(planGate(mkPlan({ t1: task({ ...base, owns: "src", reads: "none" }) })).json.tasks[0].est, 7500);
+
+  const loose = "\n\n" + task(base, "check: not a header\n");
+  const parsed = planGate(mkPlan({ t1: loose }));
+  assert.equal(parsed.json.tasks[0].check, "nix eval .#x");
+  assert.equal(parsed.json.ok, true);
+
+  const empty = planGate(mkPlan({}, false));
+  assert.equal(empty.status, 0);
+  assert.deepEqual(empty.json.missing, ["plan.md", "no tasks"]);
+  assert.equal(empty.json.ok, false);
+  assert.deepEqual(planGate(path.join(tmp, "absent")).json.missing, ["plan.md", "no tasks"]);
+
+  // Without --sizing the file under $HOME is used, then built-in defaults.
+  const withHome = (home, d) => {
+    const r = spawnSync(process.execPath, [script, "plan", d, "--repo", repo], { encoding: "utf8", env: { ...process.env, HOME: home } });
+    return JSON.parse(r.stdout);
+  };
+  const home = dir();
+  const d = mkPlan({ t1: task(base) });
+  assert.equal(withHome(home, d).tasks[0].est, 20000);
+  fs.mkdirSync(path.join(home, ".pi/agent/recipes"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".pi/agent/recipes/sizing.json"), JSON.stringify({ roles: { implementer: { base: 2000, growth_p90: 1000 } } }));
+  assert.equal(withHome(home, d).tasks[0].est, 2000 + 3000 + 1000);
+  assert.equal(gate("plan", d, "--repo", repo, "--sizing", path.join(tmp, "absent.json")).status, 1);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-gate: all assertions passed");

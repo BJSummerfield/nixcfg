@@ -11,6 +11,7 @@ let
   roles = import ../pi-coding-agent/settings.nix;
 
   recipes = [
+    "plan"
     "research"
     "triage"
   ];
@@ -31,6 +32,7 @@ in
     home.packages = [ tools ];
 
     home.file = {
+      ".pi/agent/recipes/plan/workflow.js".source = ./plan/workflow.js;
       ".pi/agent/recipes/research/workflow.js".source = ./research/workflow.js;
       ".pi/agent/recipes/sizing.json".source = ./sizing/sizing.json;
     }
