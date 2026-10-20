@@ -62,6 +62,7 @@ function fake({ plan = planOf([spec("a")]), intake = {}, impl = {}, review = {},
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
+    if (given && given.result) return { runId: `run-${key}`, ...given.result };
     return typeof given === "string" ? failed(key, given) : ok(key, given);
   };
   const idOf = (key) => key.replace(/^impl-/, "").replace(/-retry$/, "");
@@ -547,6 +548,27 @@ function assertUniqueOutputs(f) {
   ]);
   assert.deepEqual(emits[1].tasks[0], { id: "a", state: "running", next: "review", fixes: 1, heals: 0 });
   assert.deepEqual(emits.at(-1).tasks.map((x) => x.state), ["done", "done"]);
+}
+
+// A writer that reports its own work as not done is rejected by pi-subagents'
+// acceptance; it is not retried, and its blocked report goes to a diagnosis.
+{
+  const rejected = "Acceptance rejected: Required criterion 'criterion-1' was reported as not-satisfied.";
+  const f = fake({
+    plan: planOf([spec("a"), spec("b")]),
+    review: { "review-a-1": needsWork },
+    impl: {
+      "impl-b": { result: { ok: false, error: rejected, structuredOutput: { ...taskGate("b"), ok: false, reason: "report blocked: needs the port", report: { status: "blocked", why: "needs the port" } } } },
+    },
+    fix: { "fix-a-1": { result: { ok: false, error: rejected } } },
+    diagnose: { "diagnose-b-1": diagnosis("decide", "what port?") },
+  });
+  const receipt = await run(f.runs, base);
+  assert.equal(f.items().filter((i) => /-retry$/.test(i.key)).length, 0);
+  const k = byKey(f);
+  assert.match(k["diagnose-b-1"].task, /What went wrong: the implementer reported blocked: report blocked: needs the port/);
+  assert.match(k["diagnose-a-1"].task, /What went wrong: fix round 1 reported that it cannot finish/);
+  assert.deepEqual(receipt.decide.map((d) => d.id).sort(), ["a", "b"]);
 }
 
 // Three waves in a chain; each task builds on the one before.

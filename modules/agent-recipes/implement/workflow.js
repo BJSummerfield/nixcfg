@@ -58,6 +58,13 @@ function retryItem(item, failed) {
   return copy;
 }
 
+// pi-subagents marks a writer that reports its own work as not done as
+// failed; running the same brief again gets the same answer, so it is not
+// retried and its report goes to a diagnosis instead.
+function stoppedItself(result) {
+  return /reported as not-satisfied/.test(String(result.error || ""));
+}
+
 function launch(items) {
   children += items.length;
   return runs.all(items).then(function (first) {
@@ -67,7 +74,7 @@ function launch(items) {
     const again = [];
     const where = [];
     first.forEach(function (result, i) {
-      if (!result.ok) {
+      if (!result.ok && !stoppedItself(result)) {
         again.push(retryItem(items[i], result));
         where.push(i);
       }
@@ -261,8 +268,10 @@ function implementItem(t) {
 }
 
 function takeImplementation(t, result) {
-  if (!result.ok) return heal(t, "implement", "the implementer failed twice: " + (result.error || "failed"), [result.file], ["replan", "decide"]);
   const g = result.structuredOutput;
+  if (!result.ok && !(g && g.report)) {
+    return heal(t, "implement", "the implementer failed twice: " + (result.error || "failed"), [result.file], ["replan", "decide"]);
+  }
   if (!g) return heal(t, "implement", "the task check did not run", [result.file], ["retry", "decide"]);
   t.report = result.file;
   t.runId = result.runId || t.runId;
@@ -364,7 +373,10 @@ function fixItem(t) {
 
 function takeFix(t, result) {
   if (!result.ok) {
-    return heal(t, "fix", "fix round " + t.fixes + " failed twice: " + (result.error || "failed"), [result.file, t.lastReview], ["replan", "decide"]);
+    const signal = stoppedItself(result)
+      ? "fix round " + t.fixes + " reported that it cannot finish"
+      : "fix round " + t.fixes + " failed twice: " + (result.error || "failed");
+    return heal(t, "fix", signal, [result.file, t.lastReview], ["replan", "decide"]);
   }
   t.runId = result.runId || t.runId;
   t.next = "review";
