@@ -281,6 +281,17 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node recipe-sizing.test.mjs
         touch $out
       '';
+  pi-recipe-status =
+    pkgs.runCommand "pi-recipe-status"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/agent-recipes/status/recipe-status.mjs} recipe-status.mjs
+        cp ${../modules/agent-recipes/status/recipe-status.test.mjs} recipe-status.test.mjs
+        node recipe-status.test.mjs
+        touch $out
+      '';
   # pi-subagents 0.78.0 leaves a run's detached bash tool tree orphaned when the
   # run ends on its deadline (scene_gen #153). The vendored package patches the
   # runner to terminate its whole process group. This check runs the patched

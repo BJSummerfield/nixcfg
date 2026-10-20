@@ -55,3 +55,25 @@ answers, the check to run, and the output path.
   gaps. Gaps are questions, not findings. A gap is one whose answer could
   change the first section; a check that would only confirm what the
   findings already show is not a gap.
+- Diagnosis: a step's output was not accepted, and the script needs to know
+  what to do next. The brief names the step, what went wrong (the gate's
+  finding, a failure, a `blocked:` report, a question the worker asked), the
+  evidence files and the actions allowed here. Read the evidence, find the
+  cause, and choose one allowed action. This variant has no verdict lines;
+  the file opens with:
+
+      action: continue | retry | fix | replan | decide
+      reason: <the cause, one line>
+      verdict: clean | needs-work        (only when the brief asks for one)
+      owns: <extra repository paths, or none>   (only with replan)
+
+  then `## Brief`, the instructions the next worker gets, and `## Evidence`,
+  what you read and ran. `continue`: the output is acceptable as it is (a
+  review whose verdict is plain to a reader but not in the expected place;
+  give that verdict). `retry`: the same step again is likely to work (an
+  engine error, a timeout with no sign of a loop). `fix`: the same worker can
+  repair it from your brief. `replan`: the task cannot be done as written;
+  the brief is the revised task, and `owns` adds files it must change.
+  `decide`: only a person can choose (a design choice, a change the
+  repository forbids, missing facts nobody in the run can find); the reason
+  is the question to ask. Choose `decide` rather than guess.

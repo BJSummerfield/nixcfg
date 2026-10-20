@@ -17,9 +17,10 @@ Parameters, from the request:
 The task directory is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up at any
 time; an output the user wants to keep goes elsewhere. The run writes
 `angles.md`, `raw/search/`, `pages/`, `raw/extract/`, `synthesis-*.md` when
-the notes are too big for one synthesizer, `review.md` and the receipt. A
-retried child writes beside the file it replaces (`<name>.retry.md`), and the
-gap round writes the updated output beside the first one
+the notes are too big for one synthesizer, `review.md`, `diagnosis-<n>.md`
+and the receipt. A retried child writes beside the file it replaces
+(`<name>.retry.md`), a step a diagnosis runs again writes `<name>.2.md`, and
+the gap round writes the updated output beside the first one
 (`<name>.updated.md`); the receipt's `output` names the final file.
 
 ## What runs
@@ -40,6 +41,17 @@ gap round writes the updated output beside the first one
 6. A reviewer checks the output against the extracts and lists open gaps
    (`recipe-gate gaps`). If it lists any, one more round runs for those gaps
    only, and the synthesizer updates the output. There is no second round.
+7. A synthesizer or reviewer that failed twice, or a review whose verdict
+   cannot be read, goes to a diagnose child (a fresh reviewer, diagnosis
+   variant) at once. It picks one action that `recipe-gate diagnosis` checks:
+   `continue` (the verdict is plain but in the wrong place; the review's gaps
+   still count), `retry` or `decide`. The run gets at most two diagnoses,
+   and the same diagnosis twice counts as `decide`. Failed searchers and
+   extractors are not diagnosed: the run goes on without that source and
+   records it.
+8. At each stage the script emits a board (stage, source counts, gap round,
+   what healed, what needs a decision); `recipe-status <task dir>` prints it
+   with the children still running.
 
 ## pi binding
 
@@ -66,7 +78,8 @@ the run's `status.json`, whose `workflow.value` holds the whole receipt; read
 that when the Return part ends in an ellipsis.
 
 ```
-{ output, sources: { ok, failed, over_cap }, open: [...], gap_round, children }
+{ output, sources: { ok, failed, over_cap }, healed: [{step, action, reason}],
+  decide: [{step, question, diagnosis}], open: [...], gap_round, children }
 ```
 
 A child that fails inside the workflow can wake this session once with a
@@ -106,5 +119,10 @@ session are unavoidable here.
    `<dir>/review.md`, and run `recipe-gate gaps <dir>/review.md`. If it lists
    gaps, run steps 2 to 3 once for them with ids prefixed `gap-`, then a
    `synthesizer` that updates the output with the new extracts.
-6. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
+6. Where the pi script diagnoses (step 7 of What runs), dispatch a fresh
+   `reviewer` (diagnosis variant) with the step, what went wrong, the evidence
+   files, the allowed actions and `<dir>/diagnosis-<n>.md`, read it with
+   `recipe-gate diagnosis <file> --allow <actions>`, and act on it with the
+   same limits. Do not decide in its place: a `decide` goes to the user.
+7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
    dispatched.

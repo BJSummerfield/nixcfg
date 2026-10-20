@@ -11,6 +11,8 @@
 //                                  it, up to the next heading
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
+//   diagnosis <file> [--allow a,b] [--verdict yes]
+//                                  {ok, action, reason, verdict, owns:[], brief, problem}
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -24,6 +26,16 @@
 // ignored. `angles` reads the whole file. `gaps` reads only the bullets under
 // a `## Open gaps` heading of a review, up to the next heading, and also
 // returns the review's verdict, so one call reads both.
+//
+// diagnosis: reads the file a diagnose child writes when a step's output was
+// not accepted. From its first `action:` line up to the next heading it takes
+// `action:` (continue, retry, fix, replan or decide), `reason:` (one line),
+// `verdict:` (clean or needs-work, for a review that could not be read) and
+// `owns:` (extra repository paths a replanned task may change, or none). A
+// `## Brief` section holds the instructions for the next worker. ok needs an
+// action from --allow (default all five), a reason, a non-empty brief for fix
+// and replan, and with --verdict a verdict for continue; problem names what is
+// missing.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -218,11 +230,59 @@ function gaps(file) {
   return { ok: v.verdict !== "invalid", angles: angleBullets(section.join("\n")), ...v };
 }
 
+function ownsList(raw) {
+  const list = [];
+  for (const part of String(raw).split(",")) {
+    const bare = part.trim().replace(/^`+|`+$/g, "").trim();
+    if (!bare || /^none$/i.test(bare)) continue;
+    const clean = path.posix.normalize(bare.replace(/\\/g, "/")).replace(/^(\.\/)+/, "").replace(/\/+$/, "");
+    if (clean && clean !== "." && !list.includes(clean)) list.push(clean);
+  }
+  return list;
+}
+
+const ACTIONS = ["continue", "retry", "fix", "replan", "decide"];
+const DIAGNOSIS_KEY = /^(action|reason|verdict|owns):[ \t]*(.*?)\s*$/i;
+
+function diagnosis(file, flags) {
+  const allowed = flags.allow ? String(flags.allow).split(",").map((a) => a.trim()) : ACTIONS;
+  const text = readIfExists(file);
+  const none = { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false };
+  if (text === null) return { ...none, problem: "file missing" };
+  const lines = text.split("\n").map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""));
+  const fields = {};
+  let start = lines.findIndex((l) => /^action:/i.test(l));
+  for (let i = start; start >= 0 && i < lines.length && !/^#/.test(lines[i]); i++) {
+    const m = lines[i].match(DIAGNOSIS_KEY);
+    if (m && !(m[1].toLowerCase() in fields)) fields[m[1].toLowerCase()] = m[2];
+  }
+  const briefAt = text.search(/^##\s+Brief\s*$/im);
+  const brief = briefAt >= 0 && text.slice(briefAt).replace(/^##\s+Brief\s*$/im, "").split(/^##\s/m)[0].trim().length > 0;
+  const action = (fields.action || "").toLowerCase().split(/\s/)[0] || null;
+  const verdictWord = (fields.verdict || "").toLowerCase().match(/^(clean|needs-work)\b/);
+  const out = {
+    ok: true,
+    action,
+    reason: fields.reason || "",
+    verdict: verdictWord ? verdictWord[1] : null,
+    owns: fields.owns ? ownsList(fields.owns) : [],
+    brief,
+  };
+  let problem = null;
+  if (!action) problem = "no action line";
+  else if (!ACTIONS.includes(action)) problem = `unknown action ${action}`;
+  else if (!allowed.includes(action)) problem = `action ${action} is not allowed here (${allowed.join(", ")})`;
+  else if (!out.reason) problem = "no reason line";
+  else if ((action === "fix" || action === "replan") && !brief) problem = `action ${action} needs a ## Brief section`;
+  else if (action === "continue" && flags.verdict && !out.verdict) problem = "action continue needs a verdict line";
+  return problem ? { ...out, ok: false, problem } : out;
+}
+
 function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|diagnosis <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -236,6 +296,8 @@ function run(argv) {
       return angles(target);
     case "gaps":
       return gaps(target);
+    case "diagnosis":
+      return diagnosis(target, flags);
     default:
       throw new Usage(`unknown subcommand ${cmd}`);
   }
