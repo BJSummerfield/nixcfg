@@ -50,11 +50,29 @@ let
 
   qualified = provider: id: "${provider}/${id}";
 
-  prompt = role: builtins.readFile ./agents/common.md + "\n" + builtins.readFile ./agents/${role}.md;
+  toolNotes = {
+    pi = {
+      searchTool = "Search with `web_search`, several queries per call, always with `workflow: \"none\"`: raw results, no summary call. Never fetch a page.";
+      pageTool = "Save the page to the page path with `save_page` and read its outline; then `grep` and read ranges of the saved file, following the reading rule above. If `save_page` reports it cannot handle the URL (a PDF, a video, a GitHub page), use `fetch_content` and page through the rest with `get_search_content`.";
+    };
+    claude = {
+      searchTool = "Search with WebSearch, several queries as needed. Never fetch a page.";
+      pageTool = "Fetch the URL with WebFetch, asking it for the passages that bear on the goal word for word, section by section; there is no saved page, so a passage's location is the heading it sits under. If a fetch returns a summary instead of the page's own words, say so in the closing line.";
+    };
+  };
+
+  prompt =
+    harness: role:
+    let
+      notes = toolNotes.${harness};
+    in
+    builtins.replaceStrings (map (n: "@${n}@") (builtins.attrNames notes)) (builtins.attrValues notes) (
+      builtins.readFile ./agents/common.md + "\n" + builtins.readFile ./agents/${role}.md
+    );
 
   roles = {
     planner = {
-      description = "Writes the plan and task specs, the next interview round, or the issue drafts from gathered facts";
+      description = "Writes the implementation plan and task specs from gathered facts, or splits a research goal into angles";
       tools = [
         "read"
         "grep"
@@ -65,6 +83,10 @@ let
       ];
       thinking = "xhigh";
       output = "plan.md";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "opus";
+      };
     };
     scout = {
       description = "Finds facts in a repository and reports them with file and line evidence";
@@ -78,22 +100,44 @@ let
       ];
       thinking = "medium";
       output = "scout.md";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "sonnet";
+      };
     };
-    researcher = {
-      description = "Answers a question from web and primary sources with labelled evidence";
+    searcher = {
+      description = "Finds candidate sources for one angle of a question and lists them, without reading them";
       tools = [
         "read"
         "write"
         "web_search"
-        "fetch_content"
-        "get_search_content"
-        "source_check"
       ];
       thinking = "medium";
-      output = "research.md";
+      output = "searcher.md";
+      claude = {
+        tools = "Read, Write, WebSearch";
+        model = "haiku";
+      };
+    };
+    extractor = {
+      description = "Reads one source and copies out what bears on the goal, verbatim, with locations";
+      tools = [
+        "read"
+        "grep"
+        "write"
+        "save_page"
+        "fetch_content"
+        "get_search_content"
+      ];
+      thinking = "medium";
+      output = "extractor.md";
+      claude = {
+        tools = "Read, Grep, Write, WebFetch";
+        model = "sonnet";
+      };
     };
     synthesizer = {
-      description = "Merges raw findings into one cited synthesis";
+      description = "Merges findings into one cited document in the requested format";
       tools = [
         "read"
         "grep"
@@ -101,8 +145,12 @@ let
         "ls"
         "write"
       ];
-      thinking = "medium";
+      thinking = "xhigh";
       output = "synthesis.md";
+      claude = {
+        tools = "Read, Grep, Glob, Write";
+        model = "opus";
+      };
     };
     implementer = {
       description = "Executes one task spec in its own worktree; with a brief, prepares branches, merges and writes PR text";
@@ -114,14 +162,20 @@ let
         "bash"
         "edit"
         "write"
-        "contact_supervisor"
       ];
       thinking = "medium";
       output = "result.md";
-      frontmatter.acceptanceRole = "writer";
+      frontmatter = {
+        acceptanceRole = "writer";
+        excludeTools = "contact_supervisor";
+      };
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Edit, Write";
+        model = "sonnet";
+      };
     };
     reviewer = {
-      description = "Reviews a diff, plan or deliverable, verdict first, and runs the check itself";
+      description = "Reviews a diff, plan or research deliverable, verdict first, and runs the check itself";
       tools = [
         "read"
         "grep"
@@ -132,6 +186,10 @@ let
       ];
       thinking = "xhigh";
       output = "review.md";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "opus";
+      };
     };
   };
 
@@ -159,7 +217,12 @@ let
       // (role.frontmatter or { });
       lines = builtins.attrValues (builtins.mapAttrs (k: v: "${k}: ${yaml v}") front);
     in
-    "---\n" + builtins.concatStringsSep "\n" lines + "\n---\n\n" + prompt name;
+    "---\n" + builtins.concatStringsSep "\n" lines + "\n---\n\n" + prompt "pi" name;
+
+  claudeAgentFile =
+    name: role:
+    "---\nname: ${name}\ndescription: ${yaml role.description}\ntools: ${role.claude.tools}\nmodel: ${role.claude.model}\n---\n\n"
+    + prompt "claude" name;
 
   override = _: role: {
     inherit (role) tools thinking output;
@@ -214,6 +277,21 @@ in
 
   agentFiles = builtins.mapAttrs agentFile roles;
 
+  claudeAgentFiles = builtins.listToAttrs (
+    builtins.concatMap (
+      name:
+      if roles.${name} ? claude then
+        [
+          {
+            inherit name;
+            value = claudeAgentFile name roles.${name};
+          }
+        ]
+      else
+        [ ]
+    ) (builtins.attrNames roles)
+  );
+
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
   };
@@ -239,6 +317,7 @@ in
 
   subagentConfig = {
     globalConcurrencyLimit = 3;
+    worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     disabledFeatures = [
       "agent-management"

@@ -40,6 +40,8 @@ the security boundary; no sandbox wraps your commands.
   twice.
 - The engine lists its recent requests, with the prompt size of each, at
   `/ops/requests?n=<N>` on the same host and port as the model endpoint.
+- The local engine runs 4 sequences at once; helpers run at most 3 at a
+  time. A prefill on one sequence stalls decode on the others.
 - Missing tools: `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (the store
   is shared with the host, so anything it has costs no download); npm, pip
   and cargo also work. There is no sudo and you will never need it.

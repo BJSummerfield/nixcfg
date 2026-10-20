@@ -1,0 +1,206 @@
+---
+name: implement
+description: Carry out a plan directory made by the plan skill: each task is built in its own worktree, reviewed by a fresh reviewer and fixed for at most two rounds, then the finished tasks are merged on one branch, the heavy checks run once and the pull request text is written, all run by a script. Use only when the user asks for an implementation.
+disable-model-invocation: true
+---
+
+# Implement
+
+Parameters, from the request:
+
+- plan: absolute path of the plan directory the plan skill wrote (`plan.md`
+  and `tasks/<id>.md`; the header format is in the plan skill). It must sit
+  outside the repository, or the run's own files would dirty the checkout
+  that every task worktree starts from.
+- repo: absolute path of the repository the tasks change. Its checkout must
+  have a clean working tree, because every task starts from its HEAD in a
+  worktree of its own.
+- optional: `branch` (name of the integration branch, default
+  `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
+  plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
+
+The plan directory is also the task directory. The run writes into it, next
+to the plan:
+
+```
+<dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
+                            a replanned attempt n is impl-<id>-<n>.md
+<dir>/review-<id>-<n>.md    review n of the task
+<dir>/fix-<id>-<n>.md       report of fix round n
+<dir>/diagnosis-<id>-<n>.md diagnosis n of the task (or of the integration)
+<dir>/integration.md        report of the integration step (integration-2.md
+                            when a diagnosis ran it again)
+<dir>/integration/          worktree of the integration branch
+<dir>/heavy.md              first line pass, none or fail: <why>, then the output
+<dir>/pr.md                 pull request title and body
+<dir>/receipt.md            the receipt
+```
+
+Task worktrees are managed by the runner under
+`/var/tmp/pi-worktrees/<repository name>/`, one per implementer attempt, and
+that directory is emptied of anything older than 20 days. When the
+integration passes its check, the run removes the worktree and deletes the
+branch of every task it merged. What stays in the repository is the
+integration branch `implement/<name of the plan directory>`, which holds the
+finished work for you to push, and the branches of tasks that were set aside
+or replaced by a replan, which are not merged anywhere.
+
+## What runs
+
+1. One scout child exists only to carry the plan gate: `recipe-gate plan`
+   checks sizes, file ownership, dependencies and that every task has a
+   check. A gate runs only after a child, and this child is the cheapest one;
+   the plan check, not the child, decides. A plan that is not ok is refused
+   with the check's findings in the receipt, before any worktree exists.
+2. Tasks are ordered by `depends` into waves. A task runs once everything it
+   depends on has finished; a task whose dependency was set aside or skipped
+   is skipped. Within a wave the tasks run in parallel, three at a time at
+   most.
+3. Each task: an implementer in a worktree of its own, with the thinking level
+   of the task header, merges the branches of its dependencies, makes its
+   change, commits it and writes its report. `recipe-gate task` then runs in
+   that worktree and reports the branch, the commits, the files changed
+   outside `owns`, whether anything is uncommitted and the result of the
+   task's check run once more. A report that says `blocked` or `failed` goes
+   to a diagnosis (step 6).
+4. A fresh reviewer (diff variant) reads the branch's own diff, runs the check
+   in the worktree and gives a verdict (`recipe-gate verdict`). On needs-work,
+   or when the task gate was red, the same implementer is resumed in the same
+   worktree with the findings and fixes them in new commits; then a fresh
+   review. At most two fix rounds; a task still not clean goes to a
+   diagnosis. Other tasks go on.
+5. One implementer with a brief (no worktree of its own) creates the
+   integration branch and worktree from the repository's current HEAD with
+   `git worktree add`, so the checkout does not move, merges the finished
+   branches in the plan's order, runs the plan's heavy checks once under the
+   box-wide lock, and writes `pr.md` and `heavy.md`. `recipe-gate integrate`
+   then confirms every finished branch is in the branch, nothing is
+   uncommitted, `pr.md` is not empty and the heavy checks passed or were not
+   needed, and with that it tidies the merged tasks (above); a worktree or
+   branch it could not remove is an `open` line. It never merges into the
+   main branch and never pushes.
+6. A child that fails by itself is retried once (a fix round is resumed again
+   from the failed run). Whatever the script cannot accept goes to a diagnose
+   child (a fresh reviewer, diagnosis variant) at once, for that task only:
+   a child that failed twice, a `blocked` or `failed` report, a verdict
+   that cannot be read, a task still not clean after two fix rounds, an
+   integration the check does not accept. It reads the evidence and picks one
+   action that `recipe-gate diagnosis` checks against the actions allowed at
+   that step: `continue` (the output was fine, for example a verdict in the
+   wrong place), `retry`, `fix` (one more round for the same implementer
+   with its brief), `replan` (a fresh implementer in a new worktree with a
+   revised brief, and files it may add to `owns` when no task outside its
+   dependencies owns them) or `decide`. Each task gets at most two
+   diagnoses, and the same diagnosis twice counts as `decide`. A `decide`
+   sets the task aside and goes in the receipt as a question for the user;
+   tasks that depend on it are skipped.
+7. After every round the script emits a board (each task's state, next step,
+   fix rounds and diagnoses, what healed, what needs a decision);
+   `recipe-status <plan dir>` prints it with the children still running,
+   from any shell.
+
+The pi mechanism behind steps 3 and 4: a workflow child with `worktree: true`
+gets a managed worktree on its own branch; because it is a workflow child with
+a session, the runner keeps that worktree and branch instead of removing them
+after capturing the patch, so the child can be resumed in it
+(`runs.run` with `resume: <runId>`). The script learns the branch and worktree
+path from the task gate, which runs inside the child's worktree.
+
+## pi binding
+
+One call starts the whole run; nothing else is needed from this session until
+it ends.
+
+```
+subagent({
+  workflow: "/home/agent/.pi/agent/recipes/implement/workflow.js",
+  args: {
+    plan: "<plan dir>", repo: "<repo path>", model: "@subagentModel@"
+  },
+  cwd: "<repo path>",
+  async: true,
+  output: "<plan dir>/receipt.md",
+  options: { timeoutMs: 14400000, maxSubagentSpawnsPerRun: <16 x tasks + 6> }
+})
+```
+
+All paths are absolute. `cwd` is the repository, so the worktrees branch from
+it. `model` is only used for tasks whose header says `thinking: xhigh`.
+Wait for the single completion with `bg_wait`; do not poll, steer or read
+intermediate files. Then read only the receipt, `<plan dir>/receipt.md`.
+
+The receipt file is a one-line summary whose Return part is the receipt JSON
+cut at 1,000 characters; the summary names the run's `status.json`, whose
+`workflow.value` holds the whole receipt.
+
+```
+{ branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
+  heavy_check, healed: [{id, step, action, reason}],
+  decide: [{id, question, diagnosis}], open: [...], children, pr_text }
+```
+
+`heavy_check` is `pass`, `none`, `fail: <why>` or `not recorded`; `open` holds
+whatever the script could not settle, including a plan refused by its check
+and an integration that did not complete. `pr_text` is last because it is the
+longest; the full text is `<plan dir>/pr.md`.
+A child that fails inside the workflow can wake this session once with a
+"Workflow child failed" notice, even though the script retries it. Ignore the
+notice and keep waiting for the workflow's own completion.
+
+A child can also ask this session a question with a supervisor request while
+the run goes on. Do not answer the question itself: the script decides what
+happens to a stuck child. Reply that it should stop and write `blocked:` and
+its question as the first line of its report, then keep waiting.
+
+Tell the user the branch first, then what merged, each `decide` question with
+its diagnosis file, each other set-aside task with its reason, the skipped
+tasks, the heavy-check result, what healed in one line each, and each `open`
+line, and point at `pr.md`. Do not push, open the pull request or merge
+unasked, and do not answer a `decide` question for the user.
+
+## Claude Code binding
+
+Claude Code has no workflow engine, so the main session does the script's work
+with the Agent tool, one `subagent_type` per role (`implementer`, `reviewer`;
+their definitions are installed), in the same order and with the same
+`recipe-gate` checks. Turns in the starting session are unavoidable here, and
+nothing stops a helper from being retried more than once; keep to the limits
+below.
+
+1. Run `recipe-gate plan <dir> --repo <repo>` yourself. Refuse a plan that is
+   not ok and report the findings. Order the tasks into waves by `depends`.
+2. Per wave, dispatch one `implementer` per task, several in one message, with
+   `isolation: "worktree"` and a brief as in step 3 above (task file, plan,
+   repository, report path, the dependency branches to merge, commit and
+   leave nothing uncommitted). Pass `model: "opus"` only for tasks whose
+   header says `thinking: xhigh`. Ask each to end its report with its branch
+   (`git branch --show-current`) and worktree path.
+3. In that worktree run `recipe-gate task <report> --check '<check>' --owns
+   '<owns>' --repo <repo>`. A blocked or failed report goes to a diagnosis
+   (step 5 of this list); a red gate goes to a fix round.
+4. Dispatch a fresh `reviewer` (diff variant) per task with the task file,
+   branch, worktree, diff command, check and `<dir>/review-<id>-<n>.md`; read
+   the verdict with `recipe-gate verdict`. On needs-work send the findings to
+   the same implementer (SendMessage to its agent id) so it fixes them in its
+   own worktree; if that agent cannot be continued, dispatch a new
+   `implementer` without isolation told to work in the existing worktree.
+   At most two fix rounds, then a diagnosis. Retry a helper that fails by
+   itself once.
+5. Where the pi script diagnoses (step 6 of What runs), dispatch a fresh
+   `reviewer` (diagnosis variant) with the task file, the step, what went
+   wrong, the evidence files, the allowed actions and
+   `<dir>/diagnosis-<id>-<n>.md`, read it with `recipe-gate diagnosis <file>
+   --allow <actions>`, and act on it with the same limits. Do not decide in
+   its place: a `decide` goes to the user.
+6. Dispatch one `implementer` with the integration brief (no isolation),
+   then run `recipe-gate integrate <dir> --tasks id:branch,... --branch
+   <branch>` to confirm the result.
+7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
+   dispatched, and report as in the pi binding.
+
+What differs from pi: the main session spends turns on every step and
+re-reads its own conversation after each helper returns; a fix round
+continues a helper through SendMessage rather than a retained run; waves
+cannot be forced to three at a time; there is no spawn cap or timeout
+enforced for you; the worktrees are Claude Code's, so their branch and path
+come from the implementer's report, not from the gate running inside them.

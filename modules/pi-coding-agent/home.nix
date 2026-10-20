@@ -23,6 +23,7 @@ let
     subagents = data.settings.subagents // {
       defaultSubagentOnlyExtensions = [
         "${config.home.homeDirectory}/.pi/agent/subagent-extensions/budget-valve.js"
+        "${config.home.homeDirectory}/.pi/agent/subagent-extensions/save-page.js"
       ];
     };
   };
@@ -42,10 +43,11 @@ in
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
       ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
       ".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
+      ".pi/agent/subagent-extensions/save-page.js".source = ./extensions/save-page.js;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
         builtins.replaceStrings [ "@subagentModel@" ] [ data.settings.subagents.defaultModel ]
-          (builtins.readFile ./agents/core.md + "\n" + builtins.readFile ./AGENTS.md);
+          (builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md);
     }
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }

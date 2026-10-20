@@ -1,0 +1,11 @@
+{
+  "engine_rev": null,
+  "roles": {
+    "searcher": { "samples": 0, "base": 7000, "growth_p90": 18000, "peak_p90": 25000, "compact_rate": 0, "cold_per_run": 0 },
+    "extractor": { "samples": 0, "base": 7000, "growth_p90": 33000, "peak_p90": 40000, "compact_rate": 0, "cold_per_run": 0 },
+    "scout": { "samples": 0, "base": 7000, "growth_p90": 119000, "peak_p90": 126000, "compact_rate": 0.08, "cold_per_run": 0.08 },
+    "synthesizer": { "samples": 0, "base": 7000, "growth_p90": 96000, "peak_p90": 103000, "compact_rate": 0, "cold_per_run": 1 },
+    "implementer": { "samples": 0, "base": 7000, "k_read": 1, "growth_p90": 10000, "peak_p90": 109000, "compact_rate": 0.08, "cold_per_run": 0.39 },
+    "reviewer": { "samples": 0, "base": 7000, "k_read": 1, "growth_p90": 10000, "peak_p90": 135000, "compact_rate": 0.11, "cold_per_run": 0.62 }
+  }
+}
