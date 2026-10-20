@@ -558,6 +558,17 @@ function integrate(dir, flags) {
   return { ok: reasons.length === 0, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
 }
 
+function ownsList(raw) {
+  const list = [];
+  for (const part of String(raw).split(",")) {
+    const bare = part.trim().replace(/^`+|`+$/g, "").trim();
+    if (!bare || /^none$/i.test(bare)) continue;
+    const clean = path.posix.normalize(bare.replace(/\\/g, "/")).replace(/^(\.\/)+/, "").replace(/\/+$/, "");
+    if (clean && clean !== "." && !list.includes(clean)) list.push(clean);
+  }
+  return list;
+}
+
 const ACTIONS = ["continue", "retry", "fix", "replan", "decide"];
 const DIAGNOSIS_KEY = /^(action|reason|verdict|owns):[ \t]*(.*?)\s*$/i;
 
@@ -582,7 +593,7 @@ function diagnosis(file, flags) {
     action,
     reason: fields.reason || "",
     verdict: verdictWord ? verdictWord[1] : null,
-    owns: fields.owns && !/^none\b/i.test(fields.owns) ? pathList(fields.owns, true) : [],
+    owns: fields.owns ? ownsList(fields.owns) : [],
     brief,
   };
   let problem = null;
