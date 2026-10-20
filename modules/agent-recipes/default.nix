@@ -11,6 +11,7 @@ let
   roles = import ../pi-coding-agent/settings.nix;
 
   recipes = [
+    "implement"
     "plan"
     "research"
     "triage"
@@ -20,7 +21,12 @@ let
     root:
     builtins.listToAttrs (
       map (
-        name: lib.nameValuePair "${root}/${name}/SKILL.md" { source = ./. + "/${name}/SKILL.md"; }
+        name:
+        lib.nameValuePair "${root}/${name}/SKILL.md" {
+          text = builtins.replaceStrings [ "@subagentModel@" ] [ roles.settings.subagents.defaultModel ] (
+            builtins.readFile (./. + "/${name}/SKILL.md")
+          );
+        }
       ) recipes
     );
 in
@@ -32,6 +38,7 @@ in
     home.packages = [ tools ];
 
     home.file = {
+      ".pi/agent/recipes/implement/workflow.js".source = ./implement/workflow.js;
       ".pi/agent/recipes/plan/workflow.js".source = ./plan/workflow.js;
       ".pi/agent/recipes/research/workflow.js".source = ./research/workflow.js;
       ".pi/agent/recipes/sizing.json".source = ./sizing/sizing.json;

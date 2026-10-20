@@ -346,5 +346,170 @@ const gate = (...args) => {
   assert.equal(gate("plan", d, "--repo", repo, "--sizing", path.join(tmp, "absent.json")).status, 1);
 }
 
+// task and integrate: run against real git worktrees.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const source = dir();
+  git(source, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(source, "a.txt"), "a\n");
+  fs.writeFileSync(path.join(source, "b.txt"), "b\n");
+  git(source, "add", "-A");
+  git(source, "commit", "-q", "-m", "init");
+  const main = git(source, "rev-parse", "HEAD");
+
+  const worktree = (branch, where = path.join(dir(), "wt")) => {
+    git(source, "worktree", "add", "-q", "-b", branch, where, "main");
+    return where;
+  };
+  const commit = (wt, file, text) => {
+    fs.writeFileSync(path.join(wt, file), text);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", `change ${file}`);
+  };
+  const report = (text) => write("report.md", text);
+  const taskGate = (wt, rep, ...rest) => gateIn(wt, "task", rep, "--repo", source, ...rest);
+
+  // A clean task: one commit inside owns, green check.
+  const wt1 = worktree("pi/t1");
+  commit(wt1, "a.txt", "a2\n");
+  const good = taskGate(wt1, report("done\nthe detail"), "--check", "echo fine", "--owns", "a.txt");
+  assert.equal(good.status, 0);
+  assert.equal(good.json.ok, true);
+  assert.equal(good.json.reason, "");
+  assert.equal(good.json.branch, "pi/t1");
+  assert.equal(good.json.base, main);
+  assert.equal(good.json.commits, 1);
+  assert.deepEqual(good.json.files, ["a.txt"]);
+  assert.deepEqual(good.json.outside, []);
+  assert.equal(good.json.clean, true);
+  assert.deepEqual(good.json.report, { status: "done", why: "" });
+  assert.equal(good.json.check.exit, 0);
+  assert.equal(good.json.check.tail.trim(), "fine");
+  assert.equal(fs.realpathSync(good.json.worktree), fs.realpathSync(wt1));
+  assert.equal(good.json.head, git(wt1, "rev-parse", "HEAD"));
+
+  // Concerns still pass; a directory in owns covers the files below it.
+  fs.mkdirSync(path.join(wt1, "sub"));
+  commit(wt1, "sub/x.txt", "x\n");
+  const dirOwned = taskGate(wt1, report("**done, concerns**\nsee below"), "--check", "true", "--owns", "a.txt,sub/");
+  assert.equal(dirOwned.json.ok, true);
+  assert.equal(dirOwned.json.report.status, "done, concerns");
+  assert.deepEqual(dirOwned.json.files, ["a.txt", "sub/x.txt"]);
+
+  // A red check names its exit status and output.
+  const red = taskGate(wt1, report("done"), "--check", "echo broke >&2; exit 3", "--owns", "a.txt,sub");
+  assert.equal(red.status, 0);
+  assert.equal(red.json.ok, false);
+  assert.equal(red.json.check.exit, 3);
+  assert.match(red.json.reason, /^check failed \(exit 3\): broke/);
+
+  // Changes outside owns are listed.
+  commit(wt1, "b.txt", "b2\n");
+  const outside = taskGate(wt1, report("done"), "--check", "true", "--owns", "a.txt,sub");
+  assert.equal(outside.json.ok, false);
+  assert.deepEqual(outside.json.outside, ["b.txt"]);
+  assert.equal(outside.json.reason, "changed files outside owns: b.txt");
+
+  // Uncommitted work is not finished work.
+  fs.writeFileSync(path.join(wt1, "a.txt"), "dirty\n");
+  const dirty = taskGate(wt1, report("done"), "--check", "true");
+  assert.equal(dirty.json.ok, false);
+  assert.equal(dirty.json.clean, false);
+  assert.equal(dirty.json.reason, "uncommitted changes in the worktree");
+
+  // No commits at all.
+  const wt0 = worktree("pi/t0");
+  const none = taskGate(wt0, report("done"), "--check", "true");
+  assert.equal(none.json.ok, false);
+  assert.equal(none.json.commits, 0);
+  assert.equal(none.json.reason, "no commits on the branch");
+
+  // A blocked or failed report skips the check and carries its reason.
+  const blocked = taskGate(wt0, report("blocked: baseline failing\nmore"), "--check", "touch ran.txt");
+  assert.equal(blocked.json.ok, false);
+  assert.deepEqual(blocked.json.report, { status: "blocked", why: "baseline failing" });
+  assert.equal(blocked.json.check.exit, null);
+  assert.equal(blocked.json.reason, "report blocked: baseline failing");
+  assert.equal(fs.existsSync(path.join(wt0, "ran.txt")), false);
+  assert.equal(taskGate(wt0, report("failed: cannot parse"), "--check", "true").json.report.status, "failed");
+  assert.equal(taskGate(wt0, report("I did the thing"), "--check", "true").json.report.status, "invalid");
+  assert.equal(taskGate(wt0, path.join(tmp, "absent.md"), "--check", "true").json.report.status, "missing");
+
+  // Dependency branches merged into the task are not part of its own diff.
+  const dep = worktree("pi/dep");
+  commit(dep, "d.txt", "d\n");
+  const wt2 = worktree("pi/t2");
+  git(wt2, "merge", "-q", "--no-ff", "--no-edit", "pi/dep");
+  commit(wt2, "a.txt", "a3\n");
+  const merged = taskGate(wt2, report("done"), "--check", "true", "--owns", "a.txt");
+  assert.equal(merged.json.ok, true);
+  assert.equal(merged.json.commits, 1);
+  assert.deepEqual(merged.json.files, ["a.txt"]);
+  assert.equal(merged.json.base, git(wt2, "rev-parse", "HEAD~1"));
+
+  // Usage: task needs a check; without --repo there is no base.
+  assert.equal(gateIn(wt2, "task", report("done")).status, 2);
+  const noRepo = gateIn(wt2, "task", report("done"), "--check", "true");
+  assert.equal(noRepo.json.ok, false);
+  assert.equal(noRepo.json.reason, "no base commit: pass --repo of the source checkout");
+
+  // integrate: branches merged in order, pull request text and heavy result.
+  const integ = (d, branch = "implement/x") => {
+    git(source, "worktree", "add", "-q", "-b", branch, path.join(d, "integration"), "main");
+    return path.join(d, "integration");
+  };
+  const d1 = dir();
+  const iw = integ(d1);
+  git(iw, "merge", "-q", "--no-edit", "pi/t2");
+  const partial = gate("integrate", d1, "--tasks", "t2:pi/t2,dep:pi/dep", "--branch", "implement/x");
+  assert.equal(partial.status, 0);
+  assert.equal(partial.json.ok, false);
+  assert.equal(partial.json.branch, "implement/x");
+  assert.deepEqual(partial.json.merged, ["t2", "dep"]);
+  assert.deepEqual(partial.json.reasons, ["pr.md missing or empty", "heavy checks: not recorded"]);
+
+  commit(wt1, "a.txt", "a4\n");
+  git(wt1, "branch", "-q", "pi/t3");
+  const three = gate("integrate", d1, "--tasks", "t2:pi/t2,t3:pi/t3,dep:pi/dep");
+  assert.deepEqual(three.json.merged, ["t2", "dep"]);
+  assert.deepEqual(three.json.unmerged, ["t3"]);
+  assert.equal(three.json.reasons[0], "not merged: t3");
+
+  fs.writeFileSync(path.join(d1, "pr.md"), "Title line\n\nWhat and why.\n");
+  fs.writeFileSync(path.join(d1, "heavy.md"), "pass\nflake check output\n");
+  const whole = gate("integrate", d1, "--tasks", "t2:pi/t2,dep:pi/dep", "--branch", "implement/x");
+  assert.equal(whole.json.ok, true);
+  assert.deepEqual(whole.json.reasons, []);
+  assert.equal(whole.json.heavy_check, "pass");
+  assert.equal(whole.json.pr_text, "Title line\n\nWhat and why.");
+  assert.equal(whole.json.head, git(iw, "rev-parse", "HEAD"));
+
+  const wrongBranch = gate("integrate", d1, "--tasks", "t2:pi/t2", "--branch", "implement/other");
+  assert.equal(wrongBranch.json.ok, false);
+  assert.match(wrongBranch.json.reasons[0], /^integration worktree is on implement\/x, not implement\/other$/);
+
+  fs.writeFileSync(path.join(d1, "heavy.md"), "**fail**: flake check red\n");
+  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.heavy_check, "fail: flake check red");
+  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.ok, false);
+  fs.writeFileSync(path.join(d1, "heavy.md"), "none\nthe plan names no heavy check\n");
+  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.ok, true);
+
+  const absent = gate("integrate", dir(), "--tasks", "t2:pi/t2");
+  assert.equal(absent.status, 0);
+  assert.equal(absent.json.ok, false);
+  assert.equal(absent.json.branch, null);
+  assert.deepEqual(absent.json.unmerged, ["t2"]);
+  assert.equal(absent.json.reasons[0], "no integration worktree");
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-gate: all assertions passed");

@@ -14,6 +14,14 @@
 //                                  check, depends, thinking, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
 //                                  cycles:[[id, ...]]}
+//   task <report> --check CMD [--owns a,b] [--repo DIR]
+//                                  run in a task worktree -> {ok, reason, report:{status,
+//                                  why}, branch, worktree, head, base, clean, commits,
+//                                  files, outside, check:{command, exit, tail}}
+//   integrate <dir> --tasks id:branch,... [--branch NAME]
+//                                  integration worktree at <dir>/integration ->
+//                                  {ok, reasons, branch, head, merged:[id], unmerged:[id],
+//                                  clean, heavy_check, pr_text}
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -66,13 +74,32 @@
 // task, or a reads path that neither exists nor is owned by a task.
 // `cycles` has one id path per dependency loop, first id repeated at the end.
 // ok is true only when all four are empty.
+//
+// task: checks one implementation task, run in that task's worktree. The
+// first line of its report is `done`, `done, concerns`, `blocked: <why>` or
+// `failed: <why>`. The branch must hold the work as commits and nothing
+// uncommitted. base is where the task's own commits start: the last merge
+// commit of a dependency branch on the first-parent chain, else the merge base
+// with --repo's HEAD. outside lists changed files that are not under --owns,
+// whose paths are normalised as in plan. The check is run once with
+// `sh -c` in the working directory; ok needs a passing report, at least one
+// commit, a clean tree, no outside files and check exit 0, and reason names
+// the first failure.
+//
+// integrate: reads the integration worktree at <dir>/integration, <dir>/pr.md
+// and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
+// merged lists the task ids whose branch is an ancestor of its HEAD. ok needs
+// every task merged, a clean tree, a pull request text and heavy checks that
+// passed or were not needed.
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 const EXTRACT_CAP_BYTES = 24 * 1024;
 const DEFAULT_WINDOW = 221184;
 const SYNTH_TOKENS = 70000;
+const PR_CHARS = 4000;
 
 class Usage extends Error {}
 
@@ -395,11 +422,126 @@ function plan(dir, flags) {
   return { ok, tasks, oversize, overlaps, missing, cycles };
 }
 
+const CHECK_TIMEOUT_MS = 10 * 60 * 1000;
+const TAIL_CHARS = 1500;
+const LIST_CAP = 50;
+const REPORT_HEAD = /^(done, concerns|done|blocked|failed)\b:?\s*(.*)$/i;
+
+function git(cwd, args) {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+function firstLine(text) {
+  const line = text.split("\n").find((l) => l.trim()) ?? "";
+  return line.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, "").trim();
+}
+
+function reportStatus(file) {
+  const text = readIfExists(file);
+  if (text === null) return { status: "missing", why: "report missing" };
+  const line = firstLine(text);
+  const m = line.match(REPORT_HEAD);
+  if (!m) return { status: "invalid", why: line.slice(0, 200) };
+  return { status: m[1].toLowerCase(), why: m[2].trim() };
+}
+
+function owned(file, owns) {
+  return owns.some((o) => file === o || file.startsWith(`${o}/`));
+}
+
+function task(report, flags) {
+  if (!flags.check) throw new Usage("task needs --check");
+  const cwd = process.cwd();
+  const owns = pathList(flags.owns, true);
+  const rep = reportStatus(report);
+  const passing = rep.status === "done" || rep.status === "done, concerns";
+
+  const branch = git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const worktree = git(cwd, ["rev-parse", "--show-toplevel"]);
+  const head = git(cwd, ["rev-parse", "HEAD"]);
+  const source = flags.repo ? git(flags.repo, ["rev-parse", "HEAD"]) : null;
+  const mergeBase = head && source ? git(cwd, ["merge-base", "HEAD", source]) : null;
+  const dependencyMerge = mergeBase ? git(cwd, ["rev-list", "--merges", "--first-parent", "-1", `${mergeBase}..HEAD`]) : null;
+  const base = dependencyMerge || mergeBase;
+
+  const commits = base ? Number(git(cwd, ["rev-list", "--count", `${base}..HEAD`])) : 0;
+  const changed = base ? (git(cwd, ["diff", "--name-only", base, "HEAD"]) ?? "").split("\n").filter(Boolean) : [];
+  const clean = git(cwd, ["status", "--porcelain"]) === "";
+  const outside = owns.length ? changed.filter((f) => !owned(f, owns)) : [];
+
+  const check = { command: flags.check, exit: null, tail: "" };
+  if (passing && head) {
+    const r = spawnSync("sh", ["-c", flags.check], { cwd, encoding: "utf8", timeout: CHECK_TIMEOUT_MS });
+    check.exit = r.status ?? -1;
+    check.tail = `${r.stdout ?? ""}${r.stderr ?? ""}`.slice(-TAIL_CHARS);
+  }
+
+  let reason = "";
+  if (!passing) reason = `report ${rep.status}: ${rep.why}`;
+  else if (!head || !branch || branch === "HEAD") reason = "not on a branch of a git worktree";
+  else if (!base) reason = "no base commit: pass --repo of the source checkout";
+  else if (commits === 0) reason = "no commits on the branch";
+  else if (!clean) reason = "uncommitted changes in the worktree";
+  else if (outside.length) reason = `changed files outside owns: ${outside.slice(0, LIST_CAP).join(", ")}`;
+  else if (check.exit !== 0) reason = `check failed (exit ${check.exit}): ${check.tail}`;
+
+  return {
+    ok: reason === "",
+    reason,
+    report: rep,
+    branch,
+    worktree,
+    head,
+    base,
+    clean,
+    commits,
+    files: changed.slice(0, LIST_CAP),
+    outside: outside.slice(0, LIST_CAP),
+    check,
+  };
+}
+
+function heavyCheck(file) {
+  const text = readIfExists(file);
+  if (text === null) return "not recorded";
+  const line = firstLine(text);
+  if (/^pass\b/i.test(line)) return "pass";
+  if (/^none\b/i.test(line)) return "none";
+  const fail = line.match(/^fail\w*\b:?\s*(.*)$/i);
+  return fail ? `fail: ${fail[1]}` : "not recorded";
+}
+
+function integrate(dir, flags) {
+  const worktree = path.join(dir, "integration");
+  const pairs = (flags.tasks ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((s) => [s.slice(0, s.indexOf(":")), s.slice(s.indexOf(":") + 1)]);
+  const branch = git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const head = git(worktree, ["rev-parse", "HEAD"]);
+  const isMerged = ([, b]) => spawnSync("git", ["merge-base", "--is-ancestor", b, "HEAD"], { cwd: worktree }).status === 0;
+  const merged = head ? pairs.filter(isMerged).map(([id]) => id) : [];
+  const unmerged = pairs.map(([id]) => id).filter((id) => !merged.includes(id));
+  const clean = head ? git(worktree, ["status", "--porcelain"]) === "" : false;
+  const pr_text = (readIfExists(path.join(dir, "pr.md")) ?? "").trim().slice(0, PR_CHARS);
+  const heavy_check = heavyCheck(path.join(dir, "heavy.md"));
+
+  const reasons = [];
+  if (!head) reasons.push("no integration worktree");
+  else if (flags.branch && branch !== flags.branch) reasons.push(`integration worktree is on ${branch}, not ${flags.branch}`);
+  if (unmerged.length) reasons.push(`not merged: ${unmerged.join(", ")}`);
+  if (head && !clean) reasons.push("uncommitted changes in the integration worktree");
+  if (!pr_text) reasons.push("pr.md missing or empty");
+  if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
+  return { ok: reasons.length === 0, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
+}
+
 function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|plan <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|plan|task|integrate <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -415,6 +557,10 @@ function run(argv) {
       return gaps(target);
     case "plan":
       return plan(target, flags);
+    case "task":
+      return task(target, flags);
+    case "integrate":
+      return integrate(target, flags);
     default:
       throw new Usage(`unknown subcommand ${cmd}`);
   }

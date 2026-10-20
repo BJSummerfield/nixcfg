@@ -167,6 +167,10 @@ let
       thinking = "medium";
       output = "result.md";
       frontmatter.acceptanceRole = "writer";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Edit, Write";
+        model = "sonnet";
+      };
     };
     reviewer = {
       description = "Reviews a diff, plan or research deliverable, verdict first, and runs the check itself";

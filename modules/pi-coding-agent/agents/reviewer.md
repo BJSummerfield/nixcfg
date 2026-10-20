@@ -37,6 +37,12 @@ answers, the check to run, and the output path.
 
 ## Variants the brief may name
 
+- Diff on a branch: the brief names the task file, the branch, the worktree
+  that holds it, the diff command and the check. Review that diff and run
+  the check in the worktree, without editing anything there. Work left
+  uncommitted in the worktree (`git status --porcelain` is not empty) is not
+  part of the diff: it makes the change `Sound: no`. Changes outside the
+  files the task owns are blocking.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
   review before the PR is the full diff again.

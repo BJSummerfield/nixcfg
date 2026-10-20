@@ -2,13 +2,17 @@
   writeShellApplication,
   symlinkJoin,
   nodejs,
+  git,
 }:
 let
   tool =
     name: script:
     writeShellApplication {
       inherit name;
-      runtimeInputs = [ nodejs ];
+      runtimeInputs = [
+        nodejs
+        git
+      ];
       text = ''
         exec node ${script} "$@"
       '';
