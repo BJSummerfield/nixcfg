@@ -162,11 +162,13 @@ let
         "bash"
         "edit"
         "write"
-        "contact_supervisor"
       ];
       thinking = "medium";
       output = "result.md";
-      frontmatter.acceptanceRole = "writer";
+      frontmatter = {
+        acceptanceRole = "writer";
+        excludeTools = "contact_supervisor";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Edit, Write";
         model = "sonnet";
