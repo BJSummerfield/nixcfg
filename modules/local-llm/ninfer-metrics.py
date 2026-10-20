@@ -123,7 +123,10 @@ class LogTail:
         occ = cc.get("occupancy") or {}
         pressure = cc.get("pressure") or {}
         sch = ev.get("scheduling") or {}
-        kv = (cc.get("main_kv_transfers") or {}).get("h2d") or {}
+        main_pool = next(
+            (p for p in cc.get("kv_pools") or [] if p.get("pool_id") == 0), {}
+        )
+        kv = (main_pool.get("transfers") or {}).get("h2d") or {}
         state = (cc.get("state_transfers") or {}).get("h2d") or {}
         sched = ev.get("scheduler") or {}
         tps = ev.get("throughput_tokens_per_second") or {}
