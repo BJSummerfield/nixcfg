@@ -2,7 +2,6 @@ const MAX_SOURCES = 12;
 const GAP_SOURCES = 6;
 const MAX_ANGLES = 4;
 const SYNTH_TOKENS = 70000;
-const SMALL_TOOL_BUDGET = { soft: 80, hard: 120, block: "*" };
 
 const dir = args.dir;
 const goal = args.goal;
@@ -11,7 +10,7 @@ const format =
   args.format || "a markdown document whose first section answers the goal, every claim carrying a URL and a quotation or location";
 const maxSources = Math.min(args.maxSources || MAX_SOURCES, MAX_SOURCES);
 const windowTokens = args.window || 221184;
-const childMs = args.childTimeoutMs || 1200000;
+const childMs = args.childTimeoutMs || 480000;
 const bigMs = args.bigTimeoutMs || 2400000;
 
 const sources = [];
@@ -131,7 +130,6 @@ function extractItem(rec, suffix, part) {
     output: file,
     outputMode: "file-only",
     maxRuntimeMs: childMs,
-    toolBudget: SMALL_TOOL_BUDGET,
     gate: { command: "recipe-gate extract " + quote(file), output: "json" },
   };
 }
@@ -261,7 +259,6 @@ for (let round = 0; round < 2; round++) {
         output: file,
         outputMode: "file-only",
         maxRuntimeMs: childMs,
-        toolBudget: SMALL_TOOL_BUDGET,
         gate: { command: "recipe-gate urls " + quote(file), output: "json" },
       };
     }),
