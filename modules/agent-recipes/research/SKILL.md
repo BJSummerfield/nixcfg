@@ -74,6 +74,11 @@ A child that fails inside the workflow can wake this session once with a
 silences only successful children and has no option for failed ones. Ignore
 the notice and keep waiting for the workflow's own completion.
 
+A child can also ask this session a question with a supervisor request while
+the run goes on. Do not answer the question itself: the script decides what
+happens to a stuck child. Reply that it should stop and write `blocked:` and
+its question as the first line of its report, then keep waiting.
+
 Read the receipt with the triage skill.
 
 ## Claude Code binding
