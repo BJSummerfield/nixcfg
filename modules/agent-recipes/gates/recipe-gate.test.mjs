@@ -135,7 +135,8 @@ const gate = (...args) => {
   assert.equal(gate("size", small, "--window", "100000").json.split, 2);
 }
 
-// verdict: the two first lines decide; anything missing is invalid.
+// verdict: the opening lines decide, after any `# ` title and before the
+// next heading; anything missing is invalid.
 {
   const v = (text) => gate("verdict", write("review.md", text)).json;
   assert.deepEqual(v("Does what was asked: yes, as briefed.\nSound: yes, check passed.\n\n## Blocking\n"), {
@@ -152,6 +153,12 @@ const gate = (...args) => {
   assert.equal(v("Looks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "invalid");
   assert.equal(v("Does what was asked: maybe\nSound: yes\n").verdict, "invalid");
   assert.equal(v("").verdict, "invalid");
+  assert.equal(
+    v("# Review: t1\n\nDoes what was asked: yes. The diff adds the\nline the task names.\nSound: yes. The check passes.\n\n## Blocking findings\n").verdict,
+    "clean",
+  );
+  assert.equal(v("# Review\n\nLooks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "invalid");
+  assert.equal(v("Does what was asked: yes\n\n## Notes\n\nSound: yes\n").verdict, "invalid");
   const missing = gate("verdict", path.join(tmp, "absent.md"));
   assert.equal(missing.status, 0);
   assert.equal(missing.json.verdict, "invalid");

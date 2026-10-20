@@ -6,7 +6,9 @@
 //   urls <file>                    source list -> {ok, urls:[{url, angle, why, kind}]}
 //   extract <file> [--cap BYTES]   {ok, bytes, quotes, over_cap}; cap defaults to 24 KB
 //   size <dir> [--window N]        {bytes, est_tokens, split}; N defaults to 221184
-//   verdict <review.md>            {asked, sound, clean, verdict}
+//   verdict <review.md>            {asked, sound, clean, verdict}; read from the
+//                                  lines after any `# ` title and before the next
+//                                  heading, the first of them a verdict line
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //
@@ -153,11 +155,16 @@ function size(dir, flags) {
 function verdict(file) {
   const text = readIfExists(file);
   if (text === null) return { asked: null, sound: null, clean: false, verdict: "invalid", reason: "file missing" };
-  const lines = text
+  const all = text
     .split("\n")
     .map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""))
-    .filter((l) => l.trim())
-    .slice(0, 2);
+    .filter((l) => l.trim());
+  let start = 0;
+  while (start < all.length && /^# /.test(all[start])) start++;
+  let end = all.findIndex((l, i) => i > start && /^#/.test(l));
+  if (end < 0) end = all.length;
+  const opening = all.slice(start, end);
+  const lines = opening.length > 0 && /^(Does what was asked|Sound):/i.test(opening[0]) ? opening : [];
   const pick = (re) => {
     for (const line of lines) {
       const m = line.match(re);
