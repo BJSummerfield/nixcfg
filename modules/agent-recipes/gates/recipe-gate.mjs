@@ -11,6 +11,8 @@
 //                                  it, up to the next heading
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
+//   diagnosis <file> [--allow a,b] [--verdict yes]
+//                                  {ok, action, reason, verdict, owns:[], brief, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
 //                                  plan directory -> {ok, tasks:[{id, owns, reads,
 //                                  check, depends, thinking, est}], oversize:[id],
@@ -87,6 +89,16 @@
 // `sh -c` in the working directory; ok needs a passing report, at least one
 // commit, a clean tree, no outside files and check exit 0, and reason names
 // the first failure.
+//
+// diagnosis: reads the file a diagnose child writes when a step's output was
+// not accepted. From its first `action:` line up to the next heading it takes
+// `action:` (continue, retry, fix, replan or decide), `reason:` (one line),
+// `verdict:` (clean or needs-work, for a review that could not be read) and
+// `owns:` (extra repository paths a replanned task may change, or none). A
+// `## Brief` section holds the instructions for the next worker. ok needs an
+// action from --allow (default all five), a reason, a non-empty brief for fix
+// and replan, and with --verdict a verdict for continue; problem names what is
+// missing.
 //
 // integrate: reads the integration worktree at <dir>/integration, <dir>/pr.md
 // and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
@@ -546,11 +558,48 @@ function integrate(dir, flags) {
   return { ok: reasons.length === 0, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
 }
 
+const ACTIONS = ["continue", "retry", "fix", "replan", "decide"];
+const DIAGNOSIS_KEY = /^(action|reason|verdict|owns):[ \t]*(.*?)\s*$/i;
+
+function diagnosis(file, flags) {
+  const allowed = flags.allow ? String(flags.allow).split(",").map((a) => a.trim()) : ACTIONS;
+  const text = readIfExists(file);
+  const none = { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false };
+  if (text === null) return { ...none, problem: "file missing" };
+  const lines = text.split("\n").map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""));
+  const fields = {};
+  let start = lines.findIndex((l) => /^action:/i.test(l));
+  for (let i = start; start >= 0 && i < lines.length && !/^#/.test(lines[i]); i++) {
+    const m = lines[i].match(DIAGNOSIS_KEY);
+    if (m && !(m[1].toLowerCase() in fields)) fields[m[1].toLowerCase()] = m[2];
+  }
+  const briefAt = text.search(/^##\s+Brief\s*$/im);
+  const brief = briefAt >= 0 && text.slice(briefAt).replace(/^##\s+Brief\s*$/im, "").split(/^##\s/m)[0].trim().length > 0;
+  const action = (fields.action || "").toLowerCase().split(/\s/)[0] || null;
+  const verdictWord = (fields.verdict || "").toLowerCase().match(/^(clean|needs-work)\b/);
+  const out = {
+    ok: true,
+    action,
+    reason: fields.reason || "",
+    verdict: verdictWord ? verdictWord[1] : null,
+    owns: fields.owns && !/^none\b/i.test(fields.owns) ? pathList(fields.owns, true) : [],
+    brief,
+  };
+  let problem = null;
+  if (!action) problem = "no action line";
+  else if (!ACTIONS.includes(action)) problem = `unknown action ${action}`;
+  else if (!allowed.includes(action)) problem = `action ${action} is not allowed here (${allowed.join(", ")})`;
+  else if (!out.reason) problem = "no reason line";
+  else if ((action === "fix" || action === "replan") && !brief) problem = `action ${action} needs a ## Brief section`;
+  else if (action === "continue" && flags.verdict && !out.verdict) problem = "action continue needs a verdict line";
+  return problem ? { ...out, ok: false, problem } : out;
+}
+
 function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|plan|task|integrate <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|diagnosis|plan|task|integrate <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -564,6 +613,8 @@ function run(argv) {
       return angles(target);
     case "gaps":
       return gaps(target);
+    case "diagnosis":
+      return diagnosis(target, flags);
     case "plan":
       return plan(target, flags);
     case "task":

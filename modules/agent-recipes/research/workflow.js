@@ -2,6 +2,8 @@ const MAX_SOURCES = 12;
 const GAP_SOURCES = 6;
 const MAX_ANGLES = 4;
 const SYNTH_TOKENS = 70000;
+const MAX_HEALS = 2;
+const REASON_CHARS = 300;
 
 const dir = args.dir;
 const goal = args.goal;
@@ -13,8 +15,15 @@ const windowTokens = args.window || 221184;
 const childMs = args.childTimeoutMs || 480000;
 const bigMs = args.bigTimeoutMs || 2400000;
 
+const STEPS = {
+  synthesize: "the synthesis of the extracts into the requested output",
+  review: "the review of the deliverable against its findings",
+};
+
 const sources = [];
 const open = [];
+const healed = [];
+const decide = [];
 let children = 0;
 let gapRound = false;
 let nextK = 0;
@@ -34,6 +43,11 @@ function passed(result) {
 
 function sibling(file, tag) {
   return file.replace(/(\.md)?$/, "." + tag + "$1");
+}
+
+function short(text) {
+  const flat = String(text).replace(/\s+/g, " ").trim();
+  return flat.length > REASON_CHARS ? flat.slice(0, REASON_CHARS) + "..." : flat;
 }
 
 function retryItem(item) {
@@ -204,14 +218,139 @@ function okFiles(round) {
   return list;
 }
 
-function receipt(out) {
-  const counts = { ok: 0, failed: 0, over_cap: 0 };
+function counts() {
+  const c = { ok: 0, failed: 0, over_cap: 0 };
   sources.forEach(function (rec) {
-    if (rec.status === "ok") counts.ok++;
-    else if (rec.status === "over_cap") counts.over_cap++;
-    else counts.failed++;
+    if (rec.status === "ok") c.ok++;
+    else if (rec.status === "over_cap") c.over_cap++;
+    else c.failed++;
   });
-  return { output: out, sources: counts, open: open, gap_round: gapRound, children: children };
+  return c;
+}
+
+function board(stage) {
+  if (typeof emit !== "function") return;
+  emit({ stage: stage, sources: counts(), gap_round: gapRound, children: children, healed: healed, decide: decide });
+}
+
+function receipt(out) {
+  board("finished");
+  return { output: out, sources: counts(), healed: healed, decide: decide, open: open, gap_round: gapRound, children: children };
+}
+
+// A step whose output was not accepted goes to a diagnose child, which picks
+// one of the allowed actions; the cap and the signature check keep healing
+// from looping. The result is null when a person has to decide.
+const subject = { heals: 0, signatures: [], lastDiagnosis: null };
+
+function diagnose(step, signal, evidence, allowed) {
+  if (subject.heals >= MAX_HEALS) {
+    decide.push({ step: step, question: short(signal + " (still failing after " + MAX_HEALS + " recoveries)"), diagnosis: subject.lastDiagnosis });
+    return Promise.resolve(null);
+  }
+  subject.heals++;
+  const file = dir + "/diagnosis-" + subject.heals + ".md";
+  let command = "recipe-gate diagnosis " + quote(file) + " --allow " + quote(allowed.join(","));
+  if (allowed.indexOf("continue") >= 0) command += " --verdict yes";
+  const lines = [
+    "Diagnose a step whose output the script did not accept (the diagnosis variant).",
+    "Goal: " + goal,
+    "Requested output: " + format,
+    "Task directory: " + dir,
+    "Step: " + STEPS[step],
+    "What went wrong: " + short(signal),
+  ];
+  const shown = evidence.filter(Boolean);
+  if (shown.length) lines.push("Evidence: " + shown.join(", "));
+  if (subject.lastDiagnosis) lines.push("Earlier diagnosis: " + subject.lastDiagnosis);
+  if (allowed.indexOf("continue") >= 0) lines.push("With continue, give the verdict the review states.");
+  lines.push("Allowed actions: " + allowed.join(", "));
+  lines.push("Write the diagnosis to " + file);
+  board("diagnosing " + step);
+  return launch([
+    {
+      key: "diagnose-" + subject.heals,
+      agent: "reviewer",
+      task: lines.join("\n"),
+      output: file,
+      outputMode: "file-only",
+      maxRuntimeMs: childMs,
+      gate: { command: command, output: "json" },
+    },
+  ]).then(function (results) {
+    const result = results[0];
+    subject.lastDiagnosis = result.file;
+    let problem = null;
+    const d = result.structuredOutput;
+    if (!result.ok || !d) problem = "the diagnosis failed: " + (result.error || "no result");
+    else if (!d.ok) problem = "the diagnosis could not be read: " + d.problem;
+    else {
+      const signature = step + ":" + d.action + ":" + String(d.reason).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (subject.signatures.indexOf(signature) >= 0) problem = "the same diagnosis came back twice: " + d.reason;
+      else subject.signatures.push(signature);
+    }
+    if (problem) {
+      decide.push({ step: step, question: short(signal + "; " + problem), diagnosis: result.file });
+      return null;
+    }
+    if (d.action === "decide") {
+      decide.push({ step: step, question: short(d.reason), diagnosis: result.file });
+      return null;
+    }
+    healed.push({ step: step, action: d.action, reason: short(d.reason) });
+    return Object.assign({}, d, { file: result.file });
+  });
+}
+
+// Resolves to the deliverable's path, or null when a synthesizer failed.
+function synthesize(files, split, tag, out) {
+  if (split === 1) {
+    return launch([synthItem("synthesis" + tag, files.map(function (f) { return f.file; }), out, "synthesis")]).then(function (r) {
+      return r[0].ok ? r[0].file : null;
+    });
+  }
+  const partials = [];
+  const groups = groupFiles(files, split);
+  let chain = Promise.resolve();
+  groups.forEach(function (group, g) {
+    chain = chain.then(function () {
+      return launch([synthItem("synthesis-" + g + tag, group, dir + "/synthesis-" + g + tag + ".md", "partial")]).then(function (r) {
+        if (r[0].ok) partials.push(r[0].file);
+        else open.push("partial synthesis " + g + tag + " failed");
+      });
+    });
+  });
+  return chain.then(function () {
+    if (partials.length === 0) return null;
+    return launch([synthItem("synthesis-combine" + tag, partials, out, "combine")]).then(function (r) {
+      return r[0].ok ? r[0].file : null;
+    });
+  });
+}
+
+function reviewItem(n, file, files) {
+  return {
+    key: n === 1 ? "review" : "review-" + n,
+    agent: "reviewer",
+    task: [
+      "Review a research deliverable (the research variant).",
+      "Goal: " + goal,
+      "Requested output: " + format,
+      "Deliverable: " + deliverable,
+      "Findings it rests on:",
+    ]
+      .concat(
+        files.map(function (f) {
+          return "- " + f.file;
+        }),
+      )
+      .concat(["Write the report to " + file])
+      .join("\n"),
+    output: file,
+    outputMode: "file-only",
+    maxRuntimeMs: bigMs,
+    gate: { command: "recipe-gate gaps " + quote(file), output: "json" },
+  };
 }
 
 const anglesFile = dir + "/angles.md";
@@ -247,6 +386,7 @@ if (passed(planned)) {
 let gapAngles = [];
 
 for (let round = 0; round < 2; round++) {
+  board(round === 0 ? "searching" : "gap round: searching");
   const limit = round === 0 ? maxSources : Math.min(maxSources, GAP_SOURCES);
 
   const searches = await launch(
@@ -285,6 +425,7 @@ for (let round = 0; round < 2; round++) {
   });
   nextK += recs.length;
 
+  board(round === 0 ? "extracting" : "gap round: extracting");
   const first = recs.length ? await launch(recs.map(function (rec) { return extractItem(rec, "", ""); })) : [];
   const toSplit = [];
   recs.forEach(function (rec, j) {
@@ -348,57 +489,37 @@ for (let round = 0; round < 2; round++) {
     const est = Math.ceil(bytes / 4);
     const split = est <= 0.5 * windowTokens ? 1 : Math.max(2, Math.ceil(est / SYNTH_TOKENS));
 
-    if (split === 1) {
-      const r = (await launch([synthItem("synthesis", files.map(function (f) { return f.file; }), output, "synthesis")]))[0];
-      if (r.ok) deliverable = r.file;
-    } else {
-      const partials = [];
-      const groups = groupFiles(files, split);
-      for (let g = 0; g < groups.length; g++) {
-        const out = dir + "/synthesis-" + g + ".md";
-        const r = (await launch([synthItem("synthesis-" + g, groups[g], out, "partial")]))[0];
-        if (r.ok) partials.push(r.file);
-        else open.push("partial synthesis " + g + " failed");
-      }
-      if (partials.length > 0) {
-        const r = (await launch([synthItem("synthesis-combine", partials, output, "combine")]))[0];
-        if (r.ok) deliverable = r.file;
-      }
+    board("synthesizing");
+    deliverable = await synthesize(files, split, "", output);
+    if (!deliverable) {
+      const d = await diagnose("synthesize", "the synthesizer failed twice", [dir + "/raw/extract"], ["retry", "decide"]);
+      if (d) deliverable = await synthesize(files, split, "-2", sibling(output, "2"));
     }
     if (!deliverable) {
       open.push("the synthesizer failed, so there is no output");
       return receipt(null);
     }
 
-    const reviewFile = dir + "/review.md";
-    const review = (
-      await launch([
-        {
-          key: "review",
-          agent: "reviewer",
-          task: [
-            "Review a research deliverable (the research variant).",
-            "Goal: " + goal,
-            "Requested output: " + format,
-            "Deliverable: " + deliverable,
-            "Findings it rests on:",
-          ]
-            .concat(
-              files.map(function (f) {
-                return "- " + f.file;
-              }),
-            )
-            .concat(["Write the report to " + reviewFile])
-            .join("\n"),
-          output: reviewFile,
-          outputMode: "file-only",
-          maxRuntimeMs: bigMs,
-          gate: { command: "recipe-gate gaps " + quote(reviewFile), output: "json" },
-        },
-      ])
-    )[0];
-
-    const rg = review.ok ? review.structuredOutput : null;
+    let rg = null;
+    let reviewFile = null;
+    for (let n = 1; ; n++) {
+      board("reviewing");
+      reviewFile = n === 1 ? dir + "/review.md" : sibling(dir + "/review.md", String(n));
+      const review = (await launch([reviewItem(n, reviewFile, files)]))[0];
+      reviewFile = review.file;
+      rg = review.ok ? review.structuredOutput : null;
+      if (!rg) {
+        const d = await diagnose("review", "the reviewer failed: " + (review.error || "its gate did not run"), [review.file], ["retry", "decide"]);
+        if (d) continue;
+        break;
+      }
+      if (rg.verdict !== "invalid") break;
+      const d = await diagnose("review", "the review's verdict could not be read", [review.file], ["continue", "retry", "decide"]);
+      if (!d) break;
+      if (d.action === "retry") continue;
+      rg = Object.assign({}, rg, { verdict: d.verdict, clean: d.verdict === "clean" });
+      break;
+    }
     if (!rg) {
       open.push("the review failed or its gate did not run");
     } else {

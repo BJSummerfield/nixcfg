@@ -13,7 +13,7 @@ assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async func
 assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const run = (runs, args) => new AsyncFunction("runs", "args", source)(runs, Object.freeze(args));
+const run = (runs, args, emit) => new AsyncFunction("runs", "args", "emit", source)(runs, Object.freeze(args), emit);
 
 const src = (angle, n, kind) => ({ url: `https://example.com/${angle}/${n}`, angle, why: "w", kind });
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
@@ -22,6 +22,7 @@ const extractOk = (key, bytes = 50000) => ok(key, { ok: true, bytes, quotes: 3, 
 const extractRejected = (key) => ok(key, { ok: false, bytes: 100, quotes: 0, over_cap: false });
 const extractOver = (key) => ok(key, { ok: false, bytes: 30000, quotes: 5, over_cap: true });
 const urlList = (list) => ({ ok: list.length > 0, urls: list });
+const diagnosis = (action, reason, extra = {}) => ({ ok: true, action, reason, verdict: null, owns: [], brief: false, ...extra });
 
 function fake(respond) {
   const batches = [];
@@ -170,6 +171,8 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt, {
     output: "/t/d/out.updated.md",
     sources: { ok: 8, failed: 3, over_cap: 0 },
+    healed: [],
+    decide: [],
     open: [
       "source https://example.com/c/1: one half of the split failed",
       "source https://example.com/a/2: rejected (no passages)",
@@ -220,6 +223,8 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt, {
     output: "/t/e/out.md",
     sources: { ok: 2, failed: 0, over_cap: 1 },
+    healed: [],
+    decide: [],
     open: ["source https://example.com/a/0: over_cap"],
     gap_round: false,
     children: 12,
@@ -242,6 +247,8 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt, {
     output: null,
     sources: { ok: 0, failed: 0, over_cap: 0 },
+    healed: [],
+    decide: [],
     open: [
       "angles: the planner produced no usable list, so the goal was searched as one angle",
       "search main: no sources listed",
@@ -252,9 +259,10 @@ function assertUniqueOutputs(f) {
   });
 }
 
-// A synthesizer that fails twice leaves no output and no review.
-{
-  const f = fake((item) => {
+// One angle, one source; the synthesizer, the reviewer and the diagnosis
+// answer as the test says.
+const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "clean", clean: true, angles: [] }), diagnose = () => diagnosis("decide", "a person has to choose") } = {}) =>
+  fake((item) => {
     switch (item.agent) {
       case "planner":
         return ok(item.key, { ok: true, angles: [{ id: "a", question: "Q?" }] });
@@ -262,18 +270,80 @@ function assertUniqueOutputs(f) {
         return ok(item.key, urlList([src("a", 0, "primary")]));
       case "extractor":
         return extractOk(item.key, 1000);
-      case "synthesizer":
-        return failed(item.key, "engine");
+      case "synthesizer": {
+        const r = synth(item.key);
+        return typeof r === "string" ? failed(item.key, r) : ok(item.key, r);
+      }
+      case "reviewer": {
+        const r = item.key.startsWith("diagnose-") ? diagnose(item.key) : review(item.key);
+        return typeof r === "string" ? failed(item.key, r) : ok(item.key, r);
+      }
     }
     throw new Error(`unexpected agent ${item.agent}`);
   });
+
+// A synthesizer that fails twice goes to a diagnosis; one that asks a person
+// leaves no output and no review.
+{
+  const f = small({ synth: () => "engine" });
   const receipt = await run(f.runs, { dir: "/t/g", goal: "G", output: "/t/g/out.md" });
-  assert.deepEqual(keys(f.batches).slice(-2), [["synthesis"], ["synthesis-retry"]]);
+  assert.deepEqual(keys(f.batches).slice(-3), [["synthesis"], ["synthesis-retry"], ["diagnose-1"]]);
+  const d = f.batches.at(-1)[0];
+  assert.equal(d.agent, "reviewer");
+  assert.equal(d.output, "/t/g/diagnosis-1.md");
+  assert.equal(d.gate.command, "recipe-gate diagnosis '/t/g/diagnosis-1.md' --allow 'retry,decide'");
+  assert.match(d.task, /What went wrong: the synthesizer failed twice/);
+  assert.match(d.task, /Evidence: \/t\/g\/raw\/extract/);
   assert.equal(receipt.output, null);
   assert.deepEqual(receipt.open, ["the synthesizer failed, so there is no output"]);
-  assert.equal(receipt.children, 5);
-  assert.equal(f.batches.at(-1)[0].output, "/t/g/out.retry.md");
+  assert.deepEqual(receipt.decide, [{ step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
+  assert.equal(receipt.children, 6);
+  assert.equal(f.batches[f.batches.length - 2][0].output, "/t/g/out.retry.md");
   assertUniqueOutputs(f);
+}
+
+// One that says retry runs the synthesis once more, beside the first output.
+{
+  const f = small({ synth: (key) => (key === "synthesis-2" ? undefined : "engine"), diagnose: () => diagnosis("retry", "the engine restarted") });
+  const receipt = await run(f.runs, { dir: "/t/g", goal: "G", output: "/t/g/out.md" });
+  assert.deepEqual(keys(f.batches).slice(-4), [["synthesis-retry"], ["diagnose-1"], ["synthesis-2"], ["review"]]);
+  assert.equal(f.batches.at(-2)[0].output, "/t/g/out.2.md");
+  assert.equal(receipt.output, "/t/g/out.2.md");
+  assert.deepEqual(receipt.healed, [{ step: "synthesize", action: "retry", reason: "the engine restarted" }]);
+  assertUniqueOutputs(f);
+}
+
+// An unreadable review verdict goes to a diagnosis; continue keeps the
+// review's gaps, so the gap round still runs.
+{
+  const f = small({
+    review: (key) => (key === "review" ? { ok: true, verdict: "invalid", clean: false, angles: [{ id: "x", question: "X?" }] } : undefined),
+    diagnose: () => diagnosis("continue", "the verdict is under a title", { verdict: "clean" }),
+  });
+  const receipt = await run(f.runs, { dir: "/t/h", goal: "G", output: "/t/h/out.md" });
+  assert.deepEqual(keys(f.batches).slice(4, 7), [["review"], ["diagnose-1"], ["search-gap-x"]]);
+  assert.equal(f.batches[5][0].gate.command, "recipe-gate diagnosis '/t/h/diagnosis-1.md' --allow 'continue,retry,decide' --verdict yes");
+  assert.equal(receipt.gap_round, true);
+  assert.deepEqual(receipt.open.filter((o) => /review/.test(o)), []);
+}
+
+// A reviewer that fails twice goes to a diagnosis; retry reviews again into a
+// new file, and the board follows the stages.
+{
+  const emits = [];
+  const f = small({
+    review: (key) => (key.startsWith("review-2") ? { ok: true, verdict: "clean", clean: true, angles: [] } : "boom"),
+    diagnose: () => diagnosis("retry", "an engine error"),
+  });
+  const receipt = await run(f.runs, { dir: "/t/i", goal: "G", output: "/t/i/out.md" }, (v) => emits.push(JSON.parse(JSON.stringify(v))));
+  assert.deepEqual(keys(f.batches).slice(4), [["review"], ["review-retry"], ["diagnose-1"], ["review-2"]]);
+  assert.equal(f.batches[7][0].output, "/t/i/review.2.md");
+  assert.deepEqual(receipt.open, []);
+  assert.deepEqual(
+    emits.map((e) => e.stage),
+    ["searching", "extracting", "synthesizing", "reviewing", "diagnosing review", "reviewing", "finished"],
+  );
+  assert.deepEqual(emits.at(-1).sources, { ok: 1, failed: 0, over_cap: 0 });
 }
 
 // A path with a quote is shell-escaped in the gate commands.

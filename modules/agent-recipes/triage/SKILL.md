@@ -16,11 +16,12 @@ here. It follows these rules:
 | Either half is still over 24 KB or fails | Records the source as over the cap or failed |
 | The notes exceed half the window | One synthesizer per angle group, then one to combine them |
 | The reviewer lists open gaps | One gap round, then an update of the output |
+| A synthesizer or reviewer fails twice, or the verdict cannot be read | A diagnose child picks continue, retry or decide; at most two per run |
 | Anything else | Records it in `open` |
 
 ## Reading the receipt
 
-`{ output, sources: { ok, failed, over_cap }, open, gap_round, children }`
+`{ output, sources: { ok, failed, over_cap }, healed, decide, open, gap_round, children }`
 
 - `output` is null when no source was found, no extract passed its check or
   the synthesizer failed; `open` says which.
@@ -28,9 +29,13 @@ here. It follows these rules:
   search or angle that produced nothing, a gap the extra round could not
   close, or the review's verdict when it was not clean (see `review.md`).
 - `gap_round` true means one extra round already ran; there is no second.
+- `healed` lists what a diagnosis recovered, one line each; `decide` lists
+  the questions a diagnosis left for the user, each with its diagnosis file.
 
 ## What to tell the user
 
-Report the output path first. Then the counts, and each `open` entry in one
-line. A failed source or an unclosed gap is the user's call: a new research
-run, a narrower goal, or accepting the gap. Do not start another run unasked.
+Report the output path first. Then each `decide` question with its diagnosis
+file, the counts, what healed, and each `open` entry in one line. A `decide`
+question, a failed source or an unclosed gap is the user's call: a new
+research run, a narrower goal, or accepting the gap. Do not start another run
+unasked.

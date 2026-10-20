@@ -168,6 +168,28 @@ const gate = (...args) => {
   assert.equal(missing.json.verdict, "invalid");
 }
 
+// diagnosis: the action block from the first `action:` line to the next
+// heading, checked against --allow; fix and replan need a brief.
+{
+  const d = (text, ...flags) => gate("diagnosis", write("diagnosis.md", text), ...flags).json;
+  assert.deepEqual(
+    d("# Diagnosis\n\naction: replan\nreason: stage-test.sh belongs to another task.\nowns: `tests/a.sh`, ./b.nix\n\n## Brief\n\nOwn the test too.\n"),
+    { ok: true, action: "replan", reason: "stage-test.sh belongs to another task.", verdict: null, owns: ["tests/a.sh", "b.nix"], brief: true },
+  );
+  const cont = d("action: continue\nreason: the verdict sits under a heading.\nverdict: clean\n", "--allow", "continue,decide", "--verdict", "yes");
+  assert.equal(cont.ok, true);
+  assert.equal(cont.verdict, "clean");
+  assert.equal(d("action: continue\nreason: r\n", "--verdict", "yes").problem, "action continue needs a verdict line");
+  assert.equal(d("action: fix\nreason: r\n\n## Brief\n\n## Notes\nx\n").problem, "action fix needs a ## Brief section");
+  assert.match(d("action: replan\nreason: r\n\n## Brief\nx\n", "--allow", "continue,decide").problem, /not allowed/);
+  assert.equal(d("action: shrug\nreason: r\n").problem, "unknown action shrug");
+  assert.equal(d("action: decide\n").problem, "no reason line");
+  assert.equal(d("Nothing to see.\n").problem, "no action line");
+  assert.equal(d("action: decide\nreason: pick one\nowns: none\n").owns.length, 0);
+  assert.equal(d("action: retry\n\n## Why\nreason: late\n").problem, "no reason line");
+  assert.equal(gate("diagnosis", path.join(tmp, "absent.md")).json.problem, "file missing");
+}
+
 // angles: bullets of `- id | question`; repeats, bad ids and prose are ignored.
 {
   const f = write(
