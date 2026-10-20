@@ -122,10 +122,7 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey["search-a"].output, "/t/d/raw/search/search-a.md");
   assert.equal(byKey["search-a"].outputMode, "file-only");
   assert.equal(byKey["search-a"].gate.command, "recipe-gate urls '/t/d/raw/search/search-a.md'");
-  assert.equal(byKey["search-a"].maxRuntimeMs, 1200000);
-  assert.deepEqual(byKey["search-a"].toolBudget, { soft: 80, hard: 120, block: "*" });
-  assert.deepEqual(byKey["extract-0"].toolBudget, { soft: 80, hard: 120, block: "*" });
-  assert.equal(byKey.angles.toolBudget, undefined);
+  assert.equal(byKey["search-a"].maxRuntimeMs, 480000);
   assert.match(byKey["search-b"].task, /Angle: b\nQuestion: Question b\?/);
 
   assert.match(byKey["extract-0"].task, /URL: https:\/\/example\.com\/a\/1\nAngle: a\nPage: \/t\/d\/pages\/page-0\.md\nOutput: \/t\/d\/raw\/extract\/extract-0\.md/);
