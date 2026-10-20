@@ -2,6 +2,7 @@ const MAX_SOURCES = 12;
 const GAP_SOURCES = 6;
 const MAX_ANGLES = 4;
 const SYNTH_TOKENS = 70000;
+const SMALL_TOOL_BUDGET = { soft: 80, hard: 120, block: "*" };
 
 const dir = args.dir;
 const goal = args.goal;
@@ -130,6 +131,7 @@ function extractItem(rec, suffix, part) {
     output: file,
     outputMode: "file-only",
     maxRuntimeMs: childMs,
+    toolBudget: SMALL_TOOL_BUDGET,
     gate: { command: "recipe-gate extract " + quote(file), output: "json" },
   };
 }
@@ -259,6 +261,7 @@ for (let round = 0; round < 2; round++) {
         output: file,
         outputMode: "file-only",
         maxRuntimeMs: childMs,
+        toolBudget: SMALL_TOOL_BUDGET,
         gate: { command: "recipe-gate urls " + quote(file), output: "json" },
       };
     }),
