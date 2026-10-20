@@ -600,6 +600,21 @@ const gate = (...args) => {
 
   const plain = gateEnv("integrate", plan, "--tasks", "c:pi/c", "--branch", "implement/p");
   assert.equal(plain.tidied, undefined);
+
+  // The same command again, as when the integrating child ran it first: the
+  // tidied branch counts as merged by its recorded commit.
+  const again = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  assert.equal(again.ok, true, again.reasons.join("; "));
+  assert.deepEqual(again.merged, ["a", "c"]);
+  assert.deepEqual(again.tidied, ["a"]);
+  assert.equal(again.tidy_problems.length, 1);
+
+  // A merged branch that is gone without a record is not merged.
+  git(iw, "merge", "-q", "--no-edit", "pi/b");
+  git(repo, "worktree", "remove", wb);
+  git(repo, "branch", "-D", "pi/b");
+  const gone = gateEnv("integrate", plan, "--tasks", "a:pi/a,b:pi/b", "--branch", "implement/p");
+  assert.deepEqual(gone.unmerged, ["b"]);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
