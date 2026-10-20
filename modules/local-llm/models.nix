@@ -21,7 +21,6 @@
       };
 
       reasoning = true;
-      maxModelLen = 102400;
       headroom = 4096;
       maxTokens = 32768;
       sampling = {
@@ -49,7 +48,7 @@
           file = "qwen3_8_27b_nvfp4.ninfer";
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
-        maxContext = 163840;
+        maxContext = 225280;
         kvCapacity = "auto";
         maxConcurrency = 4;
         kvDtype = "k8v4";

@@ -44,7 +44,7 @@ in
       ".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
-        builtins.replaceStrings [ "@wideModel@" ] [ data.settings.subagents.defaultModel ]
+        builtins.replaceStrings [ "@subagentModel@" ] [ data.settings.subagents.defaultModel ]
           (builtins.readFile ./agents/core.md + "\n" + builtins.readFile ./AGENTS.md);
     }
     // lib.mapAttrs' (
