@@ -8,15 +8,13 @@ let
     input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
   };
 
-  narrowWindow = m: m.maxModelLen - m.headroom;
-  wideWindow = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
+  window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
 
   mkModel =
-    { window, label }:
     id: m:
     {
       inherit id;
-      name = m.displayName + label;
+      name = m.displayName;
       inherit (m) reasoning;
       contextWindow = window m;
       inherit (m) maxTokens;
@@ -24,10 +22,7 @@ let
     // thinkingMapOf m
     // inputsOf m;
 
-  narrowProvider = llm.provider;
-  wideProvider = "${llm.provider}-wide";
-
-  modelsFor = variant: map (name: mkModel variant name llm.models.${name}) llm.enabled;
+  modelsFor = map (name: mkModel name llm.models.${name}) llm.enabled;
 
   mkProvider = models: {
     inherit (llm) baseUrl;
@@ -182,10 +177,10 @@ in
       "-builtin:tool-search"
     ];
     model = {
-      provider = narrowProvider;
+      inherit (llm) provider;
       model = llm.default;
     };
-    defaultProvider = narrowProvider;
+    defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "medium";
     cacheWarming = "off";
@@ -195,7 +190,7 @@ in
     compaction.reserveTokens = 20480;
 
     subagents = {
-      defaultModel = qualified wideProvider llm.default;
+      defaultModel = qualified llm.provider llm.default;
       maxThinking = "xhigh";
       agentOverrides = builtins.mapAttrs override roles // {
         worker = {
@@ -220,16 +215,7 @@ in
   agentFiles = builtins.mapAttrs agentFile roles;
 
   models = {
-    providers = {
-      ${narrowProvider} = mkProvider (modelsFor {
-        window = narrowWindow;
-        label = "";
-      });
-      ${wideProvider} = mkProvider (modelsFor {
-        window = wideWindow;
-        label = " [wide]";
-      });
-    };
+    providers.${llm.provider} = mkProvider modelsFor;
   };
 
   imageBudget =
@@ -247,7 +233,7 @@ in
       "parallel-mcp"
     ];
     curatorTimeoutSeconds = 20;
-    summaryModel = qualified narrowProvider llm.default;
+    summaryModel = qualified llm.provider llm.default;
     toolActivation = "eager";
   };
 

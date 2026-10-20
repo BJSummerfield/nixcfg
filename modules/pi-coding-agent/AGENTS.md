@@ -18,8 +18,8 @@ above and this tail. Helpers never see it: they get the repository's
   a file first; a few KB inline arrives truncated.
 - Leave `model` out: each role's model, window, tools and thinking come from
   nix. The one exception is a task file that says `thinking: xhigh`: then
-  pass `model: "@wideModel@:xhigh"`, which keeps the wide window and raises
-  thinking for that helper only.
+  pass `model: "@subagentModel@:xhigh"`, which keeps the same model and
+  raises thinking for that helper only.
 - Implementers run with `worktree: true`, one managed worktree per task.
   Start parallel implementers a few seconds apart so the shared prompt
   prefix is cached once. The merge, the heavy checks and the PR text are an
