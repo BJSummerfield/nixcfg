@@ -135,7 +135,7 @@ const gate = (...args) => {
   assert.equal(gate("size", small, "--window", "100000").json.split, 2);
 }
 
-// verdict: the opening lines decide, after any `# ` title and before the
+// verdict: the first verdict line and the few after it decide, up to the
 // next heading; anything missing is invalid.
 {
   const v = (text) => gate("verdict", write("review.md", text)).json;
@@ -150,14 +150,18 @@ const gate = (...args) => {
   assert.equal(v("Does what was asked: no\nSound: yes\n").asked, "no");
   assert.equal(v("Does what was asked: yes\n").verdict, "invalid");
   assert.equal(v("Sound: yes\nDoes what was asked: yes\n").verdict, "clean");
-  assert.equal(v("Looks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "invalid");
+  assert.equal(v("Looks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "clean");
   assert.equal(v("Does what was asked: maybe\nSound: yes\n").verdict, "invalid");
   assert.equal(v("").verdict, "invalid");
   assert.equal(
     v("# Review: t1\n\nDoes what was asked: yes. The diff adds the\nline the task names.\nSound: yes. The check passes.\n\n## Blocking findings\n").verdict,
     "clean",
   );
-  assert.equal(v("# Review\n\nLooks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "invalid");
+  assert.equal(
+    v("# Review: t1\n\nDiff: `git diff a...b`\nTask: t1.md\n\n## Verdict\n\nDoes what was asked: yes, as specified.\nSound: yes, both gates pass.\n\n**Clean.**\n").verdict,
+    "clean",
+  );
+  assert.equal(v("Does what was asked: yes\na\nb\nc\nd\ne\nSound: yes\n").verdict, "invalid");
   assert.equal(v("Does what was asked: yes\n\n## Notes\n\nSound: yes\n").verdict, "invalid");
   const missing = gate("verdict", path.join(tmp, "absent.md"));
   assert.equal(missing.status, 0);
