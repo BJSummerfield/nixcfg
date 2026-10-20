@@ -1,4 +1,6 @@
 const MAX_REVISIONS = 2;
+const MAX_HEALS = 2;
+const REASON_CHARS = 300;
 
 const dir = args.dir;
 const goal = args.goal;
@@ -7,10 +9,18 @@ const repo = args.repo;
 const childMs = args.childTimeoutMs || 1200000;
 const bigMs = args.bigTimeoutMs || 2400000;
 
+const STEPS = {
+  plan: "the planner's run (plan.md, the task files and the plan check)",
+  review: "the review of the plan",
+};
+
 const open = [];
+const healed = [];
+const decide = [];
 let children = 0;
 let last = null;
 let reviewVerdict = null;
+let stage = "scouting";
 
 function quote(text) {
   return "'" + String(text).replace(/'/g, "'\\''") + "'";
@@ -18,6 +28,11 @@ function quote(text) {
 
 function sibling(file, tag) {
   return file.replace(/(\.md)?$/, "." + tag + "$1");
+}
+
+function short(text) {
+  const flat = String(text).replace(/\s+/g, " ").trim();
+  return flat.length > REASON_CHARS ? flat.slice(0, REASON_CHARS) + "..." : flat;
 }
 
 function retryItem(item) {
@@ -68,6 +83,19 @@ function one(item) {
 
 function list(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function board(next) {
+  stage = next;
+  if (typeof emit !== "function") return;
+  emit({
+    stage: stage,
+    tasks: last ? list(last.tasks).length : 0,
+    plan_ok: last ? Boolean(last.ok) : null,
+    review: reviewVerdict,
+    healed: healed,
+    decide: decide,
+  });
 }
 
 function planGateCommand() {
@@ -132,47 +160,116 @@ function onlyNoTasks(g) {
   );
 }
 
-function takeGate(result, what) {
-  if (!result.ok) {
-    open.push(what + " failed: " + (result.error || "failed"));
-    return false;
-  }
-  if (!result.structuredOutput) {
-    open.push(what + ": the plan check did not run");
-    return false;
-  }
+function gateProblem(result, what) {
+  if (!result.ok) return what + " failed: " + (result.error || "failed");
+  if (!result.structuredOutput) return what + ": the plan check did not run";
   last = result.structuredOutput;
-  return true;
+  return null;
 }
 
-function remaining(g) {
-  if (list(g.oversize).length) open.push("oversize: " + g.oversize.join(", "));
+function problems(g) {
+  const out = [];
+  if (list(g.oversize).length) out.push("oversize: " + g.oversize.join(", "));
   list(g.overlaps).forEach(function (o) {
-    open.push("overlap: " + o[0] + " and " + o[1] + " both own " + o[2]);
+    out.push("overlap: " + o[0] + " and " + o[1] + " both own " + o[2]);
   });
   list(g.cycles).forEach(function (c) {
-    open.push("cycle: " + c.join(" > "));
+    out.push("cycle: " + c.join(" > "));
   });
   list(g.missing).forEach(function (m) {
-    open.push("missing: " + m);
+    out.push("missing: " + m);
   });
+  return out;
 }
 
 function receipt() {
+  board("finished");
   return {
     plan_dir: dir,
     tasks: last ? list(last.tasks).length : 0,
     oversize: last ? list(last.oversize) : [],
     overlaps: last ? list(last.overlaps) : [],
     review: reviewVerdict,
+    healed: healed,
+    decide: decide,
     open: open,
     children: children,
   };
 }
 
-function reviewItem(key, file) {
+// A step whose output was not accepted goes to a diagnose child, which picks
+// one of the allowed actions; the cap and the signature check keep healing
+// from looping. The result is null when a person has to decide.
+const subject = { heals: 0, signatures: [], lastDiagnosis: null };
+
+function diagnose(step, signal, evidence, allowed) {
+  if (subject.heals >= MAX_HEALS) {
+    decide.push({ step: step, question: short(signal + " (still failing after " + MAX_HEALS + " recoveries)"), diagnosis: subject.lastDiagnosis });
+    return Promise.resolve(null);
+  }
+  subject.heals++;
+  const file = dir + "/diagnosis-" + subject.heals + ".md";
+  let command = "recipe-gate diagnosis " + quote(file) + " --allow " + quote(allowed.join(","));
+  if (allowed.indexOf("continue") >= 0) command += " --verdict yes";
+  const lines = [
+    "Diagnose a step whose output the script did not accept (the diagnosis variant).",
+    "Goal: " + goal,
+    "Input: " + input,
+    "Repository: " + repo,
+    "Plan directory: " + dir,
+    "Step: " + STEPS[step],
+    "What went wrong: " + short(signal),
+  ];
+  const shown = evidence.filter(Boolean);
+  if (shown.length) lines.push("Evidence: " + shown.join(", "));
+  if (subject.lastDiagnosis) lines.push("Earlier diagnosis: " + subject.lastDiagnosis);
+  if (allowed.indexOf("continue") >= 0) lines.push("With continue, give the verdict the review states.");
+  lines.push("Allowed actions: " + allowed.join(", "));
+  lines.push("Write the diagnosis to " + file);
+  board("diagnosing " + step);
+  return one({
+    key: "diagnose-" + subject.heals,
+    agent: "reviewer",
+    task: lines.join("\n"),
+    output: file,
+    outputMode: "file-only",
+    maxRuntimeMs: childMs,
+    gate: { command: command, output: "json" },
+  }).then(function (result) {
+    subject.lastDiagnosis = result.file;
+    let problem = null;
+    const d = result.structuredOutput;
+    if (!result.ok || !d) problem = "the diagnosis failed: " + (result.error || "no result");
+    else if (!d.ok) problem = "the diagnosis could not be read: " + d.problem;
+    else {
+      const signature = step + ":" + d.action + ":" + String(d.reason).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (subject.signatures.indexOf(signature) >= 0) problem = "the same diagnosis came back twice: " + d.reason;
+      else subject.signatures.push(signature);
+    }
+    if (problem) {
+      decide.push({ step: step, question: short(signal + "; " + problem), diagnosis: result.file });
+      return null;
+    }
+    if (d.action === "decide") {
+      decide.push({ step: step, question: short(d.reason), diagnosis: result.file });
+      return null;
+    }
+    healed.push({ step: step, action: d.action, reason: short(d.reason) });
+    return Object.assign({}, d, { file: result.file });
+  });
+}
+
+function fromDiagnosis(d) {
+  return "The diagnosis at " + d.file + " found: " + d.reason + " Follow its ## Brief section.";
+}
+
+let reviews = 0;
+
+function reviewItem() {
+  reviews++;
+  const file = reviews === 1 ? dir + "/review.md" : sibling(dir + "/review.md", String(reviews));
   return {
-    key: key,
+    key: reviews === 1 ? "review" : "review-" + reviews,
     agent: "reviewer",
     task: [
       "Review an implementation plan (the plan variant).",
@@ -191,14 +288,31 @@ function reviewItem(key, file) {
   };
 }
 
-function reviewed(result) {
-  if (!result.ok || !result.structuredOutput) {
-    open.push("the review failed or its gate did not run");
-    reviewVerdict = null;
-    return null;
-  }
-  reviewVerdict = result.structuredOutput.verdict;
-  return result;
+// Resolves to { verdict, file }, with verdict null when no review could be had.
+function review() {
+  board("reviewing");
+  return one(reviewItem()).then(function (result) {
+    if (!result.ok || !result.structuredOutput) {
+      return diagnose("review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]).then(function (d) {
+        return d ? review() : { verdict: null, file: result.file };
+      });
+    }
+    const verdict = result.structuredOutput.verdict;
+    if (verdict !== "invalid") return { verdict: verdict, file: result.file };
+    return diagnose("review", "the review's verdict could not be read", [result.file], ["continue", "retry", "decide"]).then(function (d) {
+      if (!d) return { verdict: null, file: result.file };
+      if (d.action === "retry") return review();
+      return { verdict: d.verdict, file: result.file };
+    });
+  });
+}
+
+let revisions = 0;
+
+function revise(job, extra) {
+  revisions++;
+  board("revising");
+  return one(plannerItem("revise-" + revisions, dir + "/revision-" + revisions + ".md", brief(" (revision " + revisions + job + ")", ["Revise the files in place."].concat(extra))));
 }
 
 const scoutFile = dir + "/scout.md";
@@ -220,39 +334,81 @@ let scoutNotes = "none: the scout failed, so look up the facts yourself";
 if (scouted.ok) scoutNotes = scouted.file;
 else open.push("scout failed: " + (scouted.error || "failed") + "; the planner worked without notes");
 
-const planned = await one(plannerItem("plan", dir + "/planner.md", brief("", ["Closing note: one line per task, then anything you guessed."])));
-
-if (!takeGate(planned, "the planner")) return receipt();
-
-let revisions = 0;
-while (!last.ok && !onlyNoTasks(last) && revisions < MAX_REVISIONS) {
-  revisions++;
-  const revised = await one(
-    plannerItem("revise-" + revisions, dir + "/revision-" + revisions + ".md", brief(" (revision " + revisions + ")", ["Revise the files in place."].concat(findingLines(last)))),
-  );
-  if (!takeGate(revised, "revision " + revisions)) break;
-}
-
-const reviewFile = dir + "/review.md";
-let verdict = reviewed(await one(reviewItem("review", reviewFile)));
-
-if (verdict && reviewVerdict === "needs-work") {
-  const fixed = await one(
-    plannerItem(
-      "revise-review",
-      dir + "/revision-review.md",
-      brief(" (revision after review)", ["Revise the files in place. Address the blocking findings of the review at " + verdict.file + "; leave small findings."]),
-    ),
-  );
-  if (takeGate(fixed, "the revision after review") && last.ok) {
-    verdict = reviewed(await one(reviewItem("review-2", sibling(reviewFile, "2"))));
+board("planning");
+const closing = "Closing note: one line per task, then anything you guessed.";
+let planned = await one(plannerItem("plan", dir + "/planner.md", brief("", [closing])));
+let problem = gateProblem(planned, "the planner");
+if (problem) {
+  const d = await diagnose("plan", problem, [planned.file, scoutFile], ["retry", "decide"]);
+  if (d) {
+    board("planning");
+    planned = await one(plannerItem("plan-2", dir + "/planner-2.md", brief("", [closing, "An earlier attempt did not finish. " + fromDiagnosis(d)])));
+    problem = gateProblem(planned, "the planner");
+  }
+  if (problem) {
+    open.push(problem);
+    return receipt();
   }
 }
 
-if (verdict && reviewVerdict !== "clean") {
-  open.push("review verdict " + reviewVerdict + "; see " + verdict.file);
+let lastPlanFile = planned.file;
+while (!last.ok && !onlyNoTasks(last) && revisions < MAX_REVISIONS) {
+  const revised = await revise("", findingLines(last));
+  problem = gateProblem(revised, "revision " + revisions);
+  if (problem) {
+    open.push(problem);
+    break;
+  }
+  lastPlanFile = revised.file;
 }
 
-if (!last.ok) remaining(last);
+if (!last.ok && !onlyNoTasks(last) && !problem) {
+  const d = await diagnose(
+    "plan",
+    "the plan check still fails after " + revisions + " revisions: " + problems(last).join("; "),
+    [dir + "/plan.md", lastPlanFile],
+    ["fix", "decide"],
+  );
+  if (d) {
+    const revised = await revise(", from a diagnosis", [fromDiagnosis(d)].concat(findingLines(last)));
+    problem = gateProblem(revised, "revision " + revisions);
+    if (problem) open.push(problem);
+  }
+}
+
+let verdict = await review();
+reviewVerdict = verdict.verdict;
+
+if (reviewVerdict === "needs-work") {
+  const fixed = await revise(" after review", ["Address the blocking findings of the review at " + verdict.file + "; leave small findings."]);
+  problem = gateProblem(fixed, "the revision after review");
+  if (problem) open.push(problem);
+  else if (last.ok) {
+    verdict = await review();
+    reviewVerdict = verdict.verdict;
+    if (reviewVerdict === "needs-work") {
+      const d = await diagnose("plan", "the plan still needs work after a revision for its review", [verdict.file, dir + "/plan.md"], ["fix", "decide"]);
+      if (d) {
+        const again = await revise(", from a diagnosis", [fromDiagnosis(d), "The latest review is " + verdict.file + "."]);
+        problem = gateProblem(again, "revision " + revisions);
+        if (problem) open.push(problem);
+        else if (last.ok) {
+          verdict = await review();
+          reviewVerdict = verdict.verdict;
+        }
+      }
+    }
+  }
+}
+
+if (reviewVerdict !== "clean") {
+  open.push(reviewVerdict === null ? "no review verdict; see " + verdict.file : "review verdict " + reviewVerdict + "; see " + verdict.file);
+}
+
+if (!last.ok) {
+  problems(last).forEach(function (p) {
+    open.push(p);
+  });
+}
 
 return receipt();

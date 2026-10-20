@@ -46,11 +46,11 @@ answers, the check to run, and the output path.
   tasks, so judge what it cannot: does the plan solve the goal and the input's
   problem, does each task's `check` exist in the repository's `AGENTS.md`, is
   it light and does it exit nonzero when the change is missing or wrong (one
-  that only prints passes any edit and is blocking), do `owns` and `reads` name the files the change needs, could a
-  reviewer reject each task on its own, does the plan avoid the changes the
-  repository forbids, and are the heavy checks left to the end. Same two
-  verdict lines first; a blocking finding names the task id and the smallest
-  change to the plan.
+  that only prints passes any edit and is blocking), do `owns` and `reads`
+  name the files the change needs, could a reviewer reject each task on its
+  own, does the plan avoid the changes the repository forbids, and are the
+  heavy checks left to the end. Same two verdict lines first; a blocking
+  finding names the task id and the smallest change to the plan.
 - Research deliverable: the brief names the goal, the requested output, the
   deliverable and the findings files it rests on. Your check is the sources:
   `grep` at least five quoted passages from the deliverable in the findings
