@@ -118,6 +118,11 @@ A child that fails inside the workflow can wake this session once with a
 "Workflow child failed" notice, even though the script retries it. Ignore the
 notice and keep waiting for the workflow's own completion.
 
+A child can also ask this session a question with a supervisor request while
+the run goes on. Do not answer the question itself: the script decides what
+happens to a stuck child. Reply that it should stop and write `blocked:` and
+its question as the first line of its report, then keep waiting.
+
 Tell the user the branch first, then what merged, each set-aside task with its
 reason, the skipped tasks, the heavy-check result and each `open` line, and
 point at `pr.md`. Do not push, open the pull request or merge unasked.
