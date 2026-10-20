@@ -89,6 +89,11 @@ in
       direnv
     ]);
 
+  # claude auth login must be run as the agent user: a root login writes
+  # root-owned credentials into $CLAUDE_CONFIG_DIR that agent cannot read.
+  # From the host:
+  #   sudo nixos-container run devbox -- runuser -u agent -- \
+  #     env CLAUDE_CONFIG_DIR=/home/agent/.claude-state claude auth login
   environment.sessionVariables = {
     CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
     DISABLE_AUTOUPDATER = "1";
