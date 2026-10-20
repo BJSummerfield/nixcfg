@@ -41,7 +41,11 @@ Paths are relative to the repository root. A file the task creates is listed
 in `owns`. Then the body: goal (one sentence); Interfaces (what it consumes
 from and produces for neighbouring tasks: names, signatures, values); out of
 scope; the output of the check that counts as passing, and whether it is
-expected to fail before the change; acceptance. A task is the smallest piece
+expected to fail before the change; acceptance. The check decides by its exit
+status: it exits nonzero when the change is missing or wrong. A command that
+only prints, such as an evaluation of a file's text or an expression that
+prints one word or another, is not a check; pipe it into `grep -q` for the
+expected text, or pick another command. A task is the smallest piece
 a reviewer could reject on its own. A spec longer than the change it
 describes has written the code; cut it.
 
