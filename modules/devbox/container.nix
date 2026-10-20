@@ -105,12 +105,14 @@ in
         imports = [
           ../direnv/home.nix
           ../pi-coding-agent/home.nix
+          ../agent-recipes/default.nix
         ];
         home.stateVersion = "26.05";
 
         mine.user = {
           direnv.enable = true;
           pi-coding-agent.enable = true;
+          agent-recipes.enable = true;
         };
 
         programs.pi-coding-agent.package = null;
@@ -141,6 +143,8 @@ in
             commit.gpgSign = true;
           };
         };
+
+        home.file.".claude-state/CLAUDE.md".source = ./writing.md;
 
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"

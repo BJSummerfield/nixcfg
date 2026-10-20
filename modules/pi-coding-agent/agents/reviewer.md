@@ -43,6 +43,13 @@ answers, the check to run, and the output path.
 - Plan review: does the plan solve the issue's problem, are the tasks
   disjoint and small enough to review alone, is every task check light, does
   it avoid the ineligible changes. Same two verdict lines.
-- Builder check: read only `plan.md` and the drafts; list the questions a
-  builder would still need answered, each with the answer you would
-  recommend, or write `nothing important left`.
+- Research deliverable: the brief names the goal, the requested output, the
+  deliverable and the findings files it rests on. Your check is the sources:
+  `grep` at least five quoted passages from the deliverable in the findings
+  files, and read the findings for what the goal needs that the deliverable
+  leaves out. Judge whether the first section answers the goal and every
+  claim carries a URL and a quotation or location. Then add a section
+  `## Open gaps` listing what the goal needs and no finding covers, one
+  bullet per gap, `- <id> | <question a searcher can answer>`, with a short
+  lowercase id of letters, digits, `-` or `_`; write `none` when there are no
+  gaps. Gaps are questions, not findings.

@@ -223,6 +223,17 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node budget-valve.test.mjs
         touch $out
       '';
+  pi-save-page =
+    pkgs.runCommand "pi-save-page"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/pi-coding-agent/extensions/save-page.js} save-page.js
+        cp ${../modules/pi-coding-agent/extensions/save-page.test.mjs} save-page.test.mjs
+        node save-page.test.mjs
+        touch $out
+      '';
   # The resume card replaces pi's default summariser with a fixed template on
   # every compaction. Its input (session_before_compact's payload shape) is
   # pi's, not ours, so pinning it here only proves the template, not pi's side.
@@ -235,6 +246,39 @@ evalAll "nixos" inputs.self.nixosConfigurations
         cp ${../modules/pi-coding-agent/extensions/resume-card.js} resume-card.js
         cp ${../modules/pi-coding-agent/extensions/resume-card.test.mjs} resume-card.test.mjs
         node resume-card.test.mjs
+        touch $out
+      '';
+  pi-recipe-gate =
+    pkgs.runCommand "pi-recipe-gate"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/agent-recipes/gates/recipe-gate.mjs} recipe-gate.mjs
+        cp ${../modules/agent-recipes/gates/recipe-gate.test.mjs} recipe-gate.test.mjs
+        node recipe-gate.test.mjs
+        touch $out
+      '';
+  pi-recipe-research =
+    pkgs.runCommand "pi-recipe-research"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/agent-recipes/research/workflow.js} workflow.js
+        cp ${../modules/agent-recipes/research/workflow.test.mjs} workflow.test.mjs
+        node workflow.test.mjs
+        touch $out
+      '';
+  pi-recipe-sizing =
+    pkgs.runCommand "pi-recipe-sizing"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        cp ${../modules/agent-recipes/sizing/recipe-sizing.mjs} recipe-sizing.mjs
+        cp ${../modules/agent-recipes/sizing/recipe-sizing.test.mjs} recipe-sizing.test.mjs
+        node recipe-sizing.test.mjs
         touch $out
       '';
   # pi-subagents 0.78.0 leaves a run's detached bash tool tree orphaned when the

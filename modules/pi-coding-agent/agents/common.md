@@ -20,4 +20,8 @@
 - Anything written for GitHub (issue, PR, comment, commit message) is plain
   English a person understands alone: no run names, role names, severity
   codes or temp paths.
+- Code comments say only why, and only when the code cannot show it. They
+  are plain English a stranger can read alone: no run names, role names,
+  review rounds, temp paths or mention of the conversation. The repository's
+  own `AGENTS.md` may restrict comments further.
 - Cite file and line for every claim about code.
