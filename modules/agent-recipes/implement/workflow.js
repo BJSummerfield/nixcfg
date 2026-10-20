@@ -652,7 +652,7 @@ function integrationItem(attempt, diagnosisFile) {
     maxRuntimeMs: bigMs,
     worktree: false,
     gate: {
-      command: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch),
+      command: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
       output: "json",
     },
   };
@@ -698,6 +698,9 @@ if (!integrated.ok) {
   prText = g.pr_text || "";
   list(g.reasons).forEach(function (reason) {
     open.push("integration: " + reason);
+  });
+  list(g.tidy_problems).forEach(function (p) {
+    open.push("cleanup: " + p);
   });
 }
 
