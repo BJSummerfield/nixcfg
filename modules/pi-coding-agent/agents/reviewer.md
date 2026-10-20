@@ -65,4 +65,6 @@ answers, the check to run, and the output path.
   `## Open gaps` listing what the goal needs and no finding covers, one
   bullet per gap, `- <id> | <question a searcher can answer>`, with a short
   lowercase id of letters, digits, `-` or `_`; write `none` when there are no
-  gaps. Gaps are questions, not findings.
+  gaps. Gaps are questions, not findings. A gap is one whose answer could
+  change the first section; a check that would only confirm what the
+  findings already show is not a gap.
