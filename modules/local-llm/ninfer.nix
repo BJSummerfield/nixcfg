@@ -29,11 +29,6 @@ let
     flakeIgnore = [ "E501" ];
   } (builtins.readFile ./ninfer-metrics.py);
 
-  evalTools = import ./ninfer-eval.nix {
-    inherit lib pkgs ninfer;
-    artifact = artifactOf catalog.default catalog.models.${catalog.default}.ninfer.artifact;
-  };
-
   wanted = lib.optionalAttrs autoStart { wantedBy = [ "multi-user.target" ]; };
 
   systemctl = lib.getExe' pkgs.systemd "systemctl";
@@ -52,8 +47,6 @@ let
   '';
 in
 {
-  environment.systemPackages = evalTools;
-
   systemd.services.ninfer = ninferService // wanted;
 
   systemd.services.ninfer-watchdog = {

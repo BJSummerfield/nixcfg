@@ -1,3 +1,6 @@
+let
+  qwen38Context = 225280;
+in
 {
   provider = "redtruck";
   baseUrl = "https://llm.mist-gamma.ts.net:8443/v1";
@@ -21,7 +24,7 @@
       };
 
       reasoning = true;
-      maxModelLen = 102400;
+      maxModelLen = qwen38Context;
       headroom = 4096;
       maxTokens = 32768;
       sampling = {
@@ -49,7 +52,7 @@
           file = "qwen3_8_27b_nvfp4.ninfer";
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
-        maxContext = 163840;
+        maxContext = qwen38Context;
         kvCapacity = "auto";
         maxConcurrency = 4;
         kvDtype = "k8v4";
