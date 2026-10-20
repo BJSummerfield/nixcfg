@@ -22,10 +22,10 @@
 //                                  run in a task worktree -> {ok, reason, report:{status,
 //                                  why}, branch, worktree, head, base, clean, commits,
 //                                  files, outside, check:{command, exit, tail}}
-//   integrate <dir> --tasks id:branch,... [--branch NAME]
+//   integrate <dir> --tasks id:branch,... [--branch NAME] [--tidy yes]
 //                                  integration worktree at <dir>/integration ->
 //                                  {ok, reasons, branch, head, merged:[id], unmerged:[id],
-//                                  clean, heavy_check, pr_text}
+//                                  clean, heavy_check, pr_text[, tidied:[id], tidy_problems]}
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -104,7 +104,9 @@
 // and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
 // merged lists the task ids whose branch is an ancestor of its HEAD. ok needs
 // every task merged, a clean tree, a pull request text and heavy checks that
-// passed or were not needed.
+// passed or were not needed. With --tidy yes and ok true it then removes the
+// worktree and deletes the branch of every merged task, and prunes stale
+// worktree entries; tidied lists those tasks and tidy_problems what it kept.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -555,7 +557,39 @@ function integrate(dir, flags) {
   if (head && !clean) reasons.push("uncommitted changes in the integration worktree");
   if (!pr_text) reasons.push("pr.md missing or empty");
   if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
-  return { ok: reasons.length === 0, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
+  const ok = reasons.length === 0;
+  const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
+  if (flags.tidy === "yes" && ok) Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id))));
+  return out;
+}
+
+// Removes the worktree and the branch of every task merged into the
+// integration branch. `branch -d` refuses a branch that is not merged, so
+// nothing unmerged is lost.
+function tidy(cwd, pairs) {
+  const listing = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd, encoding: "utf8" }).stdout || "";
+  const where = {};
+  let current = null;
+  for (const line of listing.split("\n")) {
+    if (line.startsWith("worktree ")) current = line.slice(9);
+    else if (line.startsWith("branch refs/heads/") && current) where[line.slice(18)] = current;
+  }
+  const tidied = [];
+  const tidy_problems = [];
+  for (const [id, b] of pairs) {
+    if (where[b]) {
+      const r = spawnSync("git", ["worktree", "remove", where[b]], { cwd, encoding: "utf8" });
+      if (r.status !== 0) {
+        tidy_problems.push(`${id}: worktree ${where[b]} kept: ${(r.stderr || "").trim().split("\n")[0]}`);
+        continue;
+      }
+    }
+    const d = spawnSync("git", ["branch", "-d", b], { cwd, encoding: "utf8" });
+    if (d.status !== 0) tidy_problems.push(`${id}: branch ${b} kept: ${(d.stderr || "").trim().split("\n")[0]}`);
+    else tidied.push(id);
+  }
+  spawnSync("git", ["worktree", "prune"], { cwd });
+  return { tidied, tidy_problems };
 }
 
 function ownsList(raw) {

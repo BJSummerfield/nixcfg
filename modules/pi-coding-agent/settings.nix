@@ -317,6 +317,7 @@ in
 
   subagentConfig = {
     globalConcurrencyLimit = 3;
+    worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     disabledFeatures = [
       "agent-management"

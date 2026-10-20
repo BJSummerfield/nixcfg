@@ -36,8 +36,14 @@ to the plan:
 <dir>/receipt.md            the receipt
 ```
 
-Task worktrees and branches are managed by the runner and live beside the
-repository; every task branch stays until it is cleaned up by hand.
+Task worktrees are managed by the runner under
+`/var/tmp/pi-worktrees/<repository name>/`, one per implementer attempt, and
+that directory is emptied of anything older than 20 days. When the
+integration passes its check, the run removes the worktree and deletes the
+branch of every task it merged. What stays in the repository is the
+integration branch `implement/<name of the plan directory>`, which holds the
+finished work for you to push, and the branches of tasks that were set aside
+or replaced by a replan, which are not merged anywhere.
 
 ## What runs
 
@@ -70,7 +76,9 @@ repository; every task branch stays until it is cleaned up by hand.
    box-wide lock, and writes `pr.md` and `heavy.md`. `recipe-gate integrate`
    then confirms every finished branch is in the branch, nothing is
    uncommitted, `pr.md` is not empty and the heavy checks passed or were not
-   needed. It never merges into the main branch and never pushes.
+   needed, and with that it tidies the merged tasks (above); a worktree or
+   branch it could not remove is an `open` line. It never merges into the
+   main branch and never pushes.
 6. A child that fails by itself is retried once (a fix round is resumed again
    from the failed run). Whatever the script cannot accept goes to a diagnose
    child (a fresh reviewer, diagnosis variant) at once, for that task only:

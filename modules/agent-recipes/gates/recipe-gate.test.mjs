@@ -544,5 +544,63 @@ const gate = (...args) => {
   assert.equal(absent.json.reasons[0], "no integration worktree");
 }
 
+// integrate --tidy: after a passing check, merged tasks lose their worktree and
+// branch; an unmerged branch, a dirty worktree and a failing check keep them.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateEnv = (...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { env, encoding: "utf8" });
+    return r.stdout ? JSON.parse(r.stdout) : null;
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "f\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const task = (b, file) => {
+    const wt = path.join(dir(), "wt");
+    git(repo, "worktree", "add", "-q", "-b", b, wt, "main");
+    fs.writeFileSync(path.join(wt, file), b + "\n");
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", b);
+    return wt;
+  };
+  const wa = task("pi/a", "a.txt");
+  const wb = task("pi/b", "b.txt");
+  const wc = task("pi/c", "c.txt");
+  fs.writeFileSync(path.join(wc, "scratch.txt"), "left behind\n");
+  const plan = dir();
+  const iw = path.join(plan, "integration");
+  git(repo, "worktree", "add", "-q", "-b", "implement/p", iw, "main");
+  git(iw, "merge", "-q", "--no-edit", "pi/a");
+  git(iw, "merge", "-q", "--no-edit", "pi/c");
+  fs.writeFileSync(path.join(plan, "heavy.md"), "none\n");
+
+  const notOk = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  assert.equal(notOk.ok, false);
+  assert.equal(notOk.tidied, undefined);
+  assert.ok(fs.existsSync(wa));
+
+  fs.writeFileSync(path.join(plan, "pr.md"), "Title\n");
+  const r = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.tidied, ["a"]);
+  assert.equal(r.tidy_problems.length, 1);
+  assert.match(r.tidy_problems[0], /^c: worktree .* kept: /);
+  assert.ok(!fs.existsSync(wa));
+  assert.ok(fs.existsSync(wb) && fs.existsSync(wc));
+  const branches = git(repo, "branch", "--format=%(refname:short)").split("\n").sort();
+  assert.deepEqual(branches, ["implement/p", "main", "pi/b", "pi/c"]);
+  assert.ok(!git(repo, "worktree", "list").includes(wa));
+
+  const plain = gateEnv("integrate", plan, "--tasks", "c:pi/c", "--branch", "implement/p");
+  assert.equal(plain.tidied, undefined);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-gate: all assertions passed");

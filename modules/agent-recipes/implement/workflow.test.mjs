@@ -195,7 +195,7 @@ function assertUniqueOutputs(f) {
   assert.equal(k.integrate.worktree, false);
   assert.equal(k.integrate.output, "/t/p/integration.md");
   assert.deepEqual(k.integrate.gate, {
-    command: "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,d:pi/d' --branch 'implement/p'",
+    command: "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,d:pi/d' --branch 'implement/p' --tidy yes",
     output: "json",
   });
   assert.match(k.integrate.task, /Finished tasks, as id:branch: a:pi\/a,b:pi\/b,d:pi\/d/);
@@ -587,7 +587,7 @@ function assertUniqueOutputs(f) {
   ]);
   assert.match(byKey(f)["impl-b"].task, /: a \(branch pi\/a\)$/m);
   assert.match(byKey(f)["impl-c"].task, /: b \(branch pi\/b\)$/m);
-  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,c:pi/c' --branch 'implement/p'");
+  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,c:pi/c' --branch 'implement/p' --tidy yes");
   assert.deepEqual(receipt.merged, ["a", "b", "c"]);
 }
 
@@ -648,6 +648,22 @@ function assertUniqueOutputs(f) {
   });
 }
 
+// A task worktree the cleanup could not remove is reported, the run still ends well.
+{
+  const f = fake({
+    integrate: {
+      integrate: {
+        ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true,
+        heavy_check: "none", pr_text: "PR", tidied: [], tidy_problems: ["a: worktree /wt/a kept: contains untracked files"],
+      },
+    },
+  });
+  const receipt = await run(f.runs, base);
+  assert.match(byKey(f).integrate.gate.command, / --tidy yes$/);
+  assert.deepEqual(receipt.merged, ["a"]);
+  assert.deepEqual(receipt.open, ["cleanup: a: worktree /wt/a kept: contains untracked files"]);
+}
+
 // An integration with no result from the gate names the branches.
 {
   const f = fake({ integrate: { integrate: undefined } });
@@ -667,7 +683,7 @@ function assertUniqueOutputs(f) {
 {
   const f = fake();
   const receipt = await run(f.runs, { ...base, branch: "feature/x" });
-  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a' --branch 'feature/x'");
+  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a' --branch 'feature/x' --tidy yes");
   assert.match(byKey(f).integrate.task, /Integration branch: feature\/x/);
   assert.equal(receipt.branch, "feature/x");
 }
@@ -679,7 +695,7 @@ function assertUniqueOutputs(f) {
   const k = byKey(f);
   assert.equal(k.intake.gate.command, "recipe-gate plan '/tmp/it'\\''s' --repo '/r o'");
   assert.equal(k["impl-a"].gate.command.split(" --check ")[0], "recipe-gate task '/tmp/it'\\''s/impl-a.md'");
-  assert.match(k.integrate.gate.command, / --branch 'implement\/it-s'$/);
+  assert.match(k.integrate.gate.command, / --branch 'implement\/it-s' --tidy yes$/);
 }
 
 console.log("implement workflow: ok");
