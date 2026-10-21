@@ -11,6 +11,4 @@
   checklists or next steps; numbers and measurements go in the commit body.
   Like comments, they never mention agents, sessions, runs, roles, tools,
   review rounds, temp paths or the conversation.
-- An issue holds the problem and the acceptance criteria, nothing else. The
-  one addition is screenshots of a UI change, which go on the issue and not
-  in the pull request.
+- An issue holds the problem and the acceptance criteria, nothing else.
