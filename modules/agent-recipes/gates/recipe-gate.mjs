@@ -107,6 +107,10 @@
 // passed or were not needed. With --tidy yes and ok true it then removes the
 // worktree and deletes the branch of every merged task, and prunes stale
 // worktree entries; tidied lists those tasks and tidy_problems what it kept.
+// The commit of each branch is written to <dir>/tidied.json before the branch
+// is deleted, and a later run checks a missing branch by that commit, so
+// running the check again after a tidy gives the same answer. The integrating
+// child is shown this command and may well run it before the workflow does.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -543,7 +547,12 @@ function integrate(dir, flags) {
     .map((s) => [s.slice(0, s.indexOf(":")), s.slice(s.indexOf(":") + 1)]);
   const branch = git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const head = git(worktree, ["rev-parse", "HEAD"]);
-  const isMerged = ([, b]) => spawnSync("git", ["merge-base", "--is-ancestor", b, "HEAD"], { cwd: worktree }).status === 0;
+  const recordFile = path.join(dir, "tidied.json");
+  const record = JSON.parse(readIfExists(recordFile) ?? "{}");
+  const isMerged = ([, b]) => {
+    const tip = branchTip(worktree, b) ?? record[b];
+    return Boolean(tip) && spawnSync("git", ["merge-base", "--is-ancestor", tip, "HEAD"], { cwd: worktree }).status === 0;
+  };
   const merged = head ? pairs.filter(isMerged).map(([id]) => id) : [];
   const unmerged = pairs.map(([id]) => id).filter((id) => !merged.includes(id));
   const clean = head ? git(worktree, ["status", "--porcelain"]) === "" : false;
@@ -559,14 +568,15 @@ function integrate(dir, flags) {
   if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
   const ok = reasons.length === 0;
   const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
-  if (flags.tidy === "yes" && ok) Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id))));
+  if (flags.tidy === "yes" && ok) Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, record));
   return out;
 }
 
 // Removes the worktree and the branch of every task merged into the
 // integration branch. `branch -d` refuses a branch that is not merged, so
-// nothing unmerged is lost.
-function tidy(cwd, pairs) {
+// nothing unmerged is lost. A branch already gone was tidied by an earlier
+// run, since integrate only passes it here when record holds its commit.
+function tidy(cwd, pairs, recordFile, record) {
   const listing = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd, encoding: "utf8" }).stdout || "";
   const where = {};
   let current = null;
@@ -577,6 +587,11 @@ function tidy(cwd, pairs) {
   const tidied = [];
   const tidy_problems = [];
   for (const [id, b] of pairs) {
+    const tip = branchTip(cwd, b);
+    if (!tip) {
+      tidied.push(id);
+      continue;
+    }
     if (where[b]) {
       const r = spawnSync("git", ["worktree", "remove", where[b]], { cwd, encoding: "utf8" });
       if (r.status !== 0) {
@@ -584,12 +599,18 @@ function tidy(cwd, pairs) {
         continue;
       }
     }
+    record[b] = tip;
+    fs.writeFileSync(recordFile, JSON.stringify(record, null, 2) + "\n");
     const d = spawnSync("git", ["branch", "-d", b], { cwd, encoding: "utf8" });
     if (d.status !== 0) tidy_problems.push(`${id}: branch ${b} kept: ${(d.stderr || "").trim().split("\n")[0]}`);
     else tidied.push(id);
   }
   spawnSync("git", ["worktree", "prune"], { cwd });
   return { tidied, tidy_problems };
+}
+
+function branchTip(cwd, b) {
+  return git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${b}^{commit}`]);
 }
 
 function ownsList(raw) {
