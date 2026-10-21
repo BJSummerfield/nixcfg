@@ -639,7 +639,7 @@ function integrationItem(attempt, diagnosisFile) {
     "1. Create the branch and worktree from the repository's current HEAD without touching its checkout: git -C " + repo + " worktree add -b " + integrationBranch + " " + dir + "/integration HEAD. If they already exist, continue in them.",
     "2. Merge every finished branch into the integration branch in the order of plan.md's task list, dependencies first. You resolve conflicts; one you cannot resolve ends the job as blocked, naming both sides.",
     "3. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
-    "4. Write the pull request title and body to " + dir + "/pr.md: what changed and why, how it was checked, and the choices made without asking.",
+    "4. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
     "Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
     "Write the report to " + report,
   );

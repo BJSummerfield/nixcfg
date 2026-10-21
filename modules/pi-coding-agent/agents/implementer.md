@@ -57,6 +57,6 @@ You work where the brief says; the worktree check does not apply.
   and the full output, and write the result where the brief says. If that
   result file already records a heavy check as passed on the same HEAD, do
   not run it again. Never merge into the main branch and never push.
-- Pull request text: a title and body a person understands alone: what
-  changed and why, how it was checked, and any rulings helpers made without
-  asking, listed as choices made.
+- Pull request text: a title and a body that say what changed and why, as
+  the writing rules require, and nothing else. A ruling belongs there only
+  when it is part of why the change looks the way it does.
