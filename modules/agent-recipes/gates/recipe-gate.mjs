@@ -4,7 +4,18 @@
 // exit nonzero.
 //
 //   urls <file>                    source list -> {ok, urls:[{url, angle, why, kind}]}
-//   extract <file> [--cap BYTES]   {ok, bytes, quotes, over_cap}; cap defaults to 24 KB
+//   paths <file>                   locator list -> {ok, paths:[{path, range, kind, why}]}
+//   extract <file> [--cap BYTES] [--repo DIR]
+//                                  {ok, bytes, quotes, over_cap}; cap defaults to 24 KB.
+//                                  An extract with a `File: <path>` header line
+//                                  (and optional `Range: <start>-<end>`) comes
+//                                  from a repository file: every quote must
+//                                  appear, whitespace-normalized, in that file
+//                                  (in those lines when a range is given), the
+//                                  path is relative to --repo (default: the
+//                                  working directory), and the output gains
+//                                  file and missing:[quote]; ok also needs
+//                                  missing to be empty
 //   size <dir> [--window N]        {bytes, est_tokens, split}; N defaults to 221184
 //   verdict <review.md> [--run DIR --id ID]
 //                                  {asked, sound, clean, verdict}; read from the
@@ -45,6 +56,12 @@
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
 // ignored. A bullet that is not an http(s) URL is dropped.
+//
+// Path list format: a `## <angle id>` heading per angle, then one bullet per
+// location, `- <path>[:<start>-<end>] | primary|secondary | <one-line why>`;
+// the kind defaults to secondary and range is null when absent. A repeated
+// path and range is dropped (primary wins); anything else is ignored. ok is
+// false when no bullet parses.
 //
 // Extract format: every quote is a markdown blockquote (`> ...`); adjacent
 // `>` lines are one quote, a blank line ends it.
@@ -229,6 +246,42 @@ function countQuotes(text) {
   return quotes;
 }
 
+function paths(file) {
+  const text = readIfExists(file);
+  if (text === null) return { ok: false, paths: [], reason: "file missing" };
+  const seen = new Map();
+  for (const line of text.split("\n")) {
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    if (!bullet) continue;
+    const [rawPath, rawKind = "", ...rest] = bullet[1].split("|").map((s) => s.trim());
+    const loc = rawPath.replace(/^`|`$/g, "").match(/^(.+?)(?::(\d+)-(\d+))?$/);
+    if (!loc || !loc[1].trim()) continue;
+    const range = loc[2] === undefined ? null : { start: Number(loc[2]), end: Number(loc[3]) };
+    const kind = rawKind.toLowerCase() === "primary" ? "primary" : "secondary";
+    const key = `${loc[1]}\0${range ? `${range.start}-${range.end}` : ""}`;
+    const prior = seen.get(key);
+    if (prior) {
+      if (kind === "primary") prior.kind = "primary";
+    } else seen.set(key, { path: loc[1], range, why: rest.join(" | "), kind });
+  }
+  const list = [...seen.values()];
+  if (list.length === 0) return { ok: false, paths: [], reason: "no path parsed" };
+  return { ok: true, paths: list };
+}
+
+function quoteTexts(text) {
+  const out = [];
+  let current = null;
+  for (const line of text.split("\n")) {
+    const body = line.match(/^\s{0,3}>\s?(.*)$/);
+    if (body && body[1].trim()) {
+      if (current === null) out.push((current = []));
+      current.push(body[1]);
+    } else if (!body) current = null;
+  }
+  return out.map((q) => q.join(" ").replace(/\s+/g, " ").trim());
+}
+
 function extract(file, flags) {
   const cap = intFlag(flags, "cap", EXTRACT_CAP_BYTES);
   let bytes;
@@ -238,9 +291,21 @@ function extract(file, flags) {
     if (err.code === "ENOENT") return { ok: false, bytes: 0, quotes: 0, over_cap: false, reason: "file missing" };
     throw err;
   }
-  const quotes = countQuotes(fs.readFileSync(file, "utf8"));
+  const text = fs.readFileSync(file, "utf8");
+  const quotes = countQuotes(text);
   const over_cap = bytes > cap;
-  return { ok: quotes > 0 && !over_cap, bytes, quotes, over_cap };
+  const source = text.match(/^File:\s*`?(.+?)`?\s*$/m);
+  if (!source) return { ok: quotes > 0 && !over_cap, bytes, quotes, over_cap };
+  const range = text.match(/^Range:\s*(\d+)\s*-\s*(\d+)\s*$/m);
+  const full = readIfExists(path.resolve(flags.repo ?? ".", source[1]));
+  let missing = quoteTexts(text);
+  if (full !== null) {
+    let lines = full.split("\n");
+    if (range) lines = lines.slice(Math.max(0, Number(range[1]) - 1), Number(range[2]));
+    const haystack = lines.join(" ").replace(/\s+/g, " ");
+    missing = missing.filter((q) => !haystack.includes(q));
+  }
+  return { ok: quotes > 0 && !over_cap && missing.length === 0, bytes, quotes, over_cap, file: source[1], missing };
 }
 
 function dirBytes(dir) {
@@ -722,10 +787,12 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
+    case "paths":
+      return paths(target);
     case "extract":
       return extract(target, flags);
     case "size":
