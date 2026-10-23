@@ -6,22 +6,37 @@
 //   urls <file>                    source list -> {ok, urls:[{url, angle, why, kind}]}
 //   extract <file> [--cap BYTES]   {ok, bytes, quotes, over_cap}; cap defaults to 24 KB
 //   size <dir> [--window N]        {bytes, est_tokens, split}; N defaults to 221184
-//   verdict <review.md>            {asked, sound, clean, verdict}; read from the
+//   verdict <review.md> [--run DIR --id ID]
+//                                  {asked, sound, clean, verdict}; read from the
 //                                  first verdict line and the few lines after
-//                                  it, up to the next heading
+//                                  it, up to the next heading. With --run the
+//                                  working directory's linked worktree is
+//                                  recorded in <DIR>/run.json as kind review
+//                                  and the output gains branch and worktree
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //   diagnosis <file> [--allow a,b] [--verdict yes]
 //                                  {ok, action, reason, verdict, owns:[], brief, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
 //                                  plan directory -> {ok, tasks:[{id, owns, reads,
-//                                  check, depends, thinking, est}], oversize:[id],
+//                                  check, depends, research, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
 //                                  cycles:[[id, ...]]}
-//   task <report> --check CMD [--owns a,b] [--repo DIR]
+//   task <report> --check CMD [--owns a,b] [--repo DIR] [--base SHA] [--run DIR --id ID]
 //                                  run in a task worktree -> {ok, reason, report:{status,
 //                                  why}, branch, worktree, head, base, clean, commits,
 //                                  files, outside, check:{command, exit, tail}}
+//   pin <dir> --repo DIR           fix the run's base commit and ref in <dir>/run.json ->
+//                                  {ok, reason, repo, base, base_ref, reused}
+//   merge <worktree> --dir DIR --branch NAME [--tips id:branch,...] [--onto REF]
+//                    [--check CMD] [--kind K] [--id ID]
+//                                  merge the tips into the worktree, creating it from
+//                                  --onto (default the run's base ref) when absent ->
+//                                  {ok, reason, branch, head, tips, merged, conflict,
+//                                  resolved, check}
+//   abandon <dir> [--keep a,b]     remove every worktree, branch and the base ref the
+//                                  run recorded, except the kept branches ->
+//                                  {ok, removed, kept, problems}
 //   integrate <dir> --tasks id:branch,... [--branch NAME] [--tidy yes]
 //                                  integration worktree at <dir>/integration ->
 //                                  {ok, reasons, branch, head, merged:[id], unmerged:[id],
@@ -56,7 +71,7 @@
 //   reads: c, d       repository paths it must read; may be `none`
 //   check: <command>  one light check, the rest of the line
 //   depends: x, y     ids of tasks that must merge first; may be `none`
-//   thinking: medium | xhigh
+//   research: <one question a web searcher can answer>; optional, or `none`
 //
 // Paths are relative to --repo (default: the working directory), separated by
 // commas, backticks stripped, `./` prefixes and trailing slashes removed; a
@@ -74,7 +89,7 @@
 // whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
 // owning the same file, or a directory and a path inside it. `missing` has
 // one line per problem: plan.md absent, no tasks, a task whose id is not its
-// file name, owns empty, check empty, thinking invalid, a depends id with no
+// file name, owns empty, check empty, a depends id with no
 // task, or a reads path that neither exists nor is owned by a task.
 // `cycles` has one id path per dependency loop, first id repeated at the end.
 // ok is true only when all four are empty.
@@ -82,9 +97,10 @@
 // task: checks one implementation task, run in that task's worktree. The
 // first line of its report is `done`, `done, concerns`, `blocked: <why>` or
 // `failed: <why>`. The branch must hold the work as commits and nothing
-// uncommitted. base is where the task's own commits start: the last merge
-// commit of a dependency branch on the first-parent chain, else the merge base
-// with --repo's HEAD. outside lists changed files that are not under --owns,
+// uncommitted. base is where the task's own commits start: --base when given,
+// and the branch must contain it, else the merge base with --repo's HEAD.
+// With --run (and --id) the working directory's worktree is recorded in
+// <run>/run.json as kind task when it is a linked worktree. outside lists changed files that are not under --owns,
 // whose paths are normalised as in plan. The check is run once with
 // `sh -c` in the working directory; ok needs a passing report, at least one
 // commit, a clean tree, no outside files and check exit 0, and reason names
@@ -107,6 +123,8 @@
 // passed or were not needed. With --tidy yes and ok true it then removes the
 // worktree and deletes the branch of every merged task, and prunes stale
 // worktree entries; tidied lists those tasks and tidy_problems what it kept.
+// It then clears the review and dependency worktrees and the base ref the run
+// recorded, leaving the integration branch and any set-aside task worktrees.
 // The commit of each branch is written to <dir>/tidied.json before the branch
 // is deleted, and a later run checks a missing branch by that commit, so
 // running the check again after a tidy gives the same answer. The integrating
@@ -115,6 +133,8 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+
+import { abandon, merge, pin, record, where } from "./recipe-git.mjs";
 
 const EXTRACT_CAP_BYTES = 24 * 1024;
 const DEFAULT_WINDOW = 221184;
@@ -243,7 +263,7 @@ function size(dir, flags) {
 
 const VERDICT_SPAN = 6;
 
-function verdict(file) {
+function verdictOf(file) {
   const text = readIfExists(file);
   if (text === null) return { asked: null, sound: null, clean: false, verdict: "invalid", reason: "file missing" };
   const all = text
@@ -268,6 +288,36 @@ function verdict(file) {
   if (!asked || !sound) return { asked, sound, clean: false, verdict: "invalid" };
   const clean = asked === "yes" && sound === "yes";
   return { asked, sound, clean, verdict: clean ? "clean" : "needs-work" };
+}
+
+const PI_WORKTREE_BASE = "/var/tmp/pi-worktrees";
+
+function realOr(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function inside(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+// Abandon removes what is recorded, so only worktrees the run's own tooling
+// makes are recorded, never a session's checkout.
+function recordable(dir, here) {
+  if (!here.linked || !here.worktree) return false;
+  return [dir, PI_WORKTREE_BASE].some((r) => inside(realOr(r), here.worktree));
+}
+
+function verdict(file, flags) {
+  const out = verdictOf(file);
+  if (!flags.run) return out;
+  const here = where(process.cwd());
+  if (recordable(flags.run, here)) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
+  return { ...out, branch: here.branch, worktree: here.worktree };
 }
 
 const ANGLE = /^\s*[-*]\s+([A-Za-z0-9][A-Za-z0-9_-]*)\s*\|\s*(\S.*?)\s*$/;
@@ -303,13 +353,13 @@ function gaps(file) {
       section.push(line);
     }
   }
-  const v = verdict(file);
+  const v = verdictOf(file);
   return { ok: v.verdict !== "invalid", angles: angleBullets(section.join("\n")), ...v };
 }
 
 const PLAN_LIMIT = 100000;
 const SIZING_FALLBACK = { base: 7000, k_read: 1, growth_p90: 10000 };
-const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "thinking"];
+const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "research"];
 const TASK_HEADER = new RegExp(`^(${TASK_KEYS.join("|")}):[ \\t]*(.*?)\\s*$`);
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -412,11 +462,10 @@ function plan(dir, flags) {
       reads: pathList(h.reads, true),
       check: h.check ?? "",
       depends: pathList(h.depends),
-      thinking: h.thinking ?? "",
+      research: /^none$/i.test(h.research ?? "") ? "" : (h.research ?? ""),
     };
     if (task.owns.length === 0) missing.push(`${stem}: owns`);
     if (!task.check) missing.push(`${stem}: check`);
-    if (task.thinking !== "medium" && task.thinking !== "xhigh") missing.push(`${stem}: thinking must be medium or xhigh`);
     return task;
   });
 
@@ -488,12 +537,16 @@ function task(report, flags) {
   const worktree = git(cwd, ["rev-parse", "--show-toplevel"]);
   const head = git(cwd, ["rev-parse", "HEAD"]);
   const source = flags.repo ? git(flags.repo, ["rev-parse", "HEAD"]) : null;
-  const mergeBase = head && source ? git(cwd, ["merge-base", "HEAD", source]) : null;
-  const dependencyMerge = mergeBase ? git(cwd, ["rev-list", "--merges", "--first-parent", "-1", `${mergeBase}..HEAD`]) : null;
-  const base = dependencyMerge || mergeBase;
+  const pinned = flags.base ? (git(cwd, ["rev-parse", "--verify", "-q", `${flags.base}^{commit}`]) ?? flags.base) : null;
+  const base = pinned ?? (head && source ? git(cwd, ["merge-base", "HEAD", source]) : null);
+  const fromBase = !pinned || spawnSync("git", ["merge-base", "--is-ancestor", pinned, "HEAD"], { cwd }).status === 0;
+  if (flags.run && head) {
+    const here = where(cwd);
+    if (recordable(flags.run, here)) record(flags.run, { kind: "task", id: flags.id, branch: here.branch, worktree: here.worktree });
+  }
 
-  const commits = base ? Number(git(cwd, ["rev-list", "--count", `${base}..HEAD`])) : 0;
-  const changed = base ? (git(cwd, ["diff", "--name-only", base, "HEAD"]) ?? "").split("\n").filter(Boolean) : [];
+  const commits = base && fromBase ? Number(git(cwd, ["rev-list", "--count", `${base}..HEAD`])) : 0;
+  const changed = base && fromBase ? (git(cwd, ["diff", "--name-only", base, "HEAD"]) ?? "").split("\n").filter(Boolean) : [];
   const clean = git(cwd, ["status", "--porcelain"]) === "";
   const outside = owns.length ? changed.filter((f) => !owned(f, owns)) : [];
 
@@ -508,6 +561,7 @@ function task(report, flags) {
   if (!passing) reason = `report ${rep.status}: ${rep.why}`;
   else if (!head || !branch || branch === "HEAD") reason = "not on a branch of a git worktree";
   else if (!base) reason = "no base commit: pass --repo of the source checkout";
+  else if (!fromBase) reason = `branch does not start from the run's base ${base}`;
   else if (commits === 0) reason = "no commits on the branch";
   else if (!clean) reason = "uncommitted changes in the worktree";
   else if (outside.length) reason = `changed files outside owns: ${outside.slice(0, LIST_CAP).join(", ")}`;
@@ -548,9 +602,9 @@ function integrate(dir, flags) {
   const branch = git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const head = git(worktree, ["rev-parse", "HEAD"]);
   const recordFile = path.join(dir, "tidied.json");
-  const record = JSON.parse(readIfExists(recordFile) ?? "{}");
+  const tidied = JSON.parse(readIfExists(recordFile) ?? "{}");
   const isMerged = ([, b]) => {
-    const tip = branchTip(worktree, b) ?? record[b];
+    const tip = branchTip(worktree, b) ?? tidied[b];
     return Boolean(tip) && spawnSync("git", ["merge-base", "--is-ancestor", tip, "HEAD"], { cwd: worktree }).status === 0;
   };
   const merged = head ? pairs.filter(isMerged).map(([id]) => id) : [];
@@ -568,7 +622,10 @@ function integrate(dir, flags) {
   if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
   const ok = reasons.length === 0;
   const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
-  if (flags.tidy === "yes" && ok) Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, record));
+  if (flags.tidy === "yes" && ok) {
+    Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied));
+    out.tidy_problems.push(...abandon(dir, { kinds: ["review", "deps", "base"] }).problems);
+  }
   return out;
 }
 
@@ -665,7 +722,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|diagnosis|plan|task|integrate <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -674,7 +731,7 @@ function run(argv) {
     case "size":
       return size(target, flags);
     case "verdict":
-      return verdict(target);
+      return verdict(target, flags);
     case "angles":
       return angles(target);
     case "gaps":
@@ -685,6 +742,12 @@ function run(argv) {
       return plan(target, flags);
     case "task":
       return task(target, flags);
+    case "pin":
+      return pin(target, { repo: flags.repo });
+    case "merge":
+      return merge(target, { dir: flags.dir, branch: flags.branch, onto: flags.onto, tips: flags.tips, check: flags.check, kind: flags.kind, id: flags.id });
+    case "abandon":
+      return abandon(target, { keep: flags.keep });
     case "integrate":
       return integrate(target, flags);
     default:

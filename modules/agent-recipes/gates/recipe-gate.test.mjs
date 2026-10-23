@@ -270,7 +270,7 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(repo, "src/a.txt"), "x".repeat(4000));
   fs.writeFileSync(path.join(repo, "src/b.txt"), "y".repeat(8000));
   const sizing = write("sizing.json", JSON.stringify({ roles: { implementer: { base: 1000, k_read: 2, growth_p90: 500 } } }));
-  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none", thinking: "medium" };
+  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none" };
   const header = (h) =>
     Object.entries(h)
       .map(([k, v]) => `${k}: ${v}`)
@@ -285,15 +285,15 @@ const gate = (...args) => {
   };
   const planGate = (d, ...extra) => gate("plan", d, "--repo", repo, "--sizing", sizing, ...extra);
 
-  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", thinking: "xhigh" };
+  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", research: "Which flag does tool x 2.0 use to set the cache dir?" };
   const cleanDir = mkPlan({ t1: task(base), t2: task(t2) });
   const clean = planGate(cleanDir);
   assert.equal(clean.status, 0);
   assert.deepEqual(clean.json, {
     ok: true,
     tasks: [
-      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], thinking: "medium", est: 7500 },
-      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], thinking: "xhigh", est: 5500 },
+      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], research: "", est: 7500 },
+      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], research: "Which flag does tool x 2.0 use to set the cache dir?", est: 5500 },
     ],
     oversize: [],
     overlaps: [],
@@ -338,14 +338,13 @@ const gate = (...args) => {
 
   const wrong = planGate(
     mkPlan({
-      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`", thinking: "high" }),
+      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`" }),
       t2: task({ ...t2, reads: "new/c.txt" }),
     }),
   );
   assert.deepEqual(wrong.json.missing, [
     "t1: id must be the file name",
     "t1: owns",
-    "t1: thinking must be medium or xhigh",
     "t1: reads src/nope.txt, which does not exist",
   ]);
 
@@ -353,6 +352,16 @@ const gate = (...args) => {
   assert.equal(created.json.tasks[0].est, 1500);
   assert.deepEqual(created.json.tasks[0].reads, []);
   assert.equal(planGate(mkPlan({ t1: task({ ...base, owns: "src", reads: "none" }) })).json.tasks[0].est, 7500);
+
+  const research = (value) => planGate(mkPlan({ t1: task({ ...base, research: value }) })).json.tasks[0].research;
+  assert.equal(research("none"), "");
+  assert.equal(research("None"), "");
+  assert.equal(research(""), "");
+  assert.equal(research("Does lib y 3.1 accept a timeout option?"), "Does lib y 3.1 accept a timeout option?");
+  assert.equal(planGate(mkPlan({ t1: task(base) })).json.tasks[0].research, "");
+  const thinkingIgnored = planGate(mkPlan({ t1: task({ ...base, thinking: "high" }) }));
+  assert.equal(thinkingIgnored.json.ok, true);
+  assert.equal("thinking" in thinkingIgnored.json.tasks[0], false);
 
   const loose = "\n\n" + task(base, "check: not a header\n");
   const parsed = planGate(mkPlan({ t1: loose }));
@@ -477,13 +486,13 @@ const gate = (...args) => {
   assert.equal(taskGate(wt0, report("I did the thing"), "--check", "true").json.report.status, "invalid");
   assert.equal(taskGate(wt0, path.join(tmp, "absent.md"), "--check", "true").json.report.status, "missing");
 
-  // Dependency branches merged into the task are not part of its own diff.
+  // Dependency branches merged into the task are outside its own diff when --base names the merge.
   const dep = worktree("pi/dep");
   commit(dep, "d.txt", "d\n");
   const wt2 = worktree("pi/t2");
   git(wt2, "merge", "-q", "--no-ff", "--no-edit", "pi/dep");
   commit(wt2, "a.txt", "a3\n");
-  const merged = taskGate(wt2, report("done"), "--check", "true", "--owns", "a.txt");
+  const merged = taskGate(wt2, report("done"), "--check", "true", "--owns", "a.txt", "--base", git(wt2, "rev-parse", "HEAD~1"));
   assert.equal(merged.json.ok, true);
   assert.equal(merged.json.commits, 1);
   assert.deepEqual(merged.json.files, ["a.txt"]);
@@ -615,6 +624,142 @@ const gate = (...args) => {
   git(repo, "branch", "-D", "pi/b");
   const gone = gateEnv("integrate", plan, "--tasks", "a:pi/a,b:pi/b", "--branch", "implement/p");
   assert.deepEqual(gone.unmerged, ["b"]);
+}
+
+
+// pin, merge, abandon, task --base/--run, verdict --run and integrate --tidy
+// clearing recorded worktrees, through the CLI.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const commit = (wt, file, text, msg = file) => {
+    fs.writeFileSync(path.join(wt, file), text);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", msg);
+  };
+  const report = (text) => write("report.md", text);
+  const readRun = (d) => JSON.parse(fs.readFileSync(path.join(d, "run.json"), "utf8"));
+
+  // pin twice around a new commit returns the same base.
+  const run = dir();
+  const p1 = gateIn(repo, "pin", run, "--repo", repo);
+  assert.equal(p1.json.ok, true);
+  const base = git(repo, "rev-parse", "HEAD");
+  assert.equal(p1.json.base, base);
+  commit(repo, "later.txt", "later\n");
+  const p2 = gateIn(repo, "pin", run, "--repo", repo);
+  assert.equal(p2.json.base, base);
+  assert.equal(p2.json.reused, true);
+
+  // merge reports a conflict with its files, then ok after a hand resolution.
+  const t1 = path.join(dir(), "t1");
+  const t2 = path.join(dir(), "t2");
+  git(repo, "worktree", "add", "-q", "-b", "pi/t1", t1, p1.json.base_ref);
+  git(repo, "worktree", "add", "-q", "-b", "pi/t2", t2, p1.json.base_ref);
+  commit(t1, "f.txt", "from t1\n");
+  commit(t2, "f.txt", "from t2\n");
+  const deps = path.join(dir(), "deps");
+  const mergeArgs = ["merge", deps, "--dir", run, "--branch", "pi/deps", "--tips", "t1:pi/t1,t2:pi/t2", "--kind", "deps", "--id", "t3"];
+  const m1 = gateIn(repo, ...mergeArgs);
+  assert.equal(m1.status, 0);
+  assert.equal(m1.json.ok, false);
+  assert.deepEqual(m1.json.conflict, { id: "t2", files: ["f.txt"] });
+  assert.deepEqual(m1.json.merged, ["t1"]);
+  fs.writeFileSync(path.join(deps, "f.txt"), "both\n");
+  git(deps, "add", "f.txt");
+  git(deps, "commit", "-q", "--no-edit");
+  const m2 = gateIn(repo, ...mergeArgs);
+  assert.equal(m2.json.ok, true, m2.json.reason);
+  assert.deepEqual(m2.json.resolved, [{ id: "t2", files: ["f.txt"] }]);
+  assert.equal(gateIn(repo, "merge", path.join(dir(), "x"), "--dir", dir(), "--branch", "b").json.reason, "run not pinned");
+  assert.equal(m2.json.tips.length, 2);
+
+  // task --base: passes on a branch built from the base, fails on one that does not contain it.
+  const good = path.join(run, "good");
+  git(repo, "worktree", "add", "-q", "-b", "pi/good", good, p1.json.base_ref);
+  commit(good, "g.txt", "g\n");
+  const ok = gateIn(good, "task", report("done"), "--check", "true", "--base", base, "--run", run, "--id", "good");
+  assert.equal(ok.json.ok, true, ok.json.reason);
+  assert.equal(ok.json.base, base);
+  assert.equal(ok.json.commits, 1);
+  const late = path.join(run, "late");
+  git(repo, "worktree", "add", "-q", "-b", "pi/late", late, "main");
+  commit(late, "l.txt", "l\n");
+  const other = git(good, "rev-parse", "HEAD");
+  const bad = gateIn(late, "task", report("done"), "--check", "true", "--base", other, "--run", run, "--id", "late");
+  assert.equal(bad.json.ok, false);
+  assert.equal(bad.json.reason, `branch does not start from the run's base ${other}`);
+
+  // The ledger gains the task and review worktrees.
+  const review = path.join(run, "review", "good-1");
+  git(repo, "worktree", "add", "-q", "-b", "pi/review", review, "pi/good");
+  const v = gateIn(review, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "good");
+  assert.equal(v.json.verdict, "clean");
+  assert.equal(v.json.branch, "pi/review");
+  assert.equal(v.json.worktree, fs.realpathSync(review));
+  assert.equal(gate("verdict", report("Does what was asked: yes\nSound: yes\n")).json.branch, undefined);
+  const made = readRun(run).made.map((m) => `${m.kind}:${m.id}:${m.branch}`);
+  assert.deepEqual(made, ["deps:t3:pi/deps", "task:good:pi/good", "task:late:pi/late", "review:good:pi/review"]);
+
+  // A session's own linked worktree is never recorded, so abandon cannot remove it.
+  const session = path.join(dir(), "session");
+  git(repo, "worktree", "add", "-q", "-b", "session", session, "main");
+  fs.writeFileSync(path.join(session, "precious.txt"), "keep\n");
+  const fromSession = gateIn(session, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "s");
+  assert.equal(fromSession.json.verdict, "clean");
+  assert.ok(!readRun(run).made.some((m) => m.branch === "session"));
+
+  // A file the reviewer leaves untracked is not the implementer's dirt, but the same file there is.
+  fs.writeFileSync(path.join(review, "notes.txt"), "scratch\n");
+  const unaffected = gateIn(good, "task", report("done"), "--check", "true", "--base", base);
+  assert.equal(unaffected.json.clean, true);
+  assert.equal(unaffected.json.ok, true);
+  fs.rmSync(path.join(review, "notes.txt"));
+  fs.writeFileSync(path.join(good, "notes.txt"), "scratch\n");
+  const dirty = gateIn(good, "task", report("done"), "--check", "true", "--base", base);
+  assert.equal(dirty.json.clean, false);
+  assert.equal(dirty.json.ok, false);
+  fs.rmSync(path.join(good, "notes.txt"));
+
+  // integrate --tidy clears recorded review and deps worktrees and the base ref, keeping the integration branch.
+  const integration = path.join(run, "integration");
+  git(repo, "worktree", "add", "-q", "-b", "implement/x", integration, p1.json.base_ref);
+  git(integration, "merge", "-q", "--no-edit", "pi/good");
+  fs.writeFileSync(path.join(run, "pr.md"), "Title\n");
+  fs.writeFileSync(path.join(run, "heavy.md"), "none\n");
+  const tidy = gateIn(repo, "integrate", run, "--tasks", "good:pi/good", "--branch", "implement/x", "--tidy", "yes");
+  assert.equal(tidy.json.ok, true, tidy.json.reasons.join("; "));
+  assert.deepEqual(tidy.json.tidy_problems, []);
+  assert.ok(!fs.existsSync(review) && !fs.existsSync(deps));
+  const left = git(repo, "branch", "--format=%(refname:short)").split("\n");
+  assert.ok(left.includes("implement/x"));
+  assert.ok(!left.includes("pi/review") && !left.includes("pi/deps"));
+  assert.ok(left.includes("pi/late"), "set-aside task branches stay");
+  assert.ok(fs.existsSync(late));
+  assert.equal(spawnSync("git", ["rev-parse", "--verify", "-q", p1.json.base_ref], { cwd: repo }).status, 1);
+
+  // abandon removes what was recorded, except kept branches.
+  const gone = gateIn(repo, "abandon", run, "--keep", "pi/late");
+  assert.equal(gone.json.ok, true);
+  assert.deepEqual(gone.json.kept, ["pi/late"]);
+  assert.ok(!fs.existsSync(good) && fs.existsSync(late) === false);
+  assert.ok(!git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/good"));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/late"));
+  assert.ok(fs.existsSync(path.join(session, "precious.txt")));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("session"));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
