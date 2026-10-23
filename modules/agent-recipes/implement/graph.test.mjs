@@ -1,5 +1,5 @@
 /**
- * Dry run of the implement workflow script against a fake `runs`. Run by
+ * Dry run of the implement graph with the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (waves, briefs, gate
  * commands, review and fix rounds, set-aside and skipped tasks, retry,
  * integration, receipt); pi-subagents' semantics and the gates are not
@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const source = fs.readFileSync(new URL("./workflow.js", import.meta.url), "utf8");
+const source =
+  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
 assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
 assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
 
@@ -18,13 +19,13 @@ const run = (runs, args, emit) => new AsyncFunction("runs", "args", "emit", sour
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
 const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
 
-const spec = (id, depends = [], thinking = "medium") => ({
+const spec = (id, depends = [], research = undefined) => ({
   id,
   owns: [`${id}.nix`, `lib/${id}`],
   reads: [],
   check: `nixfmt --check ${id}.nix`,
   depends,
-  thinking,
+  ...(research ? { research } : {}),
   est: 1000,
 });
 const planOf = (tasks) => ({ ok: true, tasks, oversize: [], overlaps: [], missing: [], cycles: [] });
@@ -115,11 +116,11 @@ function assertUniqueOutputs(f) {
   assert.equal(new Set(outputs).size, outputs.length, "two children share an output path");
 }
 
-// Two waves. a is clean first time; b (xhigh) needs one fix round; c never
+// Two waves. a is clean first time; b needs one fix round; c never
 // gets clean and is set aside after two; d depends on a and b and runs; e
 // depends on c and is skipped.
 {
-  const plan = planOf([spec("a"), spec("b", [], "xhigh"), spec("c"), spec("d", ["a", "b"]), spec("e", ["c"])]);
+  const plan = planOf([spec("a"), spec("b", [], "which flag order?"), spec("c"), spec("d", ["a", "b"]), spec("e", ["c"])]);
   const f = fake({
     plan,
     review: {
@@ -129,7 +130,7 @@ function assertUniqueOutputs(f) {
       "review-c-3": needsWork,
     },
   });
-  const receipt = await run(f.runs, { ...base, model: "prov/mod" });
+  const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [
     ["intake"],
     ["impl-a", "impl-b", "impl-c"],
@@ -154,7 +155,6 @@ function assertUniqueOutputs(f) {
   assert.equal(k["impl-a"].worktree, true);
   assert.equal(k["impl-a"].output, "/t/p/impl-a.md");
   assert.equal(k["impl-a"].outputMode, "file-only");
-  assert.equal(k["impl-a"].model, undefined);
   assert.deepEqual(k["impl-a"].gate, {
     command: "recipe-gate task '/t/p/impl-a.md' --check 'nixfmt --check a.nix' --owns 'a.nix,lib/a' --repo '/r'",
     output: "json",
@@ -164,7 +164,11 @@ function assertUniqueOutputs(f) {
   assert.match(k["impl-a"].task, /Plan: \/t\/p\/plan\.md/);
   assert.match(k["impl-a"].task, /Write the report to \/t\/p\/impl-a\.md/);
   assert.doesNotMatch(k["impl-a"].task, /merge each/);
-  assert.equal(k["impl-b"].model, "prov/mod:xhigh");
+  assert.equal(k["impl-b"].model, undefined);
+  assert.match(k["impl-b"].task, /^Research notes for this task answer: which flag order\?\. They are under \/t\/p\/research\/b\/; read them before the first edit\.$/m);
+  assert.doesNotMatch(k["impl-a"].task, /Research notes/);
+  assert.match(k["impl-a"].task, /run `recipe-gate task .*`; if it reports a problem, fix the file and run it again before you finish\./);
+  assert.doesNotMatch(k.integrate.task, /if it reports a problem/);
   assert.match(k["impl-d"].task, /`git merge --no-ff --no-edit <branch>`: a \(branch pi\/a\), b \(branch pi\/b\)/);
 
   assert.equal(k["review-b-1"].agent, "reviewer");
@@ -224,7 +228,7 @@ function assertUniqueOutputs(f) {
     skipped: ["e"],
     heavy_check: "pass",
     healed: [],
-    decide: [{ id: "c", question: "a person has to choose", diagnosis: "/t/p/diagnosis-c-1.md" }],
+    decide: [{ id: "c", step: "review", question: "a person has to choose", diagnosis: "/t/p/diagnosis-c-1.md" }],
     open: [],
     children: 17,
     pr_text: "PR text",
@@ -307,7 +311,7 @@ function assertUniqueOutputs(f) {
     skipped: ["b"],
     heavy_check: null,
     healed: [],
-    decide: [{ id: "a", question: "a person has to choose", diagnosis: "/t/p/diagnosis-a-1.md" }],
+    decide: [{ id: "a", step: "implement", question: "a person has to choose", diagnosis: "/t/p/diagnosis-a-1.md" }],
     open: ["no task finished, so there is nothing to integrate"],
     children: 3,
     pr_text: "",
@@ -449,7 +453,7 @@ function assertUniqueOutputs(f) {
   });
   const receipt = await run(f.runs, base);
   assert.deepEqual(receipt.decide, [
-    { id: "b", question: "the revised task needs lib/a/x.nix, which task a owns and this task does not build on", diagnosis: "/t/p/diagnosis-b-1.md" },
+    { id: "b", step: "implement", question: "the revised task needs lib/a/x.nix, which task a owns and this task does not build on", diagnosis: "/t/p/diagnosis-b-1.md" },
   ]);
   assert.deepEqual(receipt.merged, ["a"]);
 }
@@ -512,7 +516,7 @@ function assertUniqueOutputs(f) {
   });
   const receipt = await run(f.runs, base);
   assert.deepEqual(receipt.decide, [
-    { id: "a", question: "the review's verdict could not be read; the diagnosis could not be read: no action line", diagnosis: "/t/p/diagnosis-a-1.md" },
+    { id: "a", step: "review", question: "the review's verdict could not be read; the diagnosis could not be read: no action line", diagnosis: "/t/p/diagnosis-a-1.md" },
   ]);
 }
 
@@ -547,7 +551,7 @@ function assertUniqueOutputs(f) {
     { id: "b", state: "pending", next: null, fixes: 0, heals: 0 },
   ]);
   assert.deepEqual(emits[1].tasks[0], { id: "a", state: "running", next: "review", fixes: 1, heals: 0 });
-  assert.deepEqual(emits.at(-1).tasks.map((x) => x.state), ["done", "done"]);
+  assert.deepEqual(emits.at(-1).merged, ["a", "b"]);
 }
 
 // A writer that reports its own work as not done is rejected by pi-subagents'
@@ -608,7 +612,7 @@ function assertUniqueOutputs(f) {
     skipped: [],
     heavy_check: null,
     healed: [],
-    decide: [{ id: "integration", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
+    decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
     open: ["integration failed: boom", "finished branches: a:pi/a"],
     children: 6,
     pr_text: "",
@@ -641,7 +645,7 @@ function assertUniqueOutputs(f) {
     skipped: [],
     heavy_check: "fail: red",
     healed: [],
-    decide: [{ id: "integration", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
+    decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
     open: ["integration: not merged: b", "integration: heavy checks: fail: red"],
     children: 7,
     pr_text: "PR",
@@ -671,14 +675,6 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt.open, ["the integration check did not run; finished branches: a:pi/a"]);
 }
 
-// xhigh without a model argument runs at the role's default and says so.
-{
-  const f = fake({ plan: planOf([spec("a", [], "xhigh")]) });
-  const receipt = await run(f.runs, base);
-  assert.equal(byKey(f)["impl-a"].model, undefined);
-  assert.deepEqual(receipt.open, ["a: the task asks for xhigh thinking and no model was given, so it ran at the role's default"]);
-}
-
 // The branch argument names the integration branch.
 {
   const f = fake();
@@ -698,4 +694,4 @@ function assertUniqueOutputs(f) {
   assert.match(k.integrate.gate.command, / --branch 'implement\/it-s' --tidy yes$/);
 }
 
-console.log("implement workflow: ok");
+console.log("implement graph: ok");
