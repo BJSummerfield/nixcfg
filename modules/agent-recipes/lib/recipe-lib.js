@@ -1,6 +1,9 @@
 // Shared by every recipe graph. Nix prepends this file to a graph to make the
 // installed workflow.js, because the workflow sandbox cannot import. Graphs
-// reach the harness only through `port`.
+// reach the harness only through `port`. A harness supplies runMany, runOne
+// and emit; the role table in nix supplies each agent's model, tools and
+// thinking, and the harness wakes the starting session once with the returned
+// receipt.
 
 const MAX_HEALS = 2;
 const REASON_CHARS = 300;
@@ -8,6 +11,11 @@ const REASON_CHARS = 300;
 const port = {
   runMany: function (items) {
     return runs.all(items);
+  },
+  runOne: function (item) {
+    return port.runMany([item]).then(function (results) {
+      return results[0];
+    });
   },
   emit: function (value) {
     if (typeof emit === "function") emit(value);
@@ -50,15 +58,15 @@ function node(key, agent, lines, output, opts) {
   const o = opts || {};
   const text = lines.slice();
   if (o.gate && o.selfGate !== false) {
-    text.push("When the file is written, run `" + o.gate + "`; if it reports a problem, fix the file and run it again before you finish.");
+    text.push("When the file is written, run `" + o.gate + "`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.");
   }
-  const item = {
-    key: key,
-    agent: agent,
+  const item = { key: key };
+  if (agent !== undefined) item.agent = agent;
+  Object.assign(item, {
     task: text.join("\n"),
     output: output,
     outputMode: "file-only",
-  };
+  });
   if (o.timeoutMs) item.maxRuntimeMs = o.timeoutMs;
   if (o.gate) {
     item.gate = { command: o.gate, output: "json" };
@@ -93,9 +101,9 @@ function stoppedItself(result) {
 
 // Runs items together; a child that failed on its own is run once more under
 // a sibling output path. Each result carries the file it wrote as `file`.
-function launch(items) {
+function launch(items, runFirst) {
   tally.children += items.length;
-  return port.runMany(items).then(function (first) {
+  return (runFirst || port.runMany)(items).then(function (first) {
     const merged = first.map(function (result, i) {
       return Object.assign({}, result, { file: items[i].output });
     });
@@ -119,7 +127,11 @@ function launch(items) {
 }
 
 function one(item) {
-  return launch([item]).then(function (results) {
+  return launch([item], function (items) {
+    return port.runOne(items[0]).then(function (result) {
+      return [result];
+    });
+  }).then(function (results) {
     return results[0];
   });
 }

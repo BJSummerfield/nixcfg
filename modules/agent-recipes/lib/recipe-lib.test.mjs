@@ -43,7 +43,7 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.deepEqual(gated, {
     key: "k",
     agent: "writer",
-    task: "Do it.\nOutput: /t/o.md\nWhen the file is written, run `recipe-gate x '/t/o.md'`; if it reports a problem, fix the file and run it again before you finish.",
+    task: "Do it.\nOutput: /t/o.md\nWhen the file is written, run `recipe-gate x '/t/o.md'`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.",
     output: "/t/o.md",
     outputMode: "file-only",
     maxRuntimeMs: 5,

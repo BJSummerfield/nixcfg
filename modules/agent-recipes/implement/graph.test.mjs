@@ -165,9 +165,9 @@ function assertUniqueOutputs(f) {
   assert.match(k["impl-a"].task, /Write the report to \/t\/p\/impl-a\.md/);
   assert.doesNotMatch(k["impl-a"].task, /merge each/);
   assert.equal(k["impl-b"].model, undefined);
-  assert.match(k["impl-b"].task, /^Research notes for this task answer: which flag order\?\. They are under \/t\/p\/research\/b\/; read them before the first edit\.$/m);
+  assert.match(k["impl-b"].task, /^Research notes gathered for this task, if any, answer: which flag order\?\. They are under \/t\/p\/research\/b\/; list that directory and read what is there before the first edit\.$/m);
   assert.doesNotMatch(k["impl-a"].task, /Research notes/);
-  assert.match(k["impl-a"].task, /run `recipe-gate task .*`; if it reports a problem, fix the file and run it again before you finish\./);
+  assert.match(k["impl-a"].task, /run `recipe-gate task .*`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed\./);
   assert.doesNotMatch(k.integrate.task, /if it reports a problem/);
   assert.match(k["impl-d"].task, /`git merge --no-ff --no-edit <branch>`: a \(branch pi\/a\), b \(branch pi\/b\)/);
 

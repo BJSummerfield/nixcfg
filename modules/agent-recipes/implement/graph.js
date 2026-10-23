@@ -139,7 +139,7 @@ function implementBrief(t, report) {
     "Task directory: " + dir,
   ];
   if (t.spec.research) {
-    lines.push("Research notes for this task answer: " + t.spec.research + ". They are under " + dir + "/research/" + t.id + "/; read them before the first edit.");
+    lines.push("Research notes gathered for this task, if any, answer: " + t.spec.research + ". They are under " + dir + "/research/" + t.id + "/; list that directory and read what is there before the first edit.");
   }
   if (t.replanBrief) {
     lines.push(
@@ -402,7 +402,7 @@ const intake = await one(
     "scout",
     ["Check that " + dir + "/plan.md can be read, then write the single word done to " + dir + "/intake.md."],
     dir + "/intake.md",
-    { gate: planGateCommand(), timeoutMs: childMs },
+    { gate: planGateCommand(), selfGate: false, timeoutMs: childMs },
   ),
 );
 

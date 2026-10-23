@@ -120,7 +120,7 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey.angles.output, "/t/d/angles.md");
   assert.equal(byKey.angles.gate.command, "recipe-gate angles '/t/d/angles.md'");
   assert.match(byKey.angles.task, /Goal: The goal\./);
-  assert.ok(byKey.angles.task.endsWith("\nWhen the file is written, run `recipe-gate angles '/t/d/angles.md'`; if it reports a problem, fix the file and run it again before you finish."));
+  assert.ok(byKey.angles.task.endsWith("\nWhen the file is written, run `recipe-gate angles '/t/d/angles.md'`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed."));
   assert.ok(!/run `/.test(byKey["synthesis-0"].task), "an ungated node has no self-gate line");
 
   assert.equal(byKey["search-a"].output, "/t/d/raw/search/search-a.md");

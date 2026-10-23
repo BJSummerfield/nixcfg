@@ -65,8 +65,11 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
    searcher (writing `research/<id>/search.md`) and, for at most 3 of the
    sources it found, one extractor each, writing
    `research/<id>/extract-<k>.md` from `research/<id>/page-<k>.md`, under the
-   same gates and caps as the research skill. An extract over the cap is only
-   recorded. This step never diagnoses: a task that asked and got no usable
+   same gates and caps as the research skill. An extract over the cap is not
+   counted, and the receipt's `research` count shows what the task got. The
+   extracts are not added to the task's `reads`, because the run cannot edit
+   task files; the implementer is pointed at the directory instead (at most 3
+   extracts of 24 KB each per task). This step never diagnoses: a task that asked and got no usable
    extract is an `open` line.
 6. A fresh reviewer (plan variant) checks the plan against the goal and the
    input (`recipe-gate verdict`). On needs-work the planner revises once with
@@ -137,7 +140,9 @@ a `decide` question for the user.
 
 ## Claude Code binding
 
-Claude Code has no workflow engine, so the main session does the script's work
+Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
+child API and must be opted into per run, and a headless `claude -p` runner for
+the same script has not been built. So the main session does the script's work
 with the Agent tool, one `subagent_type` per role (`scout`, `planner`,
 `reviewer`; their definitions are installed), in the same order and with the
 same `recipe-gate` checks. Turns in the starting session are unavoidable
