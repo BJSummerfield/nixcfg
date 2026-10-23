@@ -53,6 +53,10 @@ function planGateCommand() {
   return command;
 }
 
+function locatedLine(label) {
+  return located ? [label + locateFile] : [];
+}
+
 function brief(job, extra) {
   return [
     "Job: implementation plan" + job + ".",
@@ -60,9 +64,13 @@ function brief(job, extra) {
     "Input: " + input,
     "Repository: " + repo,
     "Scout notes: " + scoutNotes,
+  ]
+    .concat(locatedLine("Candidates located: "))
+    .concat([
     "Plan directory: " + dir,
     "Write " + dir + "/plan.md and one " + dir + "/tasks/<id>.md per task in the task header format; delete any file in " + dir + "/tasks/ that no longer belongs.",
-  ].concat(extra);
+    ])
+    .concat(extra);
 }
 
 function plannerItem(key, output, lines) {
@@ -221,6 +229,15 @@ function gather(tasks) {
   });
 }
 
+const locateFile = dir + "/locate.md";
+let located = false;
+if (args.locate) {
+  show("locating");
+  const found = await one(locateItem(goal, { id: "plan", question: args.locate }, repo, locateFile, childMs));
+  located = passed(found);
+  if (!located) open.push("locate failed: " + (found.error || "no usable candidates") + "; the scout worked without them");
+}
+
 const scoutFile = dir + "/scout.md";
 const scouted = await one(
   node(
@@ -230,6 +247,9 @@ const scouted = await one(
       "Goal: " + goal,
       "Input: " + input + " (read it first)",
       "Repository: " + repo,
+      ...locatedLine("Candidates already located: ").map(function (l) {
+        return l + " (read it first)";
+      }),
       "Find what a planner needs to split this work into tasks: the files involved and their sizes, how they relate, the repository's AGENTS.md light checks, heavy checks and forbidden changes, and the exact command for a light check on each kind of file involved.",
       "Output: " + scoutFile,
     ],

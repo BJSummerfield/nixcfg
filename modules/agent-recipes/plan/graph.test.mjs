@@ -52,7 +52,7 @@ const decided = diagnosis("decide", "a person has to choose");
 // `planner`, `reviewer` and `diagnose` map a child key to its result; an
 // unlisted key gets `good`, `clean` and a diagnosis that asks a person; a
 // string is a failure message.
-function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher = {}, extractor = {} } = {}) {
+function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher = {}, extractor = {}, locator = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
@@ -72,6 +72,8 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher
               return answer(planner, item.key, good);
             case "searcher":
               return answer(searcher, item.key, urlList([]));
+            case "locator":
+              return answer(locator, item.key, { ok: true, paths: [] });
             case "extractor":
               return answer(extractor, item.key, extractOk);
             case "reviewer":
@@ -91,6 +93,42 @@ const base = { dir: "/t/d", goal: "The goal.", input: "/t/in.md", repo: "/r" };
 function assertUniqueOutputs(f) {
   const outputs = f.items().map((i) => i.output).filter(Boolean);
   assert.equal(new Set(outputs).size, outputs.length, "two children share an output path");
+}
+
+// A located question runs before the scout and its file reaches both briefs.
+{
+  const f = fake();
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  assert.deepEqual(keys(f), [["locate-plan"], ["scout"], ["plan"], ["review"]]);
+  const k = byKey(f);
+  assert.equal(k["locate-plan"].agent, "locator");
+  assert.equal(k["locate-plan"].output, "/t/d/locate.md");
+  assert.match(k["locate-plan"].task, /Question: Where is X\?/);
+  assert.match(k["locate-plan"].gate.command, /^recipe-gate paths '\/t\/d\/locate\.md'/);
+  assert.match(k.scout.task, /Repository: \/r\nCandidates already located: \/t\/d\/locate\.md \(read it first\)\nFind what/);
+  assert.match(k.plan.task, /Scout notes: \/t\/d\/scout\.md\nCandidates located: \/t\/d\/locate\.md\nPlan directory: \/t\/d/);
+  assert.doesNotMatch(k.review.task, /located/);
+  assert.deepEqual(receipt.open, []);
+  assertUniqueOutputs(f);
+}
+
+// A locator that fails leaves one open line and the scout runs as before.
+{
+  const f = fake({ locator: { "locate-plan": "no result" } });
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  const k = byKey(f);
+  assert.doesNotMatch(k.scout.task, /located/);
+  assert.doesNotMatch(k.plan.task, /located/);
+  assert.equal(receipt.open.length, 1);
+  assert.match(receipt.open[0], /^locate failed: /);
+}
+
+// Without args.locate no locator runs and no brief mentions candidates.
+{
+  const f = fake();
+  await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
+  assert.ok(f.items().every((i) => !/located/.test(i.task)));
 }
 
 // A clean plan: scout, planner, review, receipt.
