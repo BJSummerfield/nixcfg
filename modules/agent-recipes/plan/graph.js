@@ -54,7 +54,7 @@ function planGateCommand() {
 }
 
 function locatedLine(label) {
-  return located ? [label + locateFile] : [];
+  return located ? [label + located] : [];
 }
 
 function brief(job, extra) {
@@ -230,12 +230,12 @@ function gather(tasks) {
 }
 
 const locateFile = dir + "/locate.md";
-let located = false;
+let located = null;
 if (args.locate) {
   show("locating");
   const found = await one(locateItem(goal, { id: "plan", question: args.locate }, repo, locateFile, childMs));
-  located = passed(found);
-  if (!located) open.push("locate failed: " + (found.error || "no usable candidates") + "; the scout worked without them");
+  if (passed(found)) located = found.file;
+  else open.push("locate failed: " + (found.error || "no usable candidates") + "; the scout worked without them");
 }
 
 const scoutFile = dir + "/scout.md";

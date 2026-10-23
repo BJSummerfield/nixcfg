@@ -73,7 +73,7 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher
             case "searcher":
               return answer(searcher, item.key, urlList([]));
             case "locator":
-              return answer(locator, item.key, { ok: true, paths: [] });
+              return answer(locator, item.key, { ok: true, paths: [{ path: "src/a.js", range: null, why: "w", kind: "primary" }] });
             case "extractor":
               return answer(extractor, item.key, extractOk);
             case "reviewer":
@@ -121,6 +121,17 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(k.plan.task, /located/);
   assert.equal(receipt.open.length, 1);
   assert.match(receipt.open[0], /^locate failed: /);
+}
+
+// A locator that passes only on its retry points the briefs at the retry's file.
+{
+  const f = fake({ locator: { "locate-plan": "503" } });
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  const k = byKey(f);
+  assert.ok(k["locate-plan-retry"]);
+  assert.match(k.scout.task, /Candidates already located: \/t\/d\/locate\.retry\.md \(read it first\)/);
+  assert.match(k.plan.task, /Candidates located: \/t\/d\/locate\.retry\.md\n/);
+  assert.deepEqual(receipt.open, []);
 }
 
 // Without args.locate no locator runs and no brief mentions candidates.

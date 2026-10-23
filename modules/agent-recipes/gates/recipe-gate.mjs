@@ -254,9 +254,9 @@ function paths(file) {
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
     if (!bullet) continue;
     const [rawPath, rawKind = "", ...rest] = bullet[1].split("|").map((s) => s.trim());
-    const loc = rawPath.replace(/^`|`$/g, "").match(/^(.+?)(?::(\d+)-(\d+))?$/);
+    const loc = rawPath.replace(/^`|`$/g, "").match(/^(.+?)(?::(\d+)(?:-(\d+))?)?$/);
     if (!loc || !loc[1].trim()) continue;
-    const range = loc[2] === undefined ? null : { start: Number(loc[2]), end: Number(loc[3]) };
+    const range = loc[2] === undefined ? null : { start: Number(loc[2]), end: Number(loc[3] ?? loc[2]) };
     const kind = rawKind.toLowerCase() === "primary" ? "primary" : "secondary";
     const key = `${loc[1]}\0${range ? `${range.start}-${range.end}` : ""}`;
     const prior = seen.get(key);
@@ -294,17 +294,21 @@ function extract(file, flags) {
   const text = fs.readFileSync(file, "utf8");
   const quotes = countQuotes(text);
   const over_cap = bytes > cap;
-  const source = text.match(/^File:\s*`?(.+?)`?\s*$/m);
+  const lines = text.split("\n");
+  const headerEnd = lines.findIndex((l) => l.trim() === "" || /^\s{0,3}>/.test(l));
+  const header = (headerEnd < 0 ? lines : lines.slice(0, headerEnd)).join("\n");
+  const source = header.match(/^File:\s*`?(.+?)`?\s*$/m);
   if (!source) return { ok: quotes > 0 && !over_cap, bytes, quotes, over_cap };
-  const range = text.match(/^Range:\s*(\d+)\s*-\s*(\d+)\s*$/m);
+  const range = header.match(/^Range:\s*(\d+)\s*-\s*(\d+)\s*$/m);
   const full = readIfExists(path.resolve(flags.repo ?? ".", source[1]));
   let missing = quoteTexts(text);
-  if (full !== null) {
-    let lines = full.split("\n");
-    if (range) lines = lines.slice(Math.max(0, Number(range[1]) - 1), Number(range[2]));
-    const haystack = lines.join(" ").replace(/\s+/g, " ");
-    missing = missing.filter((q) => !haystack.includes(q));
+  if (full === null) {
+    return { ok: false, bytes, quotes, over_cap, file: source[1], missing, reason: "named file missing" };
   }
+  let fileLines = full.split("\n");
+  if (range) fileLines = fileLines.slice(Math.max(0, Number(range[1]) - 1), Number(range[2]));
+  const haystack = fileLines.join(" ").replace(/\s+/g, " ");
+  missing = missing.filter((q) => !haystack.includes(q));
   return { ok: quotes > 0 && !over_cap && missing.length === 0, bytes, quotes, over_cap, file: source[1], missing };
 }
 
