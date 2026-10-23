@@ -56,9 +56,10 @@ or replaced by a replan, which are not merged anywhere.
    depends on has finished; a task whose dependency was set aside or skipped
    is skipped. Within a wave the tasks run in parallel, three at a time at
    most.
-3. Each task: an implementer in a worktree of its own, with the thinking level
-   of the task header, merges the branches of its dependencies, makes its
-   change, commits it and writes its report. `recipe-gate task` then runs in
+3. Each task: an implementer in a worktree of its own merges the
+   branches of its dependencies, reads the research notes under
+   `<plan dir>/research/<id>/` when the task asks a `research` question,
+   makes its change, commits it and writes its report. `recipe-gate task` then runs in
    that worktree and reports the branch, the commits, the files changed
    outside `owns`, whether anything is uncommitted and the result of the
    task's check run once more. A report that says `blocked` or `failed` goes
@@ -115,7 +116,7 @@ it ends.
 subagent({
   workflow: "/home/agent/.pi/agent/recipes/implement/workflow.js",
   args: {
-    plan: "<plan dir>", repo: "<repo path>", model: "@subagentModel@"
+    plan: "<plan dir>", repo: "<repo path>"
   },
   cwd: "<repo path>",
   async: true,
@@ -125,8 +126,7 @@ subagent({
 ```
 
 All paths are absolute. `cwd` is the repository, so the worktrees branch from
-it. `model` is only used for tasks whose header says `thinking: xhigh`.
-Wait for the single completion with `bg_wait`; do not poll, steer or read
+it. Wait for the single completion with `bg_wait`; do not poll, steer or read
 intermediate files. Then read only the receipt, `<plan dir>/receipt.md`.
 
 The receipt file is a one-line summary whose Return part is the receipt JSON
@@ -136,7 +136,7 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 ```
 { branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
   heavy_check, healed: [{id, step, action, reason}],
-  decide: [{id, question, diagnosis}], open: [...], children, pr_text }
+  decide: [{id, step, question, diagnosis}], open: [...], children, pr_text }
 ```
 
 `heavy_check` is `pass`, `none`, `fail: <why>` or `not recorded`; `open` holds
@@ -172,8 +172,7 @@ below.
 2. Per wave, dispatch one `implementer` per task, several in one message, with
    `isolation: "worktree"` and a brief as in step 3 above (task file, plan,
    repository, report path, the dependency branches to merge, commit and
-   leave nothing uncommitted). Pass `model: "opus"` only for tasks whose
-   header says `thinking: xhigh`. Ask each to end its report with its branch
+   leave nothing uncommitted). Ask each to end its report with its branch
    (`git branch --show-current`) and worktree path.
 3. In that worktree run `recipe-gate task <report> --check '<check>' --owns
    '<owns>' --repo <repo>`. A blocked or failed report goes to a diagnosis
