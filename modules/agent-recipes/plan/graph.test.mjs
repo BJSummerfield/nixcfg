@@ -1,13 +1,14 @@
 /**
- * Dry run of the plan workflow script against a fake `runs`. Run by
+ * Dry run of the plan graph on the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (child order, briefs,
- * gate commands, revisions, review, retry, receipt); pi-subagents' semantics
+ * gate commands, revisions, research, review, retry, receipt); pi-subagents' semantics
  * are not exercised, and the gate results are the fake's, not a real plan.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const source = fs.readFileSync(new URL("./workflow.js", import.meta.url), "utf8");
+const source =
+  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
 assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
 assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
 
@@ -41,12 +42,17 @@ const clean = { ok: true, asked: "yes", sound: "yes", clean: true, verdict: "cle
 const needsWork = { ok: true, asked: "partly", sound: "yes", clean: false, verdict: "needs-work" };
 const invalid = { ok: false, verdict: "invalid" };
 const diagnosis = (action, reason, extra = {}) => ({ ok: true, action, reason, verdict: null, owns: [], brief: action === "fix" || action === "replan", ...extra });
+const urlList = (urls) => ({ ok: urls.length > 0, urls });
+const found = (task, n, kind = "primary") => ({ url: `https://example.com/${task}/${n}`, why: "w", kind });
+const extractOk = { ok: true, bytes: 5000, quotes: 3, over_cap: false };
+const extractOver = { ok: false, bytes: 30000, quotes: 5, over_cap: true };
+const extractRejected = { ok: false, bytes: 10, quotes: 0, over_cap: false };
 const decided = diagnosis("decide", "a person has to choose");
 
 // `planner`, `reviewer` and `diagnose` map a child key to its result; an
 // unlisted key gets `good`, `clean` and a diagnosis that asks a person; a
 // string is a failure message.
-function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {} } = {}) {
+function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher = {}, extractor = {}, locator = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
@@ -64,6 +70,12 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {} } = {}) {
               return answer(scout, item.key, undefined);
             case "planner":
               return answer(planner, item.key, good);
+            case "searcher":
+              return answer(searcher, item.key, urlList([]));
+            case "locator":
+              return answer(locator, item.key, { ok: true, paths: [{ path: "src/a.js", range: null, why: "w", kind: "primary" }] });
+            case "extractor":
+              return answer(extractor, item.key, extractOk);
             case "reviewer":
               return item.key.startsWith("diagnose-") ? answer(diagnose, item.key, decided) : answer(reviewer, item.key, clean);
           }
@@ -83,6 +95,53 @@ function assertUniqueOutputs(f) {
   assert.equal(new Set(outputs).size, outputs.length, "two children share an output path");
 }
 
+// A located question runs before the scout and its file reaches both briefs.
+{
+  const f = fake();
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  assert.deepEqual(keys(f), [["locate-plan"], ["scout"], ["plan"], ["review"]]);
+  const k = byKey(f);
+  assert.equal(k["locate-plan"].agent, "locator");
+  assert.equal(k["locate-plan"].output, "/t/d/locate.md");
+  assert.match(k["locate-plan"].task, /Question: Where is X\?/);
+  assert.match(k["locate-plan"].gate.command, /^recipe-gate paths '\/t\/d\/locate\.md'/);
+  assert.match(k.scout.task, /Repository: \/r\nCandidates already located: \/t\/d\/locate\.md \(read it first\)\nFind what/);
+  assert.match(k.plan.task, /Scout notes: \/t\/d\/scout\.md\nCandidates located: \/t\/d\/locate\.md\nPlan directory: \/t\/d/);
+  assert.doesNotMatch(k.review.task, /located/);
+  assert.deepEqual(receipt.open, []);
+  assertUniqueOutputs(f);
+}
+
+// A locator that fails leaves one open line and the scout runs as before.
+{
+  const f = fake({ locator: { "locate-plan": "503", "locate-plan-retry": "503" } });
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  const k = byKey(f);
+  assert.doesNotMatch(k.scout.task, /located/);
+  assert.doesNotMatch(k.plan.task, /located/);
+  assert.equal(receipt.open.length, 1);
+  assert.match(receipt.open[0], /^locate failed: /);
+}
+
+// A locator that passes only on its retry points the briefs at the retry's file.
+{
+  const f = fake({ locator: { "locate-plan": "503" } });
+  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
+  const k = byKey(f);
+  assert.ok(k["locate-plan-retry"]);
+  assert.match(k.scout.task, /Candidates already located: \/t\/d\/locate\.retry\.md \(read it first\)/);
+  assert.match(k.plan.task, /Candidates located: \/t\/d\/locate\.retry\.md\n/);
+  assert.deepEqual(receipt.open, []);
+}
+
+// Without args.locate no locator runs and no brief mentions candidates.
+{
+  const f = fake();
+  await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
+  assert.ok(f.items().every((i) => !/located/.test(i.task)));
+}
+
 // A clean plan: scout, planner, review, receipt.
 {
   const f = fake();
@@ -91,6 +150,9 @@ function assertUniqueOutputs(f) {
   const k = byKey(f);
 
   assert.equal(k.scout.agent, "scout");
+  assert.ok(!("big" in k.scout), "the scout is small");
+  assert.equal(k.plan.big, true);
+  assert.equal(k.review.big, true);
   assert.equal(k.scout.output, "/t/d/scout.md");
   assert.match(k.scout.task, /Goal: The goal\./);
   assert.match(k.scout.task, /Input: \/t\/in\.md \(read it first\)/);
@@ -102,6 +164,9 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(k.plan.gate, { command: "recipe-gate plan '/t/d' --repo '/r' --limit 80000 --sizing '/s.json'", output: "json" });
   assert.match(k.plan.task, /^Job: implementation plan\.$/m);
   assert.match(k.plan.task, /Input: \/t\/in\.md\nRepository: \/r\nScout notes: \/t\/d\/scout\.md\nPlan directory: \/t\/d/);
+  assert.match(k.plan.task, /When the file is written, run `recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000 --sizing '\/s\.json'`; if it reports a problem/);
+  assert.doesNotMatch(k.scout.task, /When the file is written/);
+  assert.match(k.review.task, /When the file is written, run `recipe-gate verdict '\/t\/d\/review\.md'`/);
   assert.match(k.plan.task, /Write \/t\/d\/plan\.md and one \/t\/d\/tasks\/<id>\.md per task/);
 
   assert.equal(k.review.agent, "reviewer");
@@ -112,7 +177,7 @@ function assertUniqueOutputs(f) {
   assert.match(k.review.task, /Plan check to run: recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000/);
   assertUniqueOutputs(f);
 
-  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", healed: [], decide: [], open: [], children: 3 });
+  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", research: {}, healed: [], decide: [], open: [], children: 3 });
 }
 
 // The default gate command carries no limit and no sizing file.
@@ -138,7 +203,7 @@ function assertUniqueOutputs(f) {
   assert.match(rev.task, /- missing: t2: check/);
   assert.match(rev.task, /Check output: \{"oversize":\["t1"\],"overlaps":\[\["t1","t2","a\.nix"\]\],"missing":\["t2: check"\],"cycles":\[\["t1","t2","t1"\]\]\}/);
   assertUniqueOutputs(f);
-  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", healed: [], decide: [], open: [], children: 4 });
+  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", research: {}, healed: [], decide: [], open: [], children: 4 });
 }
 
 // A plan that never passes gets two revisions, then a diagnosis; one that asks
@@ -161,8 +226,9 @@ function assertUniqueOutputs(f) {
     oversize: ["t1"],
     overlaps: [["t1", "t2", "a.nix"]],
     review: "clean",
+    research: {},
     healed: [],
-    decide: [{ step: "plan", question: "a person has to choose", diagnosis: "/t/d/diagnosis-1.md" }],
+    decide: [{ id: null, step: "plan", question: "a person has to choose", diagnosis: "/t/d/diagnosis-1.md" }],
     open: ["oversize: t1", "overlap: t1 and t2 both own a.nix", "cycle: t1 > t2 > t1", "missing: t2: check"],
     children: 6,
   });
@@ -181,7 +247,7 @@ function assertUniqueOutputs(f) {
   assert.match(rev.task, /The diagnosis at \/t\/d\/diagnosis-1\.md found: t1 bundles two modules; split by module Follow its ## Brief section\./);
   assert.match(rev.task, /- oversize: t1/);
   assert.deepEqual(receipt.open, []);
-  assert.deepEqual(receipt.healed, [{ step: "plan", action: "fix", reason: "t1 bundles two modules; split by module" }]);
+  assert.deepEqual(receipt.healed, [{ id: null, step: "plan", action: "fix", reason: "t1 bundles two modules; split by module" }]);
 }
 
 // A plan with no tasks by design is not revised or diagnosed.
@@ -205,7 +271,7 @@ function assertUniqueOutputs(f) {
   assert.equal(k["review-2"].output, "/t/d/review.2.md");
   assert.equal(k["review-2"].gate.command, "recipe-gate verdict '/t/d/review.2.md'");
   assertUniqueOutputs(f);
-  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", healed: [], decide: [], open: [], children: 5 });
+  assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", research: {}, healed: [], decide: [], open: [], children: 5 });
 }
 
 // A second review that still needs work goes to a diagnosis; a fix gets one
@@ -306,8 +372,9 @@ function assertUniqueOutputs(f) {
     oversize: [],
     overlaps: [],
     review: null,
+    research: {},
     healed: [],
-    decide: [{ step: "plan", question: "a person has to choose", diagnosis: "/t/d/diagnosis-1.md" }],
+    decide: [{ id: null, step: "plan", question: "a person has to choose", diagnosis: "/t/d/diagnosis-1.md" }],
     open: ["the planner failed: boom"],
     children: 4,
   });
@@ -389,7 +456,107 @@ function assertUniqueOutputs(f) {
     emits.map((e) => e.stage),
     ["planning", "reviewing", "revising", "reviewing", "finished"],
   );
-  assert.deepEqual(emits.at(-1), { stage: "finished", tasks: 2, plan_ok: true, review: "clean", healed: [], decide: [] });
+  assert.deepEqual(emits.at(-1), {
+    stage: "finished",
+    plan_dir: "/t/d",
+    tasks: 2,
+    oversize: [],
+    overlaps: [],
+    review: "clean",
+    research: {},
+    open: [],
+    children: 5,
+    healed: [],
+    decide: [],
+  });
+  assert.equal(emits[0].plan_ok, null);
+  assert.equal(emits[1].plan_ok, true);
+}
+
+// Tasks that ask a research question get one search each, at most three
+// extracts each, written under research/<id>/; the receipt counts the extracts
+// that passed and an unproductive task is an open line.
+{
+  const asking = {
+    ok: true,
+    tasks: [
+      { id: "t1", est: 5000, research: "How does x 2.0 set the cache dir?" },
+      { id: "t2", est: 6000, research: "" },
+      { id: "t3", est: 6000, research: "Does y 3.1 accept a timeout?" },
+      { id: "t4", est: 6000, research: "What does z 9 return?" },
+    ],
+    oversize: [],
+    overlaps: [],
+    missing: [],
+    cycles: [],
+  };
+  const f = fake({
+    planner: { plan: asking },
+    searcher: {
+      "search-t1": urlList([found("t1", 1), found("t1", 2, "secondary"), found("t1", 3), found("t1", 4), found("t1", 5)]),
+      "search-t3": urlList([found("t3", 1)]),
+      "search-t4": "503",
+      "search-t4-retry": "503",
+    },
+    extractor: { "extract-t1-2": extractOver, "extract-t1-3": extractRejected, "extract-t3-1": extractOk },
+  });
+  const emits = [];
+  const receipt = await run(f.runs, base, (value) => emits.push(value.stage));
+  assert.deepEqual(keys(f), [
+    ["scout"],
+    ["plan"],
+    ["search-t1", "search-t3", "search-t4"],
+    ["search-t4-retry"],
+    ["extract-t1-1", "extract-t1-2", "extract-t1-3", "extract-t3-1"],
+    ["review"],
+  ]);
+  const k = byKey(f);
+  assert.equal(k["search-t1"].agent, "searcher");
+  assert.equal(k["search-t1"].output, "/t/d/research/t1/search.md");
+  assert.match(k["search-t1"].task, /Question: How does x 2\.0 set the cache dir\?/);
+  assert.equal(k["search-t1"].gate.command, "recipe-gate urls '/t/d/research/t1/search.md'");
+  assert.equal(k["extract-t1-1"].agent, "extractor");
+  assert.equal(k["extract-t1-1"].output, "/t/d/research/t1/extract-1.md");
+  assert.match(k["extract-t1-1"].task, /URL: https:\/\/example\.com\/t1\/1\n/);
+  assert.match(k["extract-t1-1"].task, /Page: \/t\/d\/research\/t1\/page-1\.md/);
+  assert.equal(k["extract-t1-1"].gate.command, "recipe-gate extract '/t/d/research/t1/extract-1.md'");
+  assert.equal(k["extract-t3-1"].output, "/t/d/research/t3/extract-1.md");
+  assert.ok(!("extract-t1-4" in k), "at most three sources per task");
+  assert.ok(!Object.keys(k).some((key) => key.includes("t2")), "a task with no question gets no research");
+  assertUniqueOutputs(f);
+  assert.ok(emits.indexOf("researching") > emits.indexOf("planning") && emits.indexOf("researching") < emits.indexOf("reviewing"));
+  assert.deepEqual(receipt.research, { t1: 1, t3: 1, t4: 0 });
+  assert.deepEqual(receipt.open, ["research for t4: nothing usable (503)"]);
+  assert.deepEqual(receipt.healed, []);
+  assert.deepEqual(receipt.decide, []);
+  assert.equal(receipt.review, "clean");
+  assert.equal(receipt.children, 11);
+}
+
+// A search that lists nothing is an open line and starts no extractor; a
+// failing extractor is retried like any child and is never diagnosed.
+{
+  const asking = { ...good, tasks: [{ id: "t1", est: 5000, research: "q1?" }, { id: "t2", est: 5000, research: "q2?" }] };
+  const f = fake({
+    planner: { plan: asking },
+    searcher: { "search-t2": urlList([found("t2", 1)]) },
+    extractor: { "extract-t2-1": "boom", "extract-t2-1-retry": "boom" },
+  });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["search-t1", "search-t2"], ["extract-t2-1"], ["extract-t2-1-retry"], ["review"]]);
+  assert.deepEqual(receipt.research, { t1: 0, t2: 0 });
+  assert.deepEqual(receipt.open, ["research for t1: nothing usable (no sources listed)", "research for t2: nothing usable"]);
+  assert.deepEqual(receipt.decide, []);
+}
+
+// Research waits for a plan that passes its check, and a plan whose check
+// never passes is not researched.
+{
+  const asking = { ...bad, tasks: [{ id: "t1", est: 150000, research: "q?" }] };
+  const f = fake({ planner: { plan: asking, "revise-1": asking, "revise-2": asking } });
+  const receipt = await run(f.runs, base);
+  assert.ok(!f.items().some((i) => i.agent === "searcher"));
+  assert.deepEqual(receipt.research, {});
 }
 
 // A path with a quote is shell-escaped in the gate commands.
@@ -400,4 +567,4 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md'");
 }
 
-console.log("plan workflow: ok");
+console.log("plan graph: ok");
