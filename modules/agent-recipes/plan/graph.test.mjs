@@ -567,4 +567,22 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md'");
 }
 
+// A batch job: the planner and its revisions carry the rule and the change; no input line without an input.
+{
+  const bad = { gate: { ok: false, findings: ["x"] } };
+  const f = fake({ planner: { plan: bad } });
+  const { input, ...noInput } = base;
+  await run(f.runs, { ...noInput, batch: { rule: "glob src/*.js", change: "rename foo to bar" } });
+  const k = byKey(f);
+  for (const key of ["plan", "revise-1"]) {
+    assert.match(k[key].task, /^Job: batch/m);
+    assert.doesNotMatch(k[key].task, /implementation plan/);
+    assert.match(k[key].task, /Goal: The goal\.\nTargets: glob src\/\*\.js\nChange: rename foo to bar\n/);
+    assert.doesNotMatch(k[key].task, /Input:/);
+  }
+  assert.match(k.plan.task, /^Job: batch\.$/m);
+  assert.doesNotMatch(k.scout.task, /Input:/);
+  assert.doesNotMatch(k.review.task, /Input:/);
+}
+
 console.log("plan graph: ok");
