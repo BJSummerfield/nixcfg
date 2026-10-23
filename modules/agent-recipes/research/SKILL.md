@@ -32,7 +32,9 @@ the gap round writes the updated output beside the first one
 3. One extractor per source saves the page and copies out the passages that
    bear on the goal, verbatim (`recipe-gate extract`; each file under 24 KB).
    Searchers and extractors run at most 3 at a time.
-4. A child that fails on its own (not a rejected check) is retried once. An
+4. A child that fails on its own (not a rejected check) is retried once; a child that
+   reported its own work as not done is not retried, and its result goes on to
+   the step's normal handling. An
    extract over the cap is redone as two extractors, each covering half the
    page's sections by its outline. Anything else is recorded.
 5. One synthesizer writes the output. When the extracts exceed half the
@@ -78,8 +80,8 @@ the run's `status.json`, whose `workflow.value` holds the whole receipt; read
 that when the Return part ends in an ellipsis.
 
 ```
-{ output, sources: { ok, failed, over_cap }, healed: [{step, action, reason}],
-  decide: [{step, question, diagnosis}], open: [...], gap_round, children }
+{ output, sources: { ok, failed, over_cap }, healed: [{id, step, action, reason}],
+  decide: [{id, step, question, diagnosis}], open: [...], gap_round, children }
 ```
 
 A child that fails inside the workflow can wake this session once with a
@@ -96,7 +98,9 @@ Read the receipt with the triage skill.
 
 ## Claude Code binding
 
-Claude Code has no workflow engine, so the main session does the script's work
+Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
+child API and must be opted into per run, and a headless `claude -p` runner for
+the same script has not been built. So the main session does the script's work
 with the Agent tool, one `subagent_type` per role (`planner`, `searcher`,
 `extractor`, `synthesizer`, `reviewer`; their definitions are installed), in
 the same order and with the same `recipe-gate` checks. Turns in the starting

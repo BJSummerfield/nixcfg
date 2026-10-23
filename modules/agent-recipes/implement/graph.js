@@ -1,11 +1,8 @@
 const MAX_FIXES = 2;
-const MAX_HEALS = 2;
 const MAX_CYCLES = 12;
-const REASON_CHARS = 300;
 
 const dir = args.plan;
 const repo = args.repo;
-const model = args.model;
 const childMs = args.childTimeoutMs || 1200000;
 const bigMs = args.bigTimeoutMs || 3600000;
 const slug = String(dir).replace(/\/+$/, "").split("/").pop().replace(/[^A-Za-z0-9._-]/g, "-") || "plan";
@@ -21,80 +18,6 @@ const STEPS = {
 const open = [];
 const setAside = [];
 const skipped = [];
-const healed = [];
-const decide = [];
-let children = 0;
-
-function quote(text) {
-  return "'" + String(text).replace(/'/g, "'\\''") + "'";
-}
-
-function sibling(file, tag) {
-  return file.replace(/(\.md)?$/, "." + tag + "$1");
-}
-
-function list(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function short(text) {
-  const flat = String(text).replace(/\s+/g, " ").trim();
-  return flat.length > REASON_CHARS ? flat.slice(0, REASON_CHARS) + "..." : flat;
-}
-
-function retryItem(item, failed) {
-  const moved = sibling(item.output, "retry");
-  const copy = Object.assign({}, item, {
-    key: item.key + "-retry",
-    output: moved,
-    task: item.task.split(item.output).join(moved),
-  });
-  if (item.resume) copy.resume = failed.runId || item.resume;
-  if (item.gate) {
-    copy.gate = Object.assign({}, item.gate, {
-      command: item.gate.command.split(quote(item.output)).join(quote(moved)),
-    });
-  }
-  return copy;
-}
-
-// pi-subagents marks a writer that reports its own work as not done as
-// failed; running the same brief again gets the same answer, so it is not
-// retried and its report goes to a diagnosis instead.
-function stoppedItself(result) {
-  return /reported as not-satisfied/.test(String(result.error || ""));
-}
-
-function launch(items) {
-  children += items.length;
-  return runs.all(items).then(function (first) {
-    const merged = first.map(function (result, i) {
-      return Object.assign({}, result, { file: items[i].output });
-    });
-    const again = [];
-    const where = [];
-    first.forEach(function (result, i) {
-      if (!result.ok && !stoppedItself(result)) {
-        again.push(retryItem(items[i], result));
-        where.push(i);
-      }
-    });
-    if (again.length === 0) return merged;
-    children += again.length;
-    return runs.all(again).then(function (second) {
-      second.forEach(function (result, j) {
-        merged[where[j]] = Object.assign({}, result, { file: again[j].output });
-      });
-      return merged;
-    });
-  });
-}
-
-function one(item) {
-  return launch([item]).then(function (results) {
-    return results[0];
-  });
-}
 
 function planGateCommand() {
   let command = "recipe-gate plan " + quote(dir) + " --repo " + quote(repo);
@@ -122,35 +45,51 @@ let branch = null;
 let merged = [];
 let heavy = null;
 let prText = "";
+let pinned = null;
+let tidied = null;
+const made = [];
 
-function receipt() {
-  return {
+function noteMade(id, kind, entryBranch, entryWorktree) {
+  if (!entryBranch && !entryWorktree) return;
+  const duplicate = made.some(function (m) {
+    return m.kind === kind && m.branch === (entryBranch || null) && m.worktree === (entryWorktree || null);
+  });
+  if (!duplicate) made.push({ id: id, kind: kind, branch: entryBranch || null, worktree: entryWorktree || null });
+}
+
+function leftBehind() {
+  return made.filter(function (m) {
+    if (!tidied) return true;
+    if (m.kind === "review" || m.kind === "deps" || m.kind === "integration") return false;
+    return !(m.kind === "task" && tidied.indexOf(m.id) >= 0);
+  });
+}
+
+function finish() {
+  const left = leftBehind();
+  return receipt({
+    base: pinned ? pinned.base : null,
     branch: branch,
     merged: merged,
     set_aside: setAside,
     skipped: skipped,
     heavy_check: heavy,
-    healed: healed,
-    decide: decide,
     open: open,
-    children: children,
+    left: left,
+    cleanup: left.length ? "recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "") : "",
     pr_text: prText,
-  };
+  });
 }
 
 const byId = {};
 const tasks = [];
 
-function board(stage) {
-  if (typeof emit !== "function") return;
-  emit({
-    stage: stage,
+function view() {
+  return {
     tasks: tasks.map(function (t) {
       return { id: t.id, state: t.state, next: t.next, fixes: t.fixes, heals: t.heals };
     }),
-    healed: healed,
-    decide: decide,
-  });
+  };
 }
 
 function taskFile(t) {
@@ -171,6 +110,12 @@ function taskGateCommand(t, report) {
     quote(ownsOf(t).join(",")),
     "--repo",
     quote(repo),
+    "--base",
+    quote(t.base),
+    "--run",
+    quote(dir),
+    "--id",
+    quote(t.id),
   ].join(" ");
 }
 
@@ -180,18 +125,16 @@ function giveUp(t, reason) {
   setAside.push({ id: t.id, reason: short(reason) });
 }
 
-function askPerson(t, question, file) {
-  giveUp(t, "needs a decision: " + question);
-  decide.push({ id: t.id, question: short(question), diagnosis: file || null });
+function askPerson(t, step, question, file) {
+  askDecision(t, step, question, file);
+  giveUp(t, "needs a decision: " + short(question));
 }
 
-// A step whose output was not accepted goes to a diagnose child, which picks
-// one of the allowed actions; the cap and the signature check keep healing
-// from looping.
 function heal(t, step, signal, evidence, allowed) {
-  if (t.heals >= MAX_HEALS) return askPerson(t, signal + " (still failing after " + MAX_HEALS + " recoveries)", t.lastDiagnosis);
+  const trouble = troubleOf(step, signal, evidence, allowed);
+  if (exhausted(t)) return askPerson(t, step, exhaustedQuestion(trouble), t.lastDiagnosis);
   t.next = "heal";
-  t.trouble = { step: step, signal: short(signal), evidence: evidence.filter(Boolean), allowed: allowed };
+  t.trouble = trouble;
 }
 
 function ancestors(t, seen) {
@@ -224,6 +167,9 @@ function implementBrief(t, report) {
     "Repository: " + repo + " (you are in your own worktree of it, on your own branch)",
     "Task directory: " + dir,
   ];
+  if (t.spec.research) {
+    lines.push("Research notes gathered for this task, if any, answer: " + t.spec.research + ". They are under " + dir + "/research/" + t.id + "/; list that directory and read what is there before the first edit.");
+  }
   if (t.replanBrief) {
     lines.push(
       "This is attempt " + t.attempts + ". An earlier attempt did not work; the diagnosis at " + t.replanBrief + " says why, and its ## Brief section is the revised task, which wins over the task file where they differ.",
@@ -232,38 +178,32 @@ function implementBrief(t, report) {
   if (t.extraOwns.length) lines.push("Besides the task's own files you may change: " + t.extraOwns.join(", "));
   if (t.spec.depends.length) {
     lines.push(
-      "This task builds on finished tasks. Before the first edit, merge each of these into your branch, in this order, with `git merge --no-ff --no-edit <branch>`: " +
+      "This task builds on finished tasks, and your branch already holds them: " +
         t.spec.depends
           .map(function (d) {
             return d + " (branch " + byId[d].branch + ")";
           })
-          .join(", "),
+          .join(", ") +
+        ". Do not merge anything.",
     );
   }
   lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
   lines.push("If the task cannot be done as written, stop and write `blocked: <why>` as the first line of the report; do not ask.");
   lines.push("Write the report to " + report);
-  return lines.join("\n");
+  return lines;
 }
 
 function implementItem(t) {
   t.attempts++;
   const tag = t.attempts === 1 ? t.id : t.id + "-" + t.attempts;
   const report = dir + "/impl-" + tag + ".md";
-  const item = {
-    key: "impl-" + tag,
-    agent: "implementer",
-    task: implementBrief(t, report),
-    output: report,
-    outputMode: "file-only",
-    maxRuntimeMs: bigMs,
+  const item = node("impl-" + tag, "implementer", implementBrief(t, report), report, {
+    gate: taskGateCommand(t, report),
+    gateTimeoutMs: 900000,
+    timeoutMs: bigMs,
     worktree: true,
-    gate: { command: taskGateCommand(t, report), output: "json", timeoutMs: 900000 },
-  };
-  if (t.spec.thinking === "xhigh") {
-    if (model) item.model = model + ":xhigh";
-    else if (t.attempts === 1) open.push(t.id + ": the task asks for xhigh thinking and no model was given, so it ran at the role's default");
-  }
+  });
+  item.baseRef = t.baseRef;
   return item;
 }
 
@@ -277,7 +217,7 @@ function takeImplementation(t, result) {
   t.runId = result.runId || t.runId;
   t.branch = g.branch;
   t.worktree = g.worktree;
-  t.base = g.base;
+  noteMade(t.id, "task", g.branch, g.worktree);
   const status = g.report ? g.report.status : "invalid";
   if (status === "blocked" || status === "failed") {
     return heal(t, "implement", "the implementer reported " + status + ": " + g.reason, [result.file], ["replan", "decide"]);
@@ -312,8 +252,8 @@ function reviewItem(t) {
     "Task file: " + taskFile(t),
     "Repository: " + repo,
     "Branch: " + t.branch,
-    "Worktree: " + t.worktree + " (read and run the check there; edit nothing in it)",
-    "Diff to review: git diff " + t.base + "..." + t.branch,
+    "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/" + t.id + "-" + t.reviews + "); read and run the check there. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
+    "Diff to review: git diff " + t.base + ".." + t.branch,
     "Owned files: " + ownsOf(t).join(", "),
     "Check to run: " + t.spec.check,
     "Implementer report: " + t.report,
@@ -321,18 +261,18 @@ function reviewItem(t) {
   if (t.replanBrief) lines.push("Revised task (wins over the task file): the ## Brief section of " + t.replanBrief);
   if (t.lastReview) lines.push("Earlier review: " + t.lastReview);
   lines.push("Write the report to " + file);
-  return {
-    key: "review-" + t.id + "-" + t.reviews,
-    agent: "reviewer",
-    task: lines.join("\n"),
-    output: file,
-    outputMode: "file-only",
-    maxRuntimeMs: bigMs,
-    gate: { command: "recipe-gate verdict " + quote(file), output: "json" },
-  };
+  const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
+    gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote(t.id),
+    timeoutMs: bigMs,
+    worktree: true,
+  });
+  item.baseRef = "refs/heads/" + t.branch;
+  item.big = true;
+  return item;
 }
 
 function takeReview(t, result) {
+  if (result.structuredOutput) noteMade(t.id, "review", result.structuredOutput.branch, result.structuredOutput.worktree);
   if (!result.ok || !result.structuredOutput) {
     return heal(t, "review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]);
   }
@@ -354,21 +294,20 @@ function fixItem(t) {
   const extra = t.fixes > MAX_FIXES;
   t.extraFix = false;
   const file = dir + "/fix-" + t.id + "-" + t.fixes + ".md";
-  return {
-    key: "fix-" + t.id + "-" + t.fixes,
-    resume: t.runId,
-    task: [
+  return node(
+    "fix-" + t.id + "-" + t.fixes,
+    undefined,
+    [
       extra ? "Extra fix round " + t.fixes + ", from a diagnosis." : "Fix round " + t.fixes + " of " + MAX_FIXES + ".",
       "Continue in your worktree " + t.worktree + " on branch " + t.branch + ".",
       t.findings,
       "Fix the blocking findings only; small findings are recorded, not fixed. Touch only the owned files: " + ownsOf(t).join(", ") + ".",
       "Commit on the same branch, leave nothing uncommitted, run the task's light check (" + t.spec.check + ") and quote its output.",
       "Write the report to " + file,
-    ].join("\n"),
-    output: file,
-    outputMode: "file-only",
-    maxRuntimeMs: bigMs,
-  };
+    ],
+    file,
+    { timeoutMs: bigMs, resume: t.runId },
+  );
 }
 
 function takeFix(t, result) {
@@ -382,55 +321,26 @@ function takeFix(t, result) {
   t.next = "review";
 }
 
-function diagnoseItem(subject) {
-  subject.heals++;
-  const c = subject.trouble;
-  const file = dir + "/diagnosis-" + subject.id + "-" + subject.heals + ".md";
-  let command = "recipe-gate diagnosis " + quote(file) + " --allow " + quote(c.allowed.join(","));
-  if (c.allowed.indexOf("continue") >= 0 && c.step === "review") command += " --verdict yes";
-  const lines = [
-    "Diagnose a step whose output the script did not accept (the diagnosis variant).",
-    "Plan: " + dir + "/plan.md",
-    "Repository: " + repo,
-  ];
-  if (subject.spec) lines.push("Task file: " + taskFile(subject) + (subject.extraOwns.length ? " (also may change: " + subject.extraOwns.join(", ") + ")" : ""));
-  if (subject.worktree) lines.push("Worktree: " + subject.worktree + (subject.branch ? " on branch " + subject.branch : "") + " (read it, run checks in it, edit nothing)");
-  lines.push("Step: " + STEPS[c.step]);
-  lines.push("What went wrong: " + c.signal);
-  if (c.evidence.length) lines.push("Evidence: " + c.evidence.join(", "));
-  if (subject.lastDiagnosis) lines.push("Earlier diagnosis: " + subject.lastDiagnosis);
-  if (c.step === "review" && c.allowed.indexOf("continue") >= 0) lines.push("With continue, give the verdict the review states.");
-  lines.push("Allowed actions: " + c.allowed.join(", "));
-  lines.push("Write the diagnosis to " + file);
-  return {
-    key: "diagnose-" + subject.id + "-" + subject.heals,
-    agent: "reviewer",
-    task: lines.join("\n"),
-    output: file,
-    outputMode: "file-only",
-    maxRuntimeMs: childMs,
-    gate: { command: command, output: "json" },
-  };
+function diagnosisContext(t) {
+  const lines = ["Plan: " + dir + "/plan.md", "Repository: " + repo];
+  lines.push("Task file: " + taskFile(t) + (t.extraOwns.length ? " (also may change: " + t.extraOwns.join(", ") + ")" : ""));
+  if (t.worktree) lines.push("Worktree: " + t.worktree + (t.branch ? " on branch " + t.branch : "") + " (read it, run checks in it, edit nothing)");
+  return lines;
 }
 
-function readDiagnosis(subject, result) {
-  subject.lastDiagnosis = result.file;
-  if (!result.ok || !result.structuredOutput) return { problem: "the diagnosis failed: " + (result.error || "no result") };
-  const d = result.structuredOutput;
-  if (!d.ok) return { problem: "the diagnosis could not be read: " + d.problem };
-  const signature = subject.trouble.step + ":" + d.action + ":" + String(d.reason).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  if (subject.signatures.indexOf(signature) >= 0) return { problem: "the same diagnosis came back twice: " + d.reason };
-  subject.signatures.push(signature);
-  if (d.action !== "decide") healed.push({ id: subject.id, step: subject.trouble.step, action: d.action, reason: short(d.reason) });
-  return d;
+function diagnoseItem(t) {
+  return diagnosisItem(t, t.trouble, dir, diagnosisContext(t), STEPS[t.trouble.step], childMs);
 }
 
 function takeDiagnosis(t, result) {
-  const d = readDiagnosis(t, result);
-  if (d.problem) return askPerson(t, t.trouble.signal + "; " + d.problem, result.file);
-  const step = t.trouble.step;
+  const trouble = t.trouble;
+  const d = readDiagnosis(t, trouble, result);
+  if (!d) {
+    t.trouble = null;
+    return giveUp(t, "needs a decision: " + decide[decide.length - 1].question);
+  }
+  const step = trouble.step;
   t.trouble = null;
-  if (d.action === "decide") return askPerson(t, d.reason, result.file);
   if (d.action === "continue") {
     if (d.verdict === "clean") {
       t.state = "done";
@@ -445,7 +355,7 @@ function takeDiagnosis(t, result) {
     return;
   }
   if (d.action === "fix") {
-    if (!t.runId) return askPerson(t, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, result.file);
+    if (!t.runId) return askPerson(t, step, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, result.file);
     t.findings = "The diagnosis at " + result.file + " found: " + d.reason + " Follow its ## Brief section.";
     t.extraFix = true;
     t.next = "fix";
@@ -457,7 +367,7 @@ function takeDiagnosis(t, result) {
       return !reach[o.id];
     });
     if (others.length) {
-      return askPerson(t, "the revised task needs " + d.owns[i] + ", which task " + others[0].id + " owns and this task does not build on", result.file);
+      return askPerson(t, step, "the revised task needs " + d.owns[i] + ", which task " + others[0].id + " owns and this task does not build on", result.file);
     }
   }
   d.owns.forEach(function (p) {
@@ -508,7 +418,7 @@ function cycle(active, n, label) {
       return phase(active, "fix", fixItem, takeFix);
     })
     .then(function () {
-      board(label + ", round " + (n + 1));
+      board(label + ", round " + (n + 1), view());
       const pending = active.filter(function (t) {
         return t.next !== null;
       });
@@ -523,19 +433,162 @@ function cycle(active, n, label) {
     });
 }
 
-const intake = await one({
-  key: "intake",
-  agent: "scout",
-  task: "Check that " + dir + "/plan.md can be read, then write the single word done to " + dir + "/intake.md.",
-  output: dir + "/intake.md",
-  outputMode: "file-only",
-  maxRuntimeMs: childMs,
-  gate: { command: planGateCommand(), output: "json" },
-});
+const MAX_RESOLVERS = 3;
+
+function gateOnlyItem(key, command, file) {
+  return node(key, "scout", ["Write the single word done to " + file + "."], file, { gate: command, selfGate: false, timeoutMs: childMs });
+}
+
+function mergeCommand(m) {
+  return [
+    "recipe-gate merge",
+    quote(m.worktree),
+    "--dir",
+    quote(dir),
+    "--branch",
+    quote(m.branch),
+    "--tips",
+    quote(m.tips),
+    "--onto",
+    quote(pinned.base_ref),
+    "--kind",
+    m.kind,
+    "--id",
+    m.scope,
+  ].join(" ");
+}
+
+function mergeState(scope, kind, worktree, mergeBranch, tipTasks) {
+  return {
+    scope: scope,
+    kind: kind,
+    worktree: worktree,
+    branch: mergeBranch,
+    tips: tipTasks
+      .map(function (t) {
+        return t.id + ":" + t.branch;
+      })
+      .join(","),
+    resolvers: 0,
+    last: null,
+  };
+}
+
+function sameConflict(a, b) {
+  return a.id === b.id && list(a.files).join("\n") === list(b.files).join("\n");
+}
+
+function resolverItem(m, g) {
+  m.resolvers++;
+  const conflicting = byId[g.conflict.id];
+  const file = dir + "/resolve-" + m.scope + "-" + m.resolvers + ".md";
+  const before = list(g.merged)
+    .filter(function (id) {
+      return byId[id];
+    })
+    .map(function (id) {
+      return taskFile(byId[id]);
+    });
+  const lines = [
+    "Job: resolve one merge conflict (a brief, no task file).",
+    "Worktree: " + m.worktree + " (on branch " + m.branch + "; the merge is already started there)",
+    "Branch being merged: " + (conflicting ? conflicting.branch : g.conflict.id),
+    "Conflicted files: " + list(g.conflict.files).join(", "),
+    "Task file of the conflicting task: " + (conflicting ? taskFile(conflicting) : "none"),
+    "Task files of the tasks already merged: " + (before.length ? before.join(", ") : "none"),
+    "Edit only the conflicted files, `git add` them and run `git commit --no-edit`. Never start, abort or redo a merge, and never edit the repository checkout " + repo + ".",
+  ];
+  if (conflicting) lines.push("Then run the conflicting task's check and quote its output: " + conflicting.spec.check);
+  lines.push("If the conflict cannot be resolved by editing those files alone, stop and write `blocked: <why>` as the first line of the report; do not ask.");
+  lines.push("Write the report to " + file);
+  const command = mergeCommand(m) + (conflicting ? " --check " + quote(conflicting.spec.check) : "");
+  return node("resolve-" + m.scope + "-" + m.resolvers, "implementer", lines, file, {
+    gate: command,
+    gateTimeoutMs: 900000,
+    selfGate: false,
+    timeoutMs: bigMs,
+    worktree: false,
+  });
+}
+
+// Settles the result of a merge gate: a conflict goes to a resolver, whose own
+// gate repeats the merge. Resolves to { ok, g, why }.
+function settle(m, result) {
+  const g = result.structuredOutput;
+  const failure = function (why) {
+    return Promise.resolve({ ok: false, g: g, why: why });
+  };
+  if (g) noteMade(m.scope, m.kind, g.branch || m.branch, g.worktree || m.worktree);
+  if (!result.ok || !g) return failure("the merge did not run: " + (result.error || "no result"));
+  if (g.ok) return Promise.resolve({ ok: true, g: g, why: "" });
+  if (!g.conflict) return failure(g.reason || "the merge failed");
+  const where = "conflict merging " + g.conflict.id + " in " + list(g.conflict.files).join(", ");
+  if (m.last && sameConflict(m.last, g.conflict)) {
+    const why = g.reason && !/has conflicts$/.test(g.reason) ? ": " + g.reason : "";
+    return failure(where + ", left as it was by the resolver" + why);
+  }
+  if (m.resolvers >= MAX_RESOLVERS) return failure(where + ", still open after " + MAX_RESOLVERS + " resolvers");
+  m.last = g.conflict;
+  return one(resolverItem(m, g)).then(function (next) {
+    return settle(m, next);
+  });
+}
+
+function depsItem(t, m) {
+  return gateOnlyItem("deps-" + t.id, mergeCommand(m), dir + "/deps-" + t.id + ".md");
+}
+
+function prepare(active) {
+  active.forEach(function (t) {
+    if (!t.spec.depends.length) {
+      t.baseRef = pinned.base_ref;
+      t.base = pinned.base;
+    }
+  });
+  const due = active.filter(function (t) {
+    return t.spec.depends.length > 0;
+  });
+  if (due.length === 0) return Promise.resolve();
+  const states = due.map(function (t) {
+    return mergeState(t.id, "deps", dir + "/deps/" + t.id, integrationBranch + "-deps-" + t.id, t.spec.depends.map(function (d) {
+      return byId[d];
+    }));
+  });
+  return launch(
+    due.map(function (t, i) {
+      return depsItem(t, states[i]);
+    }),
+  ).then(function (results) {
+    return due.reduce(function (chain, t, i) {
+      return chain
+        .then(function () {
+          return settle(states[i], results[i]);
+        })
+        .then(function (out) {
+          if (out.ok) {
+            t.baseRef = "refs/heads/" + out.g.branch;
+            t.base = out.g.head;
+            return;
+          }
+          askPerson(t, "deps", "the tasks that task " + t.id + " builds on could not be merged: " + out.why);
+        });
+    }, Promise.resolve());
+  });
+}
+
+const intake = await one(
+  node(
+    "intake",
+    "scout",
+    ["Check that " + dir + "/plan.md can be read, then write the single word done to " + dir + "/intake.md."],
+    dir + "/intake.md",
+    { gate: planGateCommand(), selfGate: false, timeoutMs: childMs },
+  ),
+);
 
 if (!intake.ok || !intake.structuredOutput) {
   open.push("the plan check did not run: " + (intake.error || "no result"));
-  return receipt();
+  return finish();
 }
 
 const plan = intake.structuredOutput;
@@ -544,12 +597,22 @@ if (!plan.ok) {
   planProblems(plan).forEach(function (p) {
     open.push(p);
   });
-  return receipt();
+  return finish();
 }
 
+const pin = await one(gateOnlyItem("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), dir + "/pin.md"));
+if (!pin.ok || !pin.structuredOutput) {
+  open.push("the base could not be pinned: " + (pin.error || "the pin did not run"));
+  return finish();
+}
+if (!pin.structuredOutput.ok) {
+  open.push("the base could not be pinned: " + pin.structuredOutput.reason);
+  return finish();
+}
+pinned = pin.structuredOutput;
+
 list(plan.tasks).forEach(function (spec) {
-  const t = {
-    id: spec.id,
+  const t = Object.assign(subjectOf(spec.id), {
     spec: spec,
     state: "pending",
     next: null,
@@ -557,12 +620,8 @@ list(plan.tasks).forEach(function (spec) {
     fixes: 0,
     extraFix: false,
     reviews: 0,
-    heals: 0,
-    signatures: [],
-    trouble: null,
     extraOwns: [],
     replanBrief: null,
-    lastDiagnosis: null,
     runId: null,
     branch: null,
     worktree: null,
@@ -571,7 +630,7 @@ list(plan.tasks).forEach(function (spec) {
     findings: "",
     lastReview: null,
     lastVerdict: null,
-  };
+  });
   byId[spec.id] = t;
   tasks.push(t);
 });
@@ -581,7 +640,7 @@ tasks.forEach(function (t) {
   top = Math.max(top, levelOf(t));
 });
 
-board("plan accepted");
+board("plan accepted", view());
 
 for (let level = 0; level <= top; level++) {
   const active = [];
@@ -602,7 +661,13 @@ for (let level = 0; level <= top; level++) {
         active.push(t);
       }
     });
-  if (active.length) await cycle(active, 0, "wave " + (level + 1));
+  if (active.length) {
+    await prepare(active);
+    const ready = active.filter(function (t) {
+      return t.state === "running";
+    });
+    if (ready.length) await cycle(ready, 0, "wave " + (level + 1));
+  }
 }
 
 const finished = [];
@@ -614,8 +679,7 @@ for (let level = 0; level <= top; level++) {
 
 if (finished.length === 0) {
   open.push("no task finished, so there is nothing to integrate");
-  board("finished");
-  return receipt();
+  return finish();
 }
 
 const pairs = finished
@@ -624,38 +688,41 @@ const pairs = finished
   })
   .join(",");
 
+const wanted = {};
+finished.forEach(function (t) {
+  Object.keys(ancestors(t)).forEach(function (d) {
+    wanted[d] = true;
+  });
+});
+const tipTasks = finished.filter(function (t) {
+  return !wanted[t.id];
+});
+
 function integrationItem(attempt, diagnosisFile) {
   const report = dir + (attempt === 1 ? "/integration.md" : "/integration-" + attempt + ".md");
   const lines = [
-    "Job: integrate the finished tasks of a plan (a brief, no task file, no worktree of your own).",
-    "Repository: " + repo,
-    "Plan: " + dir + "/plan.md (the order of its task list is the merge order; it names the heavy checks)",
+    "Job: integrate the finished tasks of a plan (a brief, no task file).",
+    "Repository: " + repo + " (never edit its checkout)",
+    "Plan: " + dir + "/plan.md (it names the heavy checks)",
     "Integration branch: " + integrationBranch,
-    "Integration worktree: " + dir + "/integration",
+    "Integration worktree: " + dir + "/integration (already made, with every finished branch merged into it; work only there)",
     "Finished tasks, as id:branch: " + pairs,
   ];
   if (diagnosisFile) lines.push("An earlier attempt did not finish; the diagnosis at " + diagnosisFile + " says why, and its ## Brief section says what to do differently.");
   lines.push(
-    "1. Create the branch and worktree from the repository's current HEAD without touching its checkout: git -C " + repo + " worktree add -b " + integrationBranch + " " + dir + "/integration HEAD. If they already exist, continue in them.",
-    "2. Merge every finished branch into the integration branch in the order of plan.md's task list, dependencies first. You resolve conflicts; one you cannot resolve ends the job as blocked, naming both sides.",
-    "3. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
-    "4. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
-    "Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
+    "1. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
+    "2. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
+    "Create no worktree and merge nothing. Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
     "Write the report to " + report,
   );
-  return {
-    key: attempt === 1 ? "integrate" : "integrate-" + attempt,
-    agent: "implementer",
-    task: lines.join("\n"),
-    output: report,
-    outputMode: "file-only",
-    maxRuntimeMs: bigMs,
+  const item = node(attempt === 1 ? "integrate" : "integrate-" + attempt, "implementer", lines, report, {
+    gate: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
+    selfGate: false,
+    timeoutMs: bigMs,
     worktree: false,
-    gate: {
-      command: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
-      output: "json",
-    },
-  };
+  });
+  item.big = true;
+  return item;
 }
 
 function integrationTrouble(result) {
@@ -665,24 +732,26 @@ function integrationTrouble(result) {
   return null;
 }
 
-board("integrating");
+board("integrating", view());
+const joining = mergeState("integration", "integration", dir + "/integration", integrationBranch, tipTasks);
+const joined = await one(gateOnlyItem("merge", mergeCommand(joining), dir + "/merge.md"));
+const joinedOut = await settle(joining, joined);
+if (!joinedOut.ok) {
+  askDecision(subjectOf("integration"), "integrate", "the finished branches could not be merged: " + joinedOut.why, null);
+  open.push("integration merge: " + joinedOut.why);
+  open.push("integration worktree: " + joining.worktree + " on branch " + integrationBranch);
+  open.push("finished branches: " + pairs);
+  return finish();
+}
+
 let integrated = await one(integrationItem(1, null));
 const problem = integrationTrouble(integrated);
 if (problem) {
-  const subject = {
-    id: "integration",
-    heals: 0,
-    signatures: [],
-    lastDiagnosis: null,
-    worktree: dir + "/integration",
-    branch: integrationBranch,
-    trouble: { step: "integrate", signal: short(problem), evidence: [integrated.file, dir + "/heavy.md"], allowed: ["retry", "decide"] },
-  };
-  const diagnosed = await one(diagnoseItem(subject));
-  const d = readDiagnosis(subject, diagnosed);
-  if (d.problem) decide.push({ id: "integration", question: short(problem + "; " + d.problem), diagnosis: diagnosed.file });
-  else if (d.action === "decide") decide.push({ id: "integration", question: short(d.reason), diagnosis: diagnosed.file });
-  else integrated = await one(integrationItem(2, diagnosed.file));
+  const subject = subjectOf("integration");
+  const trouble = troubleOf("integrate", problem, [integrated.file, dir + "/heavy.md"], ["retry", "decide"]);
+  const context = ["Plan: " + dir + "/plan.md", "Repository: " + repo, "Worktree: " + dir + "/integration on branch " + integrationBranch + " (read it, run checks in it, edit nothing)"];
+  const d = await diagnose(subject, trouble, dir, context, STEPS.integrate, childMs);
+  if (d) integrated = await one(integrationItem(2, d.file));
 }
 
 if (!integrated.ok) {
@@ -696,6 +765,7 @@ if (!integrated.ok) {
   merged = list(g.merged);
   heavy = g.heavy_check;
   prText = g.pr_text || "";
+  if (g.ok) tidied = merged;
   list(g.reasons).forEach(function (reason) {
     open.push("integration: " + reason);
   });
@@ -704,5 +774,4 @@ if (!integrated.ok) {
   });
 }
 
-board("finished");
-return receipt();
+return finish();
