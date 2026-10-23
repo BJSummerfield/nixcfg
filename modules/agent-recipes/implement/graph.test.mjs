@@ -173,9 +173,12 @@ function assertUniqueOutputs(f) {
     ["intake"],
     ["pin"],
     ["impl-a", "impl-b", "impl-c"],
-    ["review-a-1", "review-b-1", "review-c-1"],
+    ["review-a-1"],
+    ["review-b-1"],
+    ["review-c-1"],
     ["fix-b-1", "fix-c-1"],
-    ["review-b-2", "review-c-2"],
+    ["review-b-2"],
+    ["review-c-2"],
     ["fix-c-2"],
     ["review-c-3"],
     ["diagnose-c-1"],
@@ -828,7 +831,7 @@ function assertUniqueOutputs(f) {
     merge: { merge: conflictAt("integration", "b", ["b.nix", "lib/b"], ["a"]) },
   });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a", "impl-b"], ["review-a-1", "review-b-1"], ["merge"], ["resolve-integration-1"], ["integrate"]]);
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a", "impl-b"], ["review-a-1"], ["review-b-1"], ["merge"], ["resolve-integration-1"], ["integrate"]]);
   const k = byKey(f);
   const r = k["resolve-integration-1"];
   assert.equal(r.agent, "implementer");
