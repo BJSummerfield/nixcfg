@@ -27,16 +27,24 @@
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //   diagnosis <file> [--allow a,b] [--verdict yes]
-//                                  {ok, action, reason, verdict, owns:[], brief, problem}
+//                                  {ok, action, reason, verdict, owns:[], brief, question, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
 //                                  plan directory -> {ok, tasks:[{id, owns, reads,
 //                                  check, depends, research, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
 //                                  cycles:[[id, ...]]}
-//   task <report> --check CMD [--owns a,b] [--repo DIR] [--base SHA] [--run DIR --id ID]
+//   task <report> [--check CMD] [--verify CMD] [--in DIR] [--owns a,b] [--repo DIR]
+//                 [--base SHA] [--run DIR --id ID]
 //                                  run in a task worktree -> {ok, reason, report:{status,
 //                                  why}, branch, worktree, head, base, clean, commits,
-//                                  files, outside, check:{command, exit, tail}}
+//                                  files, outside, check:{command, exit, tail, signature},
+//                                  verify:{command, exit, tail, signature} | null, signature}
+//   repro <dir> --command CMD [--expect fail|pass] [--id ID] [--in DIR]
+//                                  run a command and judge its exit status ->
+//                                  {ok, reason, command, expect, exit, timed_out, tail,
+//                                  signature, log, branch, worktree, head}
+//   hypotheses <file> [--run DIR --id ID]  ranked hypotheses -> {ok, hypotheses:[{rank, claim,
+//                                  check}], problem}
 //   pin <dir> --repo DIR           fix the run's base commit and ref in <dir>/run.json ->
 //                                  {ok, reason, repo, base, base_ref, reused}
 //   merge <worktree> --dir DIR --branch NAME [--tips id:branch,...] [--onto REF] [--refresh yes]
@@ -125,19 +133,47 @@
 // With --run (and --id) the working directory's worktree is recorded in
 // <run>/run.json as kind task when it is a linked worktree. outside lists changed files that are not under --owns,
 // whose paths are normalised as in plan. The check is run once with
-// `sh -c` in the working directory; ok needs a passing report, at least one
-// commit, a clean tree, no outside files and check exit 0, and reason names
-// the first failure.
+// `sh -c` in the working directory (--in DIR replaces it for everything the
+// gate does); ok needs a passing report, at least one commit, a clean tree, no
+// outside files, verify exit 0 and check exit 0, and reason names the first
+// failure. --check is optional when --verify is given. --verify is run before
+// the check under the same condition (a passing report and a HEAD); a command
+// that was not run has exit null. Each command may take 10 minutes.
+// signature is null when ok; otherwise a hash of the normalised output of the
+// command that failed (verify first), or of the normalised reason when no
+// command failed. The output is the command's stdout, a `--- stderr ---`
+// line and its stderr; the work directory, ANSI escapes, store hashes, temp
+// paths, hex runs of 7+ characters, digit runs of 4+ characters, decimal
+// numbers and numbers with a time unit are masked,
+// so the same failure in another worktree or at another time hashes the same
+// while a count that moved (`got 4` to `got 5`) does not. Only the last 20
+// lines are hashed.
+//
+// repro: runs --command with `sh -c` in --in (default the working directory)
+// for up to 10 minutes and writes the last 64 KB of its output to
+// <dir>/<id>.log (id defaults to `repro`). A linked worktree under <dir> or
+// the pi worktree base is recorded in <dir>/run.json as kind repro. --expect
+// is fail (the default: ok needs a nonzero exit that is not a timeout) or pass
+// (ok needs exit 0). exit is -1 when the command was killed.
+//
+// hypotheses: a hypothesis is a `## <n>. <claim>` heading and, in its section,
+// a `Check first: <text>` line. They are ranked by n; a repeated n is dropped.
+// ok needs at least two with both parts. The claim and the check are the
+// line's own text after the markers. With --run, a linked worktree under DIR or
+// the pi worktree base is recorded as kind hypothesize, and branch and worktree
+// are returned.
 //
 // diagnosis: reads the file a diagnose child writes when a step's output was
 // not accepted. From its first `action:` line up to the next heading it takes
-// `action:` (continue, retry, fix, replan or decide), `reason:` (one line),
+// `action:` (continue, retry, fix, replan, next, research or decide), `reason:` (one line),
 // `verdict:` (clean or needs-work, for a review that could not be read) and
 // `owns:` (extra repository paths a replanned task may change, or none). A
 // `## Brief` section holds the instructions for the next worker. ok needs an
-// action from --allow (default all five), a reason, a non-empty brief for fix
-// and replan, and with --verdict a verdict for continue; problem names what is
-// missing.
+// action from --allow (default all seven), a reason, a non-empty brief for fix
+// and replan, a question for research, and with --verdict a verdict for
+// continue; problem names what is missing. question is the first line of the
+// brief (leading `-`, `*`, `>` and spaces removed, at most 300 characters) for
+// research and empty otherwise.
 //
 // integrate: reads the integration worktree at <dir>/integration, <dir>/pr.md
 // and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
@@ -154,6 +190,7 @@
 // child is shown this command and may well run it before the workflow does.
 
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -601,9 +638,48 @@ function owned(file, owns) {
   return owns.some((o) => file === o || file.startsWith(`${o}/`));
 }
 
+const SIGNATURE_LINES = 20;
+const STDERR_MARKER = "--- stderr ---";
+const RUN_BUFFER = 256 * 1024 * 1024;
+
+function signatureOf(text, roots) {
+  let t = text;
+  for (const root of [...new Set(roots)].filter(Boolean).sort((a, b) => b.length - a.length)) t = t.split(root).join("<wt>");
+  t = t
+    .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "")
+    .replace(/\/nix\/store\/[0-9a-z]{32}-/g, "/nix/store/")
+    .replace(/\/(?:var\/)?tmp\/\S*/g, "<tmp>")
+    .toLowerCase()
+    .replace(/\b[0-9a-f]{7,}\b/g, "#")
+    .replace(/\d+(?:\.\d+)?\s*(?:ms|us|µs|s|m|h)\b/g, "<t>")
+    .replace(/\d+\.\d+/g, "<n>")
+    .replace(/\d+(?=\s*duration)|\bduration\S*\s+\d+/g, "<t>")
+    .replace(/\d{4,}/g, "0");
+  const lines = t
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(-SIGNATURE_LINES);
+  return crypto.createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 16);
+}
+
+// The signature covers the full output; the tail is only for display.
+function runCommand(cwd, command) {
+  const r = spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout: CHECK_TIMEOUT_MS, maxBuffer: RUN_BUFFER });
+  const stdout = r.stdout ?? "";
+  const stderr = r.stderr ?? "";
+  return {
+    exit: r.status ?? -1,
+    timed_out: r.error?.code === "ETIMEDOUT",
+    overflowed: r.error?.code === "ENOBUFS",
+    output: `${stdout}${stderr}`,
+    signature: signatureOf(`${stdout}\n${STDERR_MARKER}\n${stderr}`, [cwd, realOr(cwd)]),
+  };
+}
+
 function task(report, flags) {
-  if (!flags.check) throw new Usage("task needs --check");
-  const cwd = process.cwd();
+  if (!flags.check && !flags.verify) throw new Usage("task needs --check or --verify");
+  const cwd = flags.in ?? process.cwd();
   const owns = pathList(flags.owns, true);
   const rep = reportStatus(report);
   const passing = rep.status === "done" || rep.status === "done, concerns";
@@ -625,11 +701,17 @@ function task(report, flags) {
   const clean = git(cwd, ["status", "--porcelain"]) === "";
   const outside = owns.length ? changed.filter((f) => !owned(f, owns)) : [];
 
-  const check = { command: flags.check, exit: null, tail: "" };
+  const check = { command: flags.check ?? null, exit: null, tail: "", signature: null };
+  const verify = flags.verify ? { command: flags.verify, exit: null, tail: "", signature: null } : null;
+  const execute = (slot) => {
+    const r = runCommand(cwd, slot.command);
+    slot.exit = r.exit;
+    slot.tail = r.output.slice(-TAIL_CHARS);
+    if (r.exit !== 0) slot.signature = r.signature;
+  };
   if (passing && head) {
-    const r = spawnSync("sh", ["-c", flags.check], { cwd, encoding: "utf8", timeout: CHECK_TIMEOUT_MS });
-    check.exit = r.status ?? -1;
-    check.tail = `${r.stdout ?? ""}${r.stderr ?? ""}`.slice(-TAIL_CHARS);
+    if (verify) execute(verify);
+    if (check.command && (!verify || verify.exit === 0)) execute(check);
   }
 
   let reason = "";
@@ -640,7 +722,11 @@ function task(report, flags) {
   else if (commits === 0) reason = "no commits on the branch";
   else if (!clean) reason = "uncommitted changes in the worktree";
   else if (outside.length) reason = `changed files outside owns: ${outside.slice(0, LIST_CAP).join(", ")}`;
-  else if (check.exit !== 0) reason = `check failed (exit ${check.exit}): ${check.tail}`;
+  else if (verify && verify.exit !== 0) reason = `verify failed (exit ${verify.exit}): ${verify.tail}`;
+  else if (check.command && check.exit !== 0) reason = `check failed (exit ${check.exit}): ${check.tail}`;
+
+  let signature = null;
+  if (reason !== "") signature = verify?.signature ?? check.signature ?? signatureOf(reason, []);
 
   return {
     ok: reason === "",
@@ -655,7 +741,76 @@ function task(report, flags) {
     files: changed.slice(0, LIST_CAP),
     outside: outside.slice(0, LIST_CAP),
     check,
+    verify,
+    signature,
   };
+}
+
+const REPRO_LOG_BYTES = 64 * 1024;
+
+function repro(dir, flags) {
+  if (!flags.command) throw new Usage("repro needs --command");
+  const expect = flags.expect ?? "fail";
+  if (expect !== "fail" && expect !== "pass") throw new Usage("--expect must be fail or pass");
+  const id = flags.id ?? "repro";
+  const cwd = flags.in ?? process.cwd();
+  const r = runCommand(cwd, flags.command);
+  fs.mkdirSync(dir, { recursive: true });
+  const log = path.join(dir, `${id}.log`);
+  fs.writeFileSync(log, r.output.slice(-REPRO_LOG_BYTES));
+  const here = where(cwd);
+  if (recordable(dir, here)) record(dir, { kind: "repro", id, branch: here.branch, worktree: here.worktree });
+  let reason = "";
+  if (r.timed_out) reason = "the command did not finish in 10 minutes";
+  else if (r.overflowed) reason = "the command printed more output than can be captured";
+  else if (expect === "fail" && r.exit === 0) reason = "the command passed (exit 0) but was expected to fail";
+  else if (expect === "pass" && r.exit !== 0) reason = `the command failed (exit ${r.exit}) but was expected to pass`;
+  return {
+    ok: reason === "",
+    reason,
+    command: flags.command,
+    expect,
+    exit: r.exit,
+    timed_out: r.timed_out,
+    tail: r.output.slice(-TAIL_CHARS),
+    signature: r.signature,
+    log,
+    branch: here.branch,
+    worktree: here.worktree,
+    head: git(cwd, ["rev-parse", "HEAD"]),
+  };
+}
+
+function hypotheses(file, flags = {}) {
+  const out = hypothesesOf(file);
+  if (!flags.run) return out;
+  const here = where(process.cwd());
+  if (recordable(flags.run, here)) record(flags.run, { kind: "hypothesize", id: flags.id, branch: here.branch, worktree: here.worktree });
+  return { ...out, branch: here.branch, worktree: here.worktree };
+}
+
+function hypothesesOf(file) {
+  const text = readIfExists(file);
+  if (text === null) return { ok: false, hypotheses: [], problem: "file missing" };
+  const lines = text.split("\n").map((l) => l.replace(/^[\s>*-]+/, "").trim());
+  const found = new Map();
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^##\s+(\d+)\.\s*(.*?)\s*$/);
+    if (!m) continue;
+    const rank = Number(m[1]);
+    let check = "";
+    for (let j = i + 1; j < lines.length && !/^##\s/.test(lines[j]); j++) {
+      const c = lines[j].match(/^(?:\*\*|__)?Check first:?(?:\*\*|__)?:?\s*(.*?)\s*$/i);
+      if (c) {
+        check = c[1];
+        break;
+      }
+    }
+    if (!found.has(rank)) found.set(rank, { rank, claim: m[2], check });
+  }
+  const list = [...found.values()].filter((h) => h.claim && h.check).sort((a, b) => a.rank - b.rank);
+  const ok = list.length >= 2;
+  return { ok, hypotheses: list, problem: ok ? null : "fewer than two hypotheses with a Check first line" };
 }
 
 function heavyCheck(file) {
@@ -786,13 +941,13 @@ function ownsList(raw) {
   return list;
 }
 
-const ACTIONS = ["continue", "retry", "fix", "replan", "decide"];
+const ACTIONS = ["continue", "retry", "fix", "replan", "next", "research", "decide"];
 const DIAGNOSIS_KEY = /^(action|reason|verdict|owns):[ \t]*(.*?)\s*$/i;
 
 function diagnosis(file, flags) {
   const allowed = flags.allow ? String(flags.allow).split(",").map((a) => a.trim()) : ACTIONS;
   const text = readIfExists(file);
-  const none = { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false };
+  const none = { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false, question: "" };
   if (text === null) return { ...none, problem: "file missing" };
   const lines = text.split("\n").map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""));
   const fields = {};
@@ -802,7 +957,10 @@ function diagnosis(file, flags) {
     if (m && !(m[1].toLowerCase() in fields)) fields[m[1].toLowerCase()] = m[2];
   }
   const briefAt = text.search(/^##\s+Brief\s*$/im);
-  const brief = briefAt >= 0 && text.slice(briefAt).replace(/^##\s+Brief\s*$/im, "").split(/^##\s/m)[0].trim().length > 0;
+  const briefText = briefAt >= 0 ? text.slice(briefAt).replace(/^##\s+Brief\s*$/im, "").split(/^##\s/m)[0] : "";
+  const brief = briefText.trim().length > 0;
+  const first = briefText.split("\n").find((l) => l.trim()) ?? "";
+  const asked = first.replace(/^[-*>\s]+/, "").trim().slice(0, 300);
   const action = (fields.action || "").toLowerCase().split(/\s/)[0] || null;
   const verdictWord = (fields.verdict || "").toLowerCase().match(/^(clean|needs-work)\b/);
   const out = {
@@ -812,6 +970,7 @@ function diagnosis(file, flags) {
     verdict: verdictWord ? verdictWord[1] : null,
     owns: fields.owns ? ownsList(fields.owns) : [],
     brief,
+    question: action === "research" ? asked : "",
   };
   let problem = null;
   if (!action) problem = "no action line";
@@ -819,6 +978,7 @@ function diagnosis(file, flags) {
   else if (!allowed.includes(action)) problem = `action ${action} is not allowed here (${allowed.join(", ")})`;
   else if (!out.reason) problem = "no reason line";
   else if ((action === "fix" || action === "replan") && !brief) problem = `action ${action} needs a ## Brief section`;
+  else if (action === "research" && !out.question) problem = "action research needs a question as the first line of ## Brief";
   else if (action === "continue" && flags.verdict && !out.verdict) problem = "action continue needs a verdict line";
   return problem ? { ...out, ok: false, problem } : out;
 }
@@ -827,7 +987,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate|resume <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -849,6 +1009,10 @@ function run(argv) {
       return plan(target, flags);
     case "task":
       return task(target, flags);
+    case "repro":
+      return repro(target, flags);
+    case "hypotheses":
+      return hypotheses(target, flags);
     case "pin":
       return pin(target, { repo: flags.repo });
     case "merge":

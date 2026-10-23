@@ -12,7 +12,7 @@ assert.ok(!/setTimeout/.test(lib), "the sandbox has no setTimeout");
 assert.ok(!/^\s*(import|export)\b/m.test(lib), "the sandbox has no modules");
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const names = "node,port,launch,one,retryItem,stoppedItself,subjectOf,troubleOf,diagnose,rankAndCap,sourcesFound,pathsFound,searchItem,extractItem,locateItem,extractFileItem,board,receipt,healed,decide,tally,sibling";
+const names = "node,port,launch,one,retryItem,stoppedItself,subjectOf,troubleOf,diagnose,rankAndCap,sourcesFound,pathsFound,searchItem,extractItem,locateItem,extractFileItem,gatherSources,board,receipt,healed,decide,tally,sibling";
 const load = (runs, emit) => new AsyncFunction("runs", "args", "emit", `${lib}\nreturn { ${names} };`)(runs, {}, emit);
 
 function fake(respond) {
@@ -230,3 +230,73 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
 }
 
 console.log("recipe library: ok");
+
+// gatherSources(): search and/or locate, rank and cap, extract.
+{
+  const search = (urls) => ok("search-q", { ok: true, urls: urls.map((u, i) => ({ url: u, kind: i === 0 ? "primary" : "secondary", why: "w" })) });
+  const spec = { goal: "G", question: "Q?", id: "q", dir: "/t", repo: "/r", childMs: 9 };
+
+  {
+    const urls = ["u1", "u2", "u3", "u4", "u5"];
+    const f = fake((item) => {
+      if (item.key === "search-q") return search(urls);
+      return item.key === "extract-q-2" ? ok(item.key, { ok: false, reason: "thin" }) : ok(item.key, { ok: true, bytes: 5 });
+    });
+    const L = await load(f.runs);
+    const out = await L.gatherSources(spec);
+    assert.equal(f.batches.length, 2);
+    assert.deepEqual(f.batches[0].map((i) => i.key), ["search-q"]);
+    assert.equal(f.batches[0][0].output, "/t/research/q/search.md");
+    assert.deepEqual(f.batches[1].map((i) => i.key), ["extract-q-1", "extract-q-2", "extract-q-3"]);
+    assert.equal(f.batches[1][0].output, "/t/research/q/extract-1.md");
+    assert.ok(f.batches[1][0].task.includes("Page: /t/research/q/page-1.md"));
+    assert.ok(f.batches[1][0].task.includes("URL: u1"));
+    assert.deepEqual(out.files, ["/t/research/q/extract-1.md", "/t/research/q/extract-3.md"]);
+    assert.deepEqual(out.sources, [{ url: "u1", status: "ok" }, { url: "u2", status: "rejected" }, { url: "u3", status: "ok" }]);
+    assert.deepEqual(out.open, ["source u2: rejected"]);
+  }
+
+  {
+    const f = fake((item) => {
+      if (item.key === "locate-q") return ok(item.key, { ok: true, paths: [{ path: "src/a.js", kind: "primary", why: "w", range: { start: 1, end: 9 } }] });
+      return ok(item.key, { ok: true, bytes: 1 });
+    });
+    const L = await load(f.runs);
+    const out = await L.gatherSources({ ...spec, source: "repo" });
+    assert.deepEqual(f.batches[0].map((i) => i.key), ["locate-q"]);
+    assert.ok(f.batches[1][0].task.includes("File: /r/src/a.js"));
+    assert.ok(f.batches[1][0].task.includes("Range: 1-9"));
+    assert.deepEqual(out.files, ["/t/research/q/extract-1.md"]);
+  }
+
+  {
+    const f = fake((item) => {
+      if (item.key === "search-q") return search(["u1"]);
+      if (item.key === "locate-q") return ok(item.key, { ok: true, paths: [{ path: "p.js", kind: "primary", why: "w" }] });
+      return failed(item.key, "boom");
+    });
+    const L = await load(f.runs);
+    const out = await L.gatherSources({ ...spec, source: "both" });
+    assert.deepEqual(f.batches[0].map((i) => i.key).sort(), ["locate-q", "search-q"]);
+    assert.equal(f.batches[1].length, 2);
+    assert.deepEqual(out.files, []);
+    assert.deepEqual(out.sources.map((s) => s.status), ["failed", "failed"]);
+  }
+
+  {
+    const f = fake((item) => ok(item.key, { ok: true, urls: [] }));
+    const L = await load(f.runs);
+    const out = await L.gatherSources(spec);
+    assert.deepEqual(out.files, []);
+    assert.ok(out.open.includes("no sources were found"));
+    assert.equal(f.batches.length, 1);
+  }
+
+  {
+    const f = fake(() => null);
+    const L = await load(f.runs);
+    assert.deepEqual((await L.gatherSources({ ...spec, source: "ftp" })).open, ["source must be web, repo or both"]);
+    assert.deepEqual((await L.gatherSources({ ...spec, source: "both", repo: "" })).open, ["a repository source needs the repo argument"]);
+    assert.equal(f.batches.length, 0);
+  }
+}

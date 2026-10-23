@@ -230,7 +230,7 @@ const gate = (...args) => {
   const d = (text, ...flags) => gate("diagnosis", write("diagnosis.md", text), ...flags).json;
   assert.deepEqual(
     d("# Diagnosis\n\naction: replan\nreason: stage-test.sh belongs to another task.\nowns: `tests/a.sh`, ./b.nix\n\n## Brief\n\nOwn the test too.\n"),
-    { ok: true, action: "replan", reason: "stage-test.sh belongs to another task.", verdict: null, owns: ["tests/a.sh", "b.nix"], brief: true },
+    { ok: true, action: "replan", reason: "stage-test.sh belongs to another task.", verdict: null, owns: ["tests/a.sh", "b.nix"], brief: true, question: "" },
   );
   const cont = d("action: continue\nreason: the verdict sits under a heading.\nverdict: clean\n", "--allow", "continue,decide", "--verdict", "yes");
   assert.equal(cont.ok, true);
@@ -883,6 +883,214 @@ const gate = (...args) => {
   assert.equal(r.tasks.dx1.reviews, 4);
   assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
   assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
+}
+
+
+// repro, hypotheses, task --verify/--in with signatures, diagnosis next/research.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const source = dir();
+  git(source, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(source, "a.txt"), "a\n");
+  git(source, "add", "-A");
+  git(source, "commit", "-q", "-m", "init");
+  const run = dir();
+  const worktree = (branch, where = path.join(dir(), "wt")) => {
+    git(source, "worktree", "add", "-q", "-b", branch, where, "main");
+    return where;
+  };
+  const commit = (wt, file, text) => {
+    fs.writeFileSync(path.join(wt, file), text);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", file);
+  };
+  const report = (text) => write("report.md", text);
+
+  // repro: exit status against the expectation, the log, and the usage errors.
+  const r1 = gateIn(source, "repro", run, "--command", "echo out; echo err >&2; exit 3");
+  assert.equal(r1.status, 0);
+  assert.equal(r1.json.ok, true);
+  assert.equal(r1.json.reason, "");
+  assert.equal(r1.json.exit, 3);
+  assert.equal(r1.json.timed_out, false);
+  assert.equal(r1.json.expect, "fail");
+  assert.equal(r1.json.log, path.join(run, "repro.log"));
+  assert.equal(fs.readFileSync(r1.json.log, "utf8"), "out\nerr\n");
+  assert.match(r1.json.tail, /out\nerr/);
+  const r2 = gateIn(source, "repro", run, "--command", "true");
+  assert.equal(r2.json.ok, false);
+  assert.equal(r2.json.reason, "the command passed (exit 0) but was expected to fail");
+  const r3 = gateIn(source, "repro", run, "--command", "true", "--expect", "pass");
+  assert.equal(r3.json.ok, true);
+  const r4 = gateIn(source, "repro", run, "--command", "exit 5", "--expect", "pass", "--id", "again");
+  assert.equal(r4.json.ok, false);
+  assert.equal(r4.json.reason, "the command failed (exit 5) but was expected to pass");
+  assert.ok(fs.existsSync(path.join(run, "again.log")));
+  assert.equal(gateIn(source, "repro", run).status, 2);
+  assert.equal(gateIn(source, "repro", run, "--command", "true", "--expect", "maybe").status, 2);
+  assert.equal(gateIn(source, "repro", path.join(dir(), "new", "dir"), "--command", "true").json.ok, false);
+
+  // repro: output beyond the capture limit is not a reproduction.
+  const flood = gateIn(source, "repro", run, "--command", "head -c 300000000 /dev/zero | tr '\\0' x");
+  assert.equal(flood.json.ok, false);
+  assert.match(flood.json.reason, /more output than can be captured/);
+
+  // repro: a linked worktree under the run directory is recorded as kind repro; --in redirects.
+  const inRun = path.join(run, "wt-repro");
+  git(source, "worktree", "add", "-q", "-b", "pi/repro", inRun, "main");
+  const rec = gateIn(inRun, "repro", run, "--command", "exit 1", "--id", "reproduce");
+  assert.equal(rec.json.branch, "pi/repro");
+  assert.equal(rec.json.head, git(inRun, "rev-parse", "HEAD"));
+  const ledger = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
+  assert.deepEqual(ledger.made.map((m) => `${m.kind}:${m.id}:${m.branch}`), ["repro:reproduce:pi/repro"]);
+  const hypo = write("hh.md", "## 1. a\nCheck first: x\n## 2. b\nCheck first: y\n");
+  const hypoWt = path.join(run, "wt-hypo");
+  git(source, "worktree", "add", "-q", "-b", "pi/hypo", hypoWt, "main");
+  const hr = gateIn(hypoWt, "hypotheses", hypo, "--run", run, "--id", "hypothesize");
+  assert.equal(hr.json.branch, "pi/hypo");
+  assert.equal(hr.json.ok, true);
+  const ledger2 = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
+  assert.ok(ledger2.made.some((m) => m.kind === "hypothesize" && m.id === "hypothesize" && m.branch === "pi/hypo"));
+  const redirected = gateIn(source, "repro", run, "--command", "pwd; exit 1", "--in", inRun);
+  assert.equal(redirected.json.tail.trim(), fs.realpathSync(inRun));
+  assert.equal(redirected.json.branch, "pi/repro");
+
+  // signature: stable across worktrees, hashes, temp names and long digit runs; moved by small counts.
+  const sigOf = (cmd) => gateIn(source, "repro", run, "--command", cmd).json.signature;
+  const noisy = (n) => `echo "failed in $PWD at 12345${n} commit deadbeef0${n}1 /tmp/x${n}/y"; exit 1`;
+  assert.equal(sigOf(noisy(1)), sigOf(noisy(2)));
+  assert.notEqual(sigOf("echo expected 3, got 4; exit 1"), sigOf("echo expected 3, got 5; exit 1"));
+  assert.equal(sigOf("echo 'duration_ms 45.7'; echo 'ok in 3 ms'; exit 1"), sigOf("echo 'duration_ms 44.8'; echo 'ok in 9 ms'; exit 1"));
+  assert.equal(sigOf("echo 'took 0.01s'; exit 1"), sigOf("echo 'took 0.03s'; exit 1"));
+  assert.equal(sigOf("echo 'ran 12 duration'; exit 1"), sigOf("echo 'ran 98 duration'; exit 1"));
+  assert.notEqual(sigOf("echo a; echo b; exit 1"), sigOf("echo a; echo c; exit 1"));
+  assert.notEqual(sigOf("echo same; exit 1"), sigOf("echo same >&2; exit 1"));
+  assert.equal(sigOf("echo $((1+1)); exit 1"), sigOf("echo 2; exit 1"));
+
+  // The same command gives the same signature from repro and task in different worktrees.
+  const wtA = worktree("pi/sa");
+  const wtB = worktree("pi/sb");
+  commit(wtB, "b.txt", "b\n");
+  const cmd = 'echo "no good in $PWD, got 4"; echo "trace 987654 at /var/tmp/q1" >&2; exit 1';
+  const fromRepro = gateIn(wtA, "repro", run, "--command", cmd).json.signature;
+  const fromTask = gateIn(wtB, "task", report("done"), "--repo", source, "--check", cmd).json;
+  assert.equal(fromTask.ok, false);
+  assert.equal(fromTask.check.signature, fromRepro);
+  assert.equal(fromTask.signature, fromRepro);
+
+  // task --verify: a failing verify decides the reason and the signature; the check does not run.
+  const bad = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "echo nope; exit 4", "--check", "touch ran.txt");
+  assert.equal(bad.json.ok, false);
+  assert.match(bad.json.reason, /^verify failed \(exit 4\): nope/);
+  assert.equal(bad.json.verify.exit, 4);
+  assert.equal(bad.json.check.exit, null);
+  assert.equal(bad.json.check.signature, null);
+  assert.ok(bad.json.signature);
+  assert.equal(bad.json.signature, bad.json.verify.signature);
+  assert.equal(fs.existsSync(path.join(wtB, "ran.txt")), false);
+
+  // --verify alone works; ok has no signature; without --check the check slot stays empty.
+  const only = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "true");
+  assert.equal(only.json.ok, true, only.json.reason);
+  assert.equal(only.json.signature, null);
+  assert.deepEqual(only.json.check, { command: null, exit: null, tail: "", signature: null });
+  assert.equal(only.json.verify.exit, 0);
+  const plain = gateIn(wtB, "task", report("done"), "--repo", source, "--check", "true");
+  assert.equal(plain.json.verify, null);
+  assert.equal(gateIn(wtB, "task", report("done"), "--repo", source).status, 2);
+
+  // A passing verify then a failing check: the check signature is used.
+  const checkFails = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "true", "--check", "echo late; exit 2");
+  assert.match(checkFails.json.reason, /^check failed \(exit 2\): late/);
+  assert.equal(checkFails.json.signature, checkFails.json.check.signature);
+
+  // --in checks a worktree other than the working directory.
+  const elsewhere = gateIn(source, "task", report("done"), "--repo", source, "--in", wtB, "--check", "pwd");
+  assert.equal(elsewhere.json.ok, true, elsewhere.json.reason);
+  assert.equal(elsewhere.json.branch, "pi/sb");
+  assert.equal(fs.realpathSync(elsewhere.json.worktree), fs.realpathSync(wtB));
+  assert.equal(fs.realpathSync(elsewhere.json.check.tail.trim()), fs.realpathSync(wtB));
+
+  // A failure with no command takes its signature from the reason, the same each time.
+  const wtC = worktree("pi/sc");
+  const none1 = gateIn(wtC, "task", report("done"), "--repo", source, "--check", "true");
+  const none2 = gateIn(wtC, "task", report("done"), "--repo", source, "--check", "true");
+  assert.equal(none1.json.reason, "no commits on the branch");
+  assert.ok(none1.json.signature);
+  assert.equal(none1.json.signature, none2.json.signature);
+  const blocked = gateIn(wtC, "task", report("blocked: x"), "--repo", source, "--check", "true");
+  assert.notEqual(blocked.json.signature, none1.json.signature);
+}
+
+// hypotheses: ranked by number, each needing a claim and a Check first line.
+{
+  const two = write(
+    "h.md",
+    [
+      "# Hypotheses",
+      "## 2. The cache is stale",
+      "Why: it was written before the fix.",
+      "**Check first:** clear the cache and rerun",
+      "",
+      "## 1. The parser drops the last line",
+      "- Check first: feed it a file with no trailing newline",
+      "",
+      "## 1. A repeated rank is dropped",
+      "Check first: nothing",
+    ].join("\n"),
+  );
+  const r = gate("hypotheses", two);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.problem, null);
+  assert.deepEqual(r.json.hypotheses, [
+    { rank: 1, claim: "The parser drops the last line", check: "feed it a file with no trailing newline" },
+    { rank: 2, claim: "The cache is stale", check: "clear the cache and rerun" },
+  ]);
+  const one = gate("hypotheses", write("h.md", "## 1. Only one\nCheck first: look\n")).json;
+  assert.equal(one.ok, false);
+  assert.equal(one.problem, "fewer than two hypotheses with a Check first line");
+  const noCheck = gate("hypotheses", write("h.md", "## 1. First\nCheck first: look\n## 2. Second\nno check here\n")).json;
+  assert.equal(noCheck.ok, false);
+  assert.equal(noCheck.hypotheses.length, 1);
+  assert.equal(gate("hypotheses", path.join(tmp, "absent.md")).json.problem, "file missing");
+  const raw = gate(
+    "hypotheses",
+    write("h.md", "## 1. `cache_dir` is read before init_cache() runs\n**Check first:** `grep -n cache_dir src/app.js` shows __x__\n## 2. The lock in **lock_file.js** stays\nCheck first: run `ls_all`\n"),
+  ).json;
+  assert.deepEqual(raw.hypotheses, [
+    { rank: 1, claim: "`cache_dir` is read before init_cache() runs", check: "`grep -n cache_dir src/app.js` shows __x__" },
+    { rank: 2, claim: "The lock in **lock_file.js** stays", check: "run `ls_all`" },
+  ]);
+}
+
+// diagnosis: next and research.
+{
+  const diag = (text, ...rest) => gate("diagnosis", write("diag.md", text), ...rest).json;
+  const next = diag("action: next\nreason: this idea is spent\n");
+  assert.equal(next.ok, true);
+  assert.equal(next.action, "next");
+  assert.equal(next.question, "");
+  const research = diag("action: research\nreason: need the flag semantics\n## Brief\n- What does the --frozen flag do in tool X?\nMore detail.\n");
+  assert.equal(research.ok, true);
+  assert.equal(research.action, "research");
+  assert.equal(research.question, "What does the --frozen flag do in tool X?");
+  assert.equal(diag("action: research\nreason: r\n## Brief\n> " + "q".repeat(400) + "\n").question.length, 300);
+  const noQuestion = diag("action: research\nreason: r\n## Brief\n\n");
+  assert.equal(noQuestion.ok, false);
+  assert.equal(noQuestion.problem, "action research needs a question as the first line of ## Brief");
+  assert.equal(diag("action: research\nreason: r\n").ok, false);
+  assert.equal(diag("action: research\nreason: r\n## Brief\nWhy?\n", "--allow", "fix,decide").ok, false);
+  assert.equal(diag("action: fix\nreason: r\n## Brief\nWhy?\n", "--allow", "fix,decide").question, "");
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

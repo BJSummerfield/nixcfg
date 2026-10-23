@@ -376,3 +376,61 @@ function receipt(fields) {
   board("finished", fields);
   return Object.assign({}, fields, { healed: healed, decide: decide, children: tally.children });
 }
+
+// One research question run through a searcher and/or a locator, ranked and
+// capped, then extracted. Resolves { files, sources, open }.
+function gatherSources(spec) {
+  const source = spec.source || "web";
+  const limit = spec.limit || 3;
+  const open = [];
+  const none = { files: [], sources: [], open: open };
+  if (source !== "web" && source !== "repo" && source !== "both") {
+    open.push("source must be web, repo or both");
+    return Promise.resolve(none);
+  }
+  if (source !== "web" && !spec.repo) {
+    open.push("a repository source needs the repo argument");
+    return Promise.resolve(none);
+  }
+  const base = spec.dir + "/research/" + spec.id;
+  const angles = [{ id: spec.id, question: spec.question }];
+  const items = [];
+  if (source !== "repo") items.push(searchItem(spec.goal, angles[0], base + "/search.md", spec.childMs));
+  if (source !== "web") items.push(locateItem(spec.goal, angles[0], spec.repo, base + "/locate.md", spec.childMs));
+  return launch(items).then(function (results) {
+    const searches = source === "repo" ? [] : results.slice(0, 1);
+    const locates = source === "web" ? [] : results.slice(results.length - 1);
+    const found = (searches.length ? sourcesFound(angles, searches, {}, open) : []).concat(
+      locates.length ? pathsFound(angles, locates, {}, open) : [],
+    );
+    const picked = rankAndCap(found, limit);
+    if (picked.length === 0) {
+      open.push("no sources were found");
+      return none;
+    }
+    const files = picked.map(function (p, j) {
+      return base + "/extract-" + (j + 1) + ".md";
+    });
+    const extracts = picked.map(function (p, j) {
+      const key = "extract-" + spec.id + "-" + (j + 1);
+      if (p.path) return extractFileItem(key, spec.question, spec.repo + "/" + p.path, p.range, spec.id, files[j], spec.childMs);
+      return extractItem(key, spec.question, p.url, spec.id, base + "/page-" + (j + 1) + ".md", files[j], "", spec.childMs);
+    });
+    return launch(extracts).then(function (done) {
+      const sources = [];
+      const good = [];
+      picked.forEach(function (p, j) {
+        const r = done[j];
+        const g = r.structuredOutput || {};
+        let status = "ok";
+        if (!r.ok) status = "failed";
+        else if (g.over_cap) status = "over_cap";
+        else if (!passed(r)) status = "rejected";
+        sources.push({ url: p.url, status: status });
+        if (status === "ok") good.push(files[j]);
+        else open.push("source " + p.url + ": " + status);
+      });
+      return { files: good, sources: sources, open: open };
+    });
+  });
+}

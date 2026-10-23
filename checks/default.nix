@@ -332,6 +332,19 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node research/graph.test.mjs
         touch $out
       '';
+  pi-recipe-investigate =
+    pkgs.runCommand "pi-recipe-investigate"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        mkdir lib investigate
+        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/investigate/graph.js} investigate/graph.js
+        cp ${../modules/agent-recipes/investigate/graph.test.mjs} investigate/graph.test.mjs
+        node investigate/graph.test.mjs
+        touch $out
+      '';
   pi-recipe-sizing =
     pkgs.runCommand "pi-recipe-sizing"
       {
