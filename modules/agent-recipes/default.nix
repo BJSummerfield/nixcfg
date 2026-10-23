@@ -10,6 +10,8 @@ let
   tools = pkgs.callPackage ./package.nix { };
   roles = import ../pi-coding-agent/settings.nix;
 
+  recipeScript = graph: builtins.readFile ./lib/recipe-lib.js + "\n" + builtins.readFile graph;
+
   recipes = [
     "implement"
     "plan"
@@ -23,9 +25,7 @@ let
       map (
         name:
         lib.nameValuePair "${root}/${name}/SKILL.md" {
-          text = builtins.replaceStrings [ "@subagentModel@" ] [ roles.settings.subagents.defaultModel ] (
-            builtins.readFile (./. + "/${name}/SKILL.md")
-          );
+          text = builtins.readFile (./. + "/${name}/SKILL.md");
         }
       ) recipes
     );
@@ -38,9 +38,9 @@ in
     home.packages = [ tools ];
 
     home.file = {
-      ".pi/agent/recipes/implement/workflow.js".source = ./implement/workflow.js;
-      ".pi/agent/recipes/plan/workflow.js".source = ./plan/workflow.js;
-      ".pi/agent/recipes/research/workflow.js".source = ./research/workflow.js;
+      ".pi/agent/recipes/implement/workflow.js".text = recipeScript ./implement/graph.js;
+      ".pi/agent/recipes/plan/workflow.js".text = recipeScript ./plan/graph.js;
+      ".pi/agent/recipes/research/workflow.js".text = recipeScript ./research/graph.js;
       ".pi/agent/recipes/sizing.json".source = ./sizing/sizing.json;
     }
     // skillsUnder ".pi/agent/skills"
