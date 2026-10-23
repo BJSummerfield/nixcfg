@@ -278,6 +278,25 @@ function extractItem(key, goal, url, angle, page, file, part, childMs) {
   return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
 }
 
+// Repository variants: a locator lists files and line ranges for one
+// question, a file extractor copies the passages of one file.
+function locateItem(goal, angle, repo, file, childMs) {
+  return node(
+    "locate-" + angle.id,
+    "locator",
+    ["Goal: " + goal, "Angle: " + angle.id, "Question: " + angle.question, "Repository: " + repo, "Output: " + file],
+    file,
+    { gate: "recipe-gate paths " + quote(file), timeoutMs: childMs },
+  );
+}
+
+function extractFileItem(key, goal, path, range, angle, file, childMs) {
+  const lines = ["Goal: " + goal, "File: " + path];
+  if (range) lines.push("Range: " + range.start + "-" + range.end);
+  lines.push("Angle: " + angle, "Output: " + file);
+  return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
+}
+
 // Keeps each angle's primary sources first, takes one source per angle in
 // turn, drops repeats and stops at the limit.
 function rankAndCap(found, limit) {
@@ -323,6 +342,25 @@ function sourcesFound(angles, searches, known, open) {
     }
     s.structuredOutput.urls.forEach(function (u) {
       if (!known[u.url]) found.push({ url: u.url, kind: u.kind, why: u.why, angle: angles[i].id });
+    });
+  });
+  return found;
+}
+
+// Lists the files the locators found that are not already known. The url
+// field is the repository-relative path, with ":start-end" when ranged, so
+// rankAndCap treats a file like a page.
+function pathsFound(angles, results, known, open) {
+  const found = [];
+  results.forEach(function (s, i) {
+    if (!passed(s)) {
+      open.push("locate " + angles[i].id + ": " + (s.ok ? "no files listed" : s.error || "failed"));
+      return;
+    }
+    s.structuredOutput.paths.forEach(function (p) {
+      const range = p.range || null;
+      const url = p.path + (range ? ":" + range.start + "-" + range.end : "");
+      if (!known[url]) found.push({ url: url, path: p.path, range: range, kind: p.kind, why: p.why, angle: angles[i].id });
     });
   });
   return found;
