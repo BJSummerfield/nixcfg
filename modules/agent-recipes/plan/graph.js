@@ -66,7 +66,7 @@ function brief(job, extra) {
 }
 
 function plannerItem(key, output, lines) {
-  return node(key, "planner", lines, output, { gate: planGateCommand(), timeoutMs: bigMs });
+  return node(key, "planner", lines, output, { gate: planGateCommand(), timeoutMs: bigMs, big: true });
 }
 
 function findingLines(g) {
@@ -143,7 +143,7 @@ function reviewItem() {
       "Write the report to " + file,
     ],
     file,
-    { gate: "recipe-gate verdict " + quote(file), timeoutMs: bigMs },
+    { gate: "recipe-gate verdict " + quote(file), timeoutMs: bigMs, big: true },
   );
 }
 

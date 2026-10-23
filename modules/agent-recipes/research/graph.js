@@ -56,7 +56,7 @@ function synthItem(key, files, out, mode, from) {
     lines.push("- " + file);
   });
   lines.push("Write the result to " + out);
-  return node(key, "synthesizer", lines, out, { timeoutMs: bigMs });
+  return node(key, "synthesizer", lines, out, { timeoutMs: bigMs, big: true });
 }
 
 function reviewItem(n, file, files) {
@@ -74,6 +74,7 @@ function reviewItem(n, file, files) {
   return node(n === 1 ? "review" : "review-" + n, "reviewer", lines, file, {
     gate: "recipe-gate gaps " + quote(file),
     timeoutMs: bigMs,
+    big: true,
   });
 }
 

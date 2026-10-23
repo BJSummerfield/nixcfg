@@ -155,6 +155,10 @@ function assertUniqueOutputs(f) {
   assert.match(byKey["synthesis-combine"].task, /Merge them into the requested output/);
 
   assert.equal(byKey.review.agent, "reviewer");
+  assert.equal(byKey.review.big, true);
+  for (const key of ["synthesis-0", "synthesis-1", "synthesis-combine"]) assert.equal(byKey[key].big, true);
+  assert.ok(!("big" in byKey["extract-0"]), "extractors are small");
+  assert.ok(!("big" in byKey["search-gap-pricing"]), "searchers are small");
   assert.equal(byKey.review.gate.command, "recipe-gate gaps '/t/d/review.md'");
   assert.deepEqual(files("review"), [ex(0), ex("1.retry"), ex("2a"), ex(5), ex(6), ex(7), ex(8)]);
   assert.match(byKey.review.task, /Deliverable: \/t\/d\/out\.md/);

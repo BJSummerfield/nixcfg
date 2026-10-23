@@ -101,6 +101,9 @@ function assertUniqueOutputs(f) {
   const k = byKey(f);
 
   assert.equal(k.scout.agent, "scout");
+  assert.ok(!("big" in k.scout), "the scout is small");
+  assert.equal(k.plan.big, true);
+  assert.equal(k.review.big, true);
   assert.equal(k.scout.output, "/t/d/scout.md");
   assert.match(k.scout.task, /Goal: The goal\./);
   assert.match(k.scout.task, /Input: \/t\/in\.md \(read it first\)/);
