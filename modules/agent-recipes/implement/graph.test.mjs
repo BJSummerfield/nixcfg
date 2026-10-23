@@ -1056,14 +1056,41 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(byKey(g).merge.gate.command, /--refresh/);
 }
 
-// A continued task with dependencies merges them onto its own branch.
+// A continued task with dependencies merges them as a fresh task does; its branch is only the worktree's base ref.
 {
   const back = { ok: true, base: "base0", tasks: { c: { branch: "pi/c", head: "hc", review: "needs-work", reviews: 1, review_file: "/t/p/review-c-1.md", merged: false } } };
   const f = fake({ plan: planOf([spec("b"), spec("c", ["b"])]), back });
   await run(f.runs, { ...base, resume: true });
   const k = byKey(f);
-  assert.match(k["deps-c"].gate.command, / --onto 'refs\/heads\/pi\/c'/);
+  assert.match(k["deps-c"].gate.command, / --onto 'refs\/recipes\/p\/base'/);
+  assert.equal(k["impl-c"].baseRef, "refs/heads/pi/c");
+  assert.match(k["impl-c"].gate.command, / --base 'head-c' /);
+  assert.doesNotMatch(k["impl-c"].gate.command, / --base 'hc' /);
   assert.match(k.merge.gate.command, / --onto 'refs\/recipes\/p\/base'/);
+}
+
+// A dependency that is gone and merged is left out of the tips; the merge is made onto the integration branch.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: true } } };
+  const f = fake({ plan: planOf([spec("a"), spec("b", ["a"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const c = byKey(f)["deps-b"].gate.command;
+  assert.match(c, / --onto 'refs\/heads\/implement\/p'/);
+  assert.match(c, / --tips '' /);
+  assert.doesNotMatch(c, /pi\/a/);
+}
+
+// When every finished task is gone nothing is merged or integrated.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: true } } };
+  const f = fake({ back });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k.merge, undefined);
+  assert.equal(f.items().filter((i) => i.key.startsWith("integrate")).length, 0);
+  assert.deepEqual(receipt.merged, ["a"]);
+  assert.equal(receipt.branch, "implement/p");
+  assert.match(receipt.open[0], /nothing new to integrate/);
 }
 
 // A task whose branch is gone runs fresh, or counts as merged when it was tidied.

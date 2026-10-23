@@ -80,7 +80,12 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    launched even if it was set aside before, and an answer for an id outside
    the plan is an `open` line. Every merge of a resumed run passes
    `--refresh yes`, so the merge worktrees take the branches' current tips. A
-   continued task's dependency merge is made `--onto` the task's own branch.
+   continued task's dependency merge is made as for a fresh task, so its
+   `--base` is the dependencies' merge head and its own branch is only the
+   worktree's base ref. A dependency that is gone and merged is left out of the
+   tips and the merge is made `--onto refs/heads/<integration branch>`. When
+   every finished task is gone, the integration merge and gate are skipped
+   and the receipt's `open` says there is nothing new to integrate.
    A resume gate that fails adds an `open` line and the run goes on as a
    fresh run.
 2. Tasks are ordered by `depends` into waves. A task runs once everything it
@@ -239,8 +244,9 @@ below.
    dispatched into a worktree made `--onto refs/heads/<its branch>` with the
    line "Work already on this branch from an earlier run: continue it; do not
    start over." and the earlier review file; a task whose branch is gone and
-   not merged starts fresh; if it has dependencies, its dependency merge is
-   also made `--onto refs/heads/<its branch>`, and every merge passes
+   not merged starts fresh; its dependency merge is made as for a fresh task
+   (a gone, merged dependency is dropped and the merge is `--onto
+   refs/heads/<integration branch>`), and every merge passes
    `--refresh yes`; number its review files on from the gate's `reviews`; a task in `answers` gets "Decision from the user: <text>". A
    failing gate is an `open` line and a fresh run. List the three groups in
    the receipt's `resumed`.

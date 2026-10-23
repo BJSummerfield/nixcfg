@@ -585,10 +585,18 @@ function prepare(active) {
       "deps",
       dir + "/deps/" + t.id,
       integrationBranch + "-deps-" + t.id,
-      t.spec.depends.map(function (d) {
-        return byId[d];
-      }),
-      t.resumeRef,
+      t.spec.depends
+        .map(function (d) {
+          return byId[d];
+        })
+        .filter(function (d) {
+          return !d.gone;
+        }),
+      t.spec.depends.some(function (d) {
+        return byId[d].gone;
+      })
+        ? "refs/heads/" + integrationBranch
+        : null,
     );
   });
   return launch(
@@ -774,6 +782,14 @@ if (finished.length === 0) {
 const present = finished.filter(function (t) {
   return !t.gone;
 });
+if (present.length === 0) {
+  branch = integrationBranch;
+  merged = finished.map(function (t) {
+    return t.id;
+  });
+  open.push("nothing new to integrate: every finished task is already merged into " + integrationBranch);
+  return finish();
+}
 const pairs = present
   .map(function (t) {
     return t.id + ":" + t.branch;
