@@ -210,7 +210,8 @@ function implementBrief(t, report) {
     );
   }
   if (t.resumeRef && t.attempts === 1) {
-    lines.push("Work already on this branch from an earlier run: continue it; do not start over.");
+    lines.push("Work already on this branch from an earlier run: continue it; do not start over. The old worktree may be gone; only what was committed on the branch is kept.");
+    if (t.earlierReview) lines.push("Earlier review: " + t.earlierReview);
   }
   if (answers[t.id]) lines.push("Decision from the user: " + answers[t.id]);
   lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
@@ -476,16 +477,19 @@ function mergeCommand(m) {
     "--tips",
     quote(m.tips),
     "--onto",
-    quote(pinned.base_ref),
+    quote(m.onto || pinned.base_ref),
     "--kind",
     m.kind,
     "--id",
     m.scope,
-  ].join(" ");
+  ]
+    .concat(args.resume ? ["--refresh", "yes"] : [])
+    .join(" ");
 }
 
-function mergeState(scope, kind, worktree, mergeBranch, tipTasks) {
+function mergeState(scope, kind, worktree, mergeBranch, tipTasks, onto) {
   return {
+    onto: onto || null,
     scope: scope,
     kind: kind,
     worktree: worktree,
@@ -576,9 +580,16 @@ function prepare(active) {
   });
   if (due.length === 0) return Promise.resolve();
   const states = due.map(function (t) {
-    return mergeState(t.id, "deps", dir + "/deps/" + t.id, integrationBranch + "-deps-" + t.id, t.spec.depends.map(function (d) {
-      return byId[d];
-    }));
+    return mergeState(
+      t.id,
+      "deps",
+      dir + "/deps/" + t.id,
+      integrationBranch + "-deps-" + t.id,
+      t.spec.depends.map(function (d) {
+        return byId[d];
+      }),
+      t.resumeRef,
+    );
   });
   return launch(
     due.map(function (t, i) {
@@ -646,6 +657,8 @@ list(plan.tasks).forEach(function (spec) {
     fixes: 0,
     extraFix: false,
     reviews: 0,
+    earlierReview: null,
+    gone: false,
     extraOwns: [],
     replanBrief: null,
     runId: null,
@@ -679,22 +692,35 @@ if (args.resume) {
     const last = back.structuredOutput.tasks || {};
     tasks.forEach(function (t) {
       const entry = last[t.id];
+      if (!entry) return;
       const answered = !!answers[t.id];
-      if (answered) resumed.answered.push(t.id);
-      if (!entry || !entry.branch) return;
-      if (!answered && (entry.review === "clean" || entry.merged)) {
+      if (!answered && (entry.merged || (entry.head && entry.review === "clean"))) {
         t.state = "done";
         t.branch = entry.branch;
         t.base = pinned.base;
+        t.gone = !entry.head;
         noteMade(t.id, "task", entry.branch, null);
         resumed.done.push(t.id);
         return;
       }
+      if (!entry.head) {
+        open.push("task " + t.id + ": its earlier branch " + entry.branch + " was gone, so it runs fresh");
+        return;
+      }
       t.resumeRef = "refs/heads/" + entry.branch;
+      t.reviews = entry.reviews || 0;
+      t.earlierReview = entry.review_file || null;
       resumed.continued.push(t.id);
     });
   }
 }
+
+tasks.forEach(function (t) {
+  if (answers[t.id]) resumed.answered.push(t.id);
+});
+Object.keys(answers).forEach(function (id) {
+  if (!byId[id]) open.push("an answer was given for " + id + ", which is not a task of this plan");
+});
 
 let top = 0;
 tasks.forEach(function (t) {
@@ -745,19 +771,22 @@ if (finished.length === 0) {
   return finish();
 }
 
-const pairs = finished
+const present = finished.filter(function (t) {
+  return !t.gone;
+});
+const pairs = present
   .map(function (t) {
     return t.id + ":" + t.branch;
   })
   .join(",");
 
 const wanted = {};
-finished.forEach(function (t) {
+present.forEach(function (t) {
   Object.keys(ancestors(t)).forEach(function (d) {
     wanted[d] = true;
   });
 });
-const tipTasks = finished.filter(function (t) {
+const tipTasks = present.filter(function (t) {
   return !wanted[t.id];
 });
 
@@ -825,7 +854,14 @@ if (!integrated.ok) {
 } else {
   const g = integrated.structuredOutput;
   branch = g.branch;
-  merged = list(g.merged);
+  merged = finished
+    .filter(function (t) {
+      return t.gone;
+    })
+    .map(function (t) {
+      return t.id;
+    })
+    .concat(list(g.merged));
   heavy = g.heavy_check;
   prText = g.pr_text || "";
   if (g.ok) tidied = merged;

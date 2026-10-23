@@ -1043,6 +1043,72 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(failedBack.merged, ["a"]);
 }
 
+// A resume refreshes the recorded tips of every merge, and only then.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: "ha", review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: false } } };
+  const f = fake({ plan: planOf([spec("a"), spec("b"), spec("c", ["b"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.match(k["deps-c"].gate.command, / --refresh yes/);
+  assert.match(k.merge.gate.command, / --refresh yes/);
+  const g = fake({ plan: planOf([spec("a")]) });
+  await run(g.runs, base);
+  assert.doesNotMatch(byKey(g).merge.gate.command, /--refresh/);
+}
+
+// A continued task with dependencies merges them onto its own branch.
+{
+  const back = { ok: true, base: "base0", tasks: { c: { branch: "pi/c", head: "hc", review: "needs-work", reviews: 1, review_file: "/t/p/review-c-1.md", merged: false } } };
+  const f = fake({ plan: planOf([spec("b"), spec("c", ["b"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.match(k["deps-c"].gate.command, / --onto 'refs\/heads\/pi\/c'/);
+  assert.match(k.merge.gate.command, / --onto 'refs\/recipes\/p\/base'/);
+}
+
+// A task whose branch is gone runs fresh, or counts as merged when it was tidied.
+{
+  const back = {
+    ok: true,
+    base: "base0",
+    tasks: {
+      a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: false },
+      b: { branch: "pi/b", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-b-1.md", merged: true },
+    },
+  };
+  const f = fake({ plan: planOf([spec("a"), spec("b")]), back });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k["impl-a"].baseRef, "refs/recipes/p/base");
+  assert.equal(k["impl-b"], undefined);
+  assert.match(k.merge.gate.command, / --tips 'a:pi\/a'/);
+  assert.match(f.items().find((i) => i.key.startsWith("integrate")).gate.command, /--tasks 'a:pi\/a'/);
+  assert.deepEqual(receipt.resumed, { done: ["b"], continued: [], answered: [] });
+  assert.deepEqual(receipt.merged, ["b", "a"]);
+  assert.deepEqual(receipt.open, ["task a: its earlier branch pi/a was gone, so it runs fresh"]);
+}
+
+// Reviews of a continued task number on from the earlier ones and the brief names the last.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: "ha", review: "needs-work", reviews: 3, review_file: "/t/p/review-a-3.md", merged: false } } };
+  const f = fake({ back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k["review-a-4"].output, "/t/p/review-a-4.md");
+  assert.equal(k["review-a-1"], undefined);
+  assert.match(k["impl-a"].task, /Earlier review: \/t\/p\/review-a-3\.md/);
+  assert.match(k["impl-a"].task, /old worktree may be gone/);
+}
+
+// Answers for ids outside the plan are reported, not counted as answered.
+{
+  const back = { ok: true, base: "base0", tasks: {} };
+  const f = fake({ back });
+  const receipt = await run(f.runs, { ...base, resume: true, answers: { a: "go", zz: "what" } });
+  assert.deepEqual(receipt.resumed.answered, ["a"]);
+  assert.deepEqual(receipt.open, ["an answer was given for zz, which is not a task of this plan"]);
+}
+
 // Without resume no resume node runs and the receipt lists nothing resumed.
 {
   const f = fake();

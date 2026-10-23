@@ -855,6 +855,8 @@ const gate = (...args) => {
     { kind: "task", id: "b-1", branch: "pi/b", worktree: "/x/b" },
     { kind: "task", id: "c", branch: "pi/c", worktree: "/x/c" },
     { kind: "task", id: "gone", branch: "pi/gone", worktree: "/x/g" },
+    { kind: "task", id: "d.1", branch: "pi/d", worktree: "/x/d" },
+    { kind: "task", id: "dx1", branch: "pi/dx", worktree: "/x/dx" },
     { kind: "review", id: "r", branch: "pi/rev", worktree: "/x/r" },
   ];
   fs.writeFileSync(path.join(run, "run.json"), JSON.stringify({ repo, base, base_ref: "refs/x", made, merges: {} }));
@@ -865,15 +867,20 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(run, "review-b-1-10.md"), ok);
   fs.writeFileSync(path.join(run, "review-c-1.md"), ok);
   fs.writeFileSync(path.join(run, "review-c-2.md"), bad);
+  fs.writeFileSync(path.join(run, "review-dx1-4.md"), bad);
+  fs.writeFileSync(path.join(run, "review-d.1-1.md"), ok);
+  fs.writeFileSync(path.join(run, "tidied.json"), JSON.stringify({ "pi/d": bTip }));
 
   const r = gate("resume", run, "--repo", repo, "--branch", "integ").json;
   assert.equal(r.ok, true);
   assert.equal(r.base, base);
-  assert.deepEqual(Object.keys(r.tasks).sort(), ["a", "b-1", "c", "gone"]);
-  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, merged: true });
-  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", merged: true });
-  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", merged: false });
-  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, merged: false });
+  assert.deepEqual(Object.keys(r.tasks).sort(), ["a", "b-1", "c", "d.1", "dx1", "gone"]);
+  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, reviews: 0, review_file: null, merged: true });
+  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", reviews: 10, review_file: path.join(run, "review-b-1-10.md"), merged: true });
+  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", reviews: 2, review_file: path.join(run, "review-c-2.md"), merged: false });
+  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, review_file: null, merged: false });
+  assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, review_file: path.join(run, "review-d.1-1.md"), merged: true });
+  assert.equal(r.tasks.dx1.reviews, 4);
   assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
   assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
 }
