@@ -114,7 +114,7 @@ it ends.
 ```
 subagent({
   workflow: "/home/agent/.pi/agent/recipes/plan/workflow.js",
-  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", repo: "<repo path>" },
+  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", batch: { rule: "<glob|grep|list ...>", change: "<change>" }, repo: "<repo path>" },
   async: true,
   output: "<task dir>/receipt.md",
   options: { timeoutMs: 5400000, maxSubagentSpawnsPerRun: 30 }

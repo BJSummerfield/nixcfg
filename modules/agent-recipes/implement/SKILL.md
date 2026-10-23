@@ -192,7 +192,7 @@ the run goes on. Do not answer the question itself: the script decides what
 happens to a stuck child. Reply that it should stop and write `blocked:` and
 its question as the first line of its report, then keep waiting.
 
-Tell the user the branch first, then the `report` lines (one per task, in plan order), then what merged, each `decide` question with
+Tell the user the branch first, then the `report` lines (one per task, in dependency-level order), then what merged, each `decide` question with
 its diagnosis file, each other set-aside task with its reason, the skipped
 tasks, the heavy-check result, what healed in one line each, and each `open`
 line, and point at `pr.md`. Report `left` and the `cleanup` command; do not
