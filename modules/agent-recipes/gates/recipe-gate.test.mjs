@@ -270,7 +270,7 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(repo, "src/a.txt"), "x".repeat(4000));
   fs.writeFileSync(path.join(repo, "src/b.txt"), "y".repeat(8000));
   const sizing = write("sizing.json", JSON.stringify({ roles: { implementer: { base: 1000, k_read: 2, growth_p90: 500 } } }));
-  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none", thinking: "medium" };
+  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none" };
   const header = (h) =>
     Object.entries(h)
       .map(([k, v]) => `${k}: ${v}`)
@@ -285,15 +285,15 @@ const gate = (...args) => {
   };
   const planGate = (d, ...extra) => gate("plan", d, "--repo", repo, "--sizing", sizing, ...extra);
 
-  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", thinking: "xhigh" };
+  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", research: "Which flag does tool x 2.0 use to set the cache dir?" };
   const cleanDir = mkPlan({ t1: task(base), t2: task(t2) });
   const clean = planGate(cleanDir);
   assert.equal(clean.status, 0);
   assert.deepEqual(clean.json, {
     ok: true,
     tasks: [
-      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], thinking: "medium", est: 7500 },
-      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], thinking: "xhigh", est: 5500 },
+      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], research: "", est: 7500 },
+      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], research: "Which flag does tool x 2.0 use to set the cache dir?", est: 5500 },
     ],
     oversize: [],
     overlaps: [],
@@ -338,14 +338,13 @@ const gate = (...args) => {
 
   const wrong = planGate(
     mkPlan({
-      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`", thinking: "high" }),
+      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`" }),
       t2: task({ ...t2, reads: "new/c.txt" }),
     }),
   );
   assert.deepEqual(wrong.json.missing, [
     "t1: id must be the file name",
     "t1: owns",
-    "t1: thinking must be medium or xhigh",
     "t1: reads src/nope.txt, which does not exist",
   ]);
 
@@ -353,6 +352,16 @@ const gate = (...args) => {
   assert.equal(created.json.tasks[0].est, 1500);
   assert.deepEqual(created.json.tasks[0].reads, []);
   assert.equal(planGate(mkPlan({ t1: task({ ...base, owns: "src", reads: "none" }) })).json.tasks[0].est, 7500);
+
+  const research = (value) => planGate(mkPlan({ t1: task({ ...base, research: value }) })).json.tasks[0].research;
+  assert.equal(research("none"), "");
+  assert.equal(research("None"), "");
+  assert.equal(research(""), "");
+  assert.equal(research("Does lib y 3.1 accept a timeout option?"), "Does lib y 3.1 accept a timeout option?");
+  assert.equal(planGate(mkPlan({ t1: task(base) })).json.tasks[0].research, "");
+  const thinkingIgnored = planGate(mkPlan({ t1: task({ ...base, thinking: "high" }) }));
+  assert.equal(thinkingIgnored.json.ok, true);
+  assert.equal("thinking" in thinkingIgnored.json.tasks[0], false);
 
   const loose = "\n\n" + task(base, "check: not a header\n");
   const parsed = planGate(mkPlan({ t1: loose }));
