@@ -14,6 +14,7 @@ let
 
   recipes = [
     "implement"
+    "investigate"
     "plan"
     "research"
     "triage"
@@ -39,6 +40,7 @@ in
 
     home.file = {
       ".pi/agent/recipes/implement/workflow.js".text = recipeScript ./implement/graph.js;
+      ".pi/agent/recipes/investigate/workflow.js".text = recipeScript ./investigate/graph.js;
       ".pi/agent/recipes/plan/workflow.js".text = recipeScript ./plan/graph.js;
       ".pi/agent/recipes/research/workflow.js".text = recipeScript ./research/graph.js;
       ".pi/agent/recipes/sizing.json".source = ./sizing/sizing.json;
