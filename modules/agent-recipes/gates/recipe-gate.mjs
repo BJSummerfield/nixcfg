@@ -15,7 +15,7 @@
 //                                  {ok, action, reason, verdict, owns:[], brief, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
 //                                  plan directory -> {ok, tasks:[{id, owns, reads,
-//                                  check, depends, thinking, est}], oversize:[id],
+//                                  check, depends, research, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
 //                                  cycles:[[id, ...]]}
 //   task <report> --check CMD [--owns a,b] [--repo DIR]
@@ -56,7 +56,7 @@
 //   reads: c, d       repository paths it must read; may be `none`
 //   check: <command>  one light check, the rest of the line
 //   depends: x, y     ids of tasks that must merge first; may be `none`
-//   thinking: medium | xhigh
+//   research: <one question a web searcher can answer>; optional, or `none`
 //
 // Paths are relative to --repo (default: the working directory), separated by
 // commas, backticks stripped, `./` prefixes and trailing slashes removed; a
@@ -74,7 +74,7 @@
 // whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
 // owning the same file, or a directory and a path inside it. `missing` has
 // one line per problem: plan.md absent, no tasks, a task whose id is not its
-// file name, owns empty, check empty, thinking invalid, a depends id with no
+// file name, owns empty, check empty, a depends id with no
 // task, or a reads path that neither exists nor is owned by a task.
 // `cycles` has one id path per dependency loop, first id repeated at the end.
 // ok is true only when all four are empty.
@@ -309,7 +309,7 @@ function gaps(file) {
 
 const PLAN_LIMIT = 100000;
 const SIZING_FALLBACK = { base: 7000, k_read: 1, growth_p90: 10000 };
-const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "thinking"];
+const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "research"];
 const TASK_HEADER = new RegExp(`^(${TASK_KEYS.join("|")}):[ \\t]*(.*?)\\s*$`);
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
@@ -412,11 +412,10 @@ function plan(dir, flags) {
       reads: pathList(h.reads, true),
       check: h.check ?? "",
       depends: pathList(h.depends),
-      thinking: h.thinking ?? "",
+      research: /^none$/i.test(h.research ?? "") ? "" : (h.research ?? ""),
     };
     if (task.owns.length === 0) missing.push(`${stem}: owns`);
     if (!task.check) missing.push(`${stem}: check`);
-    if (task.thinking !== "medium" && task.thinking !== "xhigh") missing.push(`${stem}: thinking must be medium or xhigh`);
     return task;
   });
 
