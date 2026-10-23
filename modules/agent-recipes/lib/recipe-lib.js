@@ -74,6 +74,7 @@ function node(key, agent, lines, output, opts) {
   }
   if (o.worktree !== undefined) item.worktree = o.worktree;
   if (o.resume) item.resume = o.resume;
+  if (o.big) item.big = true;
   return item;
 }
 
@@ -99,9 +100,10 @@ function stoppedItself(result) {
   return /reported as not-satisfied/.test(String(result.error || ""));
 }
 
-// Runs items together; a child that failed on its own is run once more under
-// a sibling output path. Each result carries the file it wrote as `file`.
-function launch(items, runFirst) {
+// Runs small items together; a child that failed on its own is run once more
+// under a sibling output path. Each result carries the file it wrote as
+// `file`.
+function launchSmall(items, runFirst) {
   tally.children += items.length;
   return (runFirst || port.runMany)(items).then(function (first) {
     const merged = first.map(function (result, i) {
@@ -126,8 +128,56 @@ function launch(items, runFirst) {
   });
 }
 
+// A big item gets the engine's window to itself: it runs alone, and so does
+// its retry.
+function launchBig(item) {
+  tally.children++;
+  return port.runOne(item).then(function (first) {
+    if (first.ok || stoppedItself(first)) return Object.assign({}, first, { file: item.output });
+    const again = retryItem(item, first);
+    tally.children++;
+    return port.runOne(again).then(function (second) {
+      return Object.assign({}, second, { file: again.output });
+    });
+  });
+}
+
+// Small items run together first; big items then run one after another, so a
+// big node never shares the engine with another big one. Results keep the
+// caller's order.
+function launch(items, runFirst) {
+  if (!items.some(function (item) { return item.big; })) return launchSmall(items, runFirst);
+  const small = items.filter(function (item) { return !item.big; });
+  const slots = [];
+  items.forEach(function (item, i) {
+    if (!item.big) slots.push(i);
+  });
+  const results = new Array(items.length);
+  let chain = (small.length ? launchSmall(small, runFirst) : Promise.resolve([])).then(function (done) {
+    done.forEach(function (result, j) {
+      results[slots[j]] = result;
+    });
+  });
+  items.forEach(function (item, i) {
+    if (!item.big) return;
+    chain = chain.then(function () {
+      return launchBig(item).then(function (result) {
+        results[i] = result;
+      });
+    });
+  });
+  return chain.then(function () {
+    return results;
+  });
+}
+
 function one(item) {
-  return launch([item], function (items) {
+  if (item.big) {
+    return launch([item]).then(function (results) {
+      return results[0];
+    });
+  }
+  return launchSmall([item], function (items) {
     return port.runOne(items[0]).then(function (result) {
       return [result];
     });
