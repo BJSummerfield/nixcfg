@@ -94,6 +94,35 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.equal(L.tally.children, 5);
 }
 
+// Big items: small ones run together first, then each big one alone, in
+// order; a failed big item retries alone; one() of a big item uses runOne.
+{
+  const calls = [];
+  const respond = (item) => (item.key === "b1" || item.key === "b2" || item.key === "b2-retry" ? failed(item.key, "engine") : ok(item.key));
+  const L = await load({
+    all: async (items) => {
+      calls.push(items.map((i) => i.key));
+      return items.map(respond);
+    },
+  });
+  L.port.runOne = async (item) => {
+    calls.push("one:" + item.key);
+    return respond(item);
+  };
+  const mk = (k, big) => L.node(k, "w", ["Output: /t/" + k + ".md"], "/t/" + k + ".md", { big });
+  assert.equal(mk("b1", true).big, true);
+  assert.ok(!("big" in mk("s1", false)));
+  assert.equal(L.retryItem(mk("b1", true), {}).big, true);
+  const results = await L.launch([mk("b1", true), mk("s1"), mk("b2", true), mk("s2")]);
+  assert.deepEqual(calls, [["s1", "s2"], "one:b1", "one:b1-retry", "one:b2", "one:b2-retry"]);
+  assert.deepEqual(results.map((r) => [r.ok, r.file]), [[true, "/t/b1.retry.md"], [true, "/t/s1.md"], [false, "/t/b2.retry.md"], [true, "/t/s2.md"]]);
+  assert.equal(L.tally.children, 6);
+  calls.length = 0;
+  const single = await L.one(mk("c", true));
+  assert.deepEqual(calls, ["one:c"]);
+  assert.equal(single.file, "/t/c.md");
+}
+
 // diagnose(): at most two diagnoses per subject, then a decision; the same
 // diagnosis twice is a decision; ids keep subjects apart.
 {

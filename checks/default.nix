@@ -258,8 +258,27 @@ evalAll "nixos" inputs.self.nixosConfigurations
       }
       ''
         cp ${../modules/agent-recipes/gates/recipe-gate.mjs} recipe-gate.mjs
+        cp ${../modules/agent-recipes/gates/recipe-git.mjs} recipe-git.mjs
         cp ${../modules/agent-recipes/gates/recipe-gate.test.mjs} recipe-gate.test.mjs
         node recipe-gate.test.mjs
+        touch $out
+      '';
+  pi-recipe-git =
+    pkgs.runCommand "pi-recipe-git"
+      {
+        nativeBuildInputs = [
+          pkgs.nodejs
+          pkgs.git
+        ];
+      }
+      ''
+        cp ${../modules/agent-recipes/gates/recipe-gate.mjs} recipe-gate.mjs
+        cp ${../modules/agent-recipes/gates/recipe-git.mjs} recipe-git.mjs
+        cp ${../modules/agent-recipes/gates/recipe-git.test.mjs} recipe-git.test.mjs
+        node recipe-git.test.mjs
+        status=0
+        ${pkgs.callPackage ../modules/agent-recipes/package.nix { }}/bin/recipe-gate bogus x || status=$?
+        test "$status" = 2
         touch $out
       '';
   pi-recipe-lib =

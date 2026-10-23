@@ -45,15 +45,38 @@ let branch = null;
 let merged = [];
 let heavy = null;
 let prText = "";
+let pinned = null;
+let tidied = null;
+const made = [];
+
+function noteMade(id, kind, entryBranch, entryWorktree) {
+  if (!entryBranch && !entryWorktree) return;
+  const duplicate = made.some(function (m) {
+    return m.kind === kind && m.branch === (entryBranch || null) && m.worktree === (entryWorktree || null);
+  });
+  if (!duplicate) made.push({ id: id, kind: kind, branch: entryBranch || null, worktree: entryWorktree || null });
+}
+
+function leftBehind() {
+  return made.filter(function (m) {
+    if (!tidied) return true;
+    if (m.kind === "review" || m.kind === "deps" || m.kind === "integration") return false;
+    return !(m.kind === "task" && tidied.indexOf(m.id) >= 0);
+  });
+}
 
 function finish() {
+  const left = leftBehind();
   return receipt({
+    base: pinned ? pinned.base : null,
     branch: branch,
     merged: merged,
     set_aside: setAside,
     skipped: skipped,
     heavy_check: heavy,
     open: open,
+    left: left,
+    cleanup: left.length ? "recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "") : "",
     pr_text: prText,
   });
 }
@@ -87,6 +110,12 @@ function taskGateCommand(t, report) {
     quote(ownsOf(t).join(",")),
     "--repo",
     quote(repo),
+    "--base",
+    quote(t.base),
+    "--run",
+    quote(dir),
+    "--id",
+    quote(t.id),
   ].join(" ");
 }
 
@@ -149,12 +178,13 @@ function implementBrief(t, report) {
   if (t.extraOwns.length) lines.push("Besides the task's own files you may change: " + t.extraOwns.join(", "));
   if (t.spec.depends.length) {
     lines.push(
-      "This task builds on finished tasks. Before the first edit, merge each of these into your branch, in this order, with `git merge --no-ff --no-edit <branch>`: " +
+      "This task builds on finished tasks, and your branch already holds them: " +
         t.spec.depends
           .map(function (d) {
             return d + " (branch " + byId[d].branch + ")";
           })
-          .join(", "),
+          .join(", ") +
+        ". Do not merge anything.",
     );
   }
   lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
@@ -167,12 +197,14 @@ function implementItem(t) {
   t.attempts++;
   const tag = t.attempts === 1 ? t.id : t.id + "-" + t.attempts;
   const report = dir + "/impl-" + tag + ".md";
-  return node("impl-" + tag, "implementer", implementBrief(t, report), report, {
+  const item = node("impl-" + tag, "implementer", implementBrief(t, report), report, {
     gate: taskGateCommand(t, report),
     gateTimeoutMs: 900000,
     timeoutMs: bigMs,
     worktree: true,
   });
+  item.baseRef = t.baseRef;
+  return item;
 }
 
 function takeImplementation(t, result) {
@@ -185,7 +217,7 @@ function takeImplementation(t, result) {
   t.runId = result.runId || t.runId;
   t.branch = g.branch;
   t.worktree = g.worktree;
-  t.base = g.base;
+  noteMade(t.id, "task", g.branch, g.worktree);
   const status = g.report ? g.report.status : "invalid";
   if (status === "blocked" || status === "failed") {
     return heal(t, "implement", "the implementer reported " + status + ": " + g.reason, [result.file], ["replan", "decide"]);
@@ -220,8 +252,8 @@ function reviewItem(t) {
     "Task file: " + taskFile(t),
     "Repository: " + repo,
     "Branch: " + t.branch,
-    "Worktree: " + t.worktree + " (read and run the check there; edit nothing in it)",
-    "Diff to review: git diff " + t.base + "..." + t.branch,
+    "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/" + t.id + "-" + t.reviews + "); read and run the check there. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
+    "Diff to review: git diff " + t.base + ".." + t.branch,
     "Owned files: " + ownsOf(t).join(", "),
     "Check to run: " + t.spec.check,
     "Implementer report: " + t.report,
@@ -229,13 +261,18 @@ function reviewItem(t) {
   if (t.replanBrief) lines.push("Revised task (wins over the task file): the ## Brief section of " + t.replanBrief);
   if (t.lastReview) lines.push("Earlier review: " + t.lastReview);
   lines.push("Write the report to " + file);
-  return node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
-    gate: "recipe-gate verdict " + quote(file),
+  const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
+    gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote(t.id),
     timeoutMs: bigMs,
+    worktree: true,
   });
+  item.baseRef = "refs/heads/" + t.branch;
+  item.big = true;
+  return item;
 }
 
 function takeReview(t, result) {
+  if (result.structuredOutput) noteMade(t.id, "review", result.structuredOutput.branch, result.structuredOutput.worktree);
   if (!result.ok || !result.structuredOutput) {
     return heal(t, "review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]);
   }
@@ -396,6 +433,149 @@ function cycle(active, n, label) {
     });
 }
 
+const MAX_RESOLVERS = 3;
+
+function gateOnlyItem(key, command, file) {
+  return node(key, "scout", ["Write the single word done to " + file + "."], file, { gate: command, selfGate: false, timeoutMs: childMs });
+}
+
+function mergeCommand(m) {
+  return [
+    "recipe-gate merge",
+    quote(m.worktree),
+    "--dir",
+    quote(dir),
+    "--branch",
+    quote(m.branch),
+    "--tips",
+    quote(m.tips),
+    "--onto",
+    quote(pinned.base_ref),
+    "--kind",
+    m.kind,
+    "--id",
+    m.scope,
+  ].join(" ");
+}
+
+function mergeState(scope, kind, worktree, mergeBranch, tipTasks) {
+  return {
+    scope: scope,
+    kind: kind,
+    worktree: worktree,
+    branch: mergeBranch,
+    tips: tipTasks
+      .map(function (t) {
+        return t.id + ":" + t.branch;
+      })
+      .join(","),
+    resolvers: 0,
+    last: null,
+  };
+}
+
+function sameConflict(a, b) {
+  return a.id === b.id && list(a.files).join("\n") === list(b.files).join("\n");
+}
+
+function resolverItem(m, g) {
+  m.resolvers++;
+  const conflicting = byId[g.conflict.id];
+  const file = dir + "/resolve-" + m.scope + "-" + m.resolvers + ".md";
+  const before = list(g.merged)
+    .filter(function (id) {
+      return byId[id];
+    })
+    .map(function (id) {
+      return taskFile(byId[id]);
+    });
+  const lines = [
+    "Job: resolve one merge conflict (a brief, no task file).",
+    "Worktree: " + m.worktree + " (on branch " + m.branch + "; the merge is already started there)",
+    "Branch being merged: " + (conflicting ? conflicting.branch : g.conflict.id),
+    "Conflicted files: " + list(g.conflict.files).join(", "),
+    "Task file of the conflicting task: " + (conflicting ? taskFile(conflicting) : "none"),
+    "Task files of the tasks already merged: " + (before.length ? before.join(", ") : "none"),
+    "Edit only the conflicted files, `git add` them and run `git commit --no-edit`. Never start, abort or redo a merge, and never edit the repository checkout " + repo + ".",
+  ];
+  if (conflicting) lines.push("Then run the conflicting task's check and quote its output: " + conflicting.spec.check);
+  lines.push("If the conflict cannot be resolved by editing those files alone, stop and write `blocked: <why>` as the first line of the report; do not ask.");
+  lines.push("Write the report to " + file);
+  const command = mergeCommand(m) + (conflicting ? " --check " + quote(conflicting.spec.check) : "");
+  return node("resolve-" + m.scope + "-" + m.resolvers, "implementer", lines, file, {
+    gate: command,
+    gateTimeoutMs: 900000,
+    selfGate: false,
+    timeoutMs: bigMs,
+    worktree: false,
+  });
+}
+
+// Settles the result of a merge gate: a conflict goes to a resolver, whose own
+// gate repeats the merge. Resolves to { ok, g, why }.
+function settle(m, result) {
+  const g = result.structuredOutput;
+  const failure = function (why) {
+    return Promise.resolve({ ok: false, g: g, why: why });
+  };
+  if (g) noteMade(m.scope, m.kind, g.branch || m.branch, g.worktree || m.worktree);
+  if (!result.ok || !g) return failure("the merge did not run: " + (result.error || "no result"));
+  if (g.ok) return Promise.resolve({ ok: true, g: g, why: "" });
+  if (!g.conflict) return failure(g.reason || "the merge failed");
+  const where = "conflict merging " + g.conflict.id + " in " + list(g.conflict.files).join(", ");
+  if (m.last && sameConflict(m.last, g.conflict)) {
+    const why = g.reason && !/has conflicts$/.test(g.reason) ? ": " + g.reason : "";
+    return failure(where + ", left as it was by the resolver" + why);
+  }
+  if (m.resolvers >= MAX_RESOLVERS) return failure(where + ", still open after " + MAX_RESOLVERS + " resolvers");
+  m.last = g.conflict;
+  return one(resolverItem(m, g)).then(function (next) {
+    return settle(m, next);
+  });
+}
+
+function depsItem(t, m) {
+  return gateOnlyItem("deps-" + t.id, mergeCommand(m), dir + "/deps-" + t.id + ".md");
+}
+
+function prepare(active) {
+  active.forEach(function (t) {
+    if (!t.spec.depends.length) {
+      t.baseRef = pinned.base_ref;
+      t.base = pinned.base;
+    }
+  });
+  const due = active.filter(function (t) {
+    return t.spec.depends.length > 0;
+  });
+  if (due.length === 0) return Promise.resolve();
+  const states = due.map(function (t) {
+    return mergeState(t.id, "deps", dir + "/deps/" + t.id, integrationBranch + "-deps-" + t.id, t.spec.depends.map(function (d) {
+      return byId[d];
+    }));
+  });
+  return launch(
+    due.map(function (t, i) {
+      return depsItem(t, states[i]);
+    }),
+  ).then(function (results) {
+    return due.reduce(function (chain, t, i) {
+      return chain
+        .then(function () {
+          return settle(states[i], results[i]);
+        })
+        .then(function (out) {
+          if (out.ok) {
+            t.baseRef = "refs/heads/" + out.g.branch;
+            t.base = out.g.head;
+            return;
+          }
+          askPerson(t, "deps", "the tasks that task " + t.id + " builds on could not be merged: " + out.why);
+        });
+    }, Promise.resolve());
+  });
+}
+
 const intake = await one(
   node(
     "intake",
@@ -419,6 +599,17 @@ if (!plan.ok) {
   });
   return finish();
 }
+
+const pin = await one(gateOnlyItem("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), dir + "/pin.md"));
+if (!pin.ok || !pin.structuredOutput) {
+  open.push("the base could not be pinned: " + (pin.error || "the pin did not run"));
+  return finish();
+}
+if (!pin.structuredOutput.ok) {
+  open.push("the base could not be pinned: " + pin.structuredOutput.reason);
+  return finish();
+}
+pinned = pin.structuredOutput;
 
 list(plan.tasks).forEach(function (spec) {
   const t = Object.assign(subjectOf(spec.id), {
@@ -470,7 +661,13 @@ for (let level = 0; level <= top; level++) {
         active.push(t);
       }
     });
-  if (active.length) await cycle(active, 0, "wave " + (level + 1));
+  if (active.length) {
+    await prepare(active);
+    const ready = active.filter(function (t) {
+      return t.state === "running";
+    });
+    if (ready.length) await cycle(ready, 0, "wave " + (level + 1));
+  }
 }
 
 const finished = [];
@@ -491,31 +688,41 @@ const pairs = finished
   })
   .join(",");
 
+const wanted = {};
+finished.forEach(function (t) {
+  Object.keys(ancestors(t)).forEach(function (d) {
+    wanted[d] = true;
+  });
+});
+const tipTasks = finished.filter(function (t) {
+  return !wanted[t.id];
+});
+
 function integrationItem(attempt, diagnosisFile) {
   const report = dir + (attempt === 1 ? "/integration.md" : "/integration-" + attempt + ".md");
   const lines = [
-    "Job: integrate the finished tasks of a plan (a brief, no task file, no worktree of your own).",
-    "Repository: " + repo,
-    "Plan: " + dir + "/plan.md (the order of its task list is the merge order; it names the heavy checks)",
+    "Job: integrate the finished tasks of a plan (a brief, no task file).",
+    "Repository: " + repo + " (never edit its checkout)",
+    "Plan: " + dir + "/plan.md (it names the heavy checks)",
     "Integration branch: " + integrationBranch,
-    "Integration worktree: " + dir + "/integration",
+    "Integration worktree: " + dir + "/integration (already made, with every finished branch merged into it; work only there)",
     "Finished tasks, as id:branch: " + pairs,
   ];
   if (diagnosisFile) lines.push("An earlier attempt did not finish; the diagnosis at " + diagnosisFile + " says why, and its ## Brief section says what to do differently.");
   lines.push(
-    "1. Create the branch and worktree from the repository's current HEAD without touching its checkout: git -C " + repo + " worktree add -b " + integrationBranch + " " + dir + "/integration HEAD. If they already exist, continue in them.",
-    "2. Merge every finished branch into the integration branch in the order of plan.md's task list, dependencies first. You resolve conflicts; one you cannot resolve ends the job as blocked, naming both sides.",
-    "3. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
-    "4. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
-    "Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
+    "1. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
+    "2. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
+    "Create no worktree and merge nothing. Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
     "Write the report to " + report,
   );
-  return node(attempt === 1 ? "integrate" : "integrate-" + attempt, "implementer", lines, report, {
+  const item = node(attempt === 1 ? "integrate" : "integrate-" + attempt, "implementer", lines, report, {
     gate: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
     selfGate: false,
     timeoutMs: bigMs,
     worktree: false,
   });
+  item.big = true;
+  return item;
 }
 
 function integrationTrouble(result) {
@@ -526,6 +733,17 @@ function integrationTrouble(result) {
 }
 
 board("integrating", view());
+const joining = mergeState("integration", "integration", dir + "/integration", integrationBranch, tipTasks);
+const joined = await one(gateOnlyItem("merge", mergeCommand(joining), dir + "/merge.md"));
+const joinedOut = await settle(joining, joined);
+if (!joinedOut.ok) {
+  askDecision(subjectOf("integration"), "integrate", "the finished branches could not be merged: " + joinedOut.why, null);
+  open.push("integration merge: " + joinedOut.why);
+  open.push("integration worktree: " + joining.worktree + " on branch " + integrationBranch);
+  open.push("finished branches: " + pairs);
+  return finish();
+}
+
 let integrated = await one(integrationItem(1, null));
 const problem = integrationTrouble(integrated);
 if (problem) {
@@ -547,6 +765,7 @@ if (!integrated.ok) {
   merged = list(g.merged);
   heavy = g.heavy_check;
   prText = g.pr_text || "";
+  if (g.ok) tidied = merged;
   list(g.reasons).forEach(function (reason) {
     open.push("integration: " + reason);
   });
