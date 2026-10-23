@@ -12,6 +12,8 @@ Parameters, from the request:
 - input: absolute path of the file the plan starts from. Without one, write
   the user's description to `<task dir>/input.md` and use that.
 - repo: absolute path of the repository the tasks change.
+- optional `locate`: a question naming what to find in the repository, for
+  example "which files implement X?". It makes a locator run before the scout.
 - optional limits: `limit` (estimate ceiling per task, default 100000
   tokens), `sizing` (a sizing file, default
   `~/.pi/agent/recipes/sizing.json`), `childTimeoutMs`, `bigTimeoutMs`.
@@ -24,6 +26,7 @@ time. It is the plan directory the implement skill reads:
                      heavy checks to run once at the end, changes the plan
                      avoids, open risks
 <dir>/tasks/<id>.md  one per task
+<dir>/locate.md      candidate files and line ranges, when `locate` was given
 <dir>/research/<id>/ extract-<k>.md and page-<k>.md for a task that asked
 <dir>/receipt.md     the receipt
 ```
@@ -49,6 +52,10 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
 
 ## What runs
 
+0. When `locate` is given, one locator answers it and writes `locate.md`
+   (checked with `recipe-gate paths`). On a pass the scout is told to read it
+   first and the planner gets it listed after the scout notes; on a failure
+   the run records one `open` line and the scout works as before.
 1. One scout reads the input and the repository and writes `scout.md`: the
    files involved, the repository's checks and forbidden changes.
 2. A planner reads the input and the scout notes and writes `plan.md` and the
@@ -149,6 +156,10 @@ same `recipe-gate` checks. Turns in the starting session are unavoidable
 here, and nothing stops a helper from being retried more than once; keep to
 the limits below.
 
+0. When `locate` is given, dispatch `locator` first with the question and
+   the repository, writing `<dir>/locate.md`, and check it with
+   `recipe-gate paths`. On a pass, tell the scout to read it first and list
+   it for the planner; on a failure note an open line and go on.
 1. Dispatch `scout` with the goal, the input, the repository and the questions
    in step 1 above, writing `<dir>/scout.md`. If it fails, retry once; if it
    fails again, plan without notes.

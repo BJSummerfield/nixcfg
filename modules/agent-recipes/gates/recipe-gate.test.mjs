@@ -109,6 +109,62 @@ const gate = (...args) => {
   assert.equal(gate("extract", write("e.md", exact), "--cap", String(Buffer.byteLength(exact) - 1)).json.over_cap, true);
 }
 
+// paths: locator bullets with optional line ranges; duplicates by path+range dropped.
+{
+  const f = write("p.md", "## a1\n- src/a.js:10-20 | primary | the loop\n- src/b.js | secondary | whole file\n- src/a.js:10-20 | secondary | again\n- src/a.js:30-40 | x\n## a2\n- src/c.js | weird | y | z\nprose\n");
+  const r = gate("paths", f);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.ok, true);
+  assert.deepEqual(r.json.paths, [
+    { path: "src/a.js", range: { start: 10, end: 20 }, why: "the loop", kind: "primary" },
+    { path: "src/b.js", range: null, why: "whole file", kind: "secondary" },
+    { path: "src/a.js", range: { start: 30, end: 40 }, why: "", kind: "secondary" },
+    { path: "src/c.js", range: null, why: "y | z", kind: "secondary" },
+  ]);
+  const empty = gate("paths", write("p.md", "## a1\nnothing\n"));
+  assert.equal(empty.json.ok, false);
+  assert.deepEqual(empty.json.paths, []);
+  assert.equal(gate("paths", path.join(tmp, "absent.md")).json.ok, false);
+}
+
+// extract from a repository file: quotes must appear in the named file and range.
+{
+  const repo = dir();
+  fs.writeFileSync(path.join(repo, "s.js"), "line one\nfunction go() {\n  return 1;\n}\nlast line\n");
+  const good = gate("extract", write("e.md", "File: s.js\nRange: 2-4\n\n> function go() {\n>   return 1;\n\n> }\n"), "--repo", repo);
+  assert.equal(good.json.ok, true);
+  assert.equal(good.json.quotes, 2);
+  assert.deepEqual(good.json.missing, []);
+  const bad = gate("extract", write("e.md", "File: s.js\n\n> function go() {\n\n> not in the file\n"), "--repo", repo);
+  assert.equal(bad.json.ok, false);
+  assert.deepEqual(bad.json.missing, ["not in the file"]);
+  const outside = gate("extract", write("e.md", "File: s.js\nRange: 1-1\n\n> last line\n"), "--repo", repo);
+  assert.equal(outside.json.ok, false);
+  const nofile = gate("extract", write("e.md", "File: gone.js\n\n> x\n"), "--repo", repo);
+  assert.equal(nofile.json.ok, false);
+}
+
+// extract shaped as the extractor prompt describes: File, Range, Source, then quotes.
+{
+  const repo = dir();
+  fs.writeFileSync(path.join(repo, "s.js"), "line one\nfunction go() {\n  return 1;\n}\n");
+  const abs = path.join(repo, "s.js");
+  const shaped = (quote) => `File: ${abs}\nRange: 1-4\nSource: ${abs}\n\ns.js:2-3\n${quote}\n`;
+  const bad = gate("extract", write("e.md", shaped("> invented text not in the file")));
+  assert.equal(bad.json.ok, false);
+  assert.deepEqual(bad.json.missing, ["invented text not in the file"]);
+  const good = gate("extract", write("e.md", shaped("> function go() {\n>   return 1;")));
+  assert.equal(good.json.ok, true);
+  const gone = gate("extract", write("e.md", "File: /nonexistent/x.js\n\n> x\n"));
+  assert.equal(gone.json.ok, false);
+  assert.equal(gone.json.reason, "named file missing");
+  const web = gate("extract", write("e.md", "Source: https://x.test\n\n> a\n\nFile: nothing.js\n"));
+  assert.equal(web.json.ok, true);
+  const single = gate("paths", write("p.md", "- s.js:42 | primary | w\n"));
+  assert.deepEqual(single.json.paths[0].range, { start: 42, end: 42 });
+  assert.equal(single.json.paths[0].path, "s.js");
+}
+
 // size: bytes under the directory, recursively; split by the half-window rule.
 {
   const d = dir();

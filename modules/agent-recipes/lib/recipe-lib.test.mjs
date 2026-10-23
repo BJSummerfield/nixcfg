@@ -12,7 +12,7 @@ assert.ok(!/setTimeout/.test(lib), "the sandbox has no setTimeout");
 assert.ok(!/^\s*(import|export)\b/m.test(lib), "the sandbox has no modules");
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const names = "node,port,launch,one,retryItem,stoppedItself,subjectOf,troubleOf,diagnose,rankAndCap,sourcesFound,searchItem,extractItem,board,receipt,healed,decide,tally,sibling";
+const names = "node,port,launch,one,retryItem,stoppedItself,subjectOf,troubleOf,diagnose,rankAndCap,sourcesFound,pathsFound,searchItem,extractItem,locateItem,extractFileItem,board,receipt,healed,decide,tally,sibling";
 const load = (runs, emit) => new AsyncFunction("runs", "args", "emit", `${lib}\nreturn { ${names} };`)(runs, {}, emit);
 
 function fake(respond) {
@@ -203,6 +203,25 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.deepEqual(open, ["search b: no sources listed", "search c: boom"]);
   assert.equal(L.searchItem("g", { id: "a", question: "Q?" }, "/t/s.md", 9).gate.command, "recipe-gate urls '/t/s.md'");
   assert.equal(L.extractItem("e", "g", "u", "a", "/p", "/t/e.md", "half", 9).gate.command, "recipe-gate extract '/t/e.md'");
+  const located = [
+    ok("a", { ok: true, paths: [{ path: "src/a.js", range: { start: 5, end: 40 }, kind: "primary", why: "w" }, { path: "src/b.js", range: null, kind: "secondary", why: "w" }] }),
+    ok("b", { ok: false, paths: [] }),
+    failed("c", "boom"),
+  ];
+  const open2 = [];
+  assert.deepEqual(L.pathsFound(angles, located, { "src/b.js": true }, open2), [
+    { url: "src/a.js:5-40", path: "src/a.js", range: { start: 5, end: 40 }, kind: "primary", why: "w", angle: "a" },
+  ]);
+  assert.deepEqual(open2, ["locate b: no files listed", "locate c: boom"]);
+  const loc = L.locateItem("g", { id: "a", question: "Q?" }, "/r", "/t/l.md", 9);
+  assert.equal(loc.agent, "locator");
+  assert.match(loc.task, /^Goal: g\nAngle: a\nQuestion: Q\?\nRepository: \/r\nOutput: \/t\/l\.md\n/);
+  assert.equal(loc.gate.command, "recipe-gate paths '/t/l.md'");
+  const fe = L.extractFileItem("e", "g", "/r/src/a.js", { start: 5, end: 40 }, "a", "/t/e.md", 9);
+  assert.equal(fe.agent, "extractor");
+  assert.match(fe.task, /^Goal: g\nFile: \/r\/src\/a\.js\nRange: 5-40\nAngle: a\nOutput: \/t\/e\.md\n/);
+  assert.equal(fe.gate.command, "recipe-gate extract '/t/e.md'");
+  assert.ok(!/Range:/.test(L.extractFileItem("e", "g", "/r/x", null, "a", "/t/e.md", 9).task));
   L.tally.children = 3;
   assert.deepEqual(L.receipt({ output: "o" }), { output: "o", healed: [], decide: [], children: 3 });
   assert.equal(emits.at(-1).stage, "finished");

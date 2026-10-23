@@ -1,6 +1,6 @@
 ---
 name: research
-description: Answer a question from web sources: a planner splits it into angles, searchers list sources, extractors copy out passages, a synthesizer writes the output and a reviewer checks it, all run by a script. Use only when the user asks for research.
+description: Answer a question from web sources, a repository, or both: a planner splits it into angles, searchers (or locators) list sources, extractors copy out passages, a synthesizer writes the output and a reviewer checks it, all run by a script. Use only when the user asks for research.
 disable-model-invocation: true
 ---
 
@@ -11,6 +11,7 @@ Parameters, from the request:
 - goal: the question, in one or two sentences.
 - output: the format and location the user wants. Without one, use
   `summary.md` in the task directory, whose first section answers the goal.
+- optional `source`: `web` (default), `repo` or `both`; `repo`, the absolute path of the repository, is required for `repo` and `both` (without it the run ends with an open line).
 - optional limits: `maxSources` (at most 12), `window` (default 221184
   tokens), `childTimeoutMs`, `bigTimeoutMs`.
 
@@ -28,15 +29,22 @@ the gap round writes the updated output beside the first one
 1. A planner writes two to four angles (`recipe-gate angles`).
 2. One searcher per angle lists sources without reading them
    (`recipe-gate urls`); sources are ranked primary first, round-robin across
-   angles, duplicates dropped, at most 12.
-3. One extractor per source saves the page and copies out the passages that
+   angles, duplicates dropped, at most 12. With `source: repo` one locator
+   per angle (`recipe-gate paths`) lists files and line ranges in `repo`
+   instead, without reading them; with `both` the searchers and locators run
+   together and their lists are ranked as one. The gap round uses the same
+   source.
+3. One extractor per source saves the page (for a file, reads the named
+   file and range) and copies out the passages that
    bear on the goal, verbatim (`recipe-gate extract`; each file under 24 KB).
    Searchers and extractors run at most 3 at a time.
 4. A child that fails on its own (not a rejected check) is retried once; a child that
    reported its own work as not done is not retried, and its result goes on to
    the step's normal handling. An
    extract over the cap is redone as two extractors, each covering half the
-   page's sections by its outline. Anything else is recorded.
+   page's sections by its outline; an extract of a file with a known line
+   range is redone as two, each covering half the range, and one without a
+   range is recorded. Anything else is recorded.
 5. One synthesizer writes the output. When the extracts exceed half the
    window it is one synthesizer per angle group, one after another, then one
    that combines them. Only one large step runs at a time.
@@ -102,7 +110,7 @@ Claude Code runs no pi-subagents workflow script: its Workflow tool has a differ
 child API and must be opted into per run, and a headless `claude -p` runner for
 the same script has not been built. So the main session does the script's work
 with the Agent tool, one `subagent_type` per role (`planner`, `searcher`,
-`extractor`, `synthesizer`, `reviewer`; their definitions are installed), in
+`locator`, `extractor`, `synthesizer`, `reviewer`; their definitions are installed), in
 the same order and with the same `recipe-gate` checks. Turns in the starting
 session are unavoidable here.
 
@@ -110,11 +118,16 @@ session are unavoidable here.
    `recipe-gate angles <dir>/angles.md`; use at most four angles.
 2. Dispatch one `searcher` per angle, at most 3 in one message, writing
    `<dir>/raw/search/search-<id>.md`; run `recipe-gate urls` on each file.
-3. Rank and cap as above, then dispatch one `extractor` per URL, at most 3 at
+   For `repo` dispatch `locator` instead, with a Repository line, writing
+   `<dir>/raw/locate/locate-<id>.md`, and run `recipe-gate paths`; for `both`
+   dispatch both and rank their lists together.
+3. Rank and cap as above, then dispatch one `extractor` per URL (for a file, with `File: <absolute
+   path>` and `Range: <start>-<end>` lines in place of URL and Page), at most 3 at
    a time, writing `<dir>/raw/extract/extract-<k>.md`; run `recipe-gate
    extract` on each. Retry a helper that died once. For an over-cap file,
    remove it and dispatch two extractors told to cover the first and the
-   second half of the page's sections, writing `extract-<k>a.md` and `...b.md`.
+   second half of the page's sections (a ranged file: the two halves of the
+   range; an unranged file is recorded), writing `extract-<k>a.md` and `...b.md`.
 4. Run `recipe-gate size <dir>/raw/extract`. With `split` 1 dispatch one
    `synthesizer` with the goal, the format, the extract files and the output
    path. With more, group the extracts by angle, run one `synthesizer` per

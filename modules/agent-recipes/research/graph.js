@@ -13,6 +13,11 @@ const windowTokens = args.window || 221184;
 const childMs = args.childTimeoutMs || 480000;
 const bigMs = args.bigTimeoutMs || 2400000;
 
+const source = args.source || "web";
+const repo = args.repo;
+const useWeb = source !== "repo";
+const useRepo = source === "repo" || source === "both";
+
 const STEPS = {
   synthesize: "the synthesis of the extracts into the requested output",
   review: "the review of the deliverable against its findings",
@@ -29,7 +34,10 @@ function extractFile(k, suffix) {
   return dir + "/raw/extract/extract-" + k + suffix + ".md";
 }
 
-function extractFor(rec, suffix, part) {
+function extractFor(rec, suffix, part, range) {
+  if (rec.path) {
+    return extractFileItem("extract-" + rec.k + suffix, goal, repo + "/" + rec.path, range, rec.angle, extractFile(rec.k, suffix), childMs);
+  }
   return extractItem(
     "extract-" + rec.k + suffix,
     goal,
@@ -40,6 +48,10 @@ function extractFor(rec, suffix, part) {
     part,
     childMs,
   );
+}
+
+function canHalve(range) {
+  return Boolean(range) && range.end > range.start;
 }
 
 function synthItem(key, files, out, mode, from) {
@@ -173,6 +185,15 @@ function synthesize(files, split, tag, out) {
   });
 }
 
+if (["web", "repo", "both"].indexOf(source) < 0) {
+  open.push("source must be web, repo or both, not " + source);
+  return finish(null);
+}
+if (useRepo && !repo) {
+  open.push("a repository source needs the repo argument");
+  return finish(null);
+}
+
 const anglesFile = dir + "/angles.md";
 const planned = await one(
   node(
@@ -200,25 +221,34 @@ for (let round = 0; round < 2; round++) {
   board(round === 0 ? "searching" : "gap round: searching", view());
   const limit = round === 0 ? maxSources : Math.min(maxSources, GAP_SOURCES);
 
-  const searches = await launch(
-    current.map(function (angle) {
-      return searchItem(goal, angle, dir + "/raw/search/search-" + angle.id + ".md", childMs);
-    }),
-  );
+  const searchItems = useWeb
+    ? current.map(function (angle) {
+        return searchItem(goal, angle, dir + "/raw/search/search-" + angle.id + ".md", childMs);
+      })
+    : [];
+  const locateItems = useRepo
+    ? current.map(function (angle) {
+        return locateItem(goal, angle, repo, dir + "/raw/locate/locate-" + angle.id + ".md", childMs);
+      })
+    : [];
+  const gathered = await launch(searchItems.concat(locateItems));
 
   const known = {};
   sources.forEach(function (rec) {
     known[rec.url] = true;
   });
-  const picked = rankAndCap(sourcesFound(current, searches, known, open), limit);
+  const searches = gathered.slice(0, searchItems.length);
+  const locates = gathered.slice(searchItems.length);
+  const found = (useWeb ? sourcesFound(current, searches, known, open) : []).concat(useRepo ? pathsFound(current, locates, known, open) : []);
+  const picked = rankAndCap(found, limit);
 
   const recs = picked.map(function (p, j) {
-    return { k: nextK + j, url: p.url, angle: p.angle, round: round, status: "ok", files: [], error: null };
+    return { k: nextK + j, url: p.url, path: p.path || null, range: p.range || null, angle: p.angle, round: round, status: "ok", files: [], error: null };
   });
   nextK += recs.length;
 
   board(round === 0 ? "extracting" : "gap round: extracting", view());
-  const first = recs.length ? await launch(recs.map(function (rec) { return extractFor(rec, "", ""); })) : [];
+  const first = recs.length ? await launch(recs.map(function (rec) { return extractFor(rec, "", "", rec.range); })) : [];
   const toSplit = [];
   recs.forEach(function (rec, j) {
     const r = first[j];
@@ -228,7 +258,7 @@ for (let round = 0; round < 2; round++) {
       rec.error = r.error || "failed";
     } else if (g.over_cap) {
       rec.status = "over_cap";
-      toSplit.push(rec);
+      if (!rec.path || canHalve(rec.range)) toSplit.push(rec);
     } else if (!g.ok) {
       rec.status = "rejected";
       rec.error = g.reason || "no passages";
@@ -240,10 +270,16 @@ for (let round = 0; round < 2; round++) {
   if (toSplit.length > 0) {
     const halves = [];
     toSplit.forEach(function (rec) {
+      if (rec.path) {
+        const mid = Math.floor((rec.range.start + rec.range.end) / 2);
+        halves.push({ rec: rec, suffix: "a", range: { start: rec.range.start, end: mid } });
+        halves.push({ rec: rec, suffix: "b", range: { start: mid + 1, end: rec.range.end } });
+        return;
+      }
       halves.push({ rec: rec, suffix: "a", part: "The page is large: cover only the first half of its sections, by its outline. Another extractor takes the second half." });
       halves.push({ rec: rec, suffix: "b", part: "The page is large: cover only the second half of its sections, by its outline. Another extractor took the first half." });
     });
-    const second = await launch(halves.map(function (h) { return extractFor(h.rec, h.suffix, h.part); }));
+    const second = await launch(halves.map(function (h) { return extractFor(h.rec, h.suffix, h.part, h.range); }));
     toSplit.forEach(function (rec) {
       rec.overHalves = 0;
     });
