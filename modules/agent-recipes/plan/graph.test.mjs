@@ -583,6 +583,7 @@ function assertUniqueOutputs(f) {
   assert.match(k.plan.task, /^Job: batch\.$/m);
   assert.doesNotMatch(k.scout.task, /Input:/);
   assert.doesNotMatch(k.review.task, /Input:/);
+  assert.match(k.review.task, /Goal: The goal\.\nTargets: glob src\/\*\.js\nChange: rename foo to bar\n/);
 }
 
 console.log("plan graph: ok");

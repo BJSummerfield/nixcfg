@@ -149,6 +149,7 @@ function reviewItem() {
     [
       "Review an implementation plan (the plan variant).",
       "Goal: " + goal,
+      ...batchLines(),
       ...inputLine(""),
       "Repository: " + repo,
       "Scout notes: " + scoutNotes,

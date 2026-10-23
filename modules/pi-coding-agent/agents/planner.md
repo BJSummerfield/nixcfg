@@ -74,9 +74,11 @@ path, ...>`; the change is `Change: <description>`.
   pattern, the given paths for a list. Read the repository's `AGENTS.md` and
   drop any target it says not to change; name what you dropped in `plan.md`.
 - Write one task per target, or one per group of targets when a single
-  target is too small to stand alone. The plan check reports an oversize
-  task; split it then.
-- Task id: from the target path, letters, digits, `-` and `_` only. `owns`
+  target is too small to stand alone. Start with one task per target; when
+  the targets are many small files, group them by directory. The plan check
+  reports an oversize task; split it then.
+- Task id: from the target path, letters, digits, `-` and `_` only, and
+  unique across tasks. `owns`
   the target files and nothing else; `reads` none; `check` the light check
   for that file kind from the scout notes; `depends` none; `research` none.
 - The body states the change once by reference to `plan.md` and gives only
