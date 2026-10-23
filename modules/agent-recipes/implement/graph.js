@@ -18,6 +18,8 @@ const STEPS = {
 const open = [];
 const setAside = [];
 const skipped = [];
+const resumed = { done: [], continued: [], answered: [] };
+const answers = args.answers || {};
 
 function planGateCommand() {
   let command = "recipe-gate plan " + quote(dir) + " --repo " + quote(repo);
@@ -93,6 +95,7 @@ function finish() {
     skipped: skipped,
     report: reportLines(),
     heavy_check: heavy,
+    resumed: resumed,
     open: open,
     left: left,
     cleanup: left.length ? "recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "") : "",
@@ -206,6 +209,11 @@ function implementBrief(t, report) {
         ". Do not merge anything.",
     );
   }
+  if (t.resumeRef && t.attempts === 1) {
+    lines.push("Work already on this branch from an earlier run: continue it; do not start over. The old worktree may be gone; only what was committed on the branch is kept.");
+    if (t.earlierReview) lines.push("Earlier review: " + t.earlierReview);
+  }
+  if (answers[t.id]) lines.push("Decision from the user: " + answers[t.id]);
   lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
   lines.push("If the task cannot be done as written, stop and write `blocked: <why>` as the first line of the report; do not ask.");
   lines.push("Write the report to " + report);
@@ -469,16 +477,19 @@ function mergeCommand(m) {
     "--tips",
     quote(m.tips),
     "--onto",
-    quote(pinned.base_ref),
+    quote(m.onto || pinned.base_ref),
     "--kind",
     m.kind,
     "--id",
     m.scope,
-  ].join(" ");
+  ]
+    .concat(args.resume ? ["--refresh", "yes"] : [])
+    .join(" ");
 }
 
-function mergeState(scope, kind, worktree, mergeBranch, tipTasks) {
+function mergeState(scope, kind, worktree, mergeBranch, tipTasks, onto) {
   return {
+    onto: onto || null,
     scope: scope,
     kind: kind,
     worktree: worktree,
@@ -560,7 +571,7 @@ function depsItem(t, m) {
 function prepare(active) {
   active.forEach(function (t) {
     if (!t.spec.depends.length) {
-      t.baseRef = pinned.base_ref;
+      t.baseRef = t.resumeRef || pinned.base_ref;
       t.base = pinned.base;
     }
   });
@@ -569,9 +580,24 @@ function prepare(active) {
   });
   if (due.length === 0) return Promise.resolve();
   const states = due.map(function (t) {
-    return mergeState(t.id, "deps", dir + "/deps/" + t.id, integrationBranch + "-deps-" + t.id, t.spec.depends.map(function (d) {
-      return byId[d];
-    }));
+    return mergeState(
+      t.id,
+      "deps",
+      dir + "/deps/" + t.id,
+      integrationBranch + "-deps-" + t.id,
+      t.spec.depends
+        .map(function (d) {
+          return byId[d];
+        })
+        .filter(function (d) {
+          return !d.gone;
+        }),
+      t.spec.depends.some(function (d) {
+        return byId[d].gone;
+      })
+        ? "refs/heads/" + integrationBranch
+        : null,
+    );
   });
   return launch(
     due.map(function (t, i) {
@@ -585,7 +611,7 @@ function prepare(active) {
         })
         .then(function (out) {
           if (out.ok) {
-            t.baseRef = "refs/heads/" + out.g.branch;
+            t.baseRef = t.resumeRef || "refs/heads/" + out.g.branch;
             t.base = out.g.head;
             return;
           }
@@ -639,9 +665,12 @@ list(plan.tasks).forEach(function (spec) {
     fixes: 0,
     extraFix: false,
     reviews: 0,
+    earlierReview: null,
+    gone: false,
     extraOwns: [],
     replanBrief: null,
     runId: null,
+    resumeRef: null,
     branch: null,
     worktree: null,
     base: null,
@@ -652,6 +681,53 @@ list(plan.tasks).forEach(function (spec) {
   });
   byId[spec.id] = t;
   tasks.push(t);
+});
+
+if (args.resume) {
+  const back = await one(
+    gateOnlyItem(
+      "resume",
+      "recipe-gate resume " + quote(dir) + " --repo " + quote(repo) + " --branch " + quote(integrationBranch),
+      dir + "/resume.md",
+    ),
+  );
+  if (!back.ok || !back.structuredOutput || !back.structuredOutput.ok) {
+    open.push(
+      "the earlier run could not be read, so this run starts fresh: " +
+        ((back.structuredOutput && back.structuredOutput.reason) || back.error || "the resume did not run"),
+    );
+  } else {
+    const last = back.structuredOutput.tasks || {};
+    tasks.forEach(function (t) {
+      const entry = last[t.id];
+      if (!entry) return;
+      const answered = !!answers[t.id];
+      if (!answered && (entry.merged || (entry.head && entry.review === "clean"))) {
+        t.state = "done";
+        t.branch = entry.branch;
+        t.base = pinned.base;
+        t.gone = !entry.head;
+        noteMade(t.id, "task", entry.branch, null);
+        resumed.done.push(t.id);
+        return;
+      }
+      if (!entry.head) {
+        open.push("task " + t.id + ": its earlier branch " + entry.branch + " was gone, so it runs fresh");
+        return;
+      }
+      t.resumeRef = "refs/heads/" + entry.branch;
+      t.reviews = entry.reviews || 0;
+      t.earlierReview = entry.review_file || null;
+      resumed.continued.push(t.id);
+    });
+  }
+}
+
+tasks.forEach(function (t) {
+  if (answers[t.id]) resumed.answered.push(t.id);
+});
+Object.keys(answers).forEach(function (id) {
+  if (!byId[id]) open.push("an answer was given for " + id + ", which is not a task of this plan");
 });
 
 let top = 0;
@@ -668,6 +744,7 @@ for (let level = 0; level <= top; level++) {
       return t.level === level;
     })
     .forEach(function (t) {
+      if (t.state === "done") return;
       const stuck = t.spec.depends.filter(function (d) {
         return byId[d].state !== "done";
       });
@@ -702,19 +779,30 @@ if (finished.length === 0) {
   return finish();
 }
 
-const pairs = finished
+const present = finished.filter(function (t) {
+  return !t.gone;
+});
+if (present.length === 0) {
+  branch = integrationBranch;
+  merged = finished.map(function (t) {
+    return t.id;
+  });
+  open.push("nothing new to integrate: every finished task is already merged into " + integrationBranch);
+  return finish();
+}
+const pairs = present
   .map(function (t) {
     return t.id + ":" + t.branch;
   })
   .join(",");
 
 const wanted = {};
-finished.forEach(function (t) {
+present.forEach(function (t) {
   Object.keys(ancestors(t)).forEach(function (d) {
     wanted[d] = true;
   });
 });
-const tipTasks = finished.filter(function (t) {
+const tipTasks = present.filter(function (t) {
   return !wanted[t.id];
 });
 
@@ -782,7 +870,14 @@ if (!integrated.ok) {
 } else {
   const g = integrated.structuredOutput;
   branch = g.branch;
-  merged = list(g.merged);
+  merged = finished
+    .filter(function (t) {
+      return t.gone;
+    })
+    .map(function (t) {
+      return t.id;
+    })
+    .concat(list(g.merged));
   heavy = g.heavy_check;
   prText = g.pr_text || "";
   if (g.ok) tidied = merged;

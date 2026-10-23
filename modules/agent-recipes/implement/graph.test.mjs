@@ -94,7 +94,7 @@ const conflictAt = (scope, id, files = ["x.nix"], merged = []) => ({
   check: null,
 });
 
-function fake({ plan = planOf([spec("a")]), pin = pinGate, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {} } = {}) {
+function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
@@ -128,6 +128,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, intake = {}, impl = {
           switch (item.agent) {
             case "scout":
               if (item.key.startsWith("pin")) return answer({}, item.key, pin);
+              if (item.key.startsWith("resume")) return answer({}, item.key, back);
               if (/^(deps-|merge)/.test(item.key)) return answer(merge, item.key, mergeGate(item));
               return answer(intake, item.key, plan);
             case "implementer":
@@ -307,6 +308,7 @@ function assertUniqueOutputs(f) {
     heavy_check: "pass",
     healed: [],
     decide: [{ id: "c", step: "review", question: "a person has to choose", diagnosis: "/t/p/diagnosis-c-1.md" }],
+    resumed: { done: [], continued: [], answered: [] },
     open: [],
     left: [{ id: "c", kind: "task", branch: "pi/c", worktree: "/wt/c" }],
     cleanup: "recipe-gate abandon '/t/p' --keep 'implement/p'",
@@ -332,6 +334,7 @@ function assertUniqueOutputs(f) {
     heavy_check: null,
     healed: [],
     decide: [],
+    resumed: { done: [], continued: [], answered: [] },
     open: [
       "the plan is not ready to implement",
       "oversize: t1",
@@ -400,6 +403,7 @@ function assertUniqueOutputs(f) {
     heavy_check: null,
     healed: [],
     decide: [{ id: "a", step: "implement", question: "a person has to choose", diagnosis: "/t/p/diagnosis-a-1.md" }],
+    resumed: { done: [], continued: [], answered: [] },
     open: ["no task finished, so there is nothing to integrate"],
     children: 4,
     pr_text: "",
@@ -717,6 +721,7 @@ function assertUniqueOutputs(f) {
     heavy_check: null,
     healed: [],
     decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
+    resumed: { done: [], continued: [], answered: [] },
     open: ["integration failed: boom", "finished branches: a:pi/a"],
     children: 8,
     pr_text: "",
@@ -760,6 +765,7 @@ function assertUniqueOutputs(f) {
     heavy_check: "fail: red",
     healed: [],
     decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
+    resumed: { done: [], continued: [], answered: [] },
     open: ["integration: not merged: b", "integration: heavy checks: fail: red"],
     children: 9,
     pr_text: "PR",
@@ -976,6 +982,166 @@ function assertUniqueOutputs(f) {
   const receipt = await run(f.runs, base);
   assert.deepEqual(receipt.left, []);
   assert.equal(receipt.cleanup, "");
+}
+
+// A resume after a stop in the middle of a wave: one task is done, one is
+// continued from its branch, one starts fresh.
+{
+  const back = {
+    ok: true,
+    base: "base0",
+    tasks: {
+      a: { branch: "pi/a", head: "ha", review: "clean", merged: false },
+      b: { branch: "pi/b", head: "hb", review: "needs-work", merged: false },
+    },
+  };
+  const f = fake({ plan: planOf([spec("a"), spec("b"), spec("c")]), back });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.deepEqual(keys(f).slice(0, 4), [["intake"], ["pin"], ["resume"], ["impl-b", "impl-c"]]);
+  assert.equal(k.resume.agent, "scout");
+  assert.deepEqual(k.resume.gate, { command: "recipe-gate resume '/t/p' --repo '/r' --branch 'implement/p'", output: "json" });
+  assert.equal(k["impl-a"], undefined);
+  assert.equal(k["impl-b"].baseRef, "refs/heads/pi/b");
+  assert.match(k["impl-b"].task, /Work already on this branch from an earlier run: continue it; do not start over\./);
+  assert.equal(k["impl-c"].baseRef, "refs/recipes/p/base");
+  assert.doesNotMatch(k["impl-c"].task, /earlier run/);
+  assert.deepEqual(receipt.resumed, { done: ["a"], continued: ["b"], answered: [] });
+  assert.deepEqual(receipt.merged, ["a", "b", "c"]);
+  assert.deepEqual(receipt.open, []);
+}
+
+// A task that was set aside is launched again with the user's decision.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: "ha", review: "needs-work", merged: false } } };
+  const f = fake({ back });
+  const receipt = await run(f.runs, { ...base, resume: true, answers: { a: "use the second option" } });
+  const k = byKey(f);
+  assert.match(k["impl-a"].task, /Decision from the user: use the second option/);
+  assert.match(k["impl-a"].task, /continue it; do not start over/);
+  assert.deepEqual(receipt.resumed, { done: [], continued: ["a"], answered: ["a"] });
+
+  const g = fake({ back: { ok: true, base: "base0", tasks: {} } });
+  const fresh = await run(g.runs, { ...base, resume: true, answers: { a: "go" } });
+  assert.match(byKey(g)["impl-a"].task, /Decision from the user: go/);
+  assert.deepEqual(fresh.resumed, { done: [], continued: [], answered: ["a"] });
+}
+
+// A resume gate that fails leaves a fresh run and an open line.
+{
+  const f = fake({ back: { ok: false, reason: "no ledger in /t/p" } });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  assert.deepEqual(keys(f).slice(0, 4), [["intake"], ["pin"], ["resume"], ["impl-a"]]);
+  assert.equal(byKey(f)["impl-a"].baseRef, "refs/recipes/p/base");
+  assert.deepEqual(receipt.open, ["the earlier run could not be read, so this run starts fresh: no ledger in /t/p"]);
+  assert.deepEqual(receipt.resumed, { done: [], continued: [], answered: [] });
+  assert.deepEqual(receipt.merged, ["a"]);
+
+  const g = fake({ back: "boom" });
+  const failedBack = await run(g.runs, { ...base, resume: true });
+  assert.match(failedBack.open[0], /starts fresh: boom/);
+  assert.deepEqual(failedBack.merged, ["a"]);
+}
+
+// A resume refreshes the recorded tips of every merge, and only then.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: "ha", review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: false } } };
+  const f = fake({ plan: planOf([spec("a"), spec("b"), spec("c", ["b"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.match(k["deps-c"].gate.command, / --refresh yes/);
+  assert.match(k.merge.gate.command, / --refresh yes/);
+  const g = fake({ plan: planOf([spec("a")]) });
+  await run(g.runs, base);
+  assert.doesNotMatch(byKey(g).merge.gate.command, /--refresh/);
+}
+
+// A continued task with dependencies merges them as a fresh task does; its branch is only the worktree's base ref.
+{
+  const back = { ok: true, base: "base0", tasks: { c: { branch: "pi/c", head: "hc", review: "needs-work", reviews: 1, review_file: "/t/p/review-c-1.md", merged: false } } };
+  const f = fake({ plan: planOf([spec("b"), spec("c", ["b"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.match(k["deps-c"].gate.command, / --onto 'refs\/recipes\/p\/base'/);
+  assert.equal(k["impl-c"].baseRef, "refs/heads/pi/c");
+  assert.match(k["impl-c"].gate.command, / --base 'head-c' /);
+  assert.doesNotMatch(k["impl-c"].gate.command, / --base 'hc' /);
+  assert.match(k.merge.gate.command, / --onto 'refs\/recipes\/p\/base'/);
+}
+
+// A dependency that is gone and merged is left out of the tips; the merge is made onto the integration branch.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: true } } };
+  const f = fake({ plan: planOf([spec("a"), spec("b", ["a"])]), back });
+  await run(f.runs, { ...base, resume: true });
+  const c = byKey(f)["deps-b"].gate.command;
+  assert.match(c, / --onto 'refs\/heads\/implement\/p'/);
+  assert.match(c, / --tips '' /);
+  assert.doesNotMatch(c, /pi\/a/);
+}
+
+// When every finished task is gone nothing is merged or integrated.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: true } } };
+  const f = fake({ back });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k.merge, undefined);
+  assert.equal(f.items().filter((i) => i.key.startsWith("integrate")).length, 0);
+  assert.deepEqual(receipt.merged, ["a"]);
+  assert.equal(receipt.branch, "implement/p");
+  assert.match(receipt.open[0], /nothing new to integrate/);
+}
+
+// A task whose branch is gone runs fresh, or counts as merged when it was tidied.
+{
+  const back = {
+    ok: true,
+    base: "base0",
+    tasks: {
+      a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: false },
+      b: { branch: "pi/b", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-b-1.md", merged: true },
+    },
+  };
+  const f = fake({ plan: planOf([spec("a"), spec("b")]), back });
+  const receipt = await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k["impl-a"].baseRef, "refs/recipes/p/base");
+  assert.equal(k["impl-b"], undefined);
+  assert.match(k.merge.gate.command, / --tips 'a:pi\/a'/);
+  assert.match(f.items().find((i) => i.key.startsWith("integrate")).gate.command, /--tasks 'a:pi\/a'/);
+  assert.deepEqual(receipt.resumed, { done: ["b"], continued: [], answered: [] });
+  assert.deepEqual(receipt.merged, ["b", "a"]);
+  assert.deepEqual(receipt.open, ["task a: its earlier branch pi/a was gone, so it runs fresh"]);
+}
+
+// Reviews of a continued task number on from the earlier ones and the brief names the last.
+{
+  const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: "ha", review: "needs-work", reviews: 3, review_file: "/t/p/review-a-3.md", merged: false } } };
+  const f = fake({ back });
+  await run(f.runs, { ...base, resume: true });
+  const k = byKey(f);
+  assert.equal(k["review-a-4"].output, "/t/p/review-a-4.md");
+  assert.equal(k["review-a-1"], undefined);
+  assert.match(k["impl-a"].task, /Earlier review: \/t\/p\/review-a-3\.md/);
+  assert.match(k["impl-a"].task, /old worktree may be gone/);
+}
+
+// Answers for ids outside the plan are reported, not counted as answered.
+{
+  const back = { ok: true, base: "base0", tasks: {} };
+  const f = fake({ back });
+  const receipt = await run(f.runs, { ...base, resume: true, answers: { a: "go", zz: "what" } });
+  assert.deepEqual(receipt.resumed.answered, ["a"]);
+  assert.deepEqual(receipt.open, ["an answer was given for zz, which is not a task of this plan"]);
+}
+
+// Without resume no resume node runs and the receipt lists nothing resumed.
+{
+  const f = fake();
+  const receipt = await run(f.runs, base);
+  assert.ok(!keys(f).flat().includes("resume"));
+  assert.deepEqual(receipt.resumed, { done: [], continued: [], answered: [] });
 }
 
 console.log("implement graph: ok");

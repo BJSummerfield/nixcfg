@@ -39,7 +39,7 @@
 //                                  files, outside, check:{command, exit, tail}}
 //   pin <dir> --repo DIR           fix the run's base commit and ref in <dir>/run.json ->
 //                                  {ok, reason, repo, base, base_ref, reused}
-//   merge <worktree> --dir DIR --branch NAME [--tips id:branch,...] [--onto REF]
+//   merge <worktree> --dir DIR --branch NAME [--tips id:branch,...] [--onto REF] [--refresh yes]
 //                    [--check CMD] [--kind K] [--id ID]
 //                                  merge the tips into the worktree, creating it from
 //                                  --onto (default the run's base ref) when absent ->
@@ -52,6 +52,12 @@
 //                                  integration worktree at <dir>/integration ->
 //                                  {ok, reasons, branch, head, merged:[id], unmerged:[id],
 //                                  clean, heavy_check, pr_text[, tidied:[id], tidy_problems]}
+//   resume <dir> --repo DIR [--branch NAME]
+//                                  each task the ledger made -> {ok, reason, base,
+//                                  tasks:{id:{branch, head, review, reviews, review_file, merged}}}; head is
+//                                  null for a deleted branch, review is the verdict of
+//                                  the highest <dir>/review-<id>-<n>.md or null, merged
+//                                  is whether the tip is in --branch
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -739,6 +745,36 @@ function branchTip(cwd, b) {
   return git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${b}^{commit}`]);
 }
 
+function resume(dir, flags) {
+  const ledger = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null");
+  if (!ledger) return { ok: false, reason: "no ledger", base: null, tasks: {} };
+  const repo = flags.repo ?? ".";
+  const target = flags.branch ? branchTip(repo, flags.branch) : null;
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const tidied = JSON.parse(readIfExists(path.join(dir, "tidied.json")) ?? "{}");
+  const tasks = {};
+  for (const m of ledger.made ?? []) {
+    if (m.kind !== "task" || !m.id) continue;
+    const head = branchTip(repo, m.branch);
+    const escaped = m.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`^review-${escaped}-(\\d+)\\.md$`);
+    const latest = files
+      .map((f) => pattern.exec(f))
+      .filter(Boolean)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+    const inTarget = Boolean(head && target) && spawnSync("git", ["merge-base", "--is-ancestor", head, target], { cwd: repo }).status === 0;
+    tasks[m.id] = {
+      branch: m.branch,
+      head,
+      review: latest ? verdictOf(path.join(dir, latest[0])).verdict : null,
+      reviews: latest ? Number(latest[1]) : 0,
+      review_file: latest ? path.join(dir, latest[0]) : null,
+      merged: inTarget || (!head && Boolean(tidied[m.branch])),
+    };
+  }
+  return { ok: true, reason: null, base: ledger.base ?? null, tasks };
+}
+
 function ownsList(raw) {
   const list = [];
   for (const part of String(raw).split(",")) {
@@ -791,7 +827,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|pin|merge|abandon|integrate|resume <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -816,11 +852,13 @@ function run(argv) {
     case "pin":
       return pin(target, { repo: flags.repo });
     case "merge":
-      return merge(target, { dir: flags.dir, branch: flags.branch, onto: flags.onto, tips: flags.tips, check: flags.check, kind: flags.kind, id: flags.id });
+      return merge(target, { dir: flags.dir, branch: flags.branch, onto: flags.onto, tips: flags.tips, check: flags.check, kind: flags.kind, id: flags.id, refresh: flags.refresh === "yes" });
     case "abandon":
       return abandon(target, { keep: flags.keep });
     case "integrate":
       return integrate(target, flags);
+    case "resume":
+      return resume(target, flags);
     default:
       throw new Usage(`unknown subcommand ${cmd}`);
   }

@@ -818,5 +818,72 @@ const gate = (...args) => {
   assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("session"));
 }
 
+// resume: last state of each task from the ledger, branches and review files.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  const commit = (file) => {
+    fs.writeFileSync(path.join(repo, file), file);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", file);
+    return git(repo, "rev-parse", "HEAD");
+  };
+  const base = commit("base.txt");
+  git(repo, "branch", "pi/a");
+  git(repo, "checkout", "-q", "-b", "pi/b");
+  const bTip = commit("b.txt");
+  git(repo, "checkout", "-q", "main");
+  git(repo, "merge", "-q", "--no-ff", "--no-edit", "pi/b");
+  git(repo, "branch", "integ");
+  git(repo, "checkout", "-q", "-b", "pi/c", base);
+  const cTip = commit("c.txt");
+  git(repo, "checkout", "-q", "main");
+
+  const run = dir();
+  const none = gate("resume", run, "--repo", repo);
+  assert.equal(none.json.ok, false);
+  assert.deepEqual(none.json.tasks, {});
+
+  const made = [
+    { kind: "task", id: "a", branch: "pi/a", worktree: "/x/a" },
+    { kind: "task", id: "b-1", branch: "pi/b", worktree: "/x/b" },
+    { kind: "task", id: "c", branch: "pi/c", worktree: "/x/c" },
+    { kind: "task", id: "gone", branch: "pi/gone", worktree: "/x/g" },
+    { kind: "task", id: "d.1", branch: "pi/d", worktree: "/x/d" },
+    { kind: "task", id: "dx1", branch: "pi/dx", worktree: "/x/dx" },
+    { kind: "review", id: "r", branch: "pi/rev", worktree: "/x/r" },
+  ];
+  fs.writeFileSync(path.join(run, "run.json"), JSON.stringify({ repo, base, base_ref: "refs/x", made, merges: {} }));
+  const ok = "Does what was asked: yes\nSound: yes\n";
+  const bad = "Does what was asked: partly\nSound: yes\n";
+  fs.writeFileSync(path.join(run, "review-b-1-1.md"), bad);
+  fs.writeFileSync(path.join(run, "review-b-1-2.md"), bad);
+  fs.writeFileSync(path.join(run, "review-b-1-10.md"), ok);
+  fs.writeFileSync(path.join(run, "review-c-1.md"), ok);
+  fs.writeFileSync(path.join(run, "review-c-2.md"), bad);
+  fs.writeFileSync(path.join(run, "review-dx1-4.md"), bad);
+  fs.writeFileSync(path.join(run, "review-d.1-1.md"), ok);
+  fs.writeFileSync(path.join(run, "tidied.json"), JSON.stringify({ "pi/d": bTip }));
+
+  const r = gate("resume", run, "--repo", repo, "--branch", "integ").json;
+  assert.equal(r.ok, true);
+  assert.equal(r.base, base);
+  assert.deepEqual(Object.keys(r.tasks).sort(), ["a", "b-1", "c", "d.1", "dx1", "gone"]);
+  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, reviews: 0, review_file: null, merged: true });
+  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", reviews: 10, review_file: path.join(run, "review-b-1-10.md"), merged: true });
+  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", reviews: 2, review_file: path.join(run, "review-c-2.md"), merged: false });
+  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, review_file: null, merged: false });
+  assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, review_file: path.join(run, "review-d.1-1.md"), merged: true });
+  assert.equal(r.tasks.dx1.reviews, 4);
+  assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
+  assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-gate: all assertions passed");

@@ -239,7 +239,7 @@ function resolutionProblem(wt, conflict, tipSha) {
 }
 
 export function merge(worktree, opts = {}) {
-  const { dir, branch, onto, tips: tipSpec, check, kind, id } = opts;
+  const { dir, branch, onto, tips: tipSpec, check, kind, id, refresh } = opts;
   const wt = path.resolve(worktree);
   const out = {
     ok: false,
@@ -255,7 +255,7 @@ export function merge(worktree, opts = {}) {
     check: null,
   };
   try {
-    return mergeSteps(wt, out, { dir, branch, onto, tipSpec, check, kind, id });
+    return mergeSteps(wt, out, { dir, branch, onto, tipSpec, check, kind, id, refresh });
   } catch (e) {
     out.ok = false;
     out.reason = String(e.message ?? e);
@@ -279,9 +279,9 @@ function mergeSteps(wt, out, o) {
   const repo = ledger.repo;
   out.onto = o.onto ?? ledger.base_ref;
 
-  // Step 2: tips are fixed the first time this worktree is seen.
+  // Step 2: tips are fixed the first time this worktree is seen; refresh replaces those of the given ids.
   let stored = ledger.merges?.[wt]?.tips;
-  if (!stored) {
+  if (!stored || o.refresh) {
     const resolved = [];
     for (const spec of list(o.tipSpec)) {
       const at = spec.indexOf(":");
@@ -293,6 +293,14 @@ function mergeSteps(wt, out, o) {
     }
     update(o.dir, (l) => {
       l.merges[wt] ??= { tips: resolved, conflict: null };
+      if (stored) {
+        const tips = l.merges[wt].tips;
+        for (const [tipId, sha] of resolved) {
+          const at = tips.findIndex(([x]) => x === tipId);
+          if (at < 0) tips.push([tipId, sha]);
+          else tips[at] = [tipId, sha];
+        }
+      }
       stored = l.merges[wt].tips;
       return l;
     });

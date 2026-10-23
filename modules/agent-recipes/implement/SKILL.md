@@ -18,6 +18,9 @@ Parameters, from the request:
 - optional: `branch` (name of the integration branch, default
   `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
   plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
+- resume (boolean): continue a run that stopped, from the branches and
+  reviews it left in the plan directory. `answers` (optional, task id to
+  text) gives the user's decision for a task that was set aside.
 
 The plan directory is also the task directory. The run writes into it, next
 to the plan:
@@ -65,6 +68,26 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    Then `recipe-gate pin` fixes the run's base: the repository's HEAD commit
    and a ref to it, written to `<dir>/run.json`. Every task starts from that
    base, so the checkout may move while the run goes on.
+   With `resume`, one more scout child then carries `recipe-gate resume`,
+   which reads the ledger and the review files: a task whose branch has a
+   clean review (or is already merged into the integration branch, or was
+   tidied after it merged) is done and never launched again; a task whose
+   branch exists and has any other review, or none, starts from that branch
+   with a brief line to continue it and the earlier review file named, and
+   its review files number on from the highest one found; a task whose branch
+   is gone and which is not merged starts fresh with an `open` line; a task
+   named in `answers` gets the line `Decision from the user: <text>` and is
+   launched even if it was set aside before, and an answer for an id outside
+   the plan is an `open` line. Every merge of a resumed run passes
+   `--refresh yes`, so the merge worktrees take the branches' current tips. A
+   continued task's dependency merge is made as for a fresh task, so its
+   `--base` is the dependencies' merge head and its own branch is only the
+   worktree's base ref. A dependency that is gone and merged is left out of the
+   tips and the merge is made `--onto refs/heads/<integration branch>`. When
+   every finished task is gone, the integration merge and gate are skipped
+   and the receipt's `open` says there is nothing new to integrate.
+   A resume gate that fails adds an `open` line and the run goes on as a
+   fresh run.
 2. Tasks are ordered by `depends` into waves. A task runs once everything it
    depends on has finished; a task whose dependency was set aside or skipped
    is skipped. Within a wave the tasks run in parallel, three at a time at
@@ -168,6 +191,7 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 
 ```
 { base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
+  resumed: {done: [ids], continued: [ids], answered: [ids]},
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   heavy_check, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
@@ -213,7 +237,19 @@ below.
 1. Run `recipe-gate plan <dir> --repo <repo>` yourself. Refuse a plan that is
    not ok and report the findings. Run `recipe-gate pin <dir> --repo <repo>`
    and keep the `base` it prints: it is the `--base` of a task without
-   dependencies. Order the tasks into waves by `depends`.
+   dependencies. Order the tasks into waves by `depends`. When resuming, also
+   run `recipe-gate resume <dir> --repo <repo> --branch <branch>` and apply
+   the pi rules: a task with a branch and a clean review (or merged) is done
+   and not dispatched; with a branch and any other review, or none, it is
+   dispatched into a worktree made `--onto refs/heads/<its branch>` with the
+   line "Work already on this branch from an earlier run: continue it; do not
+   start over." and the earlier review file; a task whose branch is gone and
+   not merged starts fresh; its dependency merge is made as for a fresh task
+   (a gone, merged dependency is dropped and the merge is `--onto
+   refs/heads/<integration branch>`), and every merge passes
+   `--refresh yes`; number its review files on from the gate's `reviews`; a task in `answers` gets "Decision from the user: <text>". A
+   failing gate is an `open` line and a fresh run. List the three groups in
+   the receipt's `resumed`.
 2. Per task, make its worktree yourself: `recipe-gate merge <dir>/wt/<id>
    --dir <dir> --branch <branch>-task-<id> --tips <deps> --kind task --id
    <id>`, where `<deps>` is `id:branch,...` of its dependencies (omit

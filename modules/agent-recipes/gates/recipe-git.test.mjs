@@ -178,6 +178,28 @@ test("merge records tips on first call and ignores later moves", () => {
   assert.equal(fs.existsSync(path.join(wt, "z.txt")), false);
 });
 
+test("merge with refresh takes the branches' current tips and adds new ids", () => {
+  const s = scenario();
+  const p = pin(s.dir, { repo: s.repo });
+  branchFrom(s.repo, "t1", p.base, "x.txt", "x\n");
+  const wt = path.join(s.root, "wt");
+  const first = merge(wt, { dir: s.dir, branch: "work", tips: "T1:t1" });
+  assert.equal(first.ok, true, first.reason);
+  const moved = branchFrom(s.repo, "t1", "t1", "z.txt", "moved\n");
+  const t2 = branchFrom(s.repo, "t2", p.base, "y.txt", "y\n");
+  const kept = merge(wt, { dir: s.dir, branch: "work", tips: "T1:t1,T2:t2" });
+  assert.deepEqual(kept.merged, ["T1"]);
+  assert.equal(fs.existsSync(path.join(wt, "z.txt")), false);
+  const fresh = merge(wt, { dir: s.dir, branch: "work", tips: "T1:t1,T2:t2", refresh: true });
+  assert.equal(fresh.ok, true, fresh.reason);
+  assert.deepEqual(fresh.tips, [
+    { id: "T1", sha: moved },
+    { id: "T2", sha: t2 },
+  ]);
+  assert.equal(fs.readFileSync(path.join(wt, "z.txt"), "utf8"), "moved\n");
+  assert.equal(fs.readFileSync(path.join(wt, "y.txt"), "utf8"), "y\n");
+});
+
 test("merge reports an unresolvable tip", () => {
   const s = scenario();
   pin(s.dir, { repo: s.repo });
