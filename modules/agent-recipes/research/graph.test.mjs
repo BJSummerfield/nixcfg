@@ -362,4 +362,75 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.equal(f.batches[1][0].gate.command, "recipe-gate urls '/tmp/it'\\''s/raw/search/search-a-b.md'");
 }
 
+// Repository and mixed sources.
+const fileEntry = (path, range, kind = "primary") => ({ path, range, kind, why: "w" });
+const pathList = (list) => ({ ok: list.length > 0, paths: list });
+function repoFake(locate, extract = {}) {
+  return fake((item) => {
+    switch (item.agent) {
+      case "planner":
+        return ok(item.key, { ok: true, angles: [{ id: "a", question: "Question a?" }] });
+      case "locator":
+        return ok(item.key, locate[item.key]);
+      case "searcher":
+        return ok(item.key, urlList([src("a", 1, "secondary")]));
+      case "extractor":
+        return extract[item.key] ?? extractOk(item.key);
+      case "synthesizer":
+        return ok(item.key, undefined);
+      case "reviewer":
+        return ok(item.key, { ok: true, verdict: "clean", clean: true, angles: [] });
+    }
+    throw new Error(`unexpected agent ${item.agent}`);
+  });
+}
+
+// repo: locators replace searchers; a ranged and an unranged candidate; an
+// over-cap ranged file is redone as two halves, an over-cap unranged one is
+// recorded.
+{
+  const f = repoFake(
+    { "locate-a": pathList([fileEntry("src/big.js", { start: 1, end: 101 }), fileEntry("README.md", null)]) },
+    { "extract-0": extractOver("extract-0"), "extract-1": extractOver("extract-1") },
+  );
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo", repo: "/work/r" });
+  assert.deepEqual(keys(f.batches).slice(0, 4), [["angles"], ["locate-a"], ["extract-0", "extract-1"], ["extract-0a", "extract-0b"]]);
+  const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
+  assert.equal(byKey["locate-a"].agent, "locator");
+  assert.equal(byKey["locate-a"].output, "/t/d/raw/locate/locate-a.md");
+  assert.equal(byKey["locate-a"].gate.command, "recipe-gate paths '/t/d/raw/locate/locate-a.md'");
+  assert.match(byKey["locate-a"].task, /Repository: \/work\/r\n/);
+  assert.match(byKey["extract-0"].task, /File: \/work\/r\/src\/big\.js\nRange: 1-101\nAngle: a\nOutput: \/t\/d\/raw\/extract\/extract-0\.md/);
+  assert.match(byKey["extract-1"].task, /File: \/work\/r\/README\.md\nAngle: a\n/);
+  assert.ok(!/Range:/.test(byKey["extract-1"].task));
+  assert.ok(!f.items().some((i) => i.agent === "searcher"));
+  assert.match(byKey["extract-0a"].task, /Range: 1-51\n/);
+  assert.match(byKey["extract-0b"].task, /Range: 52-101\n/);
+  assert.equal(byKey["extract-0a"].gate.command, "recipe-gate extract '/t/d/raw/extract/extract-0a.md'");
+  assert.ok(!f.items().some((i) => i.key.startsWith("extract-1a")), "an unranged over-cap file is not split");
+  assert.deepEqual(receipt.sources, { ok: 1, failed: 0, over_cap: 1 });
+  assert.ok(receipt.open.includes("source README.md: over_cap"));
+  assertUniqueOutputs(f);
+}
+
+// both: searchers and locators run together and their finds rank together.
+{
+  const f = repoFake({ "locate-a": pathList([fileEntry("src/x.js", { start: 3, end: 9 }, "primary")]) });
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "both", repo: "/work/r" });
+  assert.deepEqual(keys(f.batches).slice(0, 3), [["angles"], ["search-a", "locate-a"], ["extract-0", "extract-1"]]);
+  const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
+  assert.match(byKey["extract-0"].task, /File: \/work\/r\/src\/x\.js\nRange: 3-9\n/);
+  assert.match(byKey["extract-1"].task, /URL: https:\/\/example\.com\/a\/1\n/);
+  assert.deepEqual(receipt.sources, { ok: 2, failed: 0, over_cap: 0 });
+}
+
+// A repository source without a repo ends the run with an open line.
+{
+  const f = repoFake({});
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo" });
+  assert.equal(f.batches.length, 0);
+  assert.equal(receipt.output, null);
+  assert.deepEqual(receipt.open, ["a repository source needs the repo argument"]);
+}
+
 console.log("research graph: ok");
