@@ -262,15 +262,29 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node recipe-gate.test.mjs
         touch $out
       '';
+  pi-recipe-lib =
+    pkgs.runCommand "pi-recipe-lib"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+      }
+      ''
+        mkdir lib
+        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/lib/recipe-lib.test.mjs} lib/recipe-lib.test.mjs
+        node lib/recipe-lib.test.mjs
+        touch $out
+      '';
   pi-recipe-implement =
     pkgs.runCommand "pi-recipe-implement"
       {
         nativeBuildInputs = [ pkgs.nodejs ];
       }
       ''
-        cp ${../modules/agent-recipes/implement/workflow.js} workflow.js
-        cp ${../modules/agent-recipes/implement/workflow.test.mjs} workflow.test.mjs
-        node workflow.test.mjs
+        mkdir lib implement
+        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/implement/graph.js} implement/graph.js
+        cp ${../modules/agent-recipes/implement/graph.test.mjs} implement/graph.test.mjs
+        node implement/graph.test.mjs
         touch $out
       '';
   pi-recipe-plan =
@@ -279,9 +293,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
         nativeBuildInputs = [ pkgs.nodejs ];
       }
       ''
-        cp ${../modules/agent-recipes/plan/workflow.js} workflow.js
-        cp ${../modules/agent-recipes/plan/workflow.test.mjs} workflow.test.mjs
-        node workflow.test.mjs
+        mkdir lib plan
+        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/plan/graph.js} plan/graph.js
+        cp ${../modules/agent-recipes/plan/graph.test.mjs} plan/graph.test.mjs
+        node plan/graph.test.mjs
         touch $out
       '';
   pi-recipe-research =
@@ -290,9 +306,11 @@ evalAll "nixos" inputs.self.nixosConfigurations
         nativeBuildInputs = [ pkgs.nodejs ];
       }
       ''
-        cp ${../modules/agent-recipes/research/workflow.js} workflow.js
-        cp ${../modules/agent-recipes/research/workflow.test.mjs} workflow.test.mjs
-        node workflow.test.mjs
+        mkdir lib research
+        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/research/graph.js} research/graph.js
+        cp ${../modules/agent-recipes/research/graph.test.mjs} research/graph.test.mjs
+        node research/graph.test.mjs
         touch $out
       '';
   pi-recipe-sizing =
