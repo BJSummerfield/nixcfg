@@ -168,6 +168,7 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 
 ```
 { base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
+  report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   heavy_check, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
@@ -191,7 +192,7 @@ the run goes on. Do not answer the question itself: the script decides what
 happens to a stuck child. Reply that it should stop and write `blocked:` and
 its question as the first line of its report, then keep waiting.
 
-Tell the user the branch first, then what merged, each `decide` question with
+Tell the user the branch first, then the `report` lines (one per task, in plan order), then what merged, each `decide` question with
 its diagnosis file, each other set-aside task with its reason, the skipped
 tasks, the heavy-check result, what healed in one line each, and each `open`
 line, and point at `pr.md`. Report `left` and the `cleanup` command; do not
