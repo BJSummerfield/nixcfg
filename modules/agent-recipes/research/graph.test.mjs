@@ -1,5 +1,5 @@
 /**
- * Dry run of the research workflow script against a fake `runs`. Run by
+ * Dry run of the research graph with the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (angles, ranking and
  * capping, gate commands, retry, split, sizing, review, gap round, receipt);
  * pi-subagents' semantics are not exercised, and byte counts are the fake
@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const source = fs.readFileSync(new URL("./workflow.js", import.meta.url), "utf8");
+const source =
+  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
 assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
 assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
 
@@ -119,6 +120,8 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey.angles.output, "/t/d/angles.md");
   assert.equal(byKey.angles.gate.command, "recipe-gate angles '/t/d/angles.md'");
   assert.match(byKey.angles.task, /Goal: The goal\./);
+  assert.ok(byKey.angles.task.endsWith("\nWhen the file is written, run `recipe-gate angles '/t/d/angles.md'`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed."));
+  assert.ok(!/run `/.test(byKey["synthesis-0"].task), "an ungated node has no self-gate line");
 
   assert.equal(byKey["search-a"].output, "/t/d/raw/search/search-a.md");
   assert.equal(byKey["search-a"].outputMode, "file-only");
@@ -134,7 +137,7 @@ function assertUniqueOutputs(f) {
   );
 
   assert.equal(byKey["extract-1-retry"].output, "/t/d/raw/extract/extract-1.retry.md");
-  assert.equal(byKey["extract-1-retry"].task, byKey["extract-1"].task.replace("extract-1.md", "extract-1.retry.md"));
+  assert.equal(byKey["extract-1-retry"].task, byKey["extract-1"].task.replaceAll("extract-1.md", "extract-1.retry.md"));
   assert.equal(byKey["extract-1-retry"].gate.command, "recipe-gate extract '/t/d/raw/extract/extract-1.retry.md'");
   assert.ok(!("extract-3-retry" in byKey), "a gate rejection is not retried");
   assert.match(byKey["extract-2a"].task, /Page: \/t\/d\/pages\/page-2a\.md/);
@@ -152,6 +155,10 @@ function assertUniqueOutputs(f) {
   assert.match(byKey["synthesis-combine"].task, /Merge them into the requested output/);
 
   assert.equal(byKey.review.agent, "reviewer");
+  assert.equal(byKey.review.big, true);
+  for (const key of ["synthesis-0", "synthesis-1", "synthesis-combine"]) assert.equal(byKey[key].big, true);
+  assert.ok(!("big" in byKey["extract-0"]), "extractors are small");
+  assert.ok(!("big" in byKey["search-gap-pricing"]), "searchers are small");
   assert.equal(byKey.review.gate.command, "recipe-gate gaps '/t/d/review.md'");
   assert.deepEqual(files("review"), [ex(0), ex("1.retry"), ex("2a"), ex(5), ex(6), ex(7), ex(8)]);
   assert.match(byKey.review.task, /Deliverable: \/t\/d\/out\.md/);
@@ -296,7 +303,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.match(d.task, /Evidence: \/t\/g\/raw\/extract/);
   assert.equal(receipt.output, null);
   assert.deepEqual(receipt.open, ["the synthesizer failed, so there is no output"]);
-  assert.deepEqual(receipt.decide, [{ step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
+  assert.deepEqual(receipt.decide, [{ id: null, step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
   assert.equal(receipt.children, 6);
   assert.equal(f.batches[f.batches.length - 2][0].output, "/t/g/out.retry.md");
   assertUniqueOutputs(f);
@@ -309,7 +316,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.deepEqual(keys(f.batches).slice(-4), [["synthesis-retry"], ["diagnose-1"], ["synthesis-2"], ["review"]]);
   assert.equal(f.batches.at(-2)[0].output, "/t/g/out.2.md");
   assert.equal(receipt.output, "/t/g/out.2.md");
-  assert.deepEqual(receipt.healed, [{ step: "synthesize", action: "retry", reason: "the engine restarted" }]);
+  assert.deepEqual(receipt.healed, [{ id: null, step: "synthesize", action: "retry", reason: "the engine restarted" }]);
   assertUniqueOutputs(f);
 }
 
@@ -355,4 +362,75 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.equal(f.batches[1][0].gate.command, "recipe-gate urls '/tmp/it'\\''s/raw/search/search-a-b.md'");
 }
 
-console.log("research workflow: ok");
+// Repository and mixed sources.
+const fileEntry = (path, range, kind = "primary") => ({ path, range, kind, why: "w" });
+const pathList = (list) => ({ ok: list.length > 0, paths: list });
+function repoFake(locate, extract = {}) {
+  return fake((item) => {
+    switch (item.agent) {
+      case "planner":
+        return ok(item.key, { ok: true, angles: [{ id: "a", question: "Question a?" }] });
+      case "locator":
+        return ok(item.key, locate[item.key]);
+      case "searcher":
+        return ok(item.key, urlList([src("a", 1, "secondary")]));
+      case "extractor":
+        return extract[item.key] ?? extractOk(item.key);
+      case "synthesizer":
+        return ok(item.key, undefined);
+      case "reviewer":
+        return ok(item.key, { ok: true, verdict: "clean", clean: true, angles: [] });
+    }
+    throw new Error(`unexpected agent ${item.agent}`);
+  });
+}
+
+// repo: locators replace searchers; a ranged and an unranged candidate; an
+// over-cap ranged file is redone as two halves, an over-cap unranged one is
+// recorded.
+{
+  const f = repoFake(
+    { "locate-a": pathList([fileEntry("src/big.js", { start: 1, end: 101 }), fileEntry("README.md", null)]) },
+    { "extract-0": extractOver("extract-0"), "extract-1": extractOver("extract-1") },
+  );
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo", repo: "/work/r" });
+  assert.deepEqual(keys(f.batches).slice(0, 4), [["angles"], ["locate-a"], ["extract-0", "extract-1"], ["extract-0a", "extract-0b"]]);
+  const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
+  assert.equal(byKey["locate-a"].agent, "locator");
+  assert.equal(byKey["locate-a"].output, "/t/d/raw/locate/locate-a.md");
+  assert.equal(byKey["locate-a"].gate.command, "recipe-gate paths '/t/d/raw/locate/locate-a.md'");
+  assert.match(byKey["locate-a"].task, /Repository: \/work\/r\n/);
+  assert.match(byKey["extract-0"].task, /File: \/work\/r\/src\/big\.js\nRange: 1-101\nAngle: a\nOutput: \/t\/d\/raw\/extract\/extract-0\.md/);
+  assert.match(byKey["extract-1"].task, /File: \/work\/r\/README\.md\nAngle: a\n/);
+  assert.ok(!/Range:/.test(byKey["extract-1"].task));
+  assert.ok(!f.items().some((i) => i.agent === "searcher"));
+  assert.match(byKey["extract-0a"].task, /Range: 1-51\n/);
+  assert.match(byKey["extract-0b"].task, /Range: 52-101\n/);
+  assert.equal(byKey["extract-0a"].gate.command, "recipe-gate extract '/t/d/raw/extract/extract-0a.md'");
+  assert.ok(!f.items().some((i) => i.key.startsWith("extract-1a")), "an unranged over-cap file is not split");
+  assert.deepEqual(receipt.sources, { ok: 1, failed: 0, over_cap: 1 });
+  assert.ok(receipt.open.includes("source README.md: over_cap"));
+  assertUniqueOutputs(f);
+}
+
+// both: searchers and locators run together and their finds rank together.
+{
+  const f = repoFake({ "locate-a": pathList([fileEntry("src/x.js", { start: 3, end: 9 }, "primary")]) });
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "both", repo: "/work/r" });
+  assert.deepEqual(keys(f.batches).slice(0, 3), [["angles"], ["search-a", "locate-a"], ["extract-0", "extract-1"]]);
+  const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
+  assert.match(byKey["extract-0"].task, /File: \/work\/r\/src\/x\.js\nRange: 3-9\n/);
+  assert.match(byKey["extract-1"].task, /URL: https:\/\/example\.com\/a\/1\n/);
+  assert.deepEqual(receipt.sources, { ok: 2, failed: 0, over_cap: 0 });
+}
+
+// A repository source without a repo ends the run with an open line.
+{
+  const f = repoFake({});
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo" });
+  assert.equal(f.batches.length, 0);
+  assert.equal(receipt.output, null);
+  assert.deepEqual(receipt.open, ["a repository source needs the repo argument"]);
+}
+
+console.log("research graph: ok");
