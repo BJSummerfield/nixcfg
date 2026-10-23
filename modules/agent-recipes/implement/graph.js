@@ -65,6 +65,24 @@ function leftBehind() {
   });
 }
 
+function reportLines() {
+  const lines = [];
+  const ordered = tasks.slice().sort(function (a, b) {
+    return a.level - b.level;
+  });
+  ordered.forEach(function (t) {
+    if (t.state === "skipped") return lines.push(t.id + ": skipped (" + t.stuckOn + " not done)");
+    if (t.state === "set_aside") {
+      const entry = setAside.filter(function (s) {
+        return s.id === t.id;
+      })[0];
+      return lines.push(t.id + ": set aside (" + (entry ? entry.reason : "no reason recorded") + ")");
+    }
+    lines.push(t.id + (merged.indexOf(t.id) >= 0 ? ": merged" : ": not merged"));
+  });
+  return lines;
+}
+
 function finish() {
   const left = leftBehind();
   return receipt({
@@ -73,6 +91,7 @@ function finish() {
     merged: merged,
     set_aside: setAside,
     skipped: skipped,
+    report: reportLines(),
     heavy_check: heavy,
     open: open,
     left: left,
@@ -654,6 +673,7 @@ for (let level = 0; level <= top; level++) {
       });
       if (stuck.length) {
         t.state = "skipped";
+        t.stuckOn = stuck[0];
         skipped.push(t.id);
       } else {
         t.state = "running";
