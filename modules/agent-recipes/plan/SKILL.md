@@ -10,7 +10,13 @@ Parameters, from the request:
 
 - goal: what the plan must achieve, in one or two sentences.
 - input: absolute path of the file the plan starts from. Without one, write
-  the user's description to `<task dir>/input.md` and use that.
+  the user's description to `<task dir>/input.md` and use that. Optional when
+  `batch` is given.
+- optional `batch`: `{rule: "<glob|grep|list> <value>", change: "<description>"}`.
+  It makes the planner run its batch job: the brief says `Job: batch.` and adds
+  `Targets: <rule>` and `Change: <change>` after the goal; revisions keep the
+  job. With no `input` the Input line is left out. On Claude, dispatch
+  `planner` for the batch job with the same lines.
 - repo: absolute path of the repository the tasks change.
 - optional `locate`: a question naming what to find in the repository, for
   example "which files implement X?". It makes a locator run before the scout.
@@ -108,7 +114,7 @@ it ends.
 ```
 subagent({
   workflow: "/home/agent/.pi/agent/recipes/plan/workflow.js",
-  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", repo: "<repo path>" },
+  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", batch: { rule: "<glob|grep|list ...>", change: "<change>" }, repo: "<repo path>" },
   async: true,
   output: "<task dir>/receipt.md",
   options: { timeoutMs: 5400000, maxSubagentSpawnsPerRun: 30 }
@@ -163,7 +169,8 @@ the limits below.
 1. Dispatch `scout` with the goal, the input, the repository and the questions
    in step 1 above, writing `<dir>/scout.md`. If it fails, retry once; if it
    fails again, plan without notes.
-2. Dispatch `planner` for the implementation plan job with the goal, input,
+2. Dispatch `planner` for the implementation plan job (the batch job when
+   `batch` was given, with its `Targets:` and `Change:` lines) with the goal, input,
    repository, scout notes and plan directory, telling it to write `plan.md`
    and `tasks/<id>.md` in the format above and to run `recipe-gate plan <dir>
    --repo <repo>` before it finishes.

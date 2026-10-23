@@ -4,6 +4,7 @@ const MAX_RESEARCH_SOURCES = 3;
 const dir = args.dir;
 const goal = args.goal;
 const input = args.input;
+const batch = args.batch;
 const repo = args.repo;
 const childMs = args.childTimeoutMs || 1200000;
 const bigMs = args.bigTimeoutMs || 2400000;
@@ -43,7 +44,7 @@ function finish() {
 
 function heal(step, signal, evidence, allowed) {
   show("diagnosing " + step);
-  return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal, "Input: " + input, "Repository: " + repo, "Plan directory: " + dir], STEPS[step], childMs);
+  return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal].concat(inputLine("")).concat(["Repository: " + repo, "Plan directory: " + dir]), STEPS[step], childMs);
 }
 
 function planGateCommand() {
@@ -57,14 +58,19 @@ function locatedLine(label) {
   return located ? [label + located] : [];
 }
 
+function inputLine(suffix) {
+  return input ? ["Input: " + input + suffix] : [];
+}
+
+function batchLines() {
+  return batch ? ["Targets: " + batch.rule, "Change: " + batch.change] : [];
+}
+
 function brief(job, extra) {
-  return [
-    "Job: implementation plan" + job + ".",
-    "Goal: " + goal,
-    "Input: " + input,
-    "Repository: " + repo,
-    "Scout notes: " + scoutNotes,
-  ]
+  return [(batch ? "Job: batch" : "Job: implementation plan") + job + ".", "Goal: " + goal]
+    .concat(batchLines())
+    .concat(inputLine(""))
+    .concat(["Repository: " + repo, "Scout notes: " + scoutNotes])
     .concat(locatedLine("Candidates located: "))
     .concat([
     "Plan directory: " + dir,
@@ -143,7 +149,8 @@ function reviewItem() {
     [
       "Review an implementation plan (the plan variant).",
       "Goal: " + goal,
-      "Input: " + input,
+      ...batchLines(),
+      ...inputLine(""),
       "Repository: " + repo,
       "Scout notes: " + scoutNotes,
       "Plan: " + dir + "/plan.md and " + dir + "/tasks/",
@@ -245,7 +252,8 @@ const scouted = await one(
     "scout",
     [
       "Goal: " + goal,
-      "Input: " + input + " (read it first)",
+      ...batchLines(),
+      ...inputLine(" (read it first)"),
       "Repository: " + repo,
       ...locatedLine("Candidates already located: ").map(function (l) {
         return l + " (read it first)";
