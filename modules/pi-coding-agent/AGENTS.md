@@ -17,9 +17,7 @@ environment file and their own prompt.
 - Keep the task text short: paths and where the brief is. Long text goes to
   a file first; a few KB inline arrives truncated.
 - Leave `model` out: each role's model, window, tools and thinking come from
-  nix. The one exception is a task file that says `thinking: xhigh`: then
-  pass `model: "@subagentModel@:xhigh"`, which keeps the same model and
-  raises thinking for that helper only.
+  nix.
 - Implementers run with `worktree: true`, one managed worktree per task.
 - Give every helper a `timeoutMs` in `options`; a workflow has no deadline
   of its own.
