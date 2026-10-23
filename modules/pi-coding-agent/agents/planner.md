@@ -35,10 +35,11 @@ header, one `key: value` per line, nothing before it and a blank line after:
     reads: <repository paths it must read, comma separated, or none>
     check: <one light check command from the repository's AGENTS.md>
     depends: <ids of tasks that must merge first, or none>
-    thinking: medium | xhigh
+    research: <question a web searcher can answer, or none>
 
 Paths are relative to the repository root. A file the task creates is listed
-in `owns`. Then the body: goal (one sentence); Interfaces (what it consumes
+in `owns`. `research` is for an unfamiliar API, library or version-specific
+behaviour the task will touch; the plan run gathers it before implementation. Then the body: goal (one sentence); Interfaces (what it consumes
 from and produces for neighbouring tasks: names, signatures, values); out of
 scope; the output of the check that counts as passing, and whether it is
 expected to fail before the change; acceptance. The check decides by its exit
