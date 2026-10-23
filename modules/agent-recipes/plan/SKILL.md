@@ -24,6 +24,7 @@ time. It is the plan directory the implement skill reads:
                      heavy checks to run once at the end, changes the plan
                      avoids, open risks
 <dir>/tasks/<id>.md  one per task
+<dir>/research/<id>/ extract-<k>.md and page-<k>.md for a task that asked
 <dir>/receipt.md     the receipt
 ```
 
@@ -36,10 +37,11 @@ owns: a, b           repository paths the task may change; at least one
 reads: c, d          repository paths it must read, or none
 check: <command>     one light check from the repository's AGENTS.md
 depends: x, y        ids of tasks that must merge first, or none
-thinking: medium     or xhigh
+research: <question>  one question a web searcher can answer, or none; optional
 ```
 
-`recipe-gate plan <dir>` reads that header. The run also leaves `scout.md`,
+`recipe-gate plan <dir>` reads that header. `research` is for an unfamiliar API,
+library or version-specific behaviour the task touches. The run also leaves `scout.md`,
 `planner.md`, `review.md`, `revision-<n>.md` (numbered across the run) and
 `diagnosis-<n>.md`; a retried or re-run child writes beside the file it
 replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
@@ -59,10 +61,20 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
 4. If not, the planner revises once with the check's findings (split an
    oversize task along its owned files, reassign ownership, fix cycles and
    missing fields), at most twice.
-5. A fresh reviewer (plan variant) checks the plan against the goal and the
+5. When the plan check passes, each task with a `research` question gets one
+   searcher (writing `research/<id>/search.md`) and, for at most 3 of the
+   sources it found, one extractor each, writing
+   `research/<id>/extract-<k>.md` from `research/<id>/page-<k>.md`, under the
+   same gates and caps as the research skill. An extract over the cap is not
+   counted, and the receipt's `research` count shows what the task got. The
+   extracts are not added to the task's `reads`, because the run cannot edit
+   task files; the implementer is pointed at the directory instead (at most 3
+   extracts of 24 KB each per task). This step never diagnoses: a task that asked and got no usable
+   extract is an `open` line.
+6. A fresh reviewer (plan variant) checks the plan against the goal and the
    input (`recipe-gate verdict`). On needs-work the planner revises once with
    the review and the plan is re-checked and re-reviewed once.
-6. A child that fails by itself is retried once; a plan with no tasks by
+7. A child that fails by itself is retried once; a plan with no tasks by
    design is not revised. Whatever the script still cannot accept goes to a
    diagnose child (a fresh reviewer, diagnosis variant) at once: a planner or
    reviewer that failed twice, a verdict that cannot be read, a plan check
@@ -73,7 +85,7 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
    `fix` (one more revision with its brief) or `decide`. The run gets at
    most two diagnoses, and the same diagnosis twice counts as `decide`. A
    `decide` goes in the receipt as a question for the user.
-7. At each stage the script emits a board (stage, task count, whether the
+8. At each stage the script emits a board (stage, task count, whether the
    plan check passes, the review verdict, what healed, what needs a decision);
    `recipe-status <task dir>` prints it with the children still running.
 
@@ -106,11 +118,12 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 
 ```
 { plan_dir, tasks, oversize: [...], overlaps: [...], review,
-  healed: [{step, action, reason}], decide: [{step, question, diagnosis}],
+  research: { <task id>: <extracts that passed> },
+  healed: [{id, step, action, reason}], decide: [{id, step, question, diagnosis}],
   open: [...], children }
 ```
 
-`review` is `clean`, `needs-work`, or null when no verdict could be had.
+`id` is null for the whole run. `review` is `clean`, `needs-work`, or null when no verdict could be had.
 A child that fails inside the workflow can wake this session once with a
 "Workflow child failed" notice, even though the script retries it. Ignore the
 notice and keep waiting for the workflow's own completion.
@@ -127,7 +140,9 @@ a `decide` question for the user.
 
 ## Claude Code binding
 
-Claude Code has no workflow engine, so the main session does the script's work
+Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
+child API and must be opted into per run, and a headless `claude -p` runner for
+the same script has not been built. So the main session does the script's work
 with the Agent tool, one `subagent_type` per role (`scout`, `planner`,
 `reviewer`; their definitions are installed), in the same order and with the
 same `recipe-gate` checks. Turns in the starting session are unavoidable
@@ -145,17 +160,24 @@ the limits below.
    dispatch `planner` again with the JSON findings, up to twice, then record
    what is still wrong. An empty plan with `missing: ["no tasks"]` and a
    reason in `plan.md` is not revised.
-4. Dispatch a fresh `reviewer` (plan variant) with the goal, input, repository,
+4. For each task whose `research` is set, dispatch `searcher` with the
+   question, writing `<dir>/research/<id>/search.md`, check it with
+   `recipe-gate urls`, keep at most 3 sources for the task (primary sources
+   first), and dispatch `extractor` per source writing
+   `<dir>/research/<id>/extract-<k>.md` from `page-<k>.md`, checked with
+   `recipe-gate extract`. Record the count that passed; a task with none
+   is an open line.
+5. Dispatch a fresh `reviewer` (plan variant) with the goal, input, repository,
    scout notes, plan directory and the gate command, writing `<dir>/review.md`
    (the second review `<dir>/review.2.md`); read its verdict with `recipe-gate
    verdict`. On needs-work, dispatch `planner` once with the review, re-run
    the plan gate and review once more.
-5. Where the pi script diagnoses (step 6 of What runs), dispatch a fresh
+6. Where the pi script diagnoses (step 7 of What runs), dispatch a fresh
    `reviewer` (diagnosis variant) with the step, what went wrong, the
    evidence files, the allowed actions and `<dir>/diagnosis-<n>.md`, read it
    with `recipe-gate diagnosis <file> --allow <actions>`, and act on it with
    the same limits. Do not decide in its place: a `decide` goes to the user.
-6. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
+7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
    dispatched, and report as in the pi binding.
 
 What differs from pi: the main session spends turns on every step and
