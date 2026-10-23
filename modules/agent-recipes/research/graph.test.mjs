@@ -1,5 +1,5 @@
 /**
- * Dry run of the research workflow script against a fake `runs`. Run by
+ * Dry run of the research graph with the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (angles, ranking and
  * capping, gate commands, retry, split, sizing, review, gap round, receipt);
  * pi-subagents' semantics are not exercised, and byte counts are the fake
@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const source = fs.readFileSync(new URL("./workflow.js", import.meta.url), "utf8");
+const source =
+  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
 assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
 assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
 
@@ -119,6 +120,8 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey.angles.output, "/t/d/angles.md");
   assert.equal(byKey.angles.gate.command, "recipe-gate angles '/t/d/angles.md'");
   assert.match(byKey.angles.task, /Goal: The goal\./);
+  assert.ok(byKey.angles.task.endsWith("\nWhen the file is written, run `recipe-gate angles '/t/d/angles.md'`; if it reports a problem, fix the file and run it again before you finish."));
+  assert.ok(!/run `/.test(byKey["synthesis-0"].task), "an ungated node has no self-gate line");
 
   assert.equal(byKey["search-a"].output, "/t/d/raw/search/search-a.md");
   assert.equal(byKey["search-a"].outputMode, "file-only");
@@ -134,7 +137,7 @@ function assertUniqueOutputs(f) {
   );
 
   assert.equal(byKey["extract-1-retry"].output, "/t/d/raw/extract/extract-1.retry.md");
-  assert.equal(byKey["extract-1-retry"].task, byKey["extract-1"].task.replace("extract-1.md", "extract-1.retry.md"));
+  assert.equal(byKey["extract-1-retry"].task, byKey["extract-1"].task.replaceAll("extract-1.md", "extract-1.retry.md"));
   assert.equal(byKey["extract-1-retry"].gate.command, "recipe-gate extract '/t/d/raw/extract/extract-1.retry.md'");
   assert.ok(!("extract-3-retry" in byKey), "a gate rejection is not retried");
   assert.match(byKey["extract-2a"].task, /Page: \/t\/d\/pages\/page-2a\.md/);
@@ -296,7 +299,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.match(d.task, /Evidence: \/t\/g\/raw\/extract/);
   assert.equal(receipt.output, null);
   assert.deepEqual(receipt.open, ["the synthesizer failed, so there is no output"]);
-  assert.deepEqual(receipt.decide, [{ step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
+  assert.deepEqual(receipt.decide, [{ id: null, step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
   assert.equal(receipt.children, 6);
   assert.equal(f.batches[f.batches.length - 2][0].output, "/t/g/out.retry.md");
   assertUniqueOutputs(f);
@@ -309,7 +312,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.deepEqual(keys(f.batches).slice(-4), [["synthesis-retry"], ["diagnose-1"], ["synthesis-2"], ["review"]]);
   assert.equal(f.batches.at(-2)[0].output, "/t/g/out.2.md");
   assert.equal(receipt.output, "/t/g/out.2.md");
-  assert.deepEqual(receipt.healed, [{ step: "synthesize", action: "retry", reason: "the engine restarted" }]);
+  assert.deepEqual(receipt.healed, [{ id: null, step: "synthesize", action: "retry", reason: "the engine restarted" }]);
   assertUniqueOutputs(f);
 }
 
@@ -355,4 +358,4 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.equal(f.batches[1][0].gate.command, "recipe-gate urls '/tmp/it'\\''s/raw/search/search-a-b.md'");
 }
 
-console.log("research workflow: ok");
+console.log("research graph: ok");

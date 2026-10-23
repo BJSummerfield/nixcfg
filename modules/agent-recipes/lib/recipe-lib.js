@@ -58,8 +58,8 @@ function node(key, agent, lines, output, opts) {
     task: text.join("\n"),
     output: output,
     outputMode: "file-only",
-    maxRuntimeMs: o.timeoutMs,
   };
+  if (o.timeoutMs) item.maxRuntimeMs = o.timeoutMs;
   if (o.gate) {
     item.gate = { command: o.gate, output: "json" };
     if (o.gateTimeoutMs) item.gate.timeoutMs = o.gateTimeoutMs;
@@ -264,4 +264,15 @@ function sourcesFound(angles, searches, known, open) {
     });
   });
   return found;
+}
+
+// What a person watching the run sees: the graph's own view of its progress
+// plus the counters every graph shares.
+function board(stage, view) {
+  port.emit(Object.assign({ stage: stage }, view, { children: tally.children, healed: healed, decide: decide }));
+}
+
+function receipt(fields) {
+  board("finished", fields);
+  return Object.assign({}, fields, { healed: healed, decide: decide, children: tally.children });
 }
