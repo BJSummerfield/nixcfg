@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -118,7 +119,8 @@ function addMade(ledger, entry) {
 
 function slug(dir) {
   const s = path.basename(path.resolve(dir)).replace(/[^A-Za-z0-9._-]/g, "-").replace(/^\.+/, "");
-  return s || "run";
+  const hash = crypto.createHash("sha256").update(path.resolve(dir)).digest("hex").slice(0, 8);
+  return `${s || "run"}-${hash}`;
 }
 
 export function pin(dir, { repo } = {}) {
@@ -229,6 +231,10 @@ function resolutionProblem(wt, conflict, tipSha) {
   const changed = diff.out ? diff.out.split("\n") : [];
   const outside = changed.filter((f) => !conflict.files.includes(f));
   if (outside.length) return `resolution of ${conflict.id} edits files that did not conflict: ${outside.join(", ")}`;
+  const later = run(wt, ["diff", "--name-only", parents.commit, "HEAD"]);
+  if (later.status !== 0) return `diff failed: ${later.err}`;
+  const laterOutside = (later.out ? later.out.split("\n") : []).filter((f) => !conflict.files.includes(f));
+  if (laterOutside.length) return `commits after the merge of ${conflict.id} edit files that did not conflict: ${laterOutside.join(", ")}`;
   return null;
 }
 
@@ -322,7 +328,8 @@ function mergeSteps(wt, out, o) {
       out.conflict = { id: tipId, files };
       return fail(`merge of ${tipId} has conflicts`);
     }
-    return fail(`merge of ${tipId} not committed`);
+    const committed = run(wt, ["commit", "--no-edit"]);
+    if (committed.status !== 0) return fail(`merge of ${tipId} not committed: ${committed.err || committed.out}`);
   }
   if (run(wt, ["status", "--porcelain", "--untracked-files=no"]).out) {
     return fail("uncommitted changes in the worktree");

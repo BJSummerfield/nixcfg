@@ -75,7 +75,7 @@ test("pin reuses the base after a later commit", () => {
   assert.equal(first.ok, true);
   assert.equal(first.reused, false);
   assert.equal(first.base, git(s.repo, "rev-parse", "HEAD"));
-  assert.match(first.base_ref, /^refs\/recipes\/run-dir\/base$/);
+  assert.match(first.base_ref, /^refs\/recipes\/run-dir-[0-9a-f]{8}\/base$/);
   commitFile(s.repo, "c.txt", "later\n");
   const second = pin(s.dir, { repo: s.repo });
   assert.equal(second.reused, true);
@@ -93,11 +93,18 @@ test("pin repins when the base ref is gone", () => {
   assert.equal(second.base, newer);
 });
 
+test("pin keeps two plan dirs with the same name apart", () => {
+  const s = scenario();
+  const a = pin(path.join(s.root, "a", "322"), { repo: s.repo });
+  const b = pin(path.join(s.root, "b", "322"), { repo: s.repo });
+  assert.notEqual(a.base_ref, b.base_ref);
+});
+
 test("pin strips a leading dot from the ref name", () => {
   const s = scenario();
   const dir = path.join(s.root, ".hidden");
   const r = pin(dir, { repo: s.repo });
-  assert.equal(r.base_ref, "refs/recipes/hidden/base");
+  assert.match(r.base_ref, /^refs\/recipes\/hidden-[0-9a-f]{8}\/base$/);
 });
 
 test("merge before pin reports the run is not pinned", () => {
@@ -210,13 +217,25 @@ test("merge stops on a conflict and lists the files", () => {
   assert.deepEqual(again.conflict, { id: "T2", files: ["a.txt"] });
 });
 
-test("merge reports a merge that is resolved but not committed", () => {
+test("merge commits a merge that is resolved and staged but not committed", () => {
   const s = conflictScenario();
   fs.writeFileSync(path.join(s.wt, "a.txt"), "one\nboth\nthree\n");
   git(s.wt, "add", "a.txt");
   const r = merge(s.wt, { dir: s.dir, branch: "work" });
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual(r.resolved, [{ id: "T2", files: ["a.txt"] }]);
+});
+
+test("merge refuses a later commit that edits a file that did not conflict", () => {
+  const s = conflictScenario();
+  fs.writeFileSync(path.join(s.wt, "a.txt"), "one\nboth\nthree\n");
+  git(s.wt, "add", "a.txt");
+  git(s.wt, "commit", "-q", "--no-edit");
+  commitFile(s.wt, "b.txt", "changed later\n");
+  const r = merge(s.wt, { dir: s.dir, branch: "work", check: "true" });
   assert.equal(r.ok, false);
-  assert.equal(r.reason, "merge of T2 not committed");
+  assert.match(r.reason, /b\.txt/);
+  assert.deepEqual(r.resolved, []);
 });
 
 test("merge accepts a resolution committed by hand", () => {

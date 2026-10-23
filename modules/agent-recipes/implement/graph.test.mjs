@@ -82,7 +82,7 @@ const scopeDir = (scope) => (scope === "integration" ? "/t/p/integration" : `/t/
 const scopeBranch = (scope) => (scope === "integration" ? "implement/p" : `implement/p-deps-${scope}`);
 const conflictAt = (scope, id, files = ["x.nix"], merged = []) => ({
   ok: false,
-  reason: `conflict merging ${id}`,
+  reason: `merge of ${id} has conflicts`,
   worktree: scopeDir(scope),
   branch: scopeBranch(scope),
   head: "h",
@@ -307,11 +307,8 @@ function assertUniqueOutputs(f) {
     healed: [],
     decide: [{ id: "c", step: "review", question: "a person has to choose", diagnosis: "/t/p/diagnosis-c-1.md" }],
     open: [],
-    left: [
-      { id: "c", kind: "task", branch: "pi/c", worktree: "/wt/c" },
-      { id: "integration", kind: "integration", branch: "implement/p", worktree: "/t/p/integration" },
-    ],
-    cleanup: "recipe-gate abandon '/t/p'",
+    left: [{ id: "c", kind: "task", branch: "pi/c", worktree: "/wt/c" }],
+    cleanup: "recipe-gate abandon '/t/p' --keep 'implement/p'",
     children: 20,
     pr_text: "PR text",
   });
@@ -938,7 +935,20 @@ function assertUniqueOutputs(f) {
   assert.equal(receipt.decide[0].id, "b");
   assert.equal(receipt.decide[0].step, "deps");
   assert.deepEqual(receipt.merged, ["a"]);
-  assert.deepEqual(receipt.left.map((l) => l.kind), ["integration"]);
+  assert.deepEqual(receipt.left.map((l) => l.kind), []);
+}
+
+// The reason a resolver's edit was refused reaches the receipt.
+{
+  const refused = fake({
+    plan: planOf([spec("a"), spec("b")]),
+    merge: {
+      merge: conflictAt("integration", "b"),
+      "resolve-integration-1": { ...conflictAt("integration", "b"), reason: "resolution of b edits files that did not conflict: y.nix" },
+    },
+  });
+  const receipt = await run(refused.runs, base);
+  assert.match(receipt.decide[0].question, /left as it was by the resolver: resolution of b edits files that did not conflict: y\.nix/);
 }
 
 // A deps conflict a resolver settles lets the dependant start from the deps branch.
@@ -954,12 +964,13 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt.merged, ["a", "b"]);
 }
 
-// On a clean finish only the integration branch is left; reviews and
-// dependency worktrees are tidied away with the merged task branches.
+// On a clean finish nothing is left to remove: the integration branch is the
+// deliverable, and reviews, dependency worktrees and merged task branches are tidied away.
 {
   const f = fake({ plan: planOf([spec("a"), spec("b", ["a"])]) });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(receipt.left, [{ id: "integration", kind: "integration", branch: "implement/p", worktree: "/t/p/integration" }]);
+  assert.deepEqual(receipt.left, []);
+  assert.equal(receipt.cleanup, "");
 }
 
 console.log("implement graph: ok");

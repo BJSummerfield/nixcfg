@@ -688,14 +688,14 @@ const gate = (...args) => {
   assert.equal(m2.json.tips.length, 2);
 
   // task --base: passes on a branch built from the base, fails on one that does not contain it.
-  const good = path.join(dir(), "good");
+  const good = path.join(run, "good");
   git(repo, "worktree", "add", "-q", "-b", "pi/good", good, p1.json.base_ref);
   commit(good, "g.txt", "g\n");
   const ok = gateIn(good, "task", report("done"), "--check", "true", "--base", base, "--run", run, "--id", "good");
   assert.equal(ok.json.ok, true, ok.json.reason);
   assert.equal(ok.json.base, base);
   assert.equal(ok.json.commits, 1);
-  const late = path.join(dir(), "late");
+  const late = path.join(run, "late");
   git(repo, "worktree", "add", "-q", "-b", "pi/late", late, "main");
   commit(late, "l.txt", "l\n");
   const other = git(good, "rev-parse", "HEAD");
@@ -704,7 +704,7 @@ const gate = (...args) => {
   assert.equal(bad.json.reason, `branch does not start from the run's base ${other}`);
 
   // The ledger gains the task and review worktrees.
-  const review = path.join(dir(), "review");
+  const review = path.join(run, "review", "good-1");
   git(repo, "worktree", "add", "-q", "-b", "pi/review", review, "pi/good");
   const v = gateIn(review, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "good");
   assert.equal(v.json.verdict, "clean");
@@ -713,6 +713,14 @@ const gate = (...args) => {
   assert.equal(gate("verdict", report("Does what was asked: yes\nSound: yes\n")).json.branch, undefined);
   const made = readRun(run).made.map((m) => `${m.kind}:${m.id}:${m.branch}`);
   assert.deepEqual(made, ["deps:t3:pi/deps", "task:good:pi/good", "task:late:pi/late", "review:good:pi/review"]);
+
+  // A session's own linked worktree is never recorded, so abandon cannot remove it.
+  const session = path.join(dir(), "session");
+  git(repo, "worktree", "add", "-q", "-b", "session", session, "main");
+  fs.writeFileSync(path.join(session, "precious.txt"), "keep\n");
+  const fromSession = gateIn(session, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "s");
+  assert.equal(fromSession.json.verdict, "clean");
+  assert.ok(!readRun(run).made.some((m) => m.branch === "session"));
 
   // A file the reviewer leaves untracked is not the implementer's dirt, but the same file there is.
   fs.writeFileSync(path.join(review, "notes.txt"), "scratch\n");
@@ -750,6 +758,8 @@ const gate = (...args) => {
   assert.ok(!fs.existsSync(good) && fs.existsSync(late) === false);
   assert.ok(!git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/good"));
   assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/late"));
+  assert.ok(fs.existsSync(path.join(session, "precious.txt")));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("session"));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

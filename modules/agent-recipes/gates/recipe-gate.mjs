@@ -290,11 +290,33 @@ function verdictOf(file) {
   return { asked, sound, clean, verdict: clean ? "clean" : "needs-work" };
 }
 
+const PI_WORKTREE_BASE = "/var/tmp/pi-worktrees";
+
+function realOr(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+function inside(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+// Abandon removes what is recorded, so only worktrees the run's own tooling
+// makes are recorded, never a session's checkout.
+function recordable(dir, here) {
+  if (!here.linked || !here.worktree) return false;
+  return [dir, PI_WORKTREE_BASE].some((r) => inside(realOr(r), here.worktree));
+}
+
 function verdict(file, flags) {
   const out = verdictOf(file);
   if (!flags.run) return out;
   const here = where(process.cwd());
-  if (here.linked) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
+  if (recordable(flags.run, here)) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
   return { ...out, branch: here.branch, worktree: here.worktree };
 }
 
@@ -520,7 +542,7 @@ function task(report, flags) {
   const fromBase = !pinned || spawnSync("git", ["merge-base", "--is-ancestor", pinned, "HEAD"], { cwd }).status === 0;
   if (flags.run && head) {
     const here = where(cwd);
-    if (here.linked) record(flags.run, { kind: "task", id: flags.id, branch: here.branch, worktree: here.worktree });
+    if (recordable(flags.run, here)) record(flags.run, { kind: "task", id: flags.id, branch: here.branch, worktree: here.worktree });
   }
 
   const commits = base && fromBase ? Number(git(cwd, ["rev-list", "--count", `${base}..HEAD`])) : 0;
@@ -580,9 +602,9 @@ function integrate(dir, flags) {
   const branch = git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const head = git(worktree, ["rev-parse", "HEAD"]);
   const recordFile = path.join(dir, "tidied.json");
-  const record = JSON.parse(readIfExists(recordFile) ?? "{}");
+  const tidied = JSON.parse(readIfExists(recordFile) ?? "{}");
   const isMerged = ([, b]) => {
-    const tip = branchTip(worktree, b) ?? record[b];
+    const tip = branchTip(worktree, b) ?? tidied[b];
     return Boolean(tip) && spawnSync("git", ["merge-base", "--is-ancestor", tip, "HEAD"], { cwd: worktree }).status === 0;
   };
   const merged = head ? pairs.filter(isMerged).map(([id]) => id) : [];
@@ -601,7 +623,7 @@ function integrate(dir, flags) {
   const ok = reasons.length === 0;
   const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
   if (flags.tidy === "yes" && ok) {
-    Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, record));
+    Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied));
     out.tidy_problems.push(...abandon(dir, { kinds: ["review", "deps", "base"] }).problems);
   }
   return out;

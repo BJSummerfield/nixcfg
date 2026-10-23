@@ -60,7 +60,7 @@ function noteMade(id, kind, entryBranch, entryWorktree) {
 function leftBehind() {
   return made.filter(function (m) {
     if (!tidied) return true;
-    if (m.kind === "review" || m.kind === "deps") return false;
+    if (m.kind === "review" || m.kind === "deps" || m.kind === "integration") return false;
     return !(m.kind === "task" && tidied.indexOf(m.id) >= 0);
   });
 }
@@ -76,7 +76,7 @@ function finish() {
     heavy_check: heavy,
     open: open,
     left: left,
-    cleanup: left.length ? "recipe-gate abandon " + quote(dir) : "",
+    cleanup: left.length ? "recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "") : "",
     pr_text: prText,
   });
 }
@@ -523,7 +523,10 @@ function settle(m, result) {
   if (g.ok) return Promise.resolve({ ok: true, g: g, why: "" });
   if (!g.conflict) return failure(g.reason || "the merge failed");
   const where = "conflict merging " + g.conflict.id + " in " + list(g.conflict.files).join(", ");
-  if (m.last && sameConflict(m.last, g.conflict)) return failure(where + ", left as it was by the resolver");
+  if (m.last && sameConflict(m.last, g.conflict)) {
+    const why = g.reason && !/has conflicts$/.test(g.reason) ? ": " + g.reason : "";
+    return failure(where + ", left as it was by the resolver" + why);
+  }
   if (m.resolvers >= MAX_RESOLVERS) return failure(where + ", still open after " + MAX_RESOLVERS + " resolvers");
   m.last = g.conflict;
   return one(resolverItem(m, g)).then(function (next) {

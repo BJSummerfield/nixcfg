@@ -13,8 +13,8 @@ Parameters, from the request:
   outside the repository, or the run's own files would dirty the checkout
   that every task worktree starts from.
 - repo: absolute path of the repository the tasks change. Its checkout must
-  have a clean working tree, because every task starts from its HEAD in a
-  worktree of its own.
+  have a clean working tree, because the runner refuses to make task
+  worktrees from a dirty source checkout.
 - optional: `branch` (name of the integration branch, default
   `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
   plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
@@ -51,9 +51,9 @@ branch of every task it merged, the review worktrees, the dependency
 worktrees and the base ref. What stays is the integration branch
 `implement/<name of the plan directory>`, which holds the finished work for
 you to push, and the worktrees and branches of tasks that were set aside or
-replaced by a replan, which are not merged anywhere. The receipt lists them
-as `left`; `recipe-gate abandon <plan dir>` removes them on request
-(`--keep a,b` keeps branches).
+replaced by a replan, which are not merged anywhere. The receipt lists the
+latter as `left`; `recipe-gate abandon <plan dir> --keep <integration
+branch>` removes them on request (`--keep a,b` keeps branches).
 
 ## What runs
 
@@ -175,7 +175,9 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 
 `base` is the commit every task started from. `left` holds the worktrees and
 branches still in the repository, and `cleanup` is the command that removes
-them (`recipe-gate abandon <plan dir>`), empty when `left` is.
+them (`recipe-gate abandon <plan dir>`, keeping the integration branch once
+it passed), empty when `left` is. The integration branch is never in `left`
+after a pass.
 `heavy_check` is `pass`, `none`, `fail: <why>` or `not recorded`; `open` holds
 whatever the script could not settle, including a plan refused by its check
 and an integration that did not complete. `pr_text` is last because it is the
@@ -209,11 +211,13 @@ below.
 
 1. Run `recipe-gate plan <dir> --repo <repo>` yourself. Refuse a plan that is
    not ok and report the findings. Run `recipe-gate pin <dir> --repo <repo>`
-   and keep the `base` it prints. Order the tasks into waves by `depends`.
+   and keep the `base` it prints: it is the `--base` of a task without
+   dependencies. Order the tasks into waves by `depends`.
 2. Per task, make its worktree yourself: `recipe-gate merge <dir>/wt/<id>
    --dir <dir> --branch <branch>-task-<id> --tips <deps> --kind task --id
    <id>`, where `<deps>` is `id:branch,...` of its dependencies (omit
-   `--tips` for a task without any). A conflict goes to one `implementer`
+   `--tips` for a task without any). For a task with dependencies keep the
+   `head` this merge prints: it is that task's base. A conflict goes to one `implementer`
    with the resolver brief (the worktree, the conflicted files, the check),
    then run the merge again. Dispatch one `implementer` per task, several in
    one message, without isolation, told to work in that worktree, with a
@@ -222,16 +226,19 @@ below.
    dependencies; the implementer never merges. Ask each to end its report
    with its branch and worktree path.
 3. In that worktree run `recipe-gate task <report> --check '<check>' --owns
-   '<owns>' --repo <repo> --base <base> --run <dir> --id <id>`. A blocked or
+   '<owns>' --repo <repo> --base <base> --run <dir> --id <id>`, where
+   `<base>` is the pinned base for a task without dependencies and the `head`
+   of its step-2 merge otherwise. A blocked or
    failed report goes to a diagnosis (step 5 of this list); a red gate goes
    to a fix round.
 4. For each review make the reviewer's worktree the same way, at a fresh path
    per round: `recipe-gate merge <dir>/review/<id>-<n> --dir <dir> --branch
    <branch>-review-<id>-<n> --onto refs/heads/<task branch> --kind review
    --id <id>`, with no tips. Dispatch a fresh `reviewer` (diff variant)
-   there with the task file, branch, that worktree, diff command, check and
-   `<dir>/review-<id>-<n>.md`; run `recipe-gate verdict <file> --run <dir>
-   --id <id>`. On needs-work send the findings to the same implementer
+   there with the task file, branch, that worktree, diff command (from the
+   same `<base>` as step 3), check and `<dir>/review-<id>-<n>.md`; run
+   `recipe-gate verdict <file> --run <dir> --id <id>` inside that review
+   worktree, never in your own checkout. On needs-work send the findings to the same implementer
    (SendMessage to its agent id) so it fixes them in its worktree; if that
    agent cannot be continued, dispatch a new `implementer` without isolation
    told to work in the existing worktree. At most two fix rounds, then a
