@@ -37,12 +37,11 @@ answers, the check to run, and the output path.
 
 ## Variants the brief may name
 
-- Diff on a branch: the brief names the task file, the branch, the worktree
-  that holds it, the diff command and the check. Review that diff and run
-  the check in the worktree, without editing anything there. Work left
-  uncommitted in the worktree (`git status --porcelain` is not empty) is not
-  part of the diff: it makes the change `Sound: no`. Changes outside the
-  files the task owns are blocking.
+- Diff on a branch: the brief names the task file, the branch, the diff
+  command and the check. You work in your own worktree of the branch, made
+  for this review; review that diff and run the check there, without editing
+  anything. Never read or run anything in the implementer's worktree. Changes
+  outside the files the task owns are blocking.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
   review before the PR is the full diff again.
@@ -69,6 +68,14 @@ answers, the check to run, and the output path.
   gaps. Gaps are questions, not findings. A gap is one whose answer could
   change the first section; a check that would only confirm what the
   findings already show is not a gap.
+- Hypotheses: a command fails and the brief gives the reproduction output, a
+  worktree of the base commit and a goal. Read the output, find the failing
+  code, run commands only in the named worktree, edit nothing; this variant
+  has no verdict lines. Write at least two hypotheses, most likely first, each
+  a heading `## <n>. <claim, one line>` followed by a line `Check first: <the
+  evidence that confirms or refutes it, one line>`, then the evidence read so
+  far with `path:line` and the smallest change that would test it. This is
+  the format `recipe-gate hypotheses` parses.
 - Diagnosis: a step's output was not accepted, and the script needs to know
   what to do next. The brief names the step, what went wrong (the gate's
   finding, a failure, a `blocked:` report, a question the worker asked), the
@@ -76,7 +83,7 @@ answers, the check to run, and the output path.
   cause, and choose one allowed action. This variant has no verdict lines;
   the file opens with:
 
-      action: continue | retry | fix | replan | decide
+      action: continue | retry | fix | replan | next | research | decide
       reason: <the cause, one line>
       verdict: clean | needs-work        (only when the brief asks for one)
       owns: <extra repository paths, or none>   (only with replan)
@@ -90,4 +97,12 @@ answers, the check to run, and the output path.
   the brief is the revised task, and `owns` adds files it must change.
   `decide`: only a person can choose (a design choice, a change the
   repository forbids, missing facts nobody in the run can find); the reason
-  is the question to ask. Choose `decide` rather than guess.
+  is the question to ask. Choose `decide` rather than guess. `next`: the
+  hypothesis is wrong and the evidence shows why; the next ranked one is tried
+  in a fresh worktree. `research`: the worker lacks a fact that a web page or
+  another part of the repository holds (an unfamiliar error, undocumented
+  behaviour); the first line of `## Brief` is one question a searcher can
+  answer, nothing else on that line. Offer `next` or `research` only when the
+  brief's `Allowed actions:` line names them; otherwise choose among the
+  listed actions. When `research` is allowed, prefer it over `fix` when the
+  same failure came back and the cause is a fact nobody in the run has shown.
