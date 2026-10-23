@@ -53,6 +53,20 @@ You work where the brief says; the worktree check does not apply.
   If that result file already records a heavy check as passed on the same
   HEAD, do not run it again. Create no worktree and merge nothing; never
   push.
+- Investigate: the brief names one hypothesis, a check to run first, a
+  reproduction command and a verify command. You are in a fresh worktree of
+  the base (the worktree check applies). First check the evidence the brief
+  names; if it refutes the hypothesis, change nothing and stop with `blocked:
+  hypothesis refuted: <evidence>`. Otherwise make the smallest change that
+  makes the verify command pass and keeps the light check green; never edit
+  the test or script the reproduce or verify command runs unless the
+  hypothesis is that it is wrong. Read the research notes the brief lists
+  before the first edit. Commit, run both commands and quote their output. You
+  may change any file the hypothesis needs: the owned-files rule ("Touch only
+  the owned files") and the task-file rules apply only when a task file names
+  `owns`, and an investigation has none. Fix rounds of an investigation
+  follow the fix round bullet, with the verify command in place of the task
+  check.
 - Resolve: a merge is already started in the worktree the brief names, with
   conflicted files listed. Edit only those files, `git add` them, run `git
   commit --no-edit`, then run the named check and quote its output. Start,
