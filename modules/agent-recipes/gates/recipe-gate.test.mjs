@@ -939,6 +939,11 @@ const gate = (...args) => {
   assert.equal(gateIn(source, "repro", run, "--command", "true", "--expect", "maybe").status, 2);
   assert.equal(gateIn(source, "repro", path.join(dir(), "new", "dir"), "--command", "true").json.ok, false);
 
+  // repro: output beyond the capture limit is not a reproduction.
+  const flood = gateIn(source, "repro", run, "--command", "head -c 300000000 /dev/zero | tr '\\0' x");
+  assert.equal(flood.json.ok, false);
+  assert.match(flood.json.reason, /more output than can be captured/);
+
   // repro: a linked worktree under the run directory is recorded as kind repro; --in redirects.
   const inRun = path.join(run, "wt-repro");
   git(source, "worktree", "add", "-q", "-b", "pi/repro", inRun, "main");
@@ -947,6 +952,14 @@ const gate = (...args) => {
   assert.equal(rec.json.head, git(inRun, "rev-parse", "HEAD"));
   const ledger = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
   assert.deepEqual(ledger.made.map((m) => `${m.kind}:${m.id}:${m.branch}`), ["repro:reproduce:pi/repro"]);
+  const hypo = write("hh.md", "## 1. a\nCheck first: x\n## 2. b\nCheck first: y\n");
+  const hypoWt = path.join(run, "wt-hypo");
+  git(source, "worktree", "add", "-q", "-b", "pi/hypo", hypoWt, "main");
+  const hr = gateIn(hypoWt, "hypotheses", hypo, "--run", run, "--id", "hypothesize");
+  assert.equal(hr.json.branch, "pi/hypo");
+  assert.equal(hr.json.ok, true);
+  const ledger2 = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
+  assert.ok(ledger2.made.some((m) => m.kind === "hypothesize" && m.id === "hypothesize" && m.branch === "pi/hypo"));
   const redirected = gateIn(source, "repro", run, "--command", "pwd; exit 1", "--in", inRun);
   assert.equal(redirected.json.tail.trim(), fs.realpathSync(inRun));
   assert.equal(redirected.json.branch, "pi/repro");
@@ -956,6 +969,9 @@ const gate = (...args) => {
   const noisy = (n) => `echo "failed in $PWD at 12345${n} commit deadbeef0${n}1 /tmp/x${n}/y"; exit 1`;
   assert.equal(sigOf(noisy(1)), sigOf(noisy(2)));
   assert.notEqual(sigOf("echo expected 3, got 4; exit 1"), sigOf("echo expected 3, got 5; exit 1"));
+  assert.equal(sigOf("echo 'duration_ms 45.7'; echo 'ok in 3 ms'; exit 1"), sigOf("echo 'duration_ms 44.8'; echo 'ok in 9 ms'; exit 1"));
+  assert.equal(sigOf("echo 'took 0.01s'; exit 1"), sigOf("echo 'took 0.03s'; exit 1"));
+  assert.equal(sigOf("echo 'ran 12 duration'; exit 1"), sigOf("echo 'ran 98 duration'; exit 1"));
   assert.notEqual(sigOf("echo a; echo b; exit 1"), sigOf("echo a; echo c; exit 1"));
   assert.notEqual(sigOf("echo same; exit 1"), sigOf("echo same >&2; exit 1"));
   assert.equal(sigOf("echo $((1+1)); exit 1"), sigOf("echo 2; exit 1"));
@@ -1047,6 +1063,14 @@ const gate = (...args) => {
   assert.equal(noCheck.ok, false);
   assert.equal(noCheck.hypotheses.length, 1);
   assert.equal(gate("hypotheses", path.join(tmp, "absent.md")).json.problem, "file missing");
+  const raw = gate(
+    "hypotheses",
+    write("h.md", "## 1. `cache_dir` is read before init_cache() runs\n**Check first:** `grep -n cache_dir src/app.js` shows __x__\n## 2. The lock in **lock_file.js** stays\nCheck first: run `ls_all`\n"),
+  ).json;
+  assert.deepEqual(raw.hypotheses, [
+    { rank: 1, claim: "`cache_dir` is read before init_cache() runs", check: "`grep -n cache_dir src/app.js` shows __x__" },
+    { rank: 2, claim: "The lock in **lock_file.js** stays", check: "run `ls_all`" },
+  ]);
 }
 
 // diagnosis: next and research.

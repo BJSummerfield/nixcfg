@@ -43,7 +43,7 @@
 //                                  run a command and judge its exit status ->
 //                                  {ok, reason, command, expect, exit, timed_out, tail,
 //                                  signature, log, branch, worktree, head}
-//   hypotheses <file>              ranked hypotheses -> {ok, hypotheses:[{rank, claim,
+//   hypotheses <file> [--run DIR --id ID]  ranked hypotheses -> {ok, hypotheses:[{rank, claim,
 //                                  check}], problem}
 //   pin <dir> --repo DIR           fix the run's base commit and ref in <dir>/run.json ->
 //                                  {ok, reason, repo, base, base_ref, reused}
@@ -143,7 +143,8 @@
 // command that failed (verify first), or of the normalised reason when no
 // command failed. The output is the command's stdout, a `--- stderr ---`
 // line and its stderr; the work directory, ANSI escapes, store hashes, temp
-// paths, hex runs of 7+ characters and digit runs of 4+ characters are masked,
+// paths, hex runs of 7+ characters, digit runs of 4+ characters, decimal
+// numbers and numbers with a time unit are masked,
 // so the same failure in another worktree or at another time hashes the same
 // while a count that moved (`got 4` to `got 5`) does not. Only the last 20
 // lines are hashed.
@@ -157,7 +158,10 @@
 //
 // hypotheses: a hypothesis is a `## <n>. <claim>` heading and, in its section,
 // a `Check first: <text>` line. They are ranked by n; a repeated n is dropped.
-// ok needs at least two with both parts.
+// ok needs at least two with both parts. The claim and the check are the
+// line's own text after the markers. With --run, a linked worktree under DIR or
+// the pi worktree base is recorded as kind hypothesize, and branch and worktree
+// are returned.
 //
 // diagnosis: reads the file a diagnose child writes when a step's output was
 // not accepted. From its first `action:` line up to the next heading it takes
@@ -647,6 +651,9 @@ function signatureOf(text, roots) {
     .replace(/\/(?:var\/)?tmp\/\S*/g, "<tmp>")
     .toLowerCase()
     .replace(/\b[0-9a-f]{7,}\b/g, "#")
+    .replace(/\d+(?:\.\d+)?\s*(?:ms|us|µs|s|m|h)\b/g, "<t>")
+    .replace(/\d+\.\d+/g, "<n>")
+    .replace(/\d+(?=\s*duration)|\bduration\S*\s+\d+/g, "<t>")
     .replace(/\d{4,}/g, "0");
   const lines = t
     .split("\n")
@@ -664,6 +671,7 @@ function runCommand(cwd, command) {
   return {
     exit: r.status ?? -1,
     timed_out: r.error?.code === "ETIMEDOUT",
+    overflowed: r.error?.code === "ENOBUFS",
     output: `${stdout}${stderr}`,
     signature: signatureOf(`${stdout}\n${STDERR_MARKER}\n${stderr}`, [cwd, realOr(cwd)]),
   };
@@ -754,6 +762,7 @@ function repro(dir, flags) {
   if (recordable(dir, here)) record(dir, { kind: "repro", id, branch: here.branch, worktree: here.worktree });
   let reason = "";
   if (r.timed_out) reason = "the command did not finish in 10 minutes";
+  else if (r.overflowed) reason = "the command printed more output than can be captured";
   else if (expect === "fail" && r.exit === 0) reason = "the command passed (exit 0) but was expected to fail";
   else if (expect === "pass" && r.exit !== 0) reason = `the command failed (exit ${r.exit}) but was expected to pass`;
   return {
@@ -772,10 +781,18 @@ function repro(dir, flags) {
   };
 }
 
-function hypotheses(file) {
+function hypotheses(file, flags = {}) {
+  const out = hypothesesOf(file);
+  if (!flags.run) return out;
+  const here = where(process.cwd());
+  if (recordable(flags.run, here)) record(flags.run, { kind: "hypothesize", id: flags.id, branch: here.branch, worktree: here.worktree });
+  return { ...out, branch: here.branch, worktree: here.worktree };
+}
+
+function hypothesesOf(file) {
   const text = readIfExists(file);
   if (text === null) return { ok: false, hypotheses: [], problem: "file missing" };
-  const lines = text.split("\n").map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""));
+  const lines = text.split("\n").map((l) => l.replace(/^[\s>*-]+/, "").trim());
   const found = new Map();
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^##\s+(\d+)\.\s*(.*?)\s*$/);
@@ -783,7 +800,7 @@ function hypotheses(file) {
     const rank = Number(m[1]);
     let check = "";
     for (let j = i + 1; j < lines.length && !/^##\s/.test(lines[j]); j++) {
-      const c = lines[j].match(/^Check first:\s*(.*?)\s*$/i);
+      const c = lines[j].match(/^(?:\*\*|__)?Check first:?(?:\*\*|__)?:?\s*(.*?)\s*$/i);
       if (c) {
         check = c[1];
         break;
@@ -995,7 +1012,7 @@ function run(argv) {
     case "repro":
       return repro(target, flags);
     case "hypotheses":
-      return hypotheses(target);
+      return hypotheses(target, flags);
     case "pin":
       return pin(target, { repo: flags.repo });
     case "merge":

@@ -32,6 +32,7 @@ const hyps = [];
 const wholeRun = subjectOf(null);
 let pinned = null;
 let reproduction = null;
+let baseSignature = null;
 let roundsUsed = 0;
 let researchRounds = 0;
 let winner = null;
@@ -442,6 +443,7 @@ if (verifyCommand !== reproduce) {
     open.push("the verify command could not be run at the base: " + (atBase.error || "its gate did not run"));
     return finish();
   }
+  baseSignature = baseG.signature || null;
   if (!baseG.ok) {
     open.push("the verify command does not fail at the base, so it cannot tell a fix from no fix: " + baseG.reason);
     return finish();
@@ -461,7 +463,7 @@ for (let attempt = 1; !found; attempt++) {
   ].concat(commandLines());
   lines.push("Write the hypotheses to " + file);
   const item = node("hypothesize" + tag, "reviewer", lines, file, {
-    gate: "recipe-gate hypotheses " + quote(file),
+    gate: "recipe-gate hypotheses " + quote(file) + " --run " + quote(dir) + " --id " + quote("hypothesize" + tag),
     timeoutMs: bigMs,
     worktree: true,
     big: true,
@@ -469,6 +471,7 @@ for (let attempt = 1; !found; attempt++) {
   item.baseRef = pinned.base_ref;
   const r = await one(item);
   const g = r.structuredOutput;
+  if (g) noteMade("hypothesize" + tag, "hypothesize", g.branch, g.worktree);
   if (r.ok && g && g.ok && list(g.hypotheses).length >= 2) {
     found = list(g.hypotheses).slice(0, 2);
   } else {
@@ -504,7 +507,7 @@ found.forEach(function (spec) {
     findings: "",
     notes: [],
     trouble: null,
-    seen: verifyCommand === reproduce && reproduction.signature ? [reproduction.signature] : [],
+    seen: (verifyCommand === reproduce ? reproduction.signature : baseSignature) ? [verifyCommand === reproduce ? reproduction.signature : baseSignature] : [],
   });
 });
 

@@ -62,7 +62,7 @@ function fake(table = {}) {
     let m;
     if (k === "pin") return pinGate;
     if (k === "reproduce" || k === "verify-base") return reproGate(k);
-    if (k === "hypothesize") return hypotheses;
+    if (k === "hypothesize") return { ...hypotheses, branch: "pi/hyp", worktree: "/wt/hypothesize" };
     if ((m = /^change-(\d+)/.exec(k))) return taskPass(m[1]);
     if ((m = /^verify-(\d+)-/.exec(k))) return taskPass(m[1]);
     if (k.startsWith("review-")) return clean;
@@ -115,7 +115,7 @@ function assertSound(f) {
   assert.equal(k.hypothesize.agent, "reviewer");
   assert.equal(k.hypothesize.worktree, true);
   assert.equal(k.hypothesize.baseRef, "refs/recipes/d/base");
-  assert.equal(k.hypothesize.gate.command, "recipe-gate hypotheses '/t/d/hypotheses.md'");
+  assert.equal(k.hypothesize.gate.command, "recipe-gate hypotheses '/t/d/hypotheses.md' --run '/t/d' --id 'hypothesize'");
   assert.match(k.hypothesize.task, /\/t\/d\/reproduce\.log/);
   assert.equal(k["change-1"].agent, "implementer");
   assert.equal(k["change-1"].worktree, true);
@@ -139,6 +139,7 @@ function assertSound(f) {
   assert.equal(r.cleanup, "recipe-gate abandon '/t/d' --keep 'pi/h1'");
   assert.ok(r.left.some((l) => l.worktree === "/wt/reproduce"));
   assert.ok(r.left.some((l) => l.branch === "pi/h1"));
+  assert.ok(r.left.some((l) => l.worktree === "/wt/hypothesize" && l.kind === "hypothesize"));
   assertSound(f);
 }
 
@@ -224,10 +225,14 @@ function assertSound(f) {
   await run(g.runs, args);
   assert.deepEqual(keys(g), ["pin", "reproduce", "hypothesize", "change-1", "diagnose-h1-1"]);
 
-  // A separate verify does not seed the signatures.
-  const h = fake({ "change-1": taskFail(1, "sigR") });
+  // A separate verify seeds the signatures with its own failure at the base, not the reproduction's.
+  const base = { "verify-base": reproGate("verify-base", { signature: "sigB" }) };
+  const h = fake({ ...base, "change-1": taskFail(1, "sigR") });
   await run(h.runs, { ...args, verify: "make test" });
   assert.deepEqual(keys(h).slice(4, 7), ["change-1", "fix-1-1", "verify-1-1"]);
+  const h2 = fake({ ...base, "change-1": taskFail(1, "sigB") });
+  await run(h2.runs, { ...args, verify: "make test" });
+  assert.deepEqual(keys(h2).slice(4, 6), ["change-1", "diagnose-h1-1"]);
 }
 
 // Research: a diagnosis asks a question, sources are read, the fix round carries the notes.
