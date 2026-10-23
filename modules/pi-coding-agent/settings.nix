@@ -105,6 +105,23 @@ let
         model = "sonnet";
       };
     };
+    locator = {
+      description = "Lists the files and line ranges in a repository that bear on one question, without reading them";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "write"
+      ];
+      thinking = "medium";
+      output = "locator.md";
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "sonnet";
+      };
+    };
     searcher = {
       description = "Finds candidate sources for one angle of a question and lists them, without reading them";
       tools = [
