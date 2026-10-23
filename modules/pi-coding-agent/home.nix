@@ -46,8 +46,7 @@ in
       ".pi/agent/subagent-extensions/save-page.js".source = ./extensions/save-page.js;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
-        builtins.replaceStrings [ "@subagentModel@" ] [ data.settings.subagents.defaultModel ]
-          (builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md);
+        builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;
     }
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }
