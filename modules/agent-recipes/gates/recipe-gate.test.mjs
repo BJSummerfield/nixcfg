@@ -109,6 +109,62 @@ const gate = (...args) => {
   assert.equal(gate("extract", write("e.md", exact), "--cap", String(Buffer.byteLength(exact) - 1)).json.over_cap, true);
 }
 
+// paths: locator bullets with optional line ranges; duplicates by path+range dropped.
+{
+  const f = write("p.md", "## a1\n- src/a.js:10-20 | primary | the loop\n- src/b.js | secondary | whole file\n- src/a.js:10-20 | secondary | again\n- src/a.js:30-40 | x\n## a2\n- src/c.js | weird | y | z\nprose\n");
+  const r = gate("paths", f);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.ok, true);
+  assert.deepEqual(r.json.paths, [
+    { path: "src/a.js", range: { start: 10, end: 20 }, why: "the loop", kind: "primary" },
+    { path: "src/b.js", range: null, why: "whole file", kind: "secondary" },
+    { path: "src/a.js", range: { start: 30, end: 40 }, why: "", kind: "secondary" },
+    { path: "src/c.js", range: null, why: "y | z", kind: "secondary" },
+  ]);
+  const empty = gate("paths", write("p.md", "## a1\nnothing\n"));
+  assert.equal(empty.json.ok, false);
+  assert.deepEqual(empty.json.paths, []);
+  assert.equal(gate("paths", path.join(tmp, "absent.md")).json.ok, false);
+}
+
+// extract from a repository file: quotes must appear in the named file and range.
+{
+  const repo = dir();
+  fs.writeFileSync(path.join(repo, "s.js"), "line one\nfunction go() {\n  return 1;\n}\nlast line\n");
+  const good = gate("extract", write("e.md", "File: s.js\nRange: 2-4\n\n> function go() {\n>   return 1;\n\n> }\n"), "--repo", repo);
+  assert.equal(good.json.ok, true);
+  assert.equal(good.json.quotes, 2);
+  assert.deepEqual(good.json.missing, []);
+  const bad = gate("extract", write("e.md", "File: s.js\n\n> function go() {\n\n> not in the file\n"), "--repo", repo);
+  assert.equal(bad.json.ok, false);
+  assert.deepEqual(bad.json.missing, ["not in the file"]);
+  const outside = gate("extract", write("e.md", "File: s.js\nRange: 1-1\n\n> last line\n"), "--repo", repo);
+  assert.equal(outside.json.ok, false);
+  const nofile = gate("extract", write("e.md", "File: gone.js\n\n> x\n"), "--repo", repo);
+  assert.equal(nofile.json.ok, false);
+}
+
+// extract shaped as the extractor prompt describes: File, Range, Source, then quotes.
+{
+  const repo = dir();
+  fs.writeFileSync(path.join(repo, "s.js"), "line one\nfunction go() {\n  return 1;\n}\n");
+  const abs = path.join(repo, "s.js");
+  const shaped = (quote) => `File: ${abs}\nRange: 1-4\nSource: ${abs}\n\ns.js:2-3\n${quote}\n`;
+  const bad = gate("extract", write("e.md", shaped("> invented text not in the file")));
+  assert.equal(bad.json.ok, false);
+  assert.deepEqual(bad.json.missing, ["invented text not in the file"]);
+  const good = gate("extract", write("e.md", shaped("> function go() {\n>   return 1;")));
+  assert.equal(good.json.ok, true);
+  const gone = gate("extract", write("e.md", "File: /nonexistent/x.js\n\n> x\n"));
+  assert.equal(gone.json.ok, false);
+  assert.equal(gone.json.reason, "named file missing");
+  const web = gate("extract", write("e.md", "Source: https://x.test\n\n> a\n\nFile: nothing.js\n"));
+  assert.equal(web.json.ok, true);
+  const single = gate("paths", write("p.md", "- s.js:42 | primary | w\n"));
+  assert.deepEqual(single.json.paths[0].range, { start: 42, end: 42 });
+  assert.equal(single.json.paths[0].path, "s.js");
+}
+
 // size: bytes under the directory, recursively; split by the half-window rule.
 {
   const d = dir();
@@ -174,7 +230,7 @@ const gate = (...args) => {
   const d = (text, ...flags) => gate("diagnosis", write("diagnosis.md", text), ...flags).json;
   assert.deepEqual(
     d("# Diagnosis\n\naction: replan\nreason: stage-test.sh belongs to another task.\nowns: `tests/a.sh`, ./b.nix\n\n## Brief\n\nOwn the test too.\n"),
-    { ok: true, action: "replan", reason: "stage-test.sh belongs to another task.", verdict: null, owns: ["tests/a.sh", "b.nix"], brief: true },
+    { ok: true, action: "replan", reason: "stage-test.sh belongs to another task.", verdict: null, owns: ["tests/a.sh", "b.nix"], brief: true, question: "" },
   );
   const cont = d("action: continue\nreason: the verdict sits under a heading.\nverdict: clean\n", "--allow", "continue,decide", "--verdict", "yes");
   assert.equal(cont.ok, true);
@@ -270,7 +326,7 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(repo, "src/a.txt"), "x".repeat(4000));
   fs.writeFileSync(path.join(repo, "src/b.txt"), "y".repeat(8000));
   const sizing = write("sizing.json", JSON.stringify({ roles: { implementer: { base: 1000, k_read: 2, growth_p90: 500 } } }));
-  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none", thinking: "medium" };
+  const base = { id: "t1", owns: "src/a.txt", reads: "src/b.txt", check: "nix eval .#x", depends: "none" };
   const header = (h) =>
     Object.entries(h)
       .map(([k, v]) => `${k}: ${v}`)
@@ -285,15 +341,15 @@ const gate = (...args) => {
   };
   const planGate = (d, ...extra) => gate("plan", d, "--repo", repo, "--sizing", sizing, ...extra);
 
-  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", thinking: "xhigh" };
+  const t2 = { id: "t2", owns: "new/c.txt", reads: "src/b.txt", check: "statix check new/c.nix", depends: "t1", research: "Which flag does tool x 2.0 use to set the cache dir?" };
   const cleanDir = mkPlan({ t1: task(base), t2: task(t2) });
   const clean = planGate(cleanDir);
   assert.equal(clean.status, 0);
   assert.deepEqual(clean.json, {
     ok: true,
     tasks: [
-      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], thinking: "medium", est: 7500 },
-      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], thinking: "xhigh", est: 5500 },
+      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], research: "", est: 7500 },
+      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], research: "Which flag does tool x 2.0 use to set the cache dir?", est: 5500 },
     ],
     oversize: [],
     overlaps: [],
@@ -338,14 +394,13 @@ const gate = (...args) => {
 
   const wrong = planGate(
     mkPlan({
-      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`", thinking: "high" }),
+      t1: task({ ...base, id: "other", owns: "none", reads: "`src/nope.txt`" }),
       t2: task({ ...t2, reads: "new/c.txt" }),
     }),
   );
   assert.deepEqual(wrong.json.missing, [
     "t1: id must be the file name",
     "t1: owns",
-    "t1: thinking must be medium or xhigh",
     "t1: reads src/nope.txt, which does not exist",
   ]);
 
@@ -353,6 +408,16 @@ const gate = (...args) => {
   assert.equal(created.json.tasks[0].est, 1500);
   assert.deepEqual(created.json.tasks[0].reads, []);
   assert.equal(planGate(mkPlan({ t1: task({ ...base, owns: "src", reads: "none" }) })).json.tasks[0].est, 7500);
+
+  const research = (value) => planGate(mkPlan({ t1: task({ ...base, research: value }) })).json.tasks[0].research;
+  assert.equal(research("none"), "");
+  assert.equal(research("None"), "");
+  assert.equal(research(""), "");
+  assert.equal(research("Does lib y 3.1 accept a timeout option?"), "Does lib y 3.1 accept a timeout option?");
+  assert.equal(planGate(mkPlan({ t1: task(base) })).json.tasks[0].research, "");
+  const thinkingIgnored = planGate(mkPlan({ t1: task({ ...base, thinking: "high" }) }));
+  assert.equal(thinkingIgnored.json.ok, true);
+  assert.equal("thinking" in thinkingIgnored.json.tasks[0], false);
 
   const loose = "\n\n" + task(base, "check: not a header\n");
   const parsed = planGate(mkPlan({ t1: loose }));
@@ -477,13 +542,13 @@ const gate = (...args) => {
   assert.equal(taskGate(wt0, report("I did the thing"), "--check", "true").json.report.status, "invalid");
   assert.equal(taskGate(wt0, path.join(tmp, "absent.md"), "--check", "true").json.report.status, "missing");
 
-  // Dependency branches merged into the task are not part of its own diff.
+  // Dependency branches merged into the task are outside its own diff when --base names the merge.
   const dep = worktree("pi/dep");
   commit(dep, "d.txt", "d\n");
   const wt2 = worktree("pi/t2");
   git(wt2, "merge", "-q", "--no-ff", "--no-edit", "pi/dep");
   commit(wt2, "a.txt", "a3\n");
-  const merged = taskGate(wt2, report("done"), "--check", "true", "--owns", "a.txt");
+  const merged = taskGate(wt2, report("done"), "--check", "true", "--owns", "a.txt", "--base", git(wt2, "rev-parse", "HEAD~1"));
   assert.equal(merged.json.ok, true);
   assert.equal(merged.json.commits, 1);
   assert.deepEqual(merged.json.files, ["a.txt"]);
@@ -615,6 +680,393 @@ const gate = (...args) => {
   git(repo, "branch", "-D", "pi/b");
   const gone = gateEnv("integrate", plan, "--tasks", "a:pi/a,b:pi/b", "--branch", "implement/p");
   assert.deepEqual(gone.unmerged, ["b"]);
+}
+
+
+// pin, merge, abandon, task --base/--run, verdict --run and integrate --tidy
+// clearing recorded worktrees, through the CLI.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const commit = (wt, file, text, msg = file) => {
+    fs.writeFileSync(path.join(wt, file), text);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", msg);
+  };
+  const report = (text) => write("report.md", text);
+  const readRun = (d) => JSON.parse(fs.readFileSync(path.join(d, "run.json"), "utf8"));
+
+  // pin twice around a new commit returns the same base.
+  const run = dir();
+  const p1 = gateIn(repo, "pin", run, "--repo", repo);
+  assert.equal(p1.json.ok, true);
+  const base = git(repo, "rev-parse", "HEAD");
+  assert.equal(p1.json.base, base);
+  commit(repo, "later.txt", "later\n");
+  const p2 = gateIn(repo, "pin", run, "--repo", repo);
+  assert.equal(p2.json.base, base);
+  assert.equal(p2.json.reused, true);
+
+  // merge reports a conflict with its files, then ok after a hand resolution.
+  const t1 = path.join(dir(), "t1");
+  const t2 = path.join(dir(), "t2");
+  git(repo, "worktree", "add", "-q", "-b", "pi/t1", t1, p1.json.base_ref);
+  git(repo, "worktree", "add", "-q", "-b", "pi/t2", t2, p1.json.base_ref);
+  commit(t1, "f.txt", "from t1\n");
+  commit(t2, "f.txt", "from t2\n");
+  const deps = path.join(dir(), "deps");
+  const mergeArgs = ["merge", deps, "--dir", run, "--branch", "pi/deps", "--tips", "t1:pi/t1,t2:pi/t2", "--kind", "deps", "--id", "t3"];
+  const m1 = gateIn(repo, ...mergeArgs);
+  assert.equal(m1.status, 0);
+  assert.equal(m1.json.ok, false);
+  assert.deepEqual(m1.json.conflict, { id: "t2", files: ["f.txt"] });
+  assert.deepEqual(m1.json.merged, ["t1"]);
+  fs.writeFileSync(path.join(deps, "f.txt"), "both\n");
+  git(deps, "add", "f.txt");
+  git(deps, "commit", "-q", "--no-edit");
+  const m2 = gateIn(repo, ...mergeArgs);
+  assert.equal(m2.json.ok, true, m2.json.reason);
+  assert.deepEqual(m2.json.resolved, [{ id: "t2", files: ["f.txt"] }]);
+  assert.equal(gateIn(repo, "merge", path.join(dir(), "x"), "--dir", dir(), "--branch", "b").json.reason, "run not pinned");
+  assert.equal(m2.json.tips.length, 2);
+
+  // task --base: passes on a branch built from the base, fails on one that does not contain it.
+  const good = path.join(run, "good");
+  git(repo, "worktree", "add", "-q", "-b", "pi/good", good, p1.json.base_ref);
+  commit(good, "g.txt", "g\n");
+  const ok = gateIn(good, "task", report("done"), "--check", "true", "--base", base, "--run", run, "--id", "good");
+  assert.equal(ok.json.ok, true, ok.json.reason);
+  assert.equal(ok.json.base, base);
+  assert.equal(ok.json.commits, 1);
+  const late = path.join(run, "late");
+  git(repo, "worktree", "add", "-q", "-b", "pi/late", late, "main");
+  commit(late, "l.txt", "l\n");
+  const other = git(good, "rev-parse", "HEAD");
+  const bad = gateIn(late, "task", report("done"), "--check", "true", "--base", other, "--run", run, "--id", "late");
+  assert.equal(bad.json.ok, false);
+  assert.equal(bad.json.reason, `branch does not start from the run's base ${other}`);
+
+  // The ledger gains the task and review worktrees.
+  const review = path.join(run, "review", "good-1");
+  git(repo, "worktree", "add", "-q", "-b", "pi/review", review, "pi/good");
+  const v = gateIn(review, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "good");
+  assert.equal(v.json.verdict, "clean");
+  assert.equal(v.json.branch, "pi/review");
+  assert.equal(v.json.worktree, fs.realpathSync(review));
+  assert.equal(gate("verdict", report("Does what was asked: yes\nSound: yes\n")).json.branch, undefined);
+  const made = readRun(run).made.map((m) => `${m.kind}:${m.id}:${m.branch}`);
+  assert.deepEqual(made, ["deps:t3:pi/deps", "task:good:pi/good", "task:late:pi/late", "review:good:pi/review"]);
+
+  // A session's own linked worktree is never recorded, so abandon cannot remove it.
+  const session = path.join(dir(), "session");
+  git(repo, "worktree", "add", "-q", "-b", "session", session, "main");
+  fs.writeFileSync(path.join(session, "precious.txt"), "keep\n");
+  const fromSession = gateIn(session, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "s");
+  assert.equal(fromSession.json.verdict, "clean");
+  assert.ok(!readRun(run).made.some((m) => m.branch === "session"));
+
+  // A file the reviewer leaves untracked is not the implementer's dirt, but the same file there is.
+  fs.writeFileSync(path.join(review, "notes.txt"), "scratch\n");
+  const unaffected = gateIn(good, "task", report("done"), "--check", "true", "--base", base);
+  assert.equal(unaffected.json.clean, true);
+  assert.equal(unaffected.json.ok, true);
+  fs.rmSync(path.join(review, "notes.txt"));
+  fs.writeFileSync(path.join(good, "notes.txt"), "scratch\n");
+  const dirty = gateIn(good, "task", report("done"), "--check", "true", "--base", base);
+  assert.equal(dirty.json.clean, false);
+  assert.equal(dirty.json.ok, false);
+  fs.rmSync(path.join(good, "notes.txt"));
+
+  // integrate --tidy clears recorded review and deps worktrees and the base ref, keeping the integration branch.
+  const integration = path.join(run, "integration");
+  git(repo, "worktree", "add", "-q", "-b", "implement/x", integration, p1.json.base_ref);
+  git(integration, "merge", "-q", "--no-edit", "pi/good");
+  fs.writeFileSync(path.join(run, "pr.md"), "Title\n");
+  fs.writeFileSync(path.join(run, "heavy.md"), "none\n");
+  const tidy = gateIn(repo, "integrate", run, "--tasks", "good:pi/good", "--branch", "implement/x", "--tidy", "yes");
+  assert.equal(tidy.json.ok, true, tidy.json.reasons.join("; "));
+  assert.deepEqual(tidy.json.tidy_problems, []);
+  assert.ok(!fs.existsSync(review) && !fs.existsSync(deps));
+  const left = git(repo, "branch", "--format=%(refname:short)").split("\n");
+  assert.ok(left.includes("implement/x"));
+  assert.ok(!left.includes("pi/review") && !left.includes("pi/deps"));
+  assert.ok(left.includes("pi/late"), "set-aside task branches stay");
+  assert.ok(fs.existsSync(late));
+  assert.equal(spawnSync("git", ["rev-parse", "--verify", "-q", p1.json.base_ref], { cwd: repo }).status, 1);
+
+  // abandon removes what was recorded, except kept branches.
+  const gone = gateIn(repo, "abandon", run, "--keep", "pi/late");
+  assert.equal(gone.json.ok, true);
+  assert.deepEqual(gone.json.kept, ["pi/late"]);
+  assert.ok(!fs.existsSync(good) && fs.existsSync(late) === false);
+  assert.ok(!git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/good"));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/late"));
+  assert.ok(fs.existsSync(path.join(session, "precious.txt")));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("session"));
+}
+
+// resume: last state of each task from the ledger, branches and review files.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  const commit = (file) => {
+    fs.writeFileSync(path.join(repo, file), file);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "-m", file);
+    return git(repo, "rev-parse", "HEAD");
+  };
+  const base = commit("base.txt");
+  git(repo, "branch", "pi/a");
+  git(repo, "checkout", "-q", "-b", "pi/b");
+  const bTip = commit("b.txt");
+  git(repo, "checkout", "-q", "main");
+  git(repo, "merge", "-q", "--no-ff", "--no-edit", "pi/b");
+  git(repo, "branch", "integ");
+  git(repo, "checkout", "-q", "-b", "pi/c", base);
+  const cTip = commit("c.txt");
+  git(repo, "checkout", "-q", "main");
+
+  const run = dir();
+  const none = gate("resume", run, "--repo", repo);
+  assert.equal(none.json.ok, false);
+  assert.deepEqual(none.json.tasks, {});
+
+  const made = [
+    { kind: "task", id: "a", branch: "pi/a", worktree: "/x/a" },
+    { kind: "task", id: "b-1", branch: "pi/b", worktree: "/x/b" },
+    { kind: "task", id: "c", branch: "pi/c", worktree: "/x/c" },
+    { kind: "task", id: "gone", branch: "pi/gone", worktree: "/x/g" },
+    { kind: "task", id: "d.1", branch: "pi/d", worktree: "/x/d" },
+    { kind: "task", id: "dx1", branch: "pi/dx", worktree: "/x/dx" },
+    { kind: "review", id: "r", branch: "pi/rev", worktree: "/x/r" },
+  ];
+  fs.writeFileSync(path.join(run, "run.json"), JSON.stringify({ repo, base, base_ref: "refs/x", made, merges: {} }));
+  const ok = "Does what was asked: yes\nSound: yes\n";
+  const bad = "Does what was asked: partly\nSound: yes\n";
+  fs.writeFileSync(path.join(run, "review-b-1-1.md"), bad);
+  fs.writeFileSync(path.join(run, "review-b-1-2.md"), bad);
+  fs.writeFileSync(path.join(run, "review-b-1-10.md"), ok);
+  fs.writeFileSync(path.join(run, "review-c-1.md"), ok);
+  fs.writeFileSync(path.join(run, "review-c-2.md"), bad);
+  fs.writeFileSync(path.join(run, "review-dx1-4.md"), bad);
+  fs.writeFileSync(path.join(run, "review-d.1-1.md"), ok);
+  fs.writeFileSync(path.join(run, "tidied.json"), JSON.stringify({ "pi/d": bTip }));
+
+  const r = gate("resume", run, "--repo", repo, "--branch", "integ").json;
+  assert.equal(r.ok, true);
+  assert.equal(r.base, base);
+  assert.deepEqual(Object.keys(r.tasks).sort(), ["a", "b-1", "c", "d.1", "dx1", "gone"]);
+  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, reviews: 0, review_file: null, merged: true });
+  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", reviews: 10, review_file: path.join(run, "review-b-1-10.md"), merged: true });
+  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", reviews: 2, review_file: path.join(run, "review-c-2.md"), merged: false });
+  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, review_file: null, merged: false });
+  assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, review_file: path.join(run, "review-d.1-1.md"), merged: true });
+  assert.equal(r.tasks.dx1.reviews, 4);
+  assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
+  assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
+}
+
+
+// repro, hypotheses, task --verify/--in with signatures, diagnosis next/research.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const source = dir();
+  git(source, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(source, "a.txt"), "a\n");
+  git(source, "add", "-A");
+  git(source, "commit", "-q", "-m", "init");
+  const run = dir();
+  const worktree = (branch, where = path.join(dir(), "wt")) => {
+    git(source, "worktree", "add", "-q", "-b", branch, where, "main");
+    return where;
+  };
+  const commit = (wt, file, text) => {
+    fs.writeFileSync(path.join(wt, file), text);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", file);
+  };
+  const report = (text) => write("report.md", text);
+
+  // repro: exit status against the expectation, the log, and the usage errors.
+  const r1 = gateIn(source, "repro", run, "--command", "echo out; echo err >&2; exit 3");
+  assert.equal(r1.status, 0);
+  assert.equal(r1.json.ok, true);
+  assert.equal(r1.json.reason, "");
+  assert.equal(r1.json.exit, 3);
+  assert.equal(r1.json.timed_out, false);
+  assert.equal(r1.json.expect, "fail");
+  assert.equal(r1.json.log, path.join(run, "repro.log"));
+  assert.equal(fs.readFileSync(r1.json.log, "utf8"), "out\nerr\n");
+  assert.match(r1.json.tail, /out\nerr/);
+  const r2 = gateIn(source, "repro", run, "--command", "true");
+  assert.equal(r2.json.ok, false);
+  assert.equal(r2.json.reason, "the command passed (exit 0) but was expected to fail");
+  const r3 = gateIn(source, "repro", run, "--command", "true", "--expect", "pass");
+  assert.equal(r3.json.ok, true);
+  const r4 = gateIn(source, "repro", run, "--command", "exit 5", "--expect", "pass", "--id", "again");
+  assert.equal(r4.json.ok, false);
+  assert.equal(r4.json.reason, "the command failed (exit 5) but was expected to pass");
+  assert.ok(fs.existsSync(path.join(run, "again.log")));
+  assert.equal(gateIn(source, "repro", run).status, 2);
+  assert.equal(gateIn(source, "repro", run, "--command", "true", "--expect", "maybe").status, 2);
+  assert.equal(gateIn(source, "repro", path.join(dir(), "new", "dir"), "--command", "true").json.ok, false);
+
+  // repro: a linked worktree under the run directory is recorded as kind repro; --in redirects.
+  const inRun = path.join(run, "wt-repro");
+  git(source, "worktree", "add", "-q", "-b", "pi/repro", inRun, "main");
+  const rec = gateIn(inRun, "repro", run, "--command", "exit 1", "--id", "reproduce");
+  assert.equal(rec.json.branch, "pi/repro");
+  assert.equal(rec.json.head, git(inRun, "rev-parse", "HEAD"));
+  const ledger = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
+  assert.deepEqual(ledger.made.map((m) => `${m.kind}:${m.id}:${m.branch}`), ["repro:reproduce:pi/repro"]);
+  const redirected = gateIn(source, "repro", run, "--command", "pwd; exit 1", "--in", inRun);
+  assert.equal(redirected.json.tail.trim(), fs.realpathSync(inRun));
+  assert.equal(redirected.json.branch, "pi/repro");
+
+  // signature: stable across worktrees, hashes, temp names and long digit runs; moved by small counts.
+  const sigOf = (cmd) => gateIn(source, "repro", run, "--command", cmd).json.signature;
+  const noisy = (n) => `echo "failed in $PWD at 12345${n} commit deadbeef0${n}1 /tmp/x${n}/y"; exit 1`;
+  assert.equal(sigOf(noisy(1)), sigOf(noisy(2)));
+  assert.notEqual(sigOf("echo expected 3, got 4; exit 1"), sigOf("echo expected 3, got 5; exit 1"));
+  assert.notEqual(sigOf("echo a; echo b; exit 1"), sigOf("echo a; echo c; exit 1"));
+  assert.notEqual(sigOf("echo same; exit 1"), sigOf("echo same >&2; exit 1"));
+  assert.equal(sigOf("echo $((1+1)); exit 1"), sigOf("echo 2; exit 1"));
+
+  // The same command gives the same signature from repro and task in different worktrees.
+  const wtA = worktree("pi/sa");
+  const wtB = worktree("pi/sb");
+  commit(wtB, "b.txt", "b\n");
+  const cmd = 'echo "no good in $PWD, got 4"; echo "trace 987654 at /var/tmp/q1" >&2; exit 1';
+  const fromRepro = gateIn(wtA, "repro", run, "--command", cmd).json.signature;
+  const fromTask = gateIn(wtB, "task", report("done"), "--repo", source, "--check", cmd).json;
+  assert.equal(fromTask.ok, false);
+  assert.equal(fromTask.check.signature, fromRepro);
+  assert.equal(fromTask.signature, fromRepro);
+
+  // task --verify: a failing verify decides the reason and the signature; the check does not run.
+  const bad = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "echo nope; exit 4", "--check", "touch ran.txt");
+  assert.equal(bad.json.ok, false);
+  assert.match(bad.json.reason, /^verify failed \(exit 4\): nope/);
+  assert.equal(bad.json.verify.exit, 4);
+  assert.equal(bad.json.check.exit, null);
+  assert.equal(bad.json.check.signature, null);
+  assert.ok(bad.json.signature);
+  assert.equal(bad.json.signature, bad.json.verify.signature);
+  assert.equal(fs.existsSync(path.join(wtB, "ran.txt")), false);
+
+  // --verify alone works; ok has no signature; without --check the check slot stays empty.
+  const only = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "true");
+  assert.equal(only.json.ok, true, only.json.reason);
+  assert.equal(only.json.signature, null);
+  assert.deepEqual(only.json.check, { command: null, exit: null, tail: "", signature: null });
+  assert.equal(only.json.verify.exit, 0);
+  const plain = gateIn(wtB, "task", report("done"), "--repo", source, "--check", "true");
+  assert.equal(plain.json.verify, null);
+  assert.equal(gateIn(wtB, "task", report("done"), "--repo", source).status, 2);
+
+  // A passing verify then a failing check: the check signature is used.
+  const checkFails = gateIn(wtB, "task", report("done"), "--repo", source, "--verify", "true", "--check", "echo late; exit 2");
+  assert.match(checkFails.json.reason, /^check failed \(exit 2\): late/);
+  assert.equal(checkFails.json.signature, checkFails.json.check.signature);
+
+  // --in checks a worktree other than the working directory.
+  const elsewhere = gateIn(source, "task", report("done"), "--repo", source, "--in", wtB, "--check", "pwd");
+  assert.equal(elsewhere.json.ok, true, elsewhere.json.reason);
+  assert.equal(elsewhere.json.branch, "pi/sb");
+  assert.equal(fs.realpathSync(elsewhere.json.worktree), fs.realpathSync(wtB));
+  assert.equal(fs.realpathSync(elsewhere.json.check.tail.trim()), fs.realpathSync(wtB));
+
+  // A failure with no command takes its signature from the reason, the same each time.
+  const wtC = worktree("pi/sc");
+  const none1 = gateIn(wtC, "task", report("done"), "--repo", source, "--check", "true");
+  const none2 = gateIn(wtC, "task", report("done"), "--repo", source, "--check", "true");
+  assert.equal(none1.json.reason, "no commits on the branch");
+  assert.ok(none1.json.signature);
+  assert.equal(none1.json.signature, none2.json.signature);
+  const blocked = gateIn(wtC, "task", report("blocked: x"), "--repo", source, "--check", "true");
+  assert.notEqual(blocked.json.signature, none1.json.signature);
+}
+
+// hypotheses: ranked by number, each needing a claim and a Check first line.
+{
+  const two = write(
+    "h.md",
+    [
+      "# Hypotheses",
+      "## 2. The cache is stale",
+      "Why: it was written before the fix.",
+      "**Check first:** clear the cache and rerun",
+      "",
+      "## 1. The parser drops the last line",
+      "- Check first: feed it a file with no trailing newline",
+      "",
+      "## 1. A repeated rank is dropped",
+      "Check first: nothing",
+    ].join("\n"),
+  );
+  const r = gate("hypotheses", two);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.problem, null);
+  assert.deepEqual(r.json.hypotheses, [
+    { rank: 1, claim: "The parser drops the last line", check: "feed it a file with no trailing newline" },
+    { rank: 2, claim: "The cache is stale", check: "clear the cache and rerun" },
+  ]);
+  const one = gate("hypotheses", write("h.md", "## 1. Only one\nCheck first: look\n")).json;
+  assert.equal(one.ok, false);
+  assert.equal(one.problem, "fewer than two hypotheses with a Check first line");
+  const noCheck = gate("hypotheses", write("h.md", "## 1. First\nCheck first: look\n## 2. Second\nno check here\n")).json;
+  assert.equal(noCheck.ok, false);
+  assert.equal(noCheck.hypotheses.length, 1);
+  assert.equal(gate("hypotheses", path.join(tmp, "absent.md")).json.problem, "file missing");
+}
+
+// diagnosis: next and research.
+{
+  const diag = (text, ...rest) => gate("diagnosis", write("diag.md", text), ...rest).json;
+  const next = diag("action: next\nreason: this idea is spent\n");
+  assert.equal(next.ok, true);
+  assert.equal(next.action, "next");
+  assert.equal(next.question, "");
+  const research = diag("action: research\nreason: need the flag semantics\n## Brief\n- What does the --frozen flag do in tool X?\nMore detail.\n");
+  assert.equal(research.ok, true);
+  assert.equal(research.action, "research");
+  assert.equal(research.question, "What does the --frozen flag do in tool X?");
+  assert.equal(diag("action: research\nreason: r\n## Brief\n> " + "q".repeat(400) + "\n").question.length, 300);
+  const noQuestion = diag("action: research\nreason: r\n## Brief\n\n");
+  assert.equal(noQuestion.ok, false);
+  assert.equal(noQuestion.problem, "action research needs a question as the first line of ## Brief");
+  assert.equal(diag("action: research\nreason: r\n").ok, false);
+  assert.equal(diag("action: research\nreason: r\n## Brief\nWhy?\n", "--allow", "fix,decide").ok, false);
+  assert.equal(diag("action: fix\nreason: r\n## Brief\nWhy?\n", "--allow", "fix,decide").question, "");
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
