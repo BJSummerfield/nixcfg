@@ -114,7 +114,7 @@ function assertUniqueOutputs(f) {
 
 // A locator that fails leaves one open line and the scout runs as before.
 {
-  const f = fake({ locator: { "locate-plan": "no result" } });
+  const f = fake({ locator: { "locate-plan": "503", "locate-plan-retry": "503" } });
   const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
   const k = byKey(f);
   assert.doesNotMatch(k.scout.task, /located/);
