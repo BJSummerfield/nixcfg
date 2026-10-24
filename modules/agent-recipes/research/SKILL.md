@@ -69,77 +69,40 @@ One call starts the whole run; nothing else is needed from this session until
 it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/research/workflow.js",
+recipe_run({
+  recipe: "research",
   args: { dir: "<task dir>", goal: "<goal>", output: "<output path>", format: "<format>" },
-  async: true,
-  output: "<task dir>/receipt.md",
-  options: { timeoutMs: 5400000, maxSubagentSpawnsPerRun: 120 }
+  timeoutMs: 5400000,
+  maxChildren: 120
 })
 ```
 
-All paths are absolute. Wait for the single completion with `bg_wait`; do not
-poll, steer or read intermediate files. Then read only the receipt,
-`<task dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; a long `open` list is cut short. The summary names
-the run's `status.json`, whose `workflow.value` holds the whole receipt; read
-that when the Return part ends in an ellipsis.
+All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<task dir>/receipt.json`, the whole
+receipt. `recipe-status <task dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <task dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { output, sources: { ok, failed, over_cap }, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...], gap_round, children }
 ```
 
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it; pi-subagents
-silences only successful children and has no option for failed ones. Ignore
-the notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
-
 Read the receipt with the triage skill.
 
 ## Claude Code binding
 
-Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
-child API and must be opted into per run, and a headless `claude -p` runner for
-the same script has not been built. So the main session does the script's work
-with the Agent tool, one `subagent_type` per role (`planner`, `searcher`,
-`locator`, `extractor`, `synthesizer`, `reviewer`; their definitions are installed), in
-the same order and with the same `recipe-gate` checks. Turns in the starting
-session are unavoidable here.
+The same graph runs with Claude Code children; this session only starts it and
+reads the result.
 
-1. Dispatch `planner` for the angles job, writing `<dir>/angles.md`. Run
-   `recipe-gate angles <dir>/angles.md`; use at most four angles.
-2. Dispatch one `searcher` per angle, at most 3 in one message, writing
-   `<dir>/raw/search/search-<id>.md`; run `recipe-gate urls` on each file.
-   For `repo` dispatch `locator` instead, with a Repository line, writing
-   `<dir>/raw/locate/locate-<id>.md`, and run `recipe-gate paths`; for `both`
-   dispatch both and rank their lists together.
-3. Rank and cap as above, then dispatch one `extractor` per URL (for a file, with `File: <absolute
-   path>` and `Range: <start>-<end>` lines in place of URL and Page), at most 3 at
-   a time, writing `<dir>/raw/extract/extract-<k>.md`; run `recipe-gate
-   extract` on each. Retry a helper that died once. For an over-cap file,
-   remove it and dispatch two extractors told to cover the first and the
-   second half of the page's sections (a ranged file: the two halves of the
-   range; an unranged file is recorded), writing `extract-<k>a.md` and `...b.md`.
-4. Run `recipe-gate size <dir>/raw/extract`. With `split` 1 dispatch one
-   `synthesizer` with the goal, the format, the extract files and the output
-   path. With more, group the extracts by angle, run one `synthesizer` per
-   group one after another, then one more to combine them.
-5. Dispatch a `reviewer` (research deliverable variant) writing
-   `<dir>/review.md`, and run `recipe-gate gaps <dir>/review.md`. If it lists
-   gaps, run steps 2 to 3 once for them with ids prefixed `gap-`, then a
-   `synthesizer` that updates the output with the new extracts.
-6. Where the pi script diagnoses (step 7 of What runs), dispatch a fresh
-   `reviewer` (diagnosis variant) with the step, what went wrong, the evidence
-   files, the allowed actions and `<dir>/diagnosis-<n>.md`, read it with
-   `recipe-gate diagnosis <file> --allow <actions>`, and act on it with the
-   same limits. Do not decide in its place: a `decide` goes to the user.
-7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
-   dispatched.
+```
+recipe-run start research --harness claude --args '{"dir":"<task dir>","goal":"<goal>","output":"<output path>","format":"<format>"}' --timeout-ms 5400000 --max-children 120
+```
+
+All paths are absolute. It returns at once. Then run `recipe-run wait <task dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<task dir>/receipt.json`, the
+whole receipt, and report as in the pi binding. `recipe-status <task dir>`
+shows progress from any shell. A stopped run continues with `recipe-run resume
+<task dir> --detach`.
