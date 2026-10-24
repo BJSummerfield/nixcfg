@@ -58,7 +58,11 @@ the gap round writes the updated output beside the first one
    still count), `retry` or `decide`. The run gets at most two diagnoses,
    and the same diagnosis twice counts as `decide`. Failed searchers and
    extractors are not diagnosed: the run goes on without that source and
-   records it.
+   records it. A synthesizer or reviewer that reaches its budget writes what
+   it has and lists the input it did not read; fresh ones of the same role
+   cover that input, and a last one merges the parts into the file the graph
+   goes on with. One that hands off without listing unread input is treated
+   as failed, and its partial file is not read as a verdict.
 8. At each stage the script emits a board (stage, source counts, gap round,
    what healed, what needs a decision); `recipe-status <task dir>` prints it
    with the children still running.
