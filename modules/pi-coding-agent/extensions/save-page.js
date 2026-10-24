@@ -2,8 +2,7 @@
 // where it is and what headings it has, so the page never enters context.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
-// into every session; this is reached through
-// subagents.defaultSubagentOnlyExtensions alone.
+// into every session; recipe-runner children load it through roles.json.
 
 import fs from "node:fs/promises";
 import path from "node:path";
