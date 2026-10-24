@@ -544,7 +544,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   for (const agent of ["scout", "reviewer"]) {
     const r = await port.runOne(item(`kept-${agent}`, { agent, output: out(`kept-${agent}`) }));
     assert.equal(r.status, "done");
-    assert.deepEqual(r.handoff, { line: "handoff: output written without a handoff line", unread: [], note: out(`kept-${agent}`), empty: false });
+    assert.equal(r.handoff, null);
   }
   const blank = await port.runOne(item("blank", { agent: "scout", output: out("blank") }));
   assert.equal(blank.status, "failed");

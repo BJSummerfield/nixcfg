@@ -19,7 +19,6 @@ const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0,
 
 const HANDOFF_NOTE_BYTES = 1048576;
 const VALVE_ENDED_LINE = "handoff: ended by the context valve before its note";
-const UNMARKED_NOTE_LINE = "handoff: output written without a handoff line";
 const NO_HANDOFF_ERROR = "context budget reached and no handoff was written";
 
 const OUTPUT_TRAILER = (output) =>
@@ -404,9 +403,8 @@ export function createPort(opts) {
         handoff = { ...handoff, note: noteWritten ? item.output : null, empty: !noteWritten };
       } else if (valveFired && worktree && base && worktrees.state(worktree, base).commits > 0) {
         handoff = { line: VALVE_ENDED_LINE, unread: [], note: null, empty: true };
-      } else if (valveFired && role.budget?.action !== "commit" && note.trim() !== "") {
-        handoff = { line: UNMARKED_NOTE_LINE, unread: [], note: item.output, empty: false };
       }
+      const finishedUnmarked = !handoff && valveFired && role.budget?.action !== "commit" && note.trim() !== "";
 
       let status = outcome.status;
       let error = outcome.error;
@@ -419,6 +417,9 @@ export function createPort(opts) {
         error = `reported as not-satisfied: ${reported}`;
       } else if (status === "timeout") {
         error ??= `timed out after ${spec.timeoutMs} ms`;
+      } else if (finishedUnmarked) {
+        status = "done";
+        error = undefined;
       } else if (valveFired && !handoff) {
         status = "failed";
         error = NO_HANDOFF_ERROR;
