@@ -6,6 +6,9 @@
  * scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import graph from "./graph.mjs";
 import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
@@ -279,11 +282,11 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
         return extractOk(item.key, 1000);
       case "synthesizer": {
         const r = synth(item.key);
-        return typeof r === "string" ? failed(item.key, r) : ok(item.key, r);
+        return typeof r === "string" ? failed(item.key, r) : r?.result ? { ...ok(item.key), ...r.result } : ok(item.key, r);
       }
       case "reviewer": {
         const r = item.key.startsWith("diagnose-") ? diagnose(item.key) : review(item.key);
-        return typeof r === "string" ? failed(item.key, r) : ok(item.key, r);
+        return typeof r === "string" ? failed(item.key, r) : r?.result ? { ...ok(item.key), ...r.result } : ok(item.key, r);
       }
     }
     throw new Error(`unexpected agent ${item.agent}`);
@@ -351,6 +354,71 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
     ["searching", "extracting", "synthesizing", "reviewing", "diagnosing review", "reviewing", "finished"],
   );
   assert.deepEqual(emits.at(-1).sources, { ok: 1, failed: 0, over_cap: 0 });
+}
+
+// A reviewer that hands off without an unread list is not continued: its
+// partial file is not read as a verdict and the usual diagnosis follows.
+{
+  const f = small({
+    review: (key) => (key === "review" ? { result: { handoff: { line: "handoff: out of budget", unread: [], note: null } } } : { ok: true, verdict: "clean", clean: true, angles: [] }),
+    diagnose: () => diagnosis("decide", "a person has to choose"),
+  });
+  const receipt = await run(f.runs, { dir: "/t/j", goal: "G", output: "/t/j/out.md" });
+  assert.deepEqual(keys(f.batches).slice(4), [["review"], ["diagnose-1"]]);
+  assert.match(f.batches.at(-1)[0].task, /handed off without listing unread input/);
+  assert.equal(receipt.gap_round, false);
+  assert.ok(!receipt.open.some((o) => /review verdict/.test(o)));
+  assert.equal(receipt.decide.length, 1);
+}
+
+// A synthesizer that hands off with two unread extracts is continued as two
+// parts and a merge; the merged file is the deliverable.
+{
+  const f = small({
+    synth: (key) => (key === "synthesis" ? { result: { handoff: { line: "handoff: half read", unread: ["/t/k/raw/extract/extract-1.md", "/t/k/raw/extract/extract-2.md"], note: "/t/k/out.md" } } } : undefined),
+  });
+  const receipt = await run(f.runs, { dir: "/t/k", goal: "G", output: "/t/k/out.md" });
+  assert.deepEqual(keys(f.batches).slice(3, 7), [["synthesis"], ["synthesis-part-1"], ["synthesis-part-2"], ["synthesis-merge"]]);
+  const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
+  assert.match(byKey["synthesis-part-1"].task, /Read only these inputs, which it did not reach: \/t\/k\/raw\/extract\/extract-1\.md$/);
+  assert.match(byKey["synthesis-part-2"].task, /did not reach: \/t\/k\/raw\/extract\/extract-2\.md$/);
+  assert.equal(byKey["synthesis-merge"].output, "/t/k/out.merged.md");
+  assert.match(byKey["synthesis-merge"].task, /out\.part-1\.md, \/t\/k\/out\.part-2\.md/);
+  assert.equal(receipt.output, "/t/k/out.merged.md");
+  assertUniqueOutputs(f);
+}
+
+// A reviewer that hands off is continued the same way; the merged review's
+// gaps decide the gap round.
+{
+  const f = small({
+    review: (key) => {
+      if (key === "review") return { result: { handoff: { line: "handoff: half read", unread: ["/t/l/raw/extract/extract-0.md"], note: null } } };
+      if (key === "review-merge") return { ok: true, verdict: "needs-work", clean: false, angles: [{ id: "x", question: "X?" }] };
+      return { ok: true, verdict: "clean", clean: true, angles: [] };
+    },
+  });
+  const receipt = await run(f.runs, { dir: "/t/l", goal: "G", output: "/t/l/out.md" });
+  assert.deepEqual(keys(f.batches).slice(4, 8), [["review"], ["review-part-1"], ["review-merge"], ["search-gap-x"]]);
+  const merge = f.items().find((i) => i.key === "review-merge");
+  assert.equal(merge.output, "/t/l/review.merged.md");
+  assert.equal(merge.gate.command, "recipe-gate gaps '/t/l/review.merged.md'");
+  assert.equal(receipt.gap_round, true);
+  assert.ok(receipt.open.includes("review verdict needs-work; see /t/l/review.merged.md"));
+  assertUniqueOutputs(f);
+}
+
+// The same split through the runner's port: the handoff comes from the
+// child's final text.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "research-handoff-"));
+  const f = small({
+    synth: (key) => (key === "synthesis" ? { result: { finalText: `handoff: half read\nunread: ${dir}/raw/extract/extract-0.md` } } : undefined),
+  });
+  const receipt = await runThroughRunner(graph, f.runs, { dir, goal: "G", output: `${dir}/out.md` });
+  assert.deepEqual(keys(f.batches).slice(3, 6), [["synthesis"], ["synthesis-part-1"], ["synthesis-merge"]]);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(receipt.output, `${dir}/out.merged.md`);
 }
 
 // A path with a quote is shell-escaped in the gate commands.
