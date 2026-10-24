@@ -99,7 +99,17 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
    `fix` (one more revision with its brief) or `decide`. The run gets at
    most two diagnoses, and the same diagnosis twice counts as `decide`. A
    `decide` goes in the receipt as a question for the user.
-8. At each stage the script emits a board (stage, task count, whether the
+8. A planner or reviewer that nears its budget hands off with a first line
+   `handoff: ...`. A planner's handoff is not continued: what it wrote meets
+   the plan check like any short plan, and a failing check goes to the
+   revision in step 4. A reviewer that lists the task files it did not read
+   (`unread:` lines) is continued: the library runs reviewer parts over those
+   files (two halves, or one part for a single file) and one merge reviewer
+   over the notes and part files, which writes `review.merged.md`; its verdict
+   is the review's. A reviewer that hands off with no `unread:` list has
+   failed the step: `recipe-gate verdict` reads its file as `invalid`, never
+   as a verdict, and the step goes to diagnosis as in step 7.
+9. At each stage the script emits a board (stage, task count, whether the
    plan check passes, the review verdict, what healed, what needs a decision);
    `recipe-status <task dir>` prints it with the children still running.
 
