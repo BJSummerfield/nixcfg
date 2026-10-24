@@ -162,12 +162,62 @@ let
   '';
 
   valheimNotifyExpected = pkgs.writeText "valheim-notify-expected.txt" ''
-    up l-1.0.12
-    join 76561198044411510 TeChNo ViKiNg (1 online)
-    join 76561198044411999 Bjorn Ironside (2 online)
-    mismatch 39 40
-    leave 76561198044411999 Bjorn Ironside (1 online)
-    leave 76561198044411510 TeChNo ViKiNg (0 online)
+      up l-1.0.12
+      join 76561198044411510 TeChNo ViKiNg (1 online)
+      join 76561198044411999 Bjorn Ironside (2 online)
+      mismatch 39 40
+      leave 76561198044411999 Bjorn Ironside (1 online)
+      leave 76561198044411510 TeChNo ViKiNg (0 online)
+
+    recipeSrc = builtins.path {
+      path = ../modules/agent-recipes;
+      name = "agent-recipes-src";
+    };
+    recipeTest =
+      name: test: extra:
+      pkgs.runCommand name (
+        {
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.git
+            pkgs.bash
+          ];
+        }
+        // removeAttrs extra [ "after" ]
+      ) "cp -r --no-preserve=mode ${recipeSrc} src; cd src; node ${test}\n${extra.after or ""}touch $out";
+    recipeTestFiles =
+      rel:
+      let
+        abs = ../modules/agent-recipes + "/${rel}";
+      in
+      if !builtins.pathExists abs then
+        [ ]
+      else
+        nixpkgs.lib.concatLists (
+          nixpkgs.lib.mapAttrsToList (
+            n: type:
+            let
+              p = "${rel}/${n}";
+            in
+            if type == "directory" then
+              recipeTestFiles p
+            else if type == "regular" && nixpkgs.lib.hasSuffix ".test.mjs" n then
+              [ p ]
+            else
+              [ ]
+          ) (builtins.readDir abs)
+        );
+    discoveredRecipeChecks = builtins.listToAttrs (
+      map (
+        file:
+        let
+          name = "pi-recipe-${
+            builtins.replaceStrings [ "/" ] [ "-" ] (nixpkgs.lib.removeSuffix ".test.mjs" file)
+          }";
+        in
+        nixpkgs.lib.nameValuePair name (recipeTest name file { })
+      ) (recipeTestFiles "runner" ++ recipeTestFiles "extension")
+    );
   '';
 in
 evalAll "nixos" inputs.self.nixosConfigurations
@@ -248,133 +298,29 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node resume-card.test.mjs
         touch $out
       '';
-  pi-recipe-gate =
-    pkgs.runCommand "pi-recipe-gate"
-      {
-        nativeBuildInputs = [
-          pkgs.nodejs
-          pkgs.git
-        ];
-      }
-      ''
-        cp ${../modules/agent-recipes/gates/recipe-gate.mjs} recipe-gate.mjs
-        cp ${../modules/agent-recipes/gates/recipe-git.mjs} recipe-git.mjs
-        cp ${../modules/agent-recipes/gates/recipe-gate.test.mjs} recipe-gate.test.mjs
-        node recipe-gate.test.mjs
-        touch $out
-      '';
-  pi-recipe-git =
-    pkgs.runCommand "pi-recipe-git"
-      {
-        nativeBuildInputs = [
-          pkgs.nodejs
-          pkgs.git
-        ];
-      }
-      ''
-        cp ${../modules/agent-recipes/gates/recipe-gate.mjs} recipe-gate.mjs
-        cp ${../modules/agent-recipes/gates/recipe-git.mjs} recipe-git.mjs
-        cp ${../modules/agent-recipes/gates/recipe-git.test.mjs} recipe-git.test.mjs
-        node recipe-git.test.mjs
-        status=0
-        ${pkgs.callPackage ../modules/agent-recipes/package.nix { }}/bin/recipe-gate bogus x || status=$?
-        test "$status" = 2
-        touch $out
-      '';
-  pi-recipe-lib =
-    pkgs.runCommand "pi-recipe-lib"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        mkdir lib
-        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
-        cp ${../modules/agent-recipes/lib/recipe-lib.test.mjs} lib/recipe-lib.test.mjs
-        node lib/recipe-lib.test.mjs
-        touch $out
-      '';
-  pi-recipe-implement =
-    pkgs.runCommand "pi-recipe-implement"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-        PI_SUBAGENTS = piSubagents;
-      }
-      ''
-        mkdir lib implement
-        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
-        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
-        cp ${../modules/agent-recipes/implement/graph.js} implement/graph.js
-        cp ${../modules/agent-recipes/implement/graph.test.mjs} implement/graph.test.mjs
-        node implement/graph.test.mjs
-        touch $out
-      '';
-  pi-recipe-plan =
-    pkgs.runCommand "pi-recipe-plan"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-        PI_SUBAGENTS = piSubagents;
-      }
-      ''
-        mkdir lib plan
-        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
-        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
-        cp ${../modules/agent-recipes/plan/graph.js} plan/graph.js
-        cp ${../modules/agent-recipes/plan/graph.test.mjs} plan/graph.test.mjs
-        node plan/graph.test.mjs
-        touch $out
-      '';
-  pi-recipe-research =
-    pkgs.runCommand "pi-recipe-research"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-        PI_SUBAGENTS = piSubagents;
-      }
-      ''
-        mkdir lib research
-        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
-        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
-        cp ${../modules/agent-recipes/research/graph.js} research/graph.js
-        cp ${../modules/agent-recipes/research/graph.test.mjs} research/graph.test.mjs
-        node research/graph.test.mjs
-        touch $out
-      '';
-  pi-recipe-investigate =
-    pkgs.runCommand "pi-recipe-investigate"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-        PI_SUBAGENTS = piSubagents;
-      }
-      ''
-        mkdir lib investigate
-        cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
-        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
-        cp ${../modules/agent-recipes/investigate/graph.js} investigate/graph.js
-        cp ${../modules/agent-recipes/investigate/graph.test.mjs} investigate/graph.test.mjs
-        node investigate/graph.test.mjs
-        touch $out
-      '';
-  pi-recipe-sizing =
-    pkgs.runCommand "pi-recipe-sizing"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        cp ${../modules/agent-recipes/sizing/recipe-sizing.mjs} recipe-sizing.mjs
-        cp ${../modules/agent-recipes/sizing/recipe-sizing.test.mjs} recipe-sizing.test.mjs
-        node recipe-sizing.test.mjs
-        touch $out
-      '';
-  pi-recipe-status =
-    pkgs.runCommand "pi-recipe-status"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        cp ${../modules/agent-recipes/status/recipe-status.mjs} recipe-status.mjs
-        cp ${../modules/agent-recipes/status/recipe-status.test.mjs} recipe-status.test.mjs
-        node recipe-status.test.mjs
-        touch $out
-      '';
+  pi-recipe-gate = recipeTest "pi-recipe-gate" "gates/recipe-gate.test.mjs" { };
+  pi-recipe-git = recipeTest "pi-recipe-git" "gates/recipe-git.test.mjs" {
+    after = ''
+      status=0
+      ${pkgs.callPackage ../modules/agent-recipes/package.nix { }}/bin/recipe-gate bogus x || status=$?
+      test "$status" = 2
+    '';
+  };
+  pi-recipe-lib = recipeTest "pi-recipe-lib" "lib/recipe-lib.test.mjs" { };
+  pi-recipe-implement = recipeTest "pi-recipe-implement" "implement/graph.test.mjs" {
+    PI_SUBAGENTS = piSubagents;
+  };
+  pi-recipe-plan = recipeTest "pi-recipe-plan" "plan/graph.test.mjs" {
+    PI_SUBAGENTS = piSubagents;
+  };
+  pi-recipe-research = recipeTest "pi-recipe-research" "research/graph.test.mjs" {
+    PI_SUBAGENTS = piSubagents;
+  };
+  pi-recipe-investigate = recipeTest "pi-recipe-investigate" "investigate/graph.test.mjs" {
+    PI_SUBAGENTS = piSubagents;
+  };
+  pi-recipe-sizing = recipeTest "pi-recipe-sizing" "sizing/recipe-sizing.test.mjs" { };
+  pi-recipe-status = recipeTest "pi-recipe-status" "status/recipe-status.test.mjs" { };
   # pi-subagents 0.78.0 leaves a run's detached bash tool tree orphaned when the
   # run ends on its deadline (scene_gen #153). The vendored package patches the
   # runner to terminate its whole process group. This check runs the patched
@@ -418,6 +364,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
         touch $out
       '';
 }
+// discoveredRecipeChecks
 // nixpkgs.lib.mapAttrs' (
   name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
 ) inputs.self.packages.x86_64-linux
