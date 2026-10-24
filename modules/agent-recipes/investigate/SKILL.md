@@ -23,8 +23,8 @@ Parameters, from the request:
   attempt.
 - optional `source`: `web` (default), `repo` or `both`, where a research
   question looks (`repo` is the same repository).
-- optional `rounds`: change and fix runs allowed in all (default 6, at most
-  10); `childTimeoutMs`, `bigTimeoutMs`.
+- optional `rounds`: change, fix, relay and piece runs allowed in all
+  (default 6, at most 10); `childTimeoutMs`, `bigTimeoutMs`.
 
 The task directory `dir` is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up
 at any time. It must sit outside the repository.
@@ -51,6 +51,9 @@ each must be safe to repeat and must not hold a secret.
 <dir>/change-<rank>.md             implementer report for a hypothesis (change-<rank>-<n>.md for a fresh attempt)
 <dir>/fix-<rank>-<n>.md            report of fix round n
 <dir>/verify-<rank>-<n>.md         marker of the gate-only step after a fix round
+                                   (verify-<rank>-<n>s<k>.md after the last piece of split k)
+<dir>/split/h<rank>-<n>/           a split: planner.md, plan.md and the tasks of its pieces
+<dir>/piece-<piece id>.md          report of one piece (piece-<piece id>-<n>.md when it was relayed or retried)
 <dir>/review-<rank>-<n>.md         review n of the change
 <dir>/review/h<rank>-<n>/          the reviewer's own worktree
 <dir>/diagnosis-<subject>-<n>.md   a diagnosis
@@ -96,11 +99,36 @@ each must be safe to repeat and must not hold a secret.
      findings (a resumed item cannot carry a gate), then a gate-only
      `verify-<rank>-<n>` scout child runs the same task gate with `--in` the
      worktree. Stuck detection reads that step.
-   - Every change and fix run counts against `rounds`. Reaching it ends the
-     run with the outcome `out of rounds` and an open line.
+   - handoff: an implementer that reaches its context budget stops and
+     writes a note whose first line starts `handoff:`; the task gate reports
+     it as status `handoff` with the branch, head and commit count. A fix
+     round that hands off gets those from the `verify-<rank>-<n>` step that
+     follows it. The first handoff is relayed: a fresh implementer starts on
+     `refs/heads/<branch>` of the one that handed off, told to read the note
+     and not redo the committed work, and the findings of the fix round
+     when there were any. It is then decided by code whether the next handoff
+     is relayed or split: a split follows when the relay committed nothing
+     (same head), spent over half its budget loading context, or a task has
+     been relayed twice. The same remainder line twice, or a need for a
+     third split, ends in a `decide`.
+   - split: a planner (plan variant) reads the branch and the note and writes
+     two or more independent pieces in `<dir>/split/h<rank>-<n>/`, checked by
+     `recipe-gate plan --repo <worktree>` at half the handed-off child's
+     budget (50000 tokens when it had none), each piece estimated smaller than
+     that budget. A plan that does not hold up is a `decide`. The pieces run
+     one after another, each in a fresh worktree of the previous piece's branch,
+     with its own `recipe-gate task --check --owns --base <previous head>`.
+     A piece that hands off is relayed once or twice; one that commits nothing
+     before handing off, or would need a second split, is a `decide`. After
+     the last piece the hypothesis takes that branch, goes to `verify` (the
+     verify command and the light check on the whole result) and then to one
+     review of the whole diff from the pinned base. No implementer can be
+     resumed there, so a failing verify goes to a diagnosis without `fix`.
+   - Every change, fix, relay and piece run counts against `rounds`. Reaching
+     it ends the run with the outcome `out of rounds` and an open line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
-   failed twice, a gate that did not run, a verdict that cannot be read. It
+   failed twice, a piece that failed, a gate that did not run, a verdict that cannot be read. It
    picks one action that `recipe-gate diagnosis` checks:
    - `fix`: one more round for the same implementer, offered only when it can
      be resumed;
@@ -152,14 +180,16 @@ run continues with the same call plus `resume: true`.
 
 ```
 { base, branch, reproduction: {command, exit, signature, log}, verify, check,
-  hypotheses: [{rank, claim, outcome, rounds, branch}],
+  hypotheses: [{rank, claim, outcome, rounds, branch, relays, splits}],
   researched: [{hypothesis, question, extracts, open}],
   review, rounds_used, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children }
 ```
 
-`branch` is the passing attempt's own branch, null when nothing was fixed.
+`branch` is the passing attempt's own branch (the last piece's after a split),
+null when nothing was fixed. `left` names the branches of children that
+handed off with kind `relay` and of split pieces with kind `piece`.
 `review` is the clean review file. `left` holds the worktrees and branches
 still in the repository, and `cleanup` is the command that removes them
 (`recipe-gate abandon <dir> --keep <branch>`), empty when `left` is.

@@ -6,6 +6,9 @@
  * results are the fake's. One scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import graph from "./graph.mjs";
 import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
@@ -75,6 +78,7 @@ function fake(table = {}) {
         return items.map((item) => {
           let given = item.key in table ? table[item.key] : defaults(item);
           if (typeof given === "function") given = given(item);
+          if (given && typeof given === "object" && "structuredOutput" in given) return { ok: true, runId: `run-${item.key}`, ...given };
           return typeof given === "string" ? failed(item.key, given) : ok(item.key, given);
         });
       },
@@ -393,4 +397,208 @@ function assertSound(f) {
   assert.ok(!keys(f).some((k) => k.startsWith("change-")));
   assert.equal(r.branch, null);
   assert.ok(r.open.length + r.decide.length > 0);
+}
+
+// A child that hands off: the gate reports status handoff and the result carries the note.
+const taskHandoff = (branch, head, commits = 1, why = "wiring left") => ({
+  ok: false,
+  reason: `report handoff: ${why}`,
+  report: { status: "handoff", why },
+  branch,
+  worktree: `/wt/${branch.replace("pi/", "")}`,
+  head,
+  commits,
+  signature: null,
+});
+const handedOff = (key, gate, line, { note = `/t/d/${key}.md`, budget = { tokens: 80000, reserve: 8000, action: "commit" }, firstContext = 1000 } = {}) => ({
+  structuredOutput: gate,
+  handoff: { line: `handoff: ${line}`, unread: [], note, empty: false },
+  ...(budget ? { budget } : {}),
+  usage: { firstContext },
+});
+const planGate = (tasks, extra = {}) => ({ ok: true, tasks, oversize: [], overlaps: [], missing: [], cycles: [], ...extra });
+const piece = (id, owns, check, est = 30000) => ({ id, file: `/t/d/split/h1-1/tasks/${id}.md`, owns, reads: [], check, depends: [], research: "", est });
+const pieces = planGate([piece("h1-a", ["a.js"], "check a"), piece("h1-b", ["b.js"], "check b")]);
+const pieceDone = (branch, head) => ({ ok: true, reason: "", report: { status: "done", why: "" }, branch, worktree: `/wt/${branch.replace("pi/", "")}`, head, commits: 1, signature: null });
+const reviewClean = (branch) => ({ ok: true, verdict: "clean", branch, worktree: "/rw/1" });
+
+// A change that hands off is relayed from its branch with the note; a second handoff with the
+// same head is split, and the pieces run in order from each other's branch before one verify and one review.
+{
+  const table = {
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left"),
+    "split-1-1": pieces,
+    "piece-h1-a": pieceDone("pi/pa", "HA"),
+    "piece-h1-b": pieceDone("pi/pb", "HB"),
+    "verify-1-0s1": { ...taskPass(1), branch: "pi/pb", worktree: "/wt/pb" },
+    "review-1-1": reviewClean("pi/pb"),
+  };
+  const f = fake(table);
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "split-1-1", "piece-h1-a", "piece-h1-b", "verify-1-0s1", "review-1-1"]);
+  const k = byKey(f);
+  assert.equal(k["change-1-2"].agent, "implementer");
+  assert.equal(k["change-1-2"].baseRef, "refs/heads/pi/h1");
+  assert.equal(k["change-1-2"].handoffOf, "run-change-1");
+  assert.equal(k["change-1-2"].handoffAs, "relay");
+  assert.ok(k["change-1-2"].task.includes("Continue this task from the handoff note at /t/d/change-1.md; the branch pi/h1 holds the committed work"));
+  assert.equal(k["change-1-2"].gate.command, k["change-1"].gate.command.replace("change-1.md", "change-1-2.md"));
+  assert.equal(k["change-1"].baseRef, "refs/recipes/d/base");
+
+  assert.equal(k["split-1-1"].agent, "planner");
+  assert.equal(k["split-1-1"].big, true);
+  assert.equal(k["split-1-1"].handoffOf, "run-change-1-2");
+  assert.equal(k["split-1-1"].handoffAs, "split");
+  assert.equal(k["split-1-1"].gate.command, "recipe-gate plan '/t/d/split/h1-1' --repo '/wt/h1b' --limit 40000");
+  assert.match(k["split-1-1"].task, /Handoff note: \/t\/d\/change-1-2\.md/);
+  assert.match(k["split-1-1"].task, /Hypothesis 1: the cache is stale/);
+  assert.match(k["split-1-1"].task, /git diff base0\.\.pi\/h1b/);
+
+  assert.equal(k["piece-h1-a"].agent, "implementer");
+  assert.equal(k["piece-h1-a"].baseRef, "refs/heads/pi/h1b");
+  assert.equal(k["piece-h1-a"].gate.command, "recipe-gate task '/t/d/piece-h1-a.md' --check 'check a' --owns 'a.js' --repo '/r' --base 'H1' --run '/t/d' --id 'h1-h1-a'");
+  assert.match(k["piece-h1-a"].task, /task file: \/t\/d\/split\/h1-1\/tasks\/h1-a\.md/);
+  assert.equal(k["piece-h1-b"].baseRef, "refs/heads/pi/pa");
+  assert.equal(k["piece-h1-b"].gate.command, "recipe-gate task '/t/d/piece-h1-b.md' --check 'check b' --owns 'b.js' --repo '/r' --base 'HA' --run '/t/d' --id 'h1-h1-b'");
+  assert.equal(
+    k["verify-1-0s1"].gate.command,
+    "recipe-gate task '/t/d/piece-h1-b.md' --verify 'make repro' --repo '/r' --base 'base0' --run '/t/d' --id 'h1' --in '/wt/pb'",
+  );
+  assert.equal(k["verify-1-0s1"].worktree, false);
+  assert.equal(k["review-1-1"].baseRef, "refs/heads/pi/pb");
+  assert.match(k["review-1-1"].task, /Diff to review: git diff base0\.\.pi\/pb/);
+  assert.equal(f.items().filter((i) => i.key.startsWith("review-")).length, 1);
+
+  assert.equal(r.branch, "pi/pb");
+  assert.equal(r.rounds_used, 4);
+  assert.equal(r.hypotheses[0].outcome, "fixed");
+  assert.equal(r.hypotheses[0].relays, 1);
+  assert.equal(r.hypotheses[0].splits, 1);
+  assert.equal(r.hypotheses[0].rounds, 4);
+  assert.ok(r.left.some((l) => l.kind === "relay" && l.branch === "pi/h1"));
+  assert.ok(r.left.some((l) => l.kind === "relay" && l.branch === "pi/h1b"));
+  assert.deepEqual(r.decide, []);
+  assert.equal(r.cleanup, "recipe-gate abandon '/t/d' --keep 'pi/pb'");
+  assertSound(f);
+
+  // Rounds run out during the pieces.
+  const g = fake(table);
+  const r2 = await run(g.runs, { ...args, rounds: 3 });
+  assert.deepEqual(keys(g).slice(3), ["change-1", "change-1-2", "split-1-1", "piece-h1-a"]);
+  assert.equal(r2.hypotheses[0].outcome, "out of rounds");
+  assert.match(r2.open.join("\n"), /out of rounds/);
+  assert.equal(r2.branch, null);
+}
+
+// A handoff with no usable budget still splits, at half the plan gate's default limit.
+{
+  const f = fake({
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left", { budget: null }),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left", { budget: null }),
+    "split-1-1": planGate([piece("h1-a", ["a.js"], "check a", 90000), piece("h1-b", ["b.js"], "check b", 90000)]),
+  });
+  const r = await run(f.runs, args);
+  assert.equal(byKey(f)["split-1-1"].gate.command, "recipe-gate plan '/t/d/split/h1-1' --repo '/wt/h1b' --limit 50000");
+  assert.ok(keys(f).includes("piece-h1-a"));
+  assert.equal(r.hypotheses[0].splits, 1);
+}
+
+// A split plan that does not hold up goes to a decision.
+{
+  const f = fake({
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left"),
+    "split-1-1": planGate([piece("h1-a", ["a.js"], "check a")]),
+  });
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "split-1-1"]);
+  assert.equal(r.decide.length, 1);
+  assert.equal(r.decide[0].step, "split");
+  assert.equal(r.hypotheses[0].outcome, "needs a decision");
+  assert.equal(r.hypotheses[0].splits, 0);
+
+  const g = fake({
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left"),
+    "split-1-1": planGate([piece("h1-a", ["a.js"], "check a", 80000), piece("h1-b", ["b.js"], "check b")]),
+  });
+  const r2 = await run(g.runs, args);
+  assert.equal(r2.decide.length, 1);
+  assert.equal(r2.decide[0].step, "split");
+}
+
+// A piece that hands off with nothing committed, or the same remainder twice, goes to a decision.
+{
+  const base = {
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left"),
+    "split-1-1": pieces,
+  };
+  const f = fake({ ...base, "piece-h1-a": handedOff("piece-h1-a", taskHandoff("pi/pa", "H1", 0), "parser left") });
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "split-1-1", "piece-h1-a"]);
+  assert.equal(r.decide.length, 1);
+  assert.equal(r.decide[0].step, "piece");
+  assert.match(r.decide[0].question, /nothing committed after a split/);
+  assert.equal(r.hypotheses[0].outcome, "needs a decision");
+
+  const g = fake({
+    ...base,
+    "piece-h1-a": handedOff("piece-h1-a", taskHandoff("pi/pa", "HA"), "parser left"),
+    "piece-h1-a-2": handedOff("piece-h1-a-2", taskHandoff("pi/pa2", "HA2"), "Parser left!"),
+  });
+  const r2 = await run(g.runs, args);
+  assert.deepEqual(keys(g).slice(6), ["piece-h1-a", "piece-h1-a-2"]);
+  const relayed = byKey(g)["piece-h1-a-2"];
+  assert.equal(relayed.baseRef, "refs/heads/pi/pa");
+  assert.match(relayed.task, /Continue this task from the handoff note at \/t\/d\/piece-h1-a\.md; the branch pi\/pa/);
+  assert.equal(relayed.gate.command, byKey(g)["piece-h1-a"].gate.command.replace("piece-h1-a.md", "piece-h1-a-2.md"));
+  assert.equal(r2.decide.length, 1);
+  assert.match(r2.decide[0].question, /same remainder/);
+
+  // The same remainder at the top level.
+  const h = fake({
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H2"), "wiring left"),
+  });
+  const r3 = await run(h.runs, args);
+  assert.deepEqual(keys(h).slice(3), ["change-1", "change-1-2"]);
+  assert.match(r3.decide[0].question, /same remainder/);
+}
+
+// A fix round that hands off is relayed after its verify gate has supplied the head.
+{
+  const f = fake({
+    "change-1": taskFail(1, "sigA"),
+    "fix-1-1": handedOff("fix-1-1", undefined, "findings half fixed"),
+    "verify-1-1": taskHandoff("pi/h1", "H9", 2, "findings half fixed"),
+  });
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "fix-1-1", "verify-1-1", "change-1-2", "review-1-1"]);
+  const k = byKey(f);
+  assert.equal(k["change-1-2"].baseRef, "refs/heads/pi/h1");
+  assert.equal(k["change-1-2"].handoffOf, "run-fix-1-1");
+  assert.equal(k["change-1-2"].handoffAs, "relay");
+  assert.ok(!("resume" in k["change-1-2"]));
+  assert.match(k["change-1-2"].task, /Continue this task from the handoff note at \/t\/d\/fix-1-1\.md; the branch pi\/h1 holds/);
+  assert.match(k["change-1-2"].task, /The task gate reported: verify failed \(sigA\)/);
+  assert.equal(r.rounds_used, 3);
+  assert.equal(r.hypotheses[0].relays, 1);
+  assert.equal(r.branch, "pi/h1");
+  assertSound(f);
+}
+
+// Through the runner, the reply of a child that handed off becomes the note its successor is told to read.
+{
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "investigate-handoff-"));
+  const f = fake({ "change-1": { structuredOutput: taskHandoff("pi/h1", "H1"), finalText: "handoff: wiring left" } });
+  const r = await runThroughRunner(graph, f.runs, { ...args, dir: d });
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "review-1-1"]);
+  const relayed = byKey(f)["change-1-2"];
+  assert.equal(relayed.baseRef, "refs/heads/pi/h1");
+  assert.ok(relayed.task.includes(`Continue this task from the handoff note at ${d}/change-1.md; the branch pi/h1 holds the committed work`));
+  assert.equal(fs.readFileSync(`${d}/change-1.md`, "utf8"), "handoff: wiring left");
+  assert.equal(r.hypotheses[0].relays, 1);
+  assert.equal(r.branch, "pi/h1");
 }
