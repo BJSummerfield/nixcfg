@@ -1,7 +1,10 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
+import { joinSpec, piecesStatus, reviewRange, splitItem, takePieces } from "./split.mjs";
 
 export default async function implement(args, port) {
+  const lib = recipeLib(port);
   const {
+    afterHandoff,
     askDecision,
     board,
     decide,
@@ -9,6 +12,8 @@ export default async function implement(args, port) {
     diagnosisItem,
     exhausted,
     exhaustedQuestion,
+    handedOff,
+    handoffTrack,
     launch,
     list,
     node,
@@ -16,14 +21,17 @@ export default async function implement(args, port) {
     quote,
     readDiagnosis,
     receipt,
+    relayLines,
+    remainderOf,
     short,
     stoppedItself,
     subjectOf,
     troubleOf,
-  } = recipeLib(port);
+  } = lib;
 
   const MAX_FIXES = 2;
   const MAX_CYCLES = 12;
+  const SPLIT_EXTRA_CYCLES = 4;
 
   const dir = args.plan;
   const repo = args.repo;
@@ -97,21 +105,55 @@ export default async function implement(args, port) {
       return a.level - b.level;
     });
     ordered.forEach(function (t) {
-      if (t.state === "skipped") return lines.push(t.id + ": skipped (" + t.stuckOn + " not done)");
-      if (t.state === "set_aside") {
-        const entry = setAside.filter(function (s) {
-          return s.id === t.id;
-        })[0];
-        return lines.push(t.id + ": set aside (" + (entry ? entry.reason : "no reason recorded") + ")");
-      }
-      lines.push(t.id + (merged.indexOf(t.id) >= 0 ? ": merged" : ": not merged"));
+      if (t.parent) return;
+      lines.push(reportLine(t));
+      piecesOf(t).forEach(function (p) {
+        lines.push("  " + reportLine(p));
+      });
     });
     return lines;
   }
 
+  function reportLine(t) {
+    if (t.state === "skipped") return t.id + ": skipped (" + t.stuckOn + " not done)";
+    if (t.state === "set_aside") {
+      const entry = setAside.filter(function (s) {
+        return s.id === t.id;
+      })[0];
+      return t.id + ": set aside (" + (entry ? entry.reason : "no reason recorded") + ")";
+    }
+    if (t.parent) return t.id + (t.state === "done" ? ": done, joined into " + t.parent : ": not done");
+    return t.id + (merged.indexOf(t.id) >= 0 ? ": merged" : ": not merged");
+  }
+
+  function piecesOf(t) {
+    return tasks.filter(function (p) {
+      return p.parent === t.id;
+    });
+  }
+
+  function handoffsOf() {
+    return tasks
+      .filter(function (t) {
+        return !t.parent && (t.track.relays > 0 || t.track.root.splits > 0);
+      })
+      .map(function (t) {
+        return {
+          id: t.id,
+          relays: t.track.relays,
+          splits: t.track.root.splits,
+          pieces: piecesOf(t).map(function (p) {
+            return p.id;
+          }),
+        };
+      });
+  }
+
   function finish() {
     const left = leftBehind();
+    const handoffs = handoffsOf();
     return receipt({
+      ...(handoffs.length ? { handoffs: handoffs } : {}),
       base: pinned ? pinned.base : null,
       branch: branch,
       merged: merged,
@@ -133,13 +175,15 @@ export default async function implement(args, port) {
   function view() {
     return {
       tasks: tasks.map(function (t) {
-        return { id: t.id, state: t.state, next: t.next, fixes: t.fixes, heals: t.heals };
+        const row = { id: t.id, state: t.state, next: t.next, fixes: t.fixes, heals: t.heals };
+        if (t.track.relays > 0 || t.track.root.splits > 0) Object.assign(row, { relays: t.track.relays, splits: t.track.root.splits });
+        return row;
       }),
     };
   }
 
   function taskFile(t) {
-    return dir + "/tasks/" + t.id + ".md";
+    return t.spec.file || dir + "/tasks/" + t.id + ".md";
   }
 
   function ownsOf(t) {
@@ -198,6 +242,8 @@ export default async function implement(args, port) {
     return tasks.filter(function (o) {
       return (
         o !== t &&
+        o.id !== t.parent &&
+        o.parent !== t.id &&
         ownsOf(o).some(function (p) {
           return p === path || path.indexOf(p + "/") === 0 || p.indexOf(path + "/") === 0;
         })
@@ -237,6 +283,12 @@ export default async function implement(args, port) {
       lines.push("Work already on this branch from an earlier run: continue it; do not start over. The old worktree may be gone; only what was committed on the branch is kept.");
       if (t.earlierReview) lines.push("Earlier review: " + t.earlierReview);
     }
+    if (t.relayRef) {
+      relayLines(t.relayNote, t.relayRef.replace(/^refs\/heads\//, "")).forEach(function (l) {
+        lines.push(l);
+      });
+      if (t.relayFindings) lines.push(t.relayFindings);
+    }
     if (answers[t.id]) lines.push("Decision from the user: " + answers[t.id]);
     lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
     lines.push("If the task cannot be done as written, stop and write `blocked: <why>` as the first line of the report; do not ask.");
@@ -246,7 +298,8 @@ export default async function implement(args, port) {
 
   function implementItem(t) {
     t.attempts++;
-    const tag = t.attempts === 1 ? t.id : t.id + "-" + t.attempts;
+    const own = t.parent ? "piece-" + t.id : t.id;
+    const tag = t.attempts === 1 ? own : own + "-" + t.attempts;
     const report = dir + "/impl-" + tag + ".md";
     const item = node("impl-" + tag, "implementer", implementBrief(t, report), report, {
       gate: taskGateCommand(t, report),
@@ -254,7 +307,11 @@ export default async function implement(args, port) {
       timeoutMs: bigMs,
       worktree: true,
     });
-    item.baseRef = t.baseRef;
+    item.baseRef = t.relayRef || t.baseRef;
+    if (t.relayRef && t.runId) {
+      item.handoffOf = t.runId;
+      item.handoffAs = "relay";
+    }
     return item;
   }
 
@@ -264,21 +321,69 @@ export default async function implement(args, port) {
       return heal(t, "implement", "the implementer failed twice: " + (result.error || "failed"), [result.file], ["replan", "decide"]);
     }
     if (!g) return heal(t, "implement", "the task check did not run", [result.file], ["retry", "decide"]);
+    const handoff = handoffOf(result, g);
     t.report = result.file;
     t.runId = result.runId || t.runId;
     t.branch = g.branch;
     t.worktree = g.worktree;
-    noteMade(t.id, "task", g.branch, g.worktree);
+    t.joined = false;
+    if (!handoff) noteMade(t.id, "task", g.branch, g.worktree);
     const status = g.report ? g.report.status : "invalid";
-    if (status === "blocked" || status === "failed") {
+    if (!handoff && (status === "blocked" || status === "failed")) {
       return heal(t, "implement", "the implementer reported " + status + ": " + g.reason, [result.file], ["replan", "decide"]);
     }
     if (!g.branch || !g.worktree) return heal(t, "implement", g.reason || "the task has no branch", [result.file], ["retry", "replan", "decide"]);
+    if (handoff) return takeHandoff(t, handoff, g, result, "implement");
     if (g.ok) {
+      if (t.parent) {
+        t.state = "done";
+        t.next = null;
+        return;
+      }
       t.next = "review";
       return;
     }
     needFix(t, "The task check reported: " + g.reason);
+  }
+
+  // A child that wrote its note in the report but whose reply did not carry the
+  // handoff line is still a handoff, since the task gate read the report.
+  function handoffOf(result, g) {
+    const given = handedOff(result);
+    if (given) return given;
+    if (g.report && g.report.status === "handoff") {
+      return { line: String(g.reason || "").replace(/^report handoff:\s*/i, ""), unread: [], note: result.file, empty: false };
+    }
+    return null;
+  }
+
+  // Decides what follows a handoff: the next implementer on the branch, a split
+  // into pieces, or a person. `g` is a task gate result that carries the head
+  // and the number of commits.
+  function takeHandoff(t, handoff, g, result, step) {
+    t.head = g.head;
+    const next = afterHandoff(t.track, {
+      head: g.head,
+      commits: g.commits,
+      firstContext: result.usage && result.usage.firstContext,
+      budgetTokens: result.budget && result.budget.tokens,
+      remainder: remainderOf(handoff),
+    });
+    t.relayNote = handoff.note || null;
+    if (next.action === "relay") {
+      noteMade(t.id, "relay", g.branch || t.branch, g.worktree || t.worktree);
+      t.track.relays++;
+      t.relayRef = "refs/heads/" + t.branch;
+      t.relayFindings = step === "fix" ? t.findings : null;
+      t.next = "implement";
+      return;
+    }
+    noteMade(t.id, "task", g.branch || t.branch, g.worktree || t.worktree);
+    if (next.action === "split") {
+      t.next = "split";
+      return;
+    }
+    askPerson(t, step, "the " + step + " step handed off and the task cannot go on: " + next.reason, result.file);
   }
 
   function needFix(t, findings) {
@@ -304,7 +409,7 @@ export default async function implement(args, port) {
       "Repository: " + repo,
       "Branch: " + t.branch,
       "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/" + t.id + "-" + t.reviews + "); read and run the check there. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
-      "Diff to review: git diff " + t.base + ".." + t.branch,
+      "Diff to review: git diff " + reviewRange(t, t.branch),
       "Owned files: " + ownsOf(t).join(", "),
       "Check to run: " + t.spec.check,
       "Implementer report: " + t.report,
@@ -369,7 +474,19 @@ export default async function implement(args, port) {
       return heal(t, "fix", signal, [result.file, t.lastReview], ["replan", "decide"]);
     }
     t.runId = result.runId || t.runId;
-    t.next = "review";
+    const handoff = handedOff(result);
+    if (!handoff) {
+      t.next = "review";
+      return undefined;
+    }
+    const note = handoff.note || dir + "/fix-" + t.id + "-" + t.fixes + ".md";
+    return one(gateOnlyItem("handoff-" + t.id + "-" + t.fixes, taskGateCommand(t, note), dir + "/handoff-" + t.id + "-" + t.fixes + ".md")).then(function (checked) {
+      const g = checked.structuredOutput;
+      if (!checked.ok || !g) {
+        return heal(t, "fix", "the task check did not run after fix round " + t.fixes + " handed off", [result.file], ["replan", "decide"]);
+      }
+      return takeHandoff(t, handoff, g, result, "fix");
+    });
   }
 
   function diagnosisContext(t) {
@@ -406,7 +523,7 @@ export default async function implement(args, port) {
       return;
     }
     if (d.action === "fix") {
-      if (!t.runId) return askPerson(t, step, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, result.file);
+      if (!t.runId && !t.joined) return askPerson(t, step, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, result.file);
       t.findings = "The diagnosis at " + result.file + " found: " + d.reason + " Follow its ## Brief section.";
       t.extraFix = true;
       t.next = "fix";
@@ -429,6 +546,11 @@ export default async function implement(args, port) {
     t.extraFix = false;
     t.lastReview = null;
     t.runId = null;
+    t.relayRef = null;
+    t.relayNote = null;
+    t.relayFindings = null;
+    t.track.heads = [];
+    t.joined = false;
     t.next = "implement";
   }
 
@@ -448,14 +570,144 @@ export default async function implement(args, port) {
     });
     if (due.length === 0) return Promise.resolve();
     return launch(due.map(make)).then(function (results) {
-      due.forEach(function (t, i) {
-        take(t, results[i]);
+      return due.reduce(function (chain, t, i) {
+        return chain.then(function () {
+          return take(t, results[i]);
+        });
+      }, Promise.resolve());
+    });
+  }
+
+  function makeTask(spec, extra) {
+    return Object.assign(
+      subjectOf(spec.id),
+      {
+        spec: spec,
+        file: spec.file || dir + "/tasks/" + spec.id + ".md",
+        state: "pending",
+        next: null,
+        attempts: 0,
+        fixes: 0,
+        extraFix: false,
+        reviews: 0,
+        earlierReview: null,
+        gone: false,
+        extraOwns: [],
+        replanBrief: null,
+        runId: null,
+        resumeRef: null,
+        branch: null,
+        worktree: null,
+        base: null,
+        report: null,
+        findings: "",
+        lastReview: null,
+        lastVerdict: null,
+        track: handoffTrack(),
+        head: null,
+        relayRef: null,
+        relayNote: null,
+        relayFindings: null,
+        joined: false,
+        parent: null,
+        splitN: 0,
+      },
+      extra,
+    );
+  }
+
+  function splitPlannerItem(t) {
+    t.splitN++;
+    return splitItem(lib, t, { dir: dir, n: t.splitN, note: t.relayNote, limit: args.limit, sizing: args.sizing, timeoutMs: bigMs });
+  }
+
+  function takeSplit(active) {
+    return function (t, result) {
+      if (!result.ok) return askPerson(t, "split", "the planner that splits the task failed: " + (result.error || "failed"), result.file);
+      const made = takePieces(lib, t, result.structuredOutput, { taken: Object.keys(byId) });
+      if (!made.ok) return askPerson(t, "split", made.problem, result.file);
+      t.state = "split";
+      t.next = "pieces";
+      made.pieces.forEach(function (seed) {
+        const piece = makeTask(seed.spec, seed);
+        piece.state = "running";
+        byId[piece.id] = piece;
+        tasks.push(piece);
+        active.push(piece);
       });
+      return undefined;
+    };
+  }
+
+  function checkPieces(active) {
+    active
+      .filter(function (t) {
+        return t.next === "pieces";
+      })
+      .forEach(function (t) {
+        const s = piecesStatus(t, byId);
+        if (s.status === "ready") t.next = "join";
+        else if (s.status === "blocked") giveUp(t, "piece " + s.piece.id + " was " + (s.piece.state === "skipped" ? "skipped" : "set aside"));
+      });
+  }
+
+  function joinPieces(active) {
+    const due = active.filter(function (t) {
+      return t.next === "join";
+    });
+    if (due.length === 0) return Promise.resolve();
+    const states = due.map(function (t) {
+      const s = joinSpec(t, dir, t.splitN, integrationBranch, byId);
+      return mergeState(s.scope, s.kind, s.dir, s.branch, s.tips, s.onto);
+    });
+    return launch(
+      due.map(function (t, i) {
+        return gateOnlyItem("join-" + t.id + "-" + t.splitN, mergeCommand(states[i]), dir + "/join-" + t.id + "-" + t.splitN + ".md");
+      }),
+    ).then(function (results) {
+      return due.reduce(function (chain, t, i) {
+        return chain
+          .then(function () {
+            return settle(states[i], results[i]);
+          })
+          .then(function (out) {
+            if (!out.ok) return askPerson(t, "join", "the pieces of task " + t.id + " could not be joined: " + out.why);
+            t.branch = out.g.branch || states[i].branch;
+            t.worktree = out.g.worktree || states[i].worktree;
+            t.head = out.g.head || t.head;
+            t.runId = null;
+            t.joined = true;
+            t.state = t.parent ? "done" : "running";
+            t.next = t.parent ? null : "review";
+            return undefined;
+          });
+      }, Promise.resolve());
+    });
+  }
+
+  // A joined task has no implementer session to resume, so its fix round is a
+  // fresh implementer on the joined branch, built as a relay is.
+  function relayFixes(active) {
+    active.forEach(function (t) {
+      if (t.next !== "fix" || !t.joined) return;
+      t.fixes++;
+      t.extraFix = false;
+      t.relayRef = "refs/heads/" + t.branch;
+      t.relayNote = null;
+      t.relayFindings = t.findings;
+      t.next = "implement";
     });
   }
 
   function cycle(active, n, label) {
     return phase(active, "implement", implementItem, takeImplementation)
+      .then(function () {
+        checkPieces(active);
+        return phase(active, "split", splitPlannerItem, takeSplit(active));
+      })
+      .then(function () {
+        return joinPieces(active);
+      })
       .then(function () {
         return phase(active, "review", reviewItem, takeReview);
       })
@@ -463,9 +715,11 @@ export default async function implement(args, port) {
         return phase(active, "heal", diagnoseItem, takeDiagnosis);
       })
       .then(function () {
+        checkPieces(active);
         active.forEach(function (t) {
-          if (t.next === "fix" && !t.runId) heal(t, "fix", "the implementer cannot be resumed for a fix round", [t.report], ["replan", "decide"]);
+          if (t.next === "fix" && !t.runId && !t.joined) heal(t, "fix", "the implementer cannot be resumed for a fix round", [t.report], ["replan", "decide"]);
         });
+        relayFixes(active);
         return phase(active, "fix", fixItem, takeFix);
       })
       .then(function () {
@@ -474,9 +728,10 @@ export default async function implement(args, port) {
           return t.next !== null;
         });
         if (pending.length === 0) return undefined;
-        if (n + 1 >= MAX_CYCLES) {
+        const cap = MAX_CYCLES + (active.some((t) => t.track.root.splits > 0) ? SPLIT_EXTRA_CYCLES : 0);
+        if (n + 1 >= cap) {
           pending.forEach(function (t) {
-            giveUp(t, "still unsettled after " + MAX_CYCLES + " rounds");
+            giveUp(t, "still unsettled after " + cap + " rounds");
           });
           return undefined;
         }
@@ -681,28 +936,7 @@ export default async function implement(args, port) {
   pinned = pin.structuredOutput;
 
   list(plan.tasks).forEach(function (spec) {
-    const t = Object.assign(subjectOf(spec.id), {
-      spec: spec,
-      state: "pending",
-      next: null,
-      attempts: 0,
-      fixes: 0,
-      extraFix: false,
-      reviews: 0,
-      earlierReview: null,
-      gone: false,
-      extraOwns: [],
-      replanBrief: null,
-      runId: null,
-      resumeRef: null,
-      branch: null,
-      worktree: null,
-      base: null,
-      report: null,
-      findings: "",
-      lastReview: null,
-      lastVerdict: null,
-    });
+    const t = makeTask(spec);
     byId[spec.id] = t;
     tasks.push(t);
   });
@@ -794,7 +1028,7 @@ export default async function implement(args, port) {
   const finished = [];
   for (let level = 0; level <= top; level++) {
     tasks.forEach(function (t) {
-      if (t.level === level && t.state === "done") finished.push(t);
+      if (t.level === level && t.state === "done" && !t.parent) finished.push(t);
     });
   }
 
