@@ -30,6 +30,9 @@ environment file and their own prompt.
 - A failed or timed-out Result is not failed work and a clean one is not
   finished work: read the output file. A report whose first line starts with
   `FAILED:` was cut off by the output valve and counts as failed.
+- A Result with `handoff` set is a child that reached its context budget and
+  handed off, not a failure: its output file holds what is done and what is
+  left (with `empty`, only its branch does).
 - `resume: <runId>` continues a child in its own cwd; `recipe_run` with
   `resume: true` continues a recipe from its task directory.
 - After a pi or paseo restart the wake is lost. A run with an output file is

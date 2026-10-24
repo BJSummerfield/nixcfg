@@ -30,7 +30,8 @@ export function fakeDeps(runs) {
         finalText: result?.finalText ?? "",
         error: result?.ok ? undefined : (result?.error ?? "failed"),
         structuredOutput: result?.structuredOutput,
-        usage: { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 },
+        usage: result?.usage ?? { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 },
+        ...(result?.valve ? { valve: result.valve } : {}),
         sessionFile: null,
         ms: 0,
       };
