@@ -2,17 +2,14 @@
 //
 //   recipe-status <task dir> [--json]
 //
-// pi-subagents keeps each async run under $TMPDIR/pi-subagents/async-subagent-runs/<id>/:
-// status.json holds the workflow's args, its state and every value the script
-// emitted, and workflow-children.jsonl one `start` and one `settle` line per
-// child. The run shown is the newest whose args name the task directory (the
-// research and plan skills pass it as `dir`, the implement skill as `plan`).
-// The board is the script's last emit; children still running are the ones
-// with a start and no settle, and failed ones exclude a child whose retry
-// succeeded.
+// The runner keeps its files under <task dir>/runner/: status.json holds the
+// run's state, pid and the board (the graph's last emit), and children.jsonl
+// one `start` and one `settle` line per child. Children still running are the
+// ones with a start and no settle, and failed ones exclude a child whose retry
+// succeeded. A run recorded as running whose process is gone is shown as
+// stopped.
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 class Usage extends Error {}
@@ -25,42 +22,29 @@ function readJson(file) {
   }
 }
 
-function runsRoot() {
-  return path.join(process.env.TMPDIR || os.tmpdir(), "pi-subagents", "async-subagent-runs");
-}
-
 function bare(p) {
   return path.resolve(String(p)).replace(/\/+$/, "");
 }
 
-function findRun(dir) {
-  const root = runsRoot();
-  let best = null;
-  let names = [];
+function alive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
-    names = fs.readdirSync(root);
-  } catch {
-    return null;
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
   }
-  for (const name of names) {
-    const status = readJson(path.join(root, name, "status.json"));
-    const a = status && status.workflow && status.workflow.args;
-    if (!a) continue;
-    const target = a.dir ?? a.plan;
-    if (!target || bare(target) !== dir) continue;
-    if (!best || (status.startedAt || 0) > (best.status.startedAt || 0)) best = { dir: path.join(root, name), status };
-  }
-  return best;
 }
 
-function children(runDir) {
+function children(dir) {
   const started = new Map();
   const settled = new Map();
+  const usage = { prompt: 0, cached: 0, output: 0, peakContext: 0 };
   let text = "";
   try {
-    text = fs.readFileSync(path.join(runDir, "workflow-children.jsonl"), "utf8");
+    text = fs.readFileSync(path.join(dir, "runner", "children.jsonl"), "utf8");
   } catch {
-    return { running: [], done: 0, failed: [] };
+    return { running: [], done: 0, failed: [], usage };
   }
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
@@ -73,26 +57,37 @@ function children(runDir) {
     if (r.type === "start") started.set(r.key, r);
     if (r.type === "settle") settled.set(r.key, r.result || {});
   }
+  for (const r of settled.values()) {
+    const u = r.usage || {};
+    usage.prompt += u.prompt || 0;
+    usage.cached += u.cached || 0;
+    usage.output += u.output || 0;
+    usage.peakContext = Math.max(usage.peakContext, u.peakContext || 0);
+  }
   const running = [...started.keys()].filter((k) => !settled.has(k));
   const recovered = (k) => settled.has(k + "-retry") && settled.get(k + "-retry").ok !== false;
   const failed = [...settled].filter(([k, r]) => r.ok === false && !recovered(k)).map(([k]) => k);
-  return { running, done: settled.size, failed };
+  return { running, done: settled.size, failed, usage };
+}
+
+function stateOf(s) {
+  const state = s.state || "unknown";
+  return state === "running" && !alive(s.pid) ? "stopped (process gone)" : state;
 }
 
 function minutes(ms) {
   return `${Math.round(ms / 60000)} min`;
 }
 
-function render(dir, run, now) {
-  const s = run.status;
-  const w = s.workflow || {};
-  const board = (w.emits || []).at(-1) || null;
-  const c = children(run.dir);
+function render(dir, s, c, now) {
+  const board = s.board || null;
   const lines = [];
-  const started = s.startedAt ? new Date(s.startedAt).toISOString().slice(0, 16).replace("T", " ") : "?";
-  const age = s.startedAt ? `, ${minutes((s.state === "running" ? now : s.lastUpdate || now) - s.startedAt)}` : "";
+  const t0 = s.startedAt ? new Date(s.startedAt).getTime() : NaN;
+  const t1 = s.lastUpdate ? new Date(s.lastUpdate).getTime() : now;
+  const started = Number.isNaN(t0) ? "?" : new Date(t0).toISOString().slice(0, 16).replace("T", " ");
+  const age = Number.isNaN(t0) ? "" : `, ${minutes((s.state === "running" ? now : t1) - t0)}`;
   lines.push(`${dir}`);
-  lines.push(`run ${path.basename(run.dir)}: ${s.state || "unknown"}, started ${started} UTC${age}`);
+  lines.push(`run ${s.pid ?? "?"}: ${stateOf(s)}, started ${started} UTC${age}`);
   if (board) {
     lines.push(`stage: ${board.stage}`);
     if (Array.isArray(board.tasks)) {
@@ -111,6 +106,8 @@ function render(dir, run, now) {
     lines.push("stage: no board yet");
   }
   lines.push(`children: ${c.running.length} running${c.running.length ? ` (${c.running.join(", ")})` : ""}, ${c.done} settled${c.failed.length ? `, failed: ${c.failed.join(", ")}` : ""}`);
+  const u = c.usage;
+  lines.push(`usage: prompt ${u.prompt}, cached ${u.cached}, output ${u.output}, peak context ${u.peakContext}`);
   return lines.join("\n");
 }
 
@@ -119,16 +116,17 @@ function main(argv, now) {
   const rest = argv.filter((a) => a !== "--json");
   if (rest.length !== 1) throw new Usage("usage: recipe-status <task dir> [--json]");
   const dir = bare(rest[0]);
-  const run = findRun(dir);
-  if (!run) return { code: 1, text: `recipe-status: no run found for ${dir} under ${runsRoot()}` };
+  const statusFile = path.join(dir, "runner", "status.json");
+  const s = readJson(statusFile);
+  if (!s) return { code: 1, text: `recipe-status: no run found for ${dir} (no ${statusFile})` };
+  const c = children(dir);
   if (json) {
-    const w = run.status.workflow || {};
     return {
       code: 0,
-      text: JSON.stringify({ run: path.basename(run.dir), state: run.status.state, board: (w.emits || []).at(-1) || null, children: children(run.dir) }),
+      text: JSON.stringify({ state: stateOf(s), pid: s.pid ?? null, board: s.board || null, children: { running: c.running, done: c.done, failed: c.failed }, usage: c.usage }),
     };
   }
-  return { code: 0, text: render(dir, run, now) };
+  return { code: 0, text: render(dir, s, c, now) };
 }
 
 try {
