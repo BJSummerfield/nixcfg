@@ -162,63 +162,63 @@ let
   '';
 
   valheimNotifyExpected = pkgs.writeText "valheim-notify-expected.txt" ''
-      up l-1.0.12
-      join 76561198044411510 TeChNo ViKiNg (1 online)
-      join 76561198044411999 Bjorn Ironside (2 online)
-      mismatch 39 40
-      leave 76561198044411999 Bjorn Ironside (1 online)
-      leave 76561198044411510 TeChNo ViKiNg (0 online)
-
-    recipeSrc = builtins.path {
-      path = ../modules/agent-recipes;
-      name = "agent-recipes-src";
-    };
-    recipeTest =
-      name: test: extra:
-      pkgs.runCommand name (
-        {
-          nativeBuildInputs = [
-            pkgs.nodejs
-            pkgs.git
-            pkgs.bash
-          ];
-        }
-        // removeAttrs extra [ "after" ]
-      ) "cp -r --no-preserve=mode ${recipeSrc} src; cd src; node ${test}\n${extra.after or ""}touch $out";
-    recipeTestFiles =
-      rel:
-      let
-        abs = ../modules/agent-recipes + "/${rel}";
-      in
-      if !builtins.pathExists abs then
-        [ ]
-      else
-        nixpkgs.lib.concatLists (
-          nixpkgs.lib.mapAttrsToList (
-            n: type:
-            let
-              p = "${rel}/${n}";
-            in
-            if type == "directory" then
-              recipeTestFiles p
-            else if type == "regular" && nixpkgs.lib.hasSuffix ".test.mjs" n then
-              [ p ]
-            else
-              [ ]
-          ) (builtins.readDir abs)
-        );
-    discoveredRecipeChecks = builtins.listToAttrs (
-      map (
-        file:
-        let
-          name = "pi-recipe-${
-            builtins.replaceStrings [ "/" ] [ "-" ] (nixpkgs.lib.removeSuffix ".test.mjs" file)
-          }";
-        in
-        nixpkgs.lib.nameValuePair name (recipeTest name file { })
-      ) (recipeTestFiles "runner" ++ recipeTestFiles "extension")
-    );
+    up l-1.0.12
+    join 76561198044411510 TeChNo ViKiNg (1 online)
+    join 76561198044411999 Bjorn Ironside (2 online)
+    mismatch 39 40
+    leave 76561198044411999 Bjorn Ironside (1 online)
+    leave 76561198044411510 TeChNo ViKiNg (0 online)
   '';
+
+  recipeSrc = builtins.path {
+    path = ../modules/agent-recipes;
+    name = "agent-recipes-src";
+  };
+  recipeTest =
+    name: test: extra:
+    pkgs.runCommand name (
+      {
+        nativeBuildInputs = [
+          pkgs.nodejs
+          pkgs.git
+          pkgs.bash
+        ];
+      }
+      // removeAttrs extra [ "after" ]
+    ) "cp -r --no-preserve=mode ${recipeSrc} src; cd src; node ${test}\n${extra.after or ""}touch $out";
+  recipeTestFiles =
+    rel:
+    let
+      abs = ../modules/agent-recipes + "/${rel}";
+    in
+    if !builtins.pathExists abs then
+      [ ]
+    else
+      nixpkgs.lib.concatLists (
+        nixpkgs.lib.mapAttrsToList (
+          n: type:
+          let
+            p = "${rel}/${n}";
+          in
+          if type == "directory" then
+            recipeTestFiles p
+          else if type == "regular" && nixpkgs.lib.hasSuffix ".test.mjs" n then
+            [ p ]
+          else
+            [ ]
+        ) (builtins.readDir abs)
+      );
+  discoveredRecipeChecks = builtins.listToAttrs (
+    map (
+      file:
+      let
+        name = "pi-recipe-${
+          builtins.replaceStrings [ "/" ] [ "-" ] (nixpkgs.lib.removeSuffix ".test.mjs" file)
+        }";
+      in
+      nixpkgs.lib.nameValuePair name (recipeTest name file { })
+    ) (recipeTestFiles "runner" ++ recipeTestFiles "extension")
+  );
 in
 evalAll "nixos" inputs.self.nixosConfigurations
 // evalAll "darwin" inputs.self.darwinConfigurations
