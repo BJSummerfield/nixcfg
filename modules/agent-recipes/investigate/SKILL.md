@@ -55,7 +55,8 @@ each must be safe to repeat and must not hold a secret.
 <dir>/review/h<rank>-<n>/          the reviewer's own worktree
 <dir>/diagnosis-<subject>-<n>.md   a diagnosis
 <dir>/research/h<rank>-r<n>/       the extracts of a research question
-<dir>/receipt.md                   the receipt
+<dir>/receipt.json                 the receipt
+<dir>/runner/                      the runner's status.json, board and log
 ```
 
 ## What runs
@@ -128,31 +129,26 @@ each must be safe to repeat and must not hold a secret.
 ## pi binding
 
 One call starts the whole run; nothing else is needed from this session until
-it ends. `async: true` is required: the foreground path removes a clean
-worktree after its child, and the graph resumes the implementer in its
-worktree.
+it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/investigate/workflow.js",
+recipe_run({
+  recipe: "investigate",
   args: {
     dir: "<dir>", goal: "<goal>", repo: "<repo path>",
     reproduce: "<command>", verify: "<command>", check: "<command>", source: "web"
   },
   cwd: "<repo path>",
-  async: true,
-  output: "<dir>/receipt.md",
-  options: { timeoutMs: 14400000, maxSubagentSpawnsPerRun: 60 }
+  timeoutMs: 14400000,
+  maxChildren: 60
 })
 ```
 
-`verify`, `check` and `source` are optional. All paths are absolute. Wait for
-the single completion with `bg_wait`; do not poll, steer or read intermediate
-files. Then read only the receipt, `<dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; the summary names the run's `status.json`, whose
-`workflow.value` holds the whole receipt.
+`verify`, `check` and `source` are optional. All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<dir>/receipt.json`, the whole
+receipt. `recipe-status <dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { base, branch, reproduction: {command, exit, signature, log}, verify, check,
@@ -168,54 +164,23 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 still in the repository, and `cleanup` is the command that removes them
 (`recipe-gate abandon <dir> --keep <branch>`), empty when `left` is.
 
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it. Ignore the
-notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
-
 ## Claude Code binding
 
-Claude Code runs no pi-subagents workflow script, and a headless `claude -p`
-runner for it has not been built. So the main session does the script's work
-with the Agent tool, one `subagent_type` per role (`scout`, `reviewer`,
-`implementer`, `searcher`, `locator`, `extractor`; their definitions are
-installed), in the same order and with the same `recipe-gate` checks. Keep to
-the limits above; nothing else stops a helper from being retried.
+The same graph runs with Claude Code children; this session only starts it and
+reads the result.
 
-1. Run `recipe-gate pin <dir> --repo <repo>` and keep the `base` it prints.
-2. Make a worktree of the base (`recipe-gate merge <dir>/wt/reproduce --dir
-   <dir> --branch <name> --kind repro --id reproduce`) and run `recipe-gate
-   repro <dir> --command '<reproduce>' --expect fail --id reproduce --in
-   <worktree>`. When `verify` differs run it again with `--command
-   '<verify>' --id verify-base`. Either passing ends the run.
-3. Dispatch a `reviewer` (hypotheses variant) in a worktree of the base,
-   writing `<dir>/hypotheses.md`, and run `recipe-gate hypotheses` on it.
-4. Per hypothesis in rank order, dispatch an `implementer` (investigate
-   variant) in a worktree of the base, and run `recipe-gate task <report>
-   --verify '<verify>' [--check '<check>'] --repo <repo> --base <base> --run
-   <dir> --id h<rank>` in that worktree. Keep the `signature` of every
-   failing run per hypothesis (the reproduction's first when verify is the
-   reproduce command); a repeated signature is stuck and goes to a diagnosis.
-   A new one is a fix round: send the findings to the same implementer
-   (SendMessage to its agent id), with no gate, then run the task gate by
-   hand with `--in <worktree>`. A clean gate goes to a fresh `reviewer` (diff
-   variant) in its own worktree, `recipe-gate verdict <file> --run <dir> --id
-   h<rank>`. At most two reviews per hypothesis, and at most `rounds` change
-   and fix runs in all.
-5. Where the pi script diagnoses (step 5 of What runs), dispatch a fresh
-   `reviewer` (diagnosis variant) with the step, what went wrong, the evidence
-   files, the allowed actions and `<dir>/diagnosis-<subject>-<n>.md`, read it
-   with `recipe-gate diagnosis <file> --allow <actions>`, and act on it with
-   the same limits. For `research` dispatch `searcher` (or `locator`) and
-   `extractor` children for the question, at most three sources, writing under
-   `<dir>/research/h<rank>-r<n>/`, and tell the next round to read the
-   extracts. Do not decide in its place: a `decide` goes to the user.
-6. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
-   dispatched.
+```
+recipe-run start investigate --harness claude --cwd <repo path> --args '{"dir":"<dir>","goal":"<goal>","repo":"<repo path>","reproduce":"<command>","verify":"<command>","check":"<command>","source":"web"}' --timeout-ms 14400000 --max-children 60
+```
+
+All paths are absolute. It returns at once. Then run `recipe-run wait <dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<dir>/receipt.json`, the
+whole receipt, and report as in the pi binding. `verify`, `check` and `source` are
+optional. `recipe-status <dir>`
+shows progress from any shell. A stopped run continues with `recipe-run resume
+<dir> --detach`.
 
 ## What to tell the user
 

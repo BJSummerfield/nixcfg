@@ -127,7 +127,8 @@
 //
 // task: checks one implementation task, run in that task's worktree. The
 // first line of its report is `done`, `done, concerns`, `blocked: <why>` or
-// `failed: <why>`. The branch must hold the work as commits and nothing
+// `failed: <why>` or `handoff: <why>` (the task stopped part way and
+// left the rest to a fresh start; never passing). The branch must hold the work as commits and nothing
 // uncommitted. base is where the task's own commits start: --base when given,
 // and the branch must contain it, else the merge base with --repo's HEAD.
 // With --run (and --id) the working directory's worktree is recorded in
@@ -378,6 +379,7 @@ const VERDICT_SPAN = 6;
 function verdictOf(file) {
   const text = readIfExists(file);
   if (text === null) return { asked: null, sound: null, clean: false, verdict: "invalid", reason: "file missing" };
+  if (/^handoff:/i.test(firstLine(text))) return { asked: null, sound: null, clean: false, verdict: "invalid", reason: "handoff" };
   const all = text
     .split("\n")
     .map((l) => l.replace(/^[\s>*`_-]+/, "").replace(/[*`_]+/g, ""))
@@ -613,7 +615,7 @@ function plan(dir, flags) {
 const CHECK_TIMEOUT_MS = 10 * 60 * 1000;
 const TAIL_CHARS = 1500;
 const LIST_CAP = 50;
-const REPORT_HEAD = /^(done, concerns|done|blocked|failed)\b:?\s*(.*)$/i;
+const REPORT_HEAD = /^(done, concerns|done|blocked|failed|handoff)\b:?\s*(.*)$/i;
 
 function git(cwd, args) {
   const r = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -912,17 +914,28 @@ function resume(dir, flags) {
     if (m.kind !== "task" || !m.id) continue;
     const head = branchTip(repo, m.branch);
     const escaped = m.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const pattern = new RegExp(`^review-${escaped}-(\\d+)\\.md$`);
-    const latest = files
-      .map((f) => pattern.exec(f))
-      .filter(Boolean)
-      .sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+    const pattern = new RegExp(`^review-${escaped}-(\\d+)(\\.merged)?\\.md$`);
+    const byN = new Map();
+    for (const f of files) {
+      const m = pattern.exec(f);
+      if (!m) continue;
+      const n = Number(m[1]);
+      const prior = byN.get(n);
+      if (!prior || m[2]) byN.set(n, [f, m[1]]);
+    }
+    const seen = [...byN.keys()].sort((a, b) => b - a);
+    const usable = seen.find((n) => {
+      const [f] = byN.get(n);
+      return !/^handoff:/i.test(firstLine(readIfExists(path.join(dir, f)) ?? ""));
+    });
+    const latest = usable === undefined ? null : byN.get(usable);
+    const highest = seen.length ? seen[0] : 0;
     const inTarget = Boolean(head && target) && spawnSync("git", ["merge-base", "--is-ancestor", head, target], { cwd: repo }).status === 0;
     tasks[m.id] = {
       branch: m.branch,
       head,
       review: latest ? verdictOf(path.join(dir, latest[0])).verdict : null,
-      reviews: latest ? Number(latest[1]) : 0,
+      reviews: highest,
       review_file: latest ? path.join(dir, latest[0]) : null,
       merged: inTarget || (!head && Boolean(tidied[m.branch])),
     };

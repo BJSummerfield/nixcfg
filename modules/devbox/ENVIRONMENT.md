@@ -25,10 +25,9 @@ the security boundary; no sandbox wraps your commands.
   builds and running processes alike.
 - `/var/tmp` is on disk and is `$TMPDIR`. It survives reboots but nothing in
   it is durable: systemd-tmpfiles removes entries 20 days after their last
-  write (the filesystem is `noatime`, so reading does not refresh age);
-  pi-subagents sweeps its own `chain-runs` after 24 hours and its artifact
-  directories (including a session's `subagent-artifacts/`) after 7 days; its
-  run directories under `/var/tmp/pi-subagents` stay until that 20-day age.
+  write (the filesystem is `noatime`, so reading does not refresh age); the
+  recipe runner removes its worktrees under `/var/tmp/pi-worktrees` after 20
+  days.
 - Memory is shared with the local LLM engine's pinned host cache. Expensive
   commands (full test suites, flake checks, release builds) run one at a time
   box-wide: `flock -w 7200 /var/tmp/pi-plans/locks/heavy.lock <command>`.

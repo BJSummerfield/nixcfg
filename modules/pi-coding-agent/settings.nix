@@ -10,6 +10,9 @@ let
 
   window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
 
+  compactionReserve = 20480;
+  defaultModel = llm.models.${llm.default};
+
   mkModel =
     id: m:
     {
@@ -83,6 +86,11 @@ let
       ];
       thinking = "xhigh";
       output = "plan.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "opus";
@@ -100,6 +108,11 @@ let
       ];
       thinking = "medium";
       output = "scout.md";
+      budget = {
+        tokens = 100000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "sonnet";
@@ -117,6 +130,11 @@ let
       ];
       thinking = "medium";
       output = "locator.md";
+      budget = {
+        tokens = 100000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "sonnet";
@@ -131,6 +149,11 @@ let
       ];
       thinking = "medium";
       output = "searcher.md";
+      budget = {
+        tokens = 60000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Write, WebSearch";
         model = "haiku";
@@ -148,6 +171,11 @@ let
       ];
       thinking = "medium";
       output = "extractor.md";
+      budget = {
+        tokens = 60000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Write, WebFetch";
         model = "sonnet";
@@ -164,6 +192,11 @@ let
       ];
       thinking = "xhigh";
       output = "synthesis.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "unread";
+      };
       claude = {
         tools = "Read, Grep, Glob, Write";
         model = "opus";
@@ -182,10 +215,12 @@ let
       ];
       thinking = "medium";
       output = "result.md";
-      frontmatter = {
-        acceptanceRole = "writer";
-        excludeTools = "contact_supervisor";
+      budget = {
+        tokens = 100000;
+        reserve = 30000;
+        action = "commit";
       };
+      acceptance = "writer";
       claude = {
         tools = "Read, Grep, Glob, Bash, Edit, Write";
         model = "sonnet";
@@ -203,6 +238,11 @@ let
       ];
       thinking = "xhigh";
       output = "review.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "unread";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "opus";
@@ -219,32 +259,10 @@ let
     else
       toString v;
 
-  agentFile =
-    name: role:
-    let
-      front = {
-        inherit name;
-        inherit (role) description;
-        systemPromptMode = "replace";
-        inheritProjectContext = true;
-        inheritSkills = false;
-        defaultContext = "fresh";
-        defaultProgress = false;
-      }
-      // (role.frontmatter or { });
-      lines = builtins.attrValues (builtins.mapAttrs (k: v: "${k}: ${yaml v}") front);
-    in
-    "---\n" + builtins.concatStringsSep "\n" lines + "\n---\n\n" + prompt "pi" name;
-
   claudeAgentFile =
     name: role:
     "---\nname: ${name}\ndescription: ${yaml role.description}\ntools: ${role.claude.tools}\nmodel: ${role.claude.model}\n---\n\n"
     + prompt "claude" name;
-
-  override = _: role: {
-    inherit (role) tools thinking output;
-    outputMode = "file-only";
-  };
 in
 {
   settings = {
@@ -267,32 +285,8 @@ in
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
-    compaction.reserveTokens = 20480;
-
-    subagents = {
-      defaultModel = qualified llm.provider llm.default;
-      maxThinking = "xhigh";
-      agentOverrides = builtins.mapAttrs override roles // {
-        worker = {
-          output = "worker.md";
-          outputMode = "file-only";
-          thinking = "medium";
-        };
-        delegate = {
-          output = "delegate.md";
-          outputMode = "file-only";
-          thinking = "medium";
-        };
-        oracle = {
-          output = "oracle.md";
-          outputMode = "file-only";
-          thinking = "xhigh";
-        };
-      };
-    };
+    compaction.reserveTokens = compactionReserve;
   };
-
-  agentFiles = builtins.mapAttrs agentFile roles;
 
   claudeAgentFiles = builtins.listToAttrs (
     builtins.concatMap (
@@ -308,6 +302,31 @@ in
         [ ]
     ) (builtins.attrNames roles)
   );
+
+  runnerModel = qualified llm.provider llm.default;
+
+  runnerLimits = {
+    window = window defaultModel;
+    inherit compactionReserve;
+    inherit (defaultModel) maxTokens;
+  };
+
+  runnerRoles = builtins.mapAttrs (
+    name: role:
+    assert role.budget.tokens + role.budget.reserve <= window defaultModel - compactionReserve;
+    assert role.thinking != "xhigh" || role.budget.reserve >= defaultModel.maxTokens;
+    {
+      inherit (role)
+        tools
+        thinking
+        output
+        budget
+        claude
+        ;
+      prompt = prompt "pi" name;
+      acceptance = role.acceptance or null;
+    }
+  ) roles;
 
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
@@ -330,21 +349,5 @@ in
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.provider llm.default;
     toolActivation = "eager";
-  };
-
-  subagentConfig = {
-    globalConcurrencyLimit = 3;
-    worktreeBaseDir = "/var/tmp/pi-worktrees";
-    toolActivation = "eager";
-    disabledFeatures = [
-      "agent-management"
-      "watchdog"
-      "panes"
-      "missions"
-      "lane-management"
-      "external-machines"
-      "usage-budgets"
-      "tool-budgets"
-    ];
   };
 }
