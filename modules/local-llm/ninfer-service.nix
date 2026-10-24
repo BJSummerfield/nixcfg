@@ -38,9 +38,6 @@ let
   ]
   ++ lib.optional (n.spec != null && n.lmHeadDraft) "--lm-head-draft"
   ++ lib.optional n.vision "--vision"
-  ++ lib.optional (
-    n.cudaGraphAllowanceMib != null
-  ) "--cuda-graph-allowance-mib ${num n.cudaGraphAllowanceMib}"
   ++ n.extraArgs;
 
   # NINFER_EXTRA_ARGS is appended last so its flags win; deliberately unquoted.

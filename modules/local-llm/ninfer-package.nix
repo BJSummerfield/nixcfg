@@ -13,30 +13,28 @@
   autoAddDriverRunpath,
   ffmpeg,
   curl,
+  hwloc,
+  liburing,
   python3,
 }:
 # nvcc 13.1 hosts on GCC 15 and links its libstdc++; the default GCC 16 headers
 # emit atomic-wait symbols that library lacks (XGrammar semaphores).
 cudaPackages_13_1.backendStdenv.mkDerivation {
   pname = "ninfer";
-  version = "0-unstable-2026-10-07";
+  version = "0-unstable-2026-10-16";
 
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "81c8ce093b2c1646a87566a8e59d807fcf0ec95c";
-    hash = "sha256-D+rrNhQ5+cvQu1Ylhlzu36WJZgGLmKydeGLGz8KZ/c8=";
+    rev = "64d10fbf9f8e6bfc79ab0570b94674c5b9997929";
+    hash = "sha256-vwCnXyQPR6xY0r3JEg53EuHQkd4WbnKsNTvBtrL7LxM=";
   };
 
   # Own fix: full Host tier deletes continued conversations and pause snapshots (#378 placement +
   # write-back retention + Host recency window). Drop the placement parts when upstream fixes #378,
   # the retention parts when upstream records proven demand for write-backs: bump pin, run the
   # fail-first tests unpatched.
-  # Own fix: DFlash graph allowance over-reserves ~3 GiB at 4 lanes; drop when upstream fixes #385.
-  patches = [
-    ./ninfer-full-tier.patch
-    ./ninfer-graph-allowance.patch
-  ];
+  patches = [ ./ninfer-full-tier.patch ];
 
   nativeBuildInputs = [
     cmake
@@ -53,6 +51,8 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     cudaPackages_13_1.cuda_nvtx
     curl
     ffmpeg
+    hwloc
+    liburing
   ];
 
   # CMakeLists.txt hard-rejects any architecture other than 120a, and the
