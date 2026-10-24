@@ -276,7 +276,7 @@ const basePreparation = (overrides) => ({
   rmSync(nonRootPlan, { recursive: true, force: true });
 }
 
-// 16. pi-subagents' output block survives the task cap: a long brief ending in
+// 16. the runner's output block survives the task cap: a long brief ending in
 // "---\n**Output:**" keeps the output path in its own block; no block without it.
 {
   const h = harness();
