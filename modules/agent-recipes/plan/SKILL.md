@@ -34,8 +34,11 @@ time. It is the plan directory the implement skill reads:
 <dir>/tasks/<id>.md  one per task
 <dir>/locate.md      candidate files and line ranges, when `locate` was given
 <dir>/research/<id>/ extract-<k>.md and page-<k>.md for a task that asked
-<dir>/receipt.md     the receipt
+<dir>/receipt.json   the receipt
+<dir>/runner/        the runner's status.json, board and log
 ```
+
+The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
 
 A task file opens with a header, one `key: value` per line, then a blank line
 and the body (what to change and why, acceptance):
@@ -112,22 +115,19 @@ One call starts the whole run; nothing else is needed from this session until
 it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/plan/workflow.js",
+recipe_run({
+  recipe: "plan",
   args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", batch: { rule: "<glob|grep|list ...>", change: "<change>" }, repo: "<repo path>" },
-  async: true,
-  output: "<task dir>/receipt.md",
-  options: { timeoutMs: 5400000, maxSubagentSpawnsPerRun: 30 }
+  timeoutMs: 5400000,
+  maxChildren: 30
 })
 ```
 
-All paths are absolute. Wait for the single completion with `bg_wait`; do not
-poll, steer or read intermediate files. Then read only the receipt,
-`<task dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; the summary names the run's `status.json`, whose
-`workflow.value` holds the whole receipt.
+All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<task dir>/receipt.json`, the whole
+receipt. `recipe-status <task dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <task dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { plan_dir, tasks, oversize: [...], overlaps: [...], review,
@@ -137,14 +137,6 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 ```
 
 `id` is null for the whole run. `review` is `clean`, `needs-work`, or null when no verdict could be had.
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it. Ignore the
-notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
 
 Tell the user the plan directory first, then the task count, `review`, each
 `decide` question with its diagnosis file, what healed in one line each, and
