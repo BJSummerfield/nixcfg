@@ -15,8 +15,8 @@ const EXCERPT_WORDS = 300;
 const TASK_MAX_CHARS = 1500;
 const LEDGER_NAMES = ["state.json", "tasks.json", "PAUSE.md", "plan.md"];
 // Plan root, per the #267 convention: $TMPDIR/pi-plans/<task-id>/. os.tmpdir()
-// honors $TMPDIR, so this follows the same environment pi-subagents' temp root
-// does. Resolved once at module load (pi loads the extension once per process;
+// honors $TMPDIR, so this follows the same environment as the session.
+// Resolved once at module load (pi loads the extension once per process;
 // TMPDIR is fixed for that process).
 const PLANS_ROOT = join(tmpdir(), "pi-plans");
 const PLANS_ROOT_RE = PLANS_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

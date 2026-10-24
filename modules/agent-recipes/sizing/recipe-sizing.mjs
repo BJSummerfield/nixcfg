@@ -1,4 +1,4 @@
-// Proposes sizing.json from pi's subagent transcripts. Offline: file reads only.
+// Proposes sizing.json from the runner's transcripts (<task dir>/runner/transcripts/). Offline: file reads only.
 //
 //   recipe-sizing <sessions-dir> [--current sizing.json] [--min-samples 20] [--engine-rev REV]
 //

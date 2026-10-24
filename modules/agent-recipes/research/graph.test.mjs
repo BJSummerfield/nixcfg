@@ -3,19 +3,13 @@
  * `nix flake check`. It proves the script's own logic (angles, ranking and
  * capping, gate commands, retry, split, sizing, review, gap round, receipt);
  * byte counts are the fake gate's, not real extracts. The whole-graph
- * scenario runs again in pi-subagents' own sandbox.
+ * scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import { hostRun } from "../lib/host-run.mjs";
+import graph from "./graph.mjs";
+import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
-const source =
-  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
-assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
-assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const run = (runs, args, emit) => new AsyncFunction("runs", "args", "emit", source)(runs, Object.freeze(args), emit);
+const run = (runs, args, emit) => graph(Object.freeze(args), portOf(runs, emit));
 
 const src = (angle, n, kind) => ({ url: `https://example.com/${angle}/${n}`, angle, why: "w", kind });
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
@@ -101,9 +95,9 @@ function assertUniqueOutputs(f) {
   const f = fake(respond);
 
   const receipt = await run(f.runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 });
-  assert.deepEqual(await hostRun(source, fake(respond).runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 }), JSON.parse(JSON.stringify(receipt)));
+  assert.deepEqual(await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 }), JSON.parse(JSON.stringify(receipt)));
 
-  const unnamed = await hostRun(source, fake(respond).runs, { dir: "/t/d", goal: "The goal.", window: 150000 });
+  const unnamed = await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", window: 150000 });
   assert.equal(unnamed.output, "/t/d/summary.updated.md");
 
   assert.deepEqual(keys(f.batches), [
