@@ -10,6 +10,9 @@ let
 
   window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
 
+  compactionReserve = 20480;
+  defaultModel = llm.models.${llm.default};
+
   mkModel =
     id: m:
     {
@@ -83,6 +86,11 @@ let
       ];
       thinking = "xhigh";
       output = "plan.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "opus";
@@ -100,6 +108,11 @@ let
       ];
       thinking = "medium";
       output = "scout.md";
+      budget = {
+        tokens = 100000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "sonnet";
@@ -117,6 +130,11 @@ let
       ];
       thinking = "medium";
       output = "locator.md";
+      budget = {
+        tokens = 100000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "sonnet";
@@ -131,6 +149,11 @@ let
       ];
       thinking = "medium";
       output = "searcher.md";
+      budget = {
+        tokens = 60000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Write, WebSearch";
         model = "haiku";
@@ -148,6 +171,11 @@ let
       ];
       thinking = "medium";
       output = "extractor.md";
+      budget = {
+        tokens = 60000;
+        reserve = 20000;
+        action = "stop";
+      };
       claude = {
         tools = "Read, Grep, Write, WebFetch";
         model = "sonnet";
@@ -164,6 +192,11 @@ let
       ];
       thinking = "xhigh";
       output = "synthesis.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "unread";
+      };
       claude = {
         tools = "Read, Grep, Glob, Write";
         model = "opus";
@@ -182,6 +215,11 @@ let
       ];
       thinking = "medium";
       output = "result.md";
+      budget = {
+        tokens = 100000;
+        reserve = 30000;
+        action = "commit";
+      };
       acceptance = "writer";
       claude = {
         tools = "Read, Grep, Glob, Bash, Edit, Write";
@@ -200,6 +238,11 @@ let
       ];
       thinking = "xhigh";
       output = "review.md";
+      budget = {
+        tokens = 130000;
+        reserve = 40000;
+        action = "unread";
+      };
       claude = {
         tools = "Read, Grep, Glob, Bash, Write";
         model = "opus";
@@ -242,7 +285,7 @@ in
     npmCommand = [ "bun" ];
     packages = plugins.piPackages;
 
-    compaction.reserveTokens = 20480;
+    compaction.reserveTokens = compactionReserve;
   };
 
   claudeAgentFiles = builtins.listToAttrs (
@@ -262,16 +305,28 @@ in
 
   runnerModel = qualified llm.provider llm.default;
 
-  runnerRoles = builtins.mapAttrs (name: role: {
-    inherit (role)
-      tools
-      thinking
-      output
-      claude
-      ;
-    prompt = prompt "pi" name;
-    acceptance = role.acceptance or null;
-  }) roles;
+  runnerLimits = {
+    window = window defaultModel;
+    inherit compactionReserve;
+    inherit (defaultModel) maxTokens;
+  };
+
+  runnerRoles = builtins.mapAttrs (
+    name: role:
+    assert role.budget.tokens + role.budget.reserve <= window defaultModel - compactionReserve;
+    assert role.thinking != "xhigh" || role.budget.reserve >= defaultModel.maxTokens;
+    {
+      inherit (role)
+        tools
+        thinking
+        output
+        budget
+        claude
+        ;
+      prompt = prompt "pi" name;
+      acceptance = role.acceptance or null;
+    }
+  ) roles;
 
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
