@@ -34,6 +34,13 @@ export function writeJsonAtomic(file, value) {
   fs.renameSync(tmp, file);
 }
 
+// Children that started and never settled when the run stopped.
+function interruptedKeys(runDir) {
+  const records = readRecords(path.join(runDir, "children.jsonl"));
+  const settled = new Set(records.filter((r) => r.type === "settle").map((r) => r.key));
+  return [...new Set(records.filter((r) => r.type === "start" && !settled.has(r.key)).map((r) => r.key))];
+}
+
 export function readRecords(file) {
   let text;
   try {
@@ -238,7 +245,7 @@ export async function runRecipe(opts) {
   if (stopWhy) {
     status.state = "stopped";
     status.error = stopWhy;
-    receipt = { failed: `stopped: ${stopWhy}`, board: status.board };
+    receipt = { stopped: true, failed: `stopped: ${stopWhy}`, interrupted: interruptedKeys(runDir), board: status.board };
   } else if (outcome.error) {
     status.state = "failed";
     status.error = String(outcome.error?.message ?? outcome.error);

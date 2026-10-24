@@ -82,21 +82,48 @@ export default async function implement(args, port) {
   let pinned = null;
   let tidied = null;
   const made = [];
+  const unrecorded = [];
+  let leftOver = [];
 
-  function noteMade(id, kind, entryBranch, entryWorktree) {
+  function noteMade(id, kind, entryBranch, entryWorktree, recorded) {
     if (!entryBranch && !entryWorktree) return;
     const duplicate = made.some(function (m) {
       return m.kind === kind && m.branch === (entryBranch || null) && m.worktree === (entryWorktree || null);
     });
-    if (!duplicate) made.push({ id: id, kind: kind, branch: entryBranch || null, worktree: entryWorktree || null });
+    if (duplicate) return;
+    made.push({ id: id, kind: kind, branch: entryBranch || null, worktree: entryWorktree || null });
+    if (recorded === false) unrecorded.push({ branch: entryBranch || null, worktree: entryWorktree || null });
+  }
+
+  function isUnrecorded(m) {
+    return unrecorded.some(function (u) {
+      return u.branch === m.branch && u.worktree === m.worktree;
+    });
+  }
+
+  function stillThere(m) {
+    return leftOver.some(function (l) {
+      return (m.branch && l.branch === m.branch) || (m.worktree && l.worktree === m.worktree);
+    });
   }
 
   function leftBehind() {
     return made.filter(function (m) {
       if (!tidied) return true;
-      if (m.kind === "review" || m.kind === "deps" || m.kind === "integration") return false;
+      if (m.kind === "integration") return false;
+      if (m.kind === "review" || m.kind === "deps") return isUnrecorded(m) || stillThere(m);
       return !(m.kind === "task" && tidied.indexOf(m.id) >= 0);
     });
+  }
+
+  function cleanupCommand(left) {
+    if (!left.length) return "";
+    const steps = ["recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "")];
+    left.filter(isUnrecorded).forEach(function (m) {
+      if (m.worktree) steps.push("git -C " + quote(repo) + " worktree remove --force " + quote(m.worktree));
+      if (m.branch) steps.push("git -C " + quote(repo) + " branch -D " + quote(m.branch));
+    });
+    return steps.join("; ");
   }
 
   function reportLines() {
@@ -164,7 +191,7 @@ export default async function implement(args, port) {
       resumed: resumed,
       open: open,
       left: left,
-      cleanup: left.length ? "recipe-gate abandon " + quote(dir) + (tidied && branch ? " --keep " + quote(branch) : "") : "",
+      cleanup: cleanupCommand(left),
       pr_text: prText,
     });
   }
@@ -410,7 +437,7 @@ export default async function implement(args, port) {
       "Task file: " + taskFile(t),
       "Repository: " + repo,
       "Branch: " + t.branch,
-      "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/" + t.id + "-" + t.reviews + "); read and run the check there. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
+      "Worktree: your working directory is your own worktree of the branch; read and run the check there and make no other worktree. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
       "Diff to review: git diff " + reviewRange(t, t.branch),
       "Owned files: " + ownsOf(t).join(", "),
       "Check to run: " + t.spec.check,
@@ -430,7 +457,7 @@ export default async function implement(args, port) {
   }
 
   function takeReview(t, result) {
-    if (result.structuredOutput) noteMade(t.id, "review", result.structuredOutput.branch, result.structuredOutput.worktree);
+    if (result.structuredOutput) noteMade(t.id, "review", result.structuredOutput.branch, result.structuredOutput.worktree, result.structuredOutput.recorded);
     if (!result.ok || !result.structuredOutput) {
       return heal(t, "review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]);
     }
@@ -1142,6 +1169,7 @@ export default async function implement(args, port) {
     heavy = g.heavy_check;
     prText = g.pr_text || "";
     if (g.ok) tidied = merged;
+    leftOver = list(g.left_over);
     list(g.reasons).forEach(function (reason) {
       open.push("integration: " + reason);
     });

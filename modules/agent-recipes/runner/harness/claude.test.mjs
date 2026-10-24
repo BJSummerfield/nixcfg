@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { handoffPrompt } from "../handoff.mjs";
-import { claudeArgv, claudeSessionId, start, usesEngine } from "./claude.mjs";
+import { claudeArgv, claudeSessionFile, claudeSessionId, start, usesEngine } from "./claude.mjs";
 
 const alive = (pid) => {
   try {
@@ -29,6 +29,7 @@ fs.mkdirSync(fakes);
 fs.writeFileSync(
   path.join(fakes, "ok.mjs"),
   `import fs from "node:fs";
+import path from "node:path";
 const argv = process.argv.slice(2);
 let stdin = "";
 process.stdin.setEncoding("utf8");
@@ -40,6 +41,11 @@ fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({
     SOCKET: process.env.CLAUDE_CODE_MESSAGING_SOCKET, TOKEN: process.env.CLAUDE_CODE_MESSAGING_TOKEN },
 }));
 const session_id = argv[argv.indexOf("--session-id") + 1] ?? argv[argv.indexOf("--resume") + 1];
+if (process.env.CLAUDE_CONFIG_DIR) {
+  const folder = path.join(process.env.CLAUDE_CONFIG_DIR, "projects", process.cwd().replace(/[^a-zA-Z0-9]/g, "-"));
+  fs.mkdirSync(folder, { recursive: true });
+  fs.appendFileSync(path.join(folder, session_id + ".jsonl"), "{}\\n");
+}
 const usage = (fields) => ({
   input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0,
   cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 }, service_tier: "standard", ...fields,
@@ -245,7 +251,8 @@ assert.equal(usesEngine, false);
 
 // a normal run, then a resumed one on the same session
 {
-  const spec = specFor("ok");
+  const config = path.join(tmp, "ok-config");
+  const spec = specFor("ok", { env: { EXTRA: "yes", CLAUDE_CONFIG_DIR: config } });
   const spawned = [];
   Object.assign(process.env, { CLAUDE_CODE_SESSION_ID: "parent", CLAUDE_PID: "1", CLAUDE_CODE_MESSAGING_SOCKET: "/x.sock", CLAUDE_CODE_MESSAGING_TOKEN: "t" });
   const outcome = await run({ ...spec, onSpawn: (info) => spawned.push(info) });
@@ -261,7 +268,9 @@ assert.equal(usesEngine, false);
     prompt: 3105, cached: 2100, output: 70, peakContext: 1632, turns: 2, compactions: 1, firstContext: 1632,
   });
   assert.equal(outcome.valve, null);
-  assert.equal(outcome.sessionFile, null);
+  const sessionFile = path.join(config, "projects", fs.realpathSync(tmp).replace(/[^a-zA-Z0-9]/g, "-"), `${claudeSessionId("r1-ok")}.jsonl`);
+  assert.equal(outcome.sessionFile, sessionFile);
+  assert.ok(fs.existsSync(sessionFile));
   assert.equal(spawned.length, 1);
   assert.equal(spawned[0].pid, record.pid);
   assert.deepEqual(record.argv, claudeArgv(spec));
@@ -289,7 +298,31 @@ assert.equal(usesEngine, false);
   assert.deepEqual(resumedRecord.argv.slice(-2), ["--resume", claudeSessionId("r1-ok")]);
   assert.equal(resumedRecord.stdin, "Do the thing.");
   assert.ok(!resumedRecord.argv.includes("--session-id"));
-  assert.equal(again.sessionFile, null);
+  assert.equal(again.sessionFile, sessionFile);
+}
+
+// the session file is null when claude wrote none, and found under another project directory name
+{
+  const config = path.join(tmp, "lookup-config");
+  const spec = { cwd: tmp, runId: "lookup", sessionId: "lookup", env: { CLAUDE_CONFIG_DIR: config } };
+  assert.equal(claudeSessionFile(spec), null);
+  const other = path.join(config, "projects", "-elsewhere");
+  fs.mkdirSync(other, { recursive: true });
+  fs.writeFileSync(path.join(other, `${claudeSessionId("lookup")}.jsonl`), "");
+  assert.equal(claudeSessionFile(spec), path.join(other, `${claudeSessionId("lookup")}.jsonl`));
+}
+
+// each process a child ran is recorded with its argv and RECIPE_* variables, never the brief
+{
+  const spec = specFor("spawnlog", { env: { RECIPE_ROLE: "scout", EXTRA: "yes" } });
+  await run(spec);
+  const lines = fs.readFileSync(path.join(spec.logDir, "spawn.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(lines.length, 1);
+  assert.deepEqual(lines[0].argv.slice(1), claudeArgv(spec));
+  assert.equal(lines[0].env.RECIPE_ROLE, "scout");
+  assert.equal(lines[0].env.RECIPE_CHILD, "1");
+  assert.ok(Object.keys(lines[0].env).every((name) => name.startsWith("RECIPE_")));
+  assert.ok(!JSON.stringify(lines[0]).includes(spec.brief));
 }
 
 // a brief that starts with "@" or "-", or is far larger than one argument can be, arrives intact

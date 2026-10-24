@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { handoffPrompt } from "../handoff.mjs";
 import { killTree, watchTree } from "../tree-kill.mjs";
+import { recordSpawn } from "./spawn-log.mjs";
 
 // Claude children call a remote API, so they never need the local engine's lock.
 export const usesEngine = false;
@@ -73,6 +75,28 @@ export function claudeArgv(spec, grant = null) {
   return argv;
 }
 
+// Claude Code keeps a session at <config dir>/projects/<working directory with
+// every non-alphanumeric character as "-">/<uuid>.jsonl. The runner's cwd may
+// be reached through a symlink, so both spellings are tried, then any project.
+export function claudeSessionFile(spec) {
+  const config = spec.env?.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const projects = path.join(config, "projects");
+  const name = `${claudeSessionId(spec.sessionId ?? spec.runId)}.jsonl`;
+  const cwds = [spec.cwd];
+  try {
+    cwds.push(fs.realpathSync(spec.cwd));
+  } catch {
+    // The directory is gone; the unresolved spelling is all there is.
+  }
+  const candidates = cwds.filter(Boolean).map((cwd) => path.join(projects, cwd.replace(/[^a-zA-Z0-9]/g, "-"), name));
+  try {
+    for (const entry of fs.readdirSync(projects)) candidates.push(path.join(projects, entry, name));
+  } catch {
+    // No projects directory yet; only the computed spellings remain.
+  }
+  return candidates.find((file) => fs.existsSync(file)) ?? null;
+}
+
 function binOf(spec) {
   if (spec.bin) return spec.bin;
   if (process.env.RECIPE_CLAUDE_BIN) return JSON.parse(process.env.RECIPE_CLAUDE_BIN);
@@ -107,7 +131,7 @@ export async function start(spec) {
     finalText: "",
     usage,
     valve,
-    sessionFile: null,
+    sessionFile: claudeSessionFile(spec),
     ms: Date.now() - startedAt,
     ...fields,
   });
@@ -141,11 +165,13 @@ export async function start(spec) {
   // message that calls a tool at or over the budget kills the tree.
   async function runProcess({ argv, brief, timeoutMs, watchBudget }) {
     const [command, ...prefix] = binOf(spec);
+    const env = childEnv(spec);
+    recordSpawn(spec.logDir, { command, argv: [...prefix, ...argv], cwd: spec.cwd, env });
     const child = spawn(command, [...prefix, ...argv], {
       cwd: spec.cwd,
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: childEnv(spec),
+      env,
     });
     // The brief can exceed one argument's size limit, so it goes in on stdin.
     child.stdin?.on("error", () => {});

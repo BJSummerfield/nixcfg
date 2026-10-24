@@ -30,7 +30,6 @@ to the plan:
                             branch the run made
 <dir>/abandoned.json        what `recipe-gate abandon` removed
 <dir>/deps/<id>/            worktree where a task's dependencies are merged
-<dir>/review/<id>-<n>/      the reviewer's own worktree for review n of a task
 <dir>/resolve-<scope>-<n>.md report of resolver n for a merge (a task id or integration)
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
                             a replanned attempt n is impl-<id>-<n>.md
@@ -126,7 +125,7 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    task, when a piece cannot be joined, or when a third split would be
    needed. Only the task, not its pieces, is integrated in step 5.
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
-   branch, a new one for every review round (`<dir>/review/<id>-<n>`), reads
+   branch, a new one for every review round (made by the runner under its worktree root), reads
    the branch's own diff, runs the check there and never touches the
    implementer's worktree. It gives a verdict (`recipe-gate verdict`, which
    records the review worktree). On needs-work, or when the task gate was

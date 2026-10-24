@@ -501,4 +501,21 @@ function repoFake(locate, extract = {}) {
   assert.deepEqual(receipt.open, ["a repository source needs the repo argument"]);
 }
 
+// A stop part way through the extracts ends the graph: the interrupted sources are not failed ones,
+// and no later stage runs or reports.
+{
+  const respond = (item) => {
+    if (item.agent === "planner") return ok(item.key, { ok: true, angles: [{ id: "a", question: "Question a?" }] });
+    if (item.agent === "searcher") return ok(item.key, urlList([src("a", 1, "primary"), src("a", 2, "secondary")]));
+    if (item.key === "extract-0") return extractOk(item.key);
+    return { ...failed(item.key, "run stopped"), status: "aborted" };
+  };
+  const f = fake(respond);
+  const views = [];
+  await assert.rejects(run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md" }, (v) => views.push(v)), { name: "RunStopped" });
+  assert.deepEqual(keys(f.batches), [["angles"], ["search-a"], ["extract-0", "extract-1"]]);
+  assert.ok(views.every((v) => !v.sources || v.sources.failed === 0), "an interrupted source was counted as failed");
+  assert.ok(views.every((v) => v.stage !== "finished"));
+}
+
 console.log("research graph: ok");

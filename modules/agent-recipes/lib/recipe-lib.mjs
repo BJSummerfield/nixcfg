@@ -8,7 +8,30 @@ const REASON_CHARS = 300;
 const HANDOFF_LIMITS = Object.freeze({ MAX_RELAYS: 2, MAX_SPLITS: 2, START_FRACTION: 0.5 });
 const UNREAD_ROLES = ["reviewer", "synthesizer"];
 
-export function recipeLib(port) {
+// Thrown when the runner reports a child cut short by a stop. The graph ends
+// there: an interrupted child is not a failed one, and nothing after it may
+// be counted as if it had run.
+export class RunStopped extends Error {
+  constructor() {
+    super("run stopped");
+    this.name = "RunStopped";
+  }
+}
+
+function stopAware(port) {
+  const check = (results) => {
+    if (results.some((result) => result && result.status === "aborted")) throw new RunStopped();
+    return results;
+  };
+  return {
+    ...port,
+    runMany: (items) => port.runMany(items).then(check),
+    runOne: (item) => port.runOne(item).then((result) => check([result])[0]),
+  };
+}
+
+export function recipeLib(rawPort) {
+  const port = stopAware(rawPort);
   const healed = [];
   const decide = [];
   const tally = { children: 0 };

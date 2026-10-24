@@ -405,7 +405,7 @@ function mergeSteps(wt, out, o) {
 }
 
 export function abandon(dir, { keep, kinds } = {}) {
-  const res = { ok: true, removed: { worktrees: [], branches: [], refs: [] }, kept: [], problems: [] };
+  const res = { ok: true, removed: { worktrees: [], branches: [], refs: [] }, kept: [], left: [], problems: [] };
   const ledger = readLedger(dir);
   if (!ledger) return res;
   const keepSet = new Set(list(keep));
@@ -427,6 +427,7 @@ export function abandon(dir, { keep, kinds } = {}) {
     if (tip.status !== 0) continue;
     if (keepSet.has(m.branch)) {
       if (!res.kept.includes(m.branch)) res.kept.push(m.branch);
+      res.left.push(m);
       continue;
     }
     if (!doomedBranches.some((b) => b.branch === m.branch)) doomedBranches.push({ branch: m.branch, tip: tip.out });
@@ -457,14 +458,20 @@ export function abandon(dir, { keep, kinds } = {}) {
     if (w === own || !listed.has(w)) continue;
     const r = run(repo, ["worktree", "remove", "--force", m.worktree]);
     if (r.status === 0) res.removed.worktrees.push(m.worktree);
-    else res.problems.push(`worktree ${m.worktree}: ${r.err}`);
+    else {
+      res.problems.push(`worktree ${m.worktree}: ${r.err}`);
+      if (!res.left.includes(m)) res.left.push(m);
+    }
   }
   run(repo, ["worktree", "prune"]);
 
   for (const b of doomedBranches) {
     const r = run(repo, ["branch", "-D", b.branch]);
     if (r.status === 0) res.removed.branches.push(b);
-    else res.problems.push(`branch ${b.branch}: ${r.err}`);
+    else {
+      res.problems.push(`branch ${b.branch}: ${r.err}`);
+      res.left.push(...entries.filter((m) => m.branch === b.branch && !res.left.includes(m)));
+    }
   }
   if (baseSha) {
     const r = run(repo, ["update-ref", "-d", ledger.base_ref]);

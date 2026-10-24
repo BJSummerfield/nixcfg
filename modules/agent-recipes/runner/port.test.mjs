@@ -187,6 +187,27 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(r1.status, "done");
 }
 
+// The harness's valve record reaches the result and the settle record; a child whose valve did not fire has none.
+{
+  const valve = { fired: true, tokens: 15568, budget: 12000, action: "commit", ended: true };
+  const harness = fakeHarness((spec) => (spec.item.key === "tripped" ? { valve } : {}));
+  const { port, runDir } = setup("valve", { harness });
+  const tripped = await port.runOne(item("tripped"));
+  assert.deepEqual(tripped.valve, valve);
+  const quiet = await port.runOne(item("quiet"));
+  assert.equal(quiet.valve, null);
+  const settled = readLog(runDir).filter((r) => r.type === "settle");
+  assert.deepEqual(settled.map((r) => r.result.valve), [valve, null]);
+}
+
+// A gate learns where the runner puts worktrees, so it can record the ones that are the run's.
+{
+  const { port, gates } = setup("gate-env", { harness: fakeHarness(() => ({})), config: { worktreeDir: "/some/where" } });
+  await port.runOne(item("g", { gate: { command: "check" } }));
+  assert.equal(gates[0].env.RECIPE_WORKTREE_ROOT, "/some/where");
+  assert.equal(gates[0].env.PATH, process.env.PATH);
+}
+
 // A failed child still gets its gate, and so does a resumed one.
 {
   const harness = fakeHarness((spec) => (spec.item.key === "bad" ? { status: "failed", error: "boom", finalText: "" } : {}));

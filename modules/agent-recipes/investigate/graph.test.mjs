@@ -629,3 +629,10 @@ const reviewClean = (branch) => ({ ok: true, verdict: "clean", branch, worktree:
   assert.equal(r.hypotheses[0].relays, 1);
   assert.equal(r.branch, "pi/h1");
 }
+
+// A stop while the reproduction runs ends the graph.
+{
+  const f = fake({ reproduce: { structuredOutput: undefined, ok: false, status: "aborted", error: "run stopped" } });
+  await assert.rejects(run(f.runs, args), { name: "RunStopped" });
+  assert.equal(keys(f).at(-1), "reproduce");
+}

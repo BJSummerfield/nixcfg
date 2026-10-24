@@ -433,6 +433,7 @@ export function createPort(opts) {
         try {
           gate = await runGate(item.gate, {
             cwd: childCwd,
+            env: { ...process.env, ...(config.worktreeDir ? { RECIPE_WORKTREE_ROOT: config.worktreeDir } : {}) },
             item,
             outcome,
             signal,
@@ -482,6 +483,7 @@ export function createPort(opts) {
         ms: outcome.ms ?? 0,
         handoff,
         budget: role.budget ?? null,
+        valve: outcome.valve ?? null,
       };
       appendJsonl(spec.transcriptFile, {
         recordType: "outcome",

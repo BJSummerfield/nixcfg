@@ -8,7 +8,9 @@
 //   extract <file> [--cap BYTES] [--repo DIR]
 //                                  {ok, bytes, quotes, over_cap}; cap defaults to 24 KB.
 //                                  An extract with a `File: <path>` header line
-//                                  (and optional `Range: <start>-<end>`) comes
+//                                  (and optional `Range: <start>-<end>`; a
+//                                  trailing `(lines a-b, c-d)` on the File line
+//                                  stands in when there is no Range line) comes
 //                                  from a repository file: every quote must
 //                                  appear, whitespace-normalized, in that file
 //                                  (in those lines when a range is given), the
@@ -343,17 +345,32 @@ function extract(file, flags) {
   const header = (headerEnd < 0 ? lines : lines.slice(0, headerEnd)).join("\n");
   const source = header.match(/^File:\s*`?(.+?)`?\s*$/m);
   if (!source) return { ok: quotes > 0 && !over_cap, bytes, quotes, over_cap };
+  const named = splitFileHeader(source[1], flags.repo ?? ".");
   const range = header.match(/^Range:\s*(\d+)\s*-\s*(\d+)\s*$/m);
-  const full = readIfExists(path.resolve(flags.repo ?? ".", source[1]));
+  const ranges = range ? [[Number(range[1]), Number(range[2])]] : named.ranges;
+  const full = readIfExists(path.resolve(flags.repo ?? ".", named.path));
   let missing = quoteTexts(text);
   if (full === null) {
-    return { ok: false, bytes, quotes, over_cap, file: source[1], missing, reason: "named file missing" };
+    return { ok: false, bytes, quotes, over_cap, file: named.path, missing, reason: "named file missing" };
   }
-  let fileLines = full.split("\n");
-  if (range) fileLines = fileLines.slice(Math.max(0, Number(range[1]) - 1), Number(range[2]));
+  const allLines = full.split("\n");
+  const fileLines = ranges.length
+    ? ranges.flatMap(([start, end]) => allLines.slice(Math.max(0, start - 1), end))
+    : allLines;
   const haystack = fileLines.join(" ").replace(/\s+/g, " ");
   missing = missing.filter((q) => !haystack.includes(q));
-  return { ok: quotes > 0 && !over_cap && missing.length === 0, bytes, quotes, over_cap, file: source[1], missing };
+  return { ok: quotes > 0 && !over_cap && missing.length === 0, bytes, quotes, over_cap, file: named.path, missing };
+}
+
+// A File header is the path alone, but models append "(lines 3-9, 12-20)".
+// A path that exists whole wins, so one containing spaces still works.
+function splitFileHeader(value, repo) {
+  if (readIfExists(path.resolve(repo, value)) !== null) return { path: value, ranges: [] };
+  const suffix = value.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  const bare = suffix ? suffix[1] : value;
+  const ranges = suffix ? [...suffix[2].matchAll(/(\d+)\s*-\s*(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])]) : [];
+  const pathOnly = readIfExists(path.resolve(repo, bare)) !== null ? bare : bare.split(/\s/)[0];
+  return { path: pathOnly, ranges };
 }
 
 function dirBytes(dir) {
@@ -423,15 +440,17 @@ function inside(parent, child) {
 // makes are recorded, never a session's checkout.
 function recordable(dir, here) {
   if (!here.linked || !here.worktree) return false;
-  return [dir, PI_WORKTREE_BASE].some((r) => inside(realOr(r), here.worktree));
+  const roots = [dir, PI_WORKTREE_BASE, process.env.RECIPE_WORKTREE_ROOT].filter(Boolean);
+  return roots.some((r) => inside(realOr(r), here.worktree));
 }
 
 function verdict(file, flags) {
   const out = verdictOf(file);
   if (!flags.run) return out;
   const here = where(process.cwd());
-  if (recordable(flags.run, here)) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
-  return { ...out, branch: here.branch, worktree: here.worktree };
+  const recorded = recordable(flags.run, here);
+  if (recorded) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
+  return { ...out, branch: here.branch, worktree: here.worktree, recorded };
 }
 
 const ANGLE = /^\s*[-*]\s+([A-Za-z0-9][A-Za-z0-9_-]*)\s*\|\s*(\S.*?)\s*$/;
@@ -856,7 +875,9 @@ function integrate(dir, flags) {
   const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
   if (flags.tidy === "yes" && ok) {
     Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied));
-    out.tidy_problems.push(...abandon(dir, { kinds: ["review", "deps", "base"] }).problems);
+    const swept = abandon(dir, { kinds: ["review", "deps", "base"] });
+    out.tidy_problems.push(...swept.problems);
+    out.left_over = swept.left;
   }
   return out;
 }

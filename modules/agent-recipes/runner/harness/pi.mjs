@@ -3,9 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { killTree, watchTree } from "../tree-kill.mjs";
+import { recordSpawn } from "./spawn-log.mjs";
 
 const TAIL_CHARS = 1500;
 const STREAM_GRACE_MS = 1000;
+// Partial-message events repeat the whole message so far on every delta.
+const STREAMING_EVENTS = new Set(["message_update", "tool_execution_update"]);
 
 const toolList = (tools) => (Array.isArray(tools) ? tools.join(",") : typeof tools === "string" ? tools : "");
 
@@ -101,11 +104,14 @@ export async function start(spec) {
     Promise.all([events, stderrLog, transcript].map((stream) => new Promise((resolve) => stream.end(resolve))));
 
   const [command, ...prefix] = binOf(spec);
-  const child = spawn(command, [...prefix, ...piArgv(spec)], {
+  const argv = [...prefix, ...piArgv(spec)];
+  const env = { ...process.env, ...spec.env, RECIPE_CHILD: "1" };
+  recordSpawn(spec.logDir, { command, argv, cwd: spec.cwd, env });
+  const child = spawn(command, argv, {
     cwd: spec.cwd,
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...spec.env, RECIPE_CHILD: "1" },
+    env,
   });
   // pi attaches an argument starting with "@" as a file, and one argument
   // cannot exceed 128 KiB, so the brief goes in on stdin.
@@ -177,13 +183,14 @@ export async function start(spec) {
   const onLine = (line) => {
     if (line.endsWith("\r")) line = line.slice(0, -1);
     if (line === "") return;
-    events.write(`${line}\n`);
     let event;
     try {
       event = JSON.parse(line);
     } catch {
+      events.write(`${line}\n`);
       return;
     }
+    if (!STREAMING_EVENTS.has(event?.type)) events.write(`${line}\n`);
     onEvent(event);
   };
 

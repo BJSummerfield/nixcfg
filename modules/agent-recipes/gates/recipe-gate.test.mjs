@@ -165,6 +165,32 @@ const gate = (...args) => {
   assert.equal(single.json.paths[0].path, "s.js");
 }
 
+// A File header with a parenthesised suffix still names the file; its ranges apply when no Range line is given.
+{
+  const repo = dir();
+  const body = Array.from({ length: 30 }, (_, i) => `row ${i + 1}`).join("\n");
+  const abs = path.join(repo, "page.md");
+  fs.writeFileSync(abs, body + "\n");
+  const suffixed = (quotes, extra = "") => write("e.md", `File: ${abs} (lines 3-5, 20-22)\n${extra}Source: ${abs}\n\n${quotes}\n`);
+  const good = gate("extract", suffixed("> row 4\n\n> row 21"));
+  assert.equal(good.json.ok, true);
+  assert.equal(good.json.file, abs);
+  assert.deepEqual(good.json.missing, []);
+  const outside = gate("extract", suffixed("> row 10"));
+  assert.equal(outside.json.ok, false);
+  assert.deepEqual(outside.json.missing, ["row 10"]);
+  const ruled = gate("extract", suffixed("> row 10", "Range: 9-11\n"));
+  assert.equal(ruled.json.ok, true);
+  const words = gate("extract", write("e.md", `File: ${abs} lines 3-5\n\n> row 4\n`));
+  assert.equal(words.json.ok, true);
+  const gone = gate("extract", write("e.md", "File: /nonexistent/x.md (lines 1-2)\n\n> x\n"));
+  assert.equal(gone.json.reason, "named file missing");
+  assert.equal(gone.json.file, "/nonexistent/x.md");
+  const spaced = path.join(repo, "my page.md");
+  fs.writeFileSync(spaced, body + "\n");
+  assert.equal(gate("extract", write("e.md", `File: ${spaced}\n\n> row 4\n`)).json.ok, true);
+}
+
 // size: bytes under the directory, recursively; split by the half-window rule.
 {
   const d = dir();
@@ -803,6 +829,25 @@ const gate = (...args) => {
   assert.equal(dirty.json.ok, false);
   fs.rmSync(path.join(good, "notes.txt"));
 
+  // A review worktree under the runner's own worktree root is recorded when the gate is told the root,
+  // and reported as unrecorded when it is not.
+  const root = dir();
+  const rooted = path.join(root, "repo", "r-review-1");
+  const strayed = path.join(root, "repo", "r-review-2");
+  git(repo, "worktree", "add", "-q", "-b", "recipe/r-review-1", rooted, "pi/good");
+  git(repo, "worktree", "add", "-q", "-b", "recipe/r-review-2", strayed, "pi/good");
+  const verdictIn = (cwd, extra) => {
+    const r = spawnSync(process.execPath, [script, "verdict", report("Does what was asked: yes\nSound: yes\n"), "--run", run, "--id", "good"], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
+    return JSON.parse(r.stdout);
+  };
+  const unknown = verdictIn(strayed, {});
+  assert.equal(unknown.recorded, false);
+  assert.ok(!readRun(run).made.some((m) => m.branch === "recipe/r-review-2"));
+  const known = verdictIn(rooted, { RECIPE_WORKTREE_ROOT: root });
+  assert.equal(known.recorded, true);
+  assert.ok(readRun(run).made.some((m) => m.kind === "review" && m.branch === "recipe/r-review-1"));
+  assert.equal(verdictIn(review, {}).recorded, true);
+
   // integrate --tidy clears recorded review and deps worktrees and the base ref, keeping the integration branch.
   const integration = path.join(run, "integration");
   git(repo, "worktree", "add", "-q", "-b", "implement/x", integration, p1.json.base_ref);
@@ -812,10 +857,12 @@ const gate = (...args) => {
   const tidy = gateIn(repo, "integrate", run, "--tasks", "good:pi/good", "--branch", "implement/x", "--tidy", "yes");
   assert.equal(tidy.json.ok, true, tidy.json.reasons.join("; "));
   assert.deepEqual(tidy.json.tidy_problems, []);
-  assert.ok(!fs.existsSync(review) && !fs.existsSync(deps));
+  assert.deepEqual(tidy.json.left_over, []);
+  assert.ok(!fs.existsSync(review) && !fs.existsSync(deps) && !fs.existsSync(rooted));
+  assert.ok(fs.existsSync(strayed), "an unrecorded worktree is not the ledger's to remove");
   const left = git(repo, "branch", "--format=%(refname:short)").split("\n");
   assert.ok(left.includes("implement/x"));
-  assert.ok(!left.includes("pi/review") && !left.includes("pi/deps"));
+  assert.ok(!left.includes("pi/review") && !left.includes("pi/deps") && !left.includes("recipe/r-review-1"));
   assert.ok(left.includes("pi/late"), "set-aside task branches stay");
   assert.ok(fs.existsSync(late));
   assert.equal(spawnSync("git", ["rev-parse", "--verify", "-q", p1.json.base_ref], { cwd: repo }).status, 1);

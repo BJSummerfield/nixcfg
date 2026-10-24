@@ -55,7 +55,6 @@ each must be safe to repeat and must not hold a secret.
 <dir>/split/h<rank>-<n>/           a split: planner.md, plan.md and the tasks of its pieces
 <dir>/piece-<piece id>.md          report of one piece (piece-<piece id>-<n>.md when it was relayed or retried)
 <dir>/review-<rank>-<n>.md         review n of the change
-<dir>/review/h<rank>-<n>/          the reviewer's own worktree
 <dir>/diagnosis-<subject>-<n>.md   a diagnosis
 <dir>/research/h<rank>-r<n>/       the extracts of a research question
 <dir>/receipt.json                 the receipt
