@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { handoffPrompt } from "../handoff.mjs";
 import { claudeArgv, claudeSessionId, start, usesEngine } from "./claude.mjs";
 
 const alive = (pid) => {
@@ -118,6 +119,55 @@ fs.writeFileSync(
 `,
 );
 
+// A first run that reads, writes and then calls a tool far over the budget,
+// and would otherwise sleep for a minute; a resumed run that answers at once.
+// FAKE_MODE picks the shape: `text` makes the big message a plain answer,
+// `nowrite` drops the Write, `commit` swaps it for a git commit, `hang2` keeps
+// the resumed run alive.
+fs.writeFileSync(
+  path.join(fakes, "budget.mjs"),
+  `import { spawn } from "node:child_process";
+import fs from "node:fs";
+const argv = process.argv.slice(2);
+let stdin = "";
+process.stdin.setEncoding("utf8");
+for await (const chunk of process.stdin) stdin += chunk;
+const resumed = argv.includes("--resume");
+const mode = process.env.FAKE_MODE ?? "";
+const lingers = resumed ? mode === "hang2" : mode !== "text";
+const grandchild = lingers ? spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" }) : null;
+fs.writeFileSync(process.env.FAKE_RECORD + (resumed ? ".2" : ".1"), JSON.stringify({ argv, stdin, pid: process.pid, grandchild: grandchild?.pid ?? null }));
+const session_id = argv[argv.indexOf("--session-id") + 1] ?? argv[argv.indexOf("--resume") + 1];
+const line = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+const message = (id, block, usage) => line({
+  type: "assistant", session_id,
+  message: { id, role: "assistant", content: [block], usage: { cache_creation_input_tokens: 0, ...usage } },
+});
+const result = (text) => line({ type: "result", subtype: "success", is_error: false, result: text, stop_reason: "end_turn", session_id });
+if (resumed) {
+  message("msg_h", { type: "text", text: "handoff: x" }, { input_tokens: 5, cache_read_input_tokens: 6000, output_tokens: 50 });
+  if (mode === "hang2") await new Promise(() => {});
+  result("handoff: x");
+  process.exit(0);
+}
+message("msg_a", { type: "tool_use", id: "t1", name: "Read", input: {} }, { input_tokens: 10, cache_read_input_tokens: 900, output_tokens: 90 });
+if (mode === "commit") {
+  message("msg_b", { type: "tool_use", id: "t2", name: "Bash", input: { command: "cd x && git commit -m y" } }, { input_tokens: 5, cache_creation_input_tokens: 500, cache_read_input_tokens: 1900, output_tokens: 95 });
+} else if (mode !== "nowrite" && mode !== "text") {
+  message("msg_b", { type: "tool_use", id: "t2", name: "Write", input: { file_path: "n.md" } }, { input_tokens: 5, cache_creation_input_tokens: 500, cache_read_input_tokens: 1900, output_tokens: 95 });
+}
+const big = { input_tokens: 5, cache_read_input_tokens: 5800, output_tokens: 195 };
+if (mode === "text") {
+  message("msg_c", { type: "text", text: "all finished" }, big);
+  result("all finished");
+  process.exit(0);
+}
+message("msg_c", { type: "thinking", thinking: "hm" }, big);
+message("msg_c", { type: "tool_use", id: "t3", name: "Bash", input: { command: "ls" } }, big);
+await new Promise(() => {});
+`,
+);
+
 const fake = (name) => [process.execPath, path.join(fakes, `${name}.mjs`)];
 
 function specFor(label, overrides = {}) {
@@ -207,7 +257,10 @@ assert.equal(usesEngine, false);
   assert.equal(outcome.stopReason, "end_turn");
   assert.equal(outcome.finalText, "All done twice");
   // msg_1 arrives on two lines with the same usage and counts once
-  assert.deepEqual(outcome.usage, { prompt: 3105, cached: 2100, output: 70, peakContext: 1632, turns: 2, compactions: 1 });
+  assert.deepEqual(outcome.usage, {
+    prompt: 3105, cached: 2100, output: 70, peakContext: 1632, turns: 2, compactions: 1, firstContext: 1632,
+  });
+  assert.equal(outcome.valve, null);
   assert.equal(outcome.sessionFile, null);
   assert.equal(spawned.length, 1);
   assert.equal(spawned[0].pid, record.pid);
@@ -308,6 +361,157 @@ assert.equal(usesEngine, false);
   const missing = await run(specFor("missing", { bin: [path.join(tmp, "no-such-claude")] }));
   assert.equal(missing.status, "failed");
   assert.match(missing.error, /ENOENT/);
+}
+
+// the budget: the first over-budget tool call kills the child, and one narrowed turn on the same session follows
+{
+  const budgetSpec = (label, mode, overrides = {}) => {
+    const spec = specFor(label, {
+      bin: fake("budget"),
+      budget: { tokens: 5000, reserve: 10000, action: "commit" },
+      item: { output: path.join(tmp, label, "notes", "note.md") },
+      ...overrides,
+    });
+    return { ...spec, env: { ...spec.env, FAKE_MODE: mode } };
+  };
+  const records = (spec) => [1, 2].map((n) => {
+    const file = `${spec.record}.${n}`;
+    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+  });
+  const gone = (record) => assert.ok(!alive(record.pid) && !(record.grandchild && alive(record.grandchild)), "a process survived");
+
+  {
+    const spec = budgetSpec("budget-commit", "");
+    const spawned = [];
+    const started = Date.now();
+    const outcome = await run({ ...spec, onSpawn: (info) => spawned.push(info.pid) });
+    const [first, second] = records(spec);
+    const session = claudeSessionId("r1-budget-commit");
+
+    assert.ok(Date.now() - started < 15000, "the first process was not killed");
+    assert.equal(outcome.status, "done");
+    assert.equal(outcome.finalText, "handoff: x");
+    assert.equal(outcome.exitCode, 0);
+    assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "commit", ended: false });
+    assert.deepEqual(outcome.usage, {
+      prompt: 15125, cached: 14600, output: 430, peakContext: 6055, turns: 4, compactions: 0, firstContext: 2500,
+    });
+    assert.equal(spawned.length, 2);
+    assert.deepEqual(spawned, [first.pid, second.pid]);
+    assert.notEqual(spawned[0], spawned[1]);
+    gone(first);
+    gone(second);
+
+    assert.deepEqual(first.argv.slice(-2), ["--session-id", session]);
+    assert.equal(first.stdin, "Do the thing.");
+    assert.deepEqual(second.argv.slice(-2), ["--resume", session]);
+    assert.ok(!second.argv.includes("--session-id"));
+    assert.equal(second.argv[second.argv.indexOf("--tools") + 1], "Write,Edit,Bash");
+    const allowed = second.argv.slice(second.argv.indexOf("--allowedTools") + 1, second.argv.indexOf("--permission-prompts"));
+    assert.deepEqual(allowed, [`Write(/${spec.item.output})`, `Edit(/${spec.item.output})`, "Bash(git *)"]);
+    assert.ok(spec.item.output.startsWith("/") && allowed[0].startsWith("Write(//"));
+    assert.equal(second.stdin, handoffPrompt("commit", { output: spec.item.output, tokens: 6000 }));
+    assert.deepEqual(second.argv.slice(0, 4), first.argv.slice(0, 4));
+    assert.equal(second.argv[second.argv.indexOf("--model") + 1], "sonnet");
+
+    const logged = fs.readFileSync(path.join(spec.logDir, "events.jsonl"), "utf8");
+    assert.match(logged, /msg_h/);
+    assert.match(logged, /msg_c/);
+  }
+
+  // an action other than commit gets no Bash; a relative output resolves against the working directory
+  {
+    const spec = budgetSpec("budget-stop", "", {
+      budget: { tokens: 5000, reserve: 10000, action: "stop" },
+      item: { output: "notes/note.md" },
+    });
+    const outcome = await run(spec);
+    const second = records(spec)[1];
+    const absolute = path.resolve(tmp, "notes/note.md");
+    assert.equal(outcome.valve.action, "stop");
+    assert.equal(second.argv[second.argv.indexOf("--tools") + 1], "Write,Edit");
+    const allowed = second.argv.slice(second.argv.indexOf("--allowedTools") + 1, second.argv.indexOf("--permission-prompts"));
+    assert.deepEqual(allowed, [`Write(/${absolute})`, `Edit(/${absolute})`]);
+    gone(records(spec)[0]);
+    gone(second);
+  }
+
+  // with no output file the reply is the note, so only a commit may touch anything
+  {
+    const spec = budgetSpec("budget-reply", "", { item: {} });
+    await run(spec);
+    const second = records(spec)[1];
+    assert.equal(second.argv[second.argv.indexOf("--tools") + 1], "Bash");
+    assert.deepEqual(
+      second.argv.slice(second.argv.indexOf("--allowedTools") + 1, second.argv.indexOf("--permission-prompts")),
+      ["Bash(git *)"],
+    );
+    const bare = budgetSpec("budget-reply2", "", { item: {}, budget: { tokens: 5000, reserve: 1, action: "stop" } });
+    await run(bare);
+    const none = records(bare)[1];
+    assert.equal(none.argv[none.argv.indexOf("--tools") + 1], "");
+    assert.ok(!none.argv.includes("--allowedTools"));
+  }
+
+  // the context at the first commit stands in when nothing was written with a tool
+  {
+    const spec = budgetSpec("budget-git", "commit");
+    const outcome = await run(spec);
+    assert.equal(outcome.usage.firstContext, 2500);
+    assert.equal(outcome.valve.fired, true);
+  }
+
+  // with nothing written or committed, the first context is the peak
+  {
+    const spec = budgetSpec("budget-nowrite", "nowrite");
+    const outcome = await run(spec);
+    assert.equal(outcome.valve.fired, true);
+    assert.equal(outcome.usage.peakContext, 6055);
+    assert.equal(outcome.usage.firstContext, 6055);
+  }
+
+  // a final answer over the budget is let finish
+  {
+    const spec = budgetSpec("budget-text", "text");
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "done");
+    assert.equal(outcome.finalText, "all finished");
+    assert.equal(outcome.valve, null);
+    assert.equal(second, null);
+    assert.equal(outcome.usage.peakContext, 6000);
+    assert.equal(outcome.usage.firstContext, 6000);
+    gone(first);
+  }
+
+  // no budget never triggers; neither does a zero one
+  for (const [label, budget] of [["budget-null", null], ["budget-zero", { tokens: 0, reserve: 0, action: "stop" }]]) {
+    const spec = budgetSpec(label, "", { budget, timeoutMs: 1500 });
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "timeout");
+    assert.equal(outcome.valve, null);
+    assert.equal(second, null);
+    gone(first);
+  }
+
+  // an abort during the handoff turn still ends as aborted, and kills it
+  {
+    const controller = new AbortController();
+    const spec = budgetSpec("budget-abort", "hang2", { signal: controller.signal });
+    let spawns = 0;
+    const outcome = await run({
+      ...spec,
+      onSpawn: () => {
+        if (++spawns === 2) setTimeout(() => controller.abort(), 300);
+      },
+    });
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "aborted");
+    assert.equal(outcome.valve.fired, true);
+    gone(first);
+    gone(second);
+  }
 }
 
 // the binary can come from RECIPE_CLAUDE_BIN
