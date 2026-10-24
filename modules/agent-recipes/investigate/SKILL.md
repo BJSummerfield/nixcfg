@@ -55,7 +55,8 @@ each must be safe to repeat and must not hold a secret.
 <dir>/review/h<rank>-<n>/          the reviewer's own worktree
 <dir>/diagnosis-<subject>-<n>.md   a diagnosis
 <dir>/research/h<rank>-r<n>/       the extracts of a research question
-<dir>/receipt.md                   the receipt
+<dir>/receipt.json                 the receipt
+<dir>/runner/                      the runner's status.json, board and log
 ```
 
 ## What runs
@@ -128,31 +129,26 @@ each must be safe to repeat and must not hold a secret.
 ## pi binding
 
 One call starts the whole run; nothing else is needed from this session until
-it ends. `async: true` is required: the foreground path removes a clean
-worktree after its child, and the graph resumes the implementer in its
-worktree.
+it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/investigate/workflow.js",
+recipe_run({
+  recipe: "investigate",
   args: {
     dir: "<dir>", goal: "<goal>", repo: "<repo path>",
     reproduce: "<command>", verify: "<command>", check: "<command>", source: "web"
   },
   cwd: "<repo path>",
-  async: true,
-  output: "<dir>/receipt.md",
-  options: { timeoutMs: 14400000, maxSubagentSpawnsPerRun: 60 }
+  timeoutMs: 14400000,
+  maxChildren: 60
 })
 ```
 
-`verify`, `check` and `source` are optional. All paths are absolute. Wait for
-the single completion with `bg_wait`; do not poll, steer or read intermediate
-files. Then read only the receipt, `<dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; the summary names the run's `status.json`, whose
-`workflow.value` holds the whole receipt.
+`verify`, `check` and `source` are optional. All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<dir>/receipt.json`, the whole
+receipt. `recipe-status <dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { base, branch, reproduction: {command, exit, signature, log}, verify, check,
@@ -167,15 +163,6 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
 `review` is the clean review file. `left` holds the worktrees and branches
 still in the repository, and `cleanup` is the command that removes them
 (`recipe-gate abandon <dir> --keep <branch>`), empty when `left` is.
-
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it. Ignore the
-notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
 
 ## Claude Code binding
 
