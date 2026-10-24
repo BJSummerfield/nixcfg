@@ -69,38 +69,24 @@ One call starts the whole run; nothing else is needed from this session until
 it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/research/workflow.js",
+recipe_run({
+  recipe: "research",
   args: { dir: "<task dir>", goal: "<goal>", output: "<output path>", format: "<format>" },
-  async: true,
-  output: "<task dir>/receipt.md",
-  options: { timeoutMs: 5400000, maxSubagentSpawnsPerRun: 120 }
+  timeoutMs: 5400000,
+  maxChildren: 120
 })
 ```
 
-All paths are absolute. Wait for the single completion with `bg_wait`; do not
-poll, steer or read intermediate files. Then read only the receipt,
-`<task dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; a long `open` list is cut short. The summary names
-the run's `status.json`, whose `workflow.value` holds the whole receipt; read
-that when the Return part ends in an ellipsis.
+All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<task dir>/receipt.json`, the whole
+receipt. `recipe-status <task dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <task dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { output, sources: { ok, failed, over_cap }, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...], gap_round, children }
 ```
-
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it; pi-subagents
-silences only successful children and has no option for failed ones. Ignore
-the notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
 
 Read the receipt with the triage skill.
 
