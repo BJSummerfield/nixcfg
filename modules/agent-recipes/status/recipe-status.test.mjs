@@ -73,7 +73,7 @@ const impl = fakeRun(
   assert.equal(j.state, "running");
   assert.equal(j.pid, process.pid);
   assert.equal(j.board.stage, "wave 1, round 2");
-  assert.deepEqual(j.children, { running: ["fix-stage-check-1"], done: 4, failed: ["impl-stage-check"] });
+  assert.deepEqual(j.children, { running: ["fix-stage-check-1"], stopped: [], done: 4, failed: ["impl-stage-check"] });
   assert.deepEqual(j.usage, u(1510, 900, 75, 1500));
 }
 
@@ -107,6 +107,31 @@ const research = fakeRun(
   const gone = fakeRun("gone", status(null, { pid: dead.pid }));
   assert.match(run(gone).out, /^run \d+: stopped \(process gone\), started/m);
   assert.equal(JSON.parse(run(gone, "--json").out).state, "stopped (process gone)");
+}
+
+// After a stop, a child with an end and no settle is stopped; while the run still
+// goes it may be in its gate and counts as running; a restarted one runs again.
+{
+  const dead = spawnSync(process.execPath, ["-e", ""]);
+  const lines = [
+    { type: "start", key: "a", runId: "r-a" },
+    { type: "end", key: "a", runId: "r-a" },
+    { type: "settle", key: "a", result: { ok: true } },
+    { type: "start", key: "b", runId: "r-b" },
+    { type: "end", key: "b", runId: "r-b" },
+    { type: "start", key: "c", runId: "r-c1" },
+    { type: "end", key: "c", runId: "r-c1" },
+    { type: "start", key: "c", runId: "r-c2" },
+  ];
+  const stopped = fakeRun("stopped", status(null, { state: "stopped" }), lines);
+  const j = JSON.parse(run(stopped, "--json").out);
+  assert.deepEqual(j.children, { running: ["c"], stopped: ["b"], done: 1, failed: [] });
+  assert.match(run(stopped).out, /^children: 1 running \(c\), 1 stopped \(b\), 1 settled$/m);
+  const gone = fakeRun("gone2", status(null, { pid: dead.pid }), lines);
+  assert.deepEqual(JSON.parse(run(gone, "--json").out).children.stopped, ["b"]);
+  const going = fakeRun("going", status(null), lines);
+  const g = JSON.parse(run(going, "--json").out).children;
+  assert.deepEqual([g.running, g.stopped], [["b", "c"], []]);
 }
 
 // No board yet, no run at all, and a usage error.

@@ -118,5 +118,17 @@ setTimeout(() => {}, 30000);
   assert.equal(result.timedOut, true);
 }
 
+// the pid is reported once, and a multi-byte character split across chunks survives
+{
+  const pids = [];
+  const result = await runGate(
+    { command: `printf '{"s":"\\303'; sleep 0.2; printf '\\251"}'`, output: "json" },
+    { cwd: dir, onSpawn: ({ pid }) => pids.push(pid) },
+  );
+  assert.equal(pids.length, 1);
+  assert.ok(pids[0] > 0);
+  assert.deepEqual(result.value, { s: "\u00e9" });
+}
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log("gate tests passed");

@@ -40,7 +40,9 @@ const configFile = path.join(tmp, "config.json");
 fs.writeFileSync(
   fakePi,
   `import fs from "node:fs";
-const brief = process.argv[process.argv.length - 1];
+let brief = "";
+process.stdin.setEncoding("utf8");
+for await (const chunk of process.stdin) brief += chunk;
 const output = /exactly this path: (.*)/.exec(brief)?.[1];
 const marker = /SLEEPONCE (\\S+)/.exec(brief)?.[1];
 const delay = Number(/DELAY (\\d+)/.exec(brief)?.[1] ?? 0);
@@ -68,9 +70,13 @@ export default async function tiny(args, port) {
     agent: "worker",
     task: task + " " + args.dir,
     output: path.join(args.dir, key + ".md"),
-    gate: { command: "echo " + key + " >> " + args.gateLog },
+    gate: { command: args.gateCommand ?? "echo " + key + " >> " + args.gateLog },
   });
   const board = (stage) => port.emit({ stage });
+  if (args.kind === "gated") {
+    const r = await port.runOne(node("a", "A"));
+    return { kind: args.kind, a: r.status, gate: r.gate?.exit };
+  }
   if (args.kind === "sleep") {
     board("sleeping");
     const r = await port.runOne(node("a", "SLEEP"));
@@ -308,6 +314,26 @@ try {
     assert.equal(cli(["wait", s.dir]).code, 0);
     assert.equal(fakeStarts(s, "A").length, before, "the settled node was started again");
     assert.deepEqual(readJson(path.join(s.dir, "receipt.json")).replayed, [true, false]);
+  }
+
+  // SIGKILL of the run during a long gate leaves the gate; resume kills it and runs the gate once.
+  {
+    const s = scenario("gated");
+    const pids = path.join(s.dir, "gate-pids");
+    s.args.gateCommand = `echo $$ >> ${pids}; if [ ! -e ${s.args.marker} ]; then touch ${s.args.marker}; sleep 120; fi; echo a >> ${s.args.gateLog}`;
+    const info = json(cli(runArgs("start", s)).stdout);
+    strays.add(info.pid);
+    const gatePid = await until(() => records(s.dir).find((rec) => rec.type === "gate-start")?.pid, "the gate to start");
+    process.kill(info.pid, "SIGKILL");
+    await until(() => !alive(info.pid), "the run to die");
+    assert.ok(alive(gatePid), "the gate should outlive a killed run");
+    const resumed = cli(["resume", s.dir]);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    assert.ok(!alive(gatePid), "the first run's gate survived the resume");
+    assert.equal(gateRuns(s.args.gateLog, "a"), 1);
+    assert.equal(fs.readFileSync(pids, "utf8").trim().split("\n").length, 2);
+    const gateRecords = records(s.dir).filter((rec) => rec.type.startsWith("gate"));
+    assert.deepEqual(gateRecords.map((rec) => rec.type), ["gate-start", "gate-end", "gate-start", "gate-end"]);
   }
 
   // dispatch: one child through the same port.

@@ -18,6 +18,14 @@ function cut(text, cap) {
   return text.length > cap ? `${text.slice(0, cap)}...` : text;
 }
 
+function logTail(file) {
+  try {
+    return fs.readFileSync(file, "utf8").trim().split("\n").slice(-10).join("\n").slice(-1000);
+  } catch {
+    return "";
+  }
+}
+
 function absoluteDir(value, what) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error(`${what} must be an absolute path`);
   return value;
@@ -99,22 +107,35 @@ export default function recipeTools(pi, deps = {}) {
             ...(params.timeoutMs != null ? ["--timeout-ms", String(params.timeoutMs)] : []),
             ...(params.maxChildren != null ? ["--max-children", String(params.maxChildren)] : []),
           ];
-      const fd = openLog(path.join(taskDir, "runner", "runner.log"));
+      const logFile = path.join(taskDir, "runner", "runner.log");
+      const fd = openLog(logFile);
       let child;
       try {
         child = spawn(argv[0], argv.slice(1), { cwd, detached: true, stdio: ["ignore", fd, fd], env });
       } finally {
         fs.closeSync(fd);
       }
-      child.on("error", () => {});
-      child.on("exit", () => {
+      let spawnError = null;
+      child.on("error", (error) => {
+        spawnError = error;
+      });
+      if (child.pid === undefined) {
+        await new Promise((resolve) => setImmediate(resolve));
+        throw new Error(`could not start the run: ${spawnError?.message ?? "spawn failed"}`);
+      }
+      child.on("exit", (code, signal) => {
         const status = readJson(path.join(taskDir, "runner", "status.json"));
+        if (status?.pid !== child.pid) {
+          const state = "exited before starting";
+          const text = `Recipe ${params.recipe}: the run exited before starting: exit ${code ?? signal}. ${logTail(logFile)}`;
+          wake("recipe-run", text, { taskDir, recipe: params.recipe, state, receipt: null });
+          return;
+        }
         const receipt = readJson(path.join(taskDir, "receipt.json"));
-        const state = status?.state ?? "ended without a status";
         const text =
-          `Recipe ${params.recipe} ${state}. Receipt: ${path.join(taskDir, "receipt.json")}` +
+          `Recipe ${params.recipe} ${status.state}. Receipt: ${path.join(taskDir, "receipt.json")}` +
           (receipt ? `\n${cut(JSON.stringify(receipt), RECEIPT_CAP)}` : "");
-        wake("recipe-run", text, { taskDir, recipe: params.recipe, state, receipt });
+        wake("recipe-run", text, { taskDir, recipe: params.recipe, state: status.state, receipt });
       });
       child.unref();
       const details = { taskDir, pid: child.pid };

@@ -12,7 +12,7 @@ const parseJson = (stdout) => {
   }
 };
 
-function runCommand(gate, { cwd, env, signal }) {
+function runCommand(gate, { cwd, env, signal, onSpawn }) {
   const started = Date.now();
   const timeoutMs = gate.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve) => {
@@ -22,6 +22,9 @@ function runCommand(gate, { cwd, env, signal }) {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    if (child.pid) onSpawn?.({ pid: child.pid });
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     let stdout = "";
     let combined = "";
     let timedOut = false;
@@ -129,7 +132,7 @@ async function runCheck(gate, { cwd, item, outcome }) {
   }
 }
 
-export async function runGate(gate, { cwd, env = process.env, item, outcome, signal } = {}) {
+export async function runGate(gate, { cwd, env = process.env, item, outcome, signal, onSpawn } = {}) {
   if (typeof gate.check === "function") return runCheck(gate, { cwd, item, outcome });
-  return runCommand(gate, { cwd, env, signal });
+  return runCommand(gate, { cwd, env, signal, onSpawn });
 }

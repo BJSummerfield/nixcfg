@@ -59,6 +59,8 @@ each must be safe to repeat and must not hold a secret.
 <dir>/runner/                      the runner's status.json, board and log
 ```
 
+The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
+
 ## What runs
 
 1. A scout child carries `recipe-gate pin`, which fixes the base: the

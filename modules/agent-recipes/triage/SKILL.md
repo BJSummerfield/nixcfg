@@ -21,7 +21,8 @@ here. It follows these rules:
 
 ## Reading the receipt
 
-The receipt is `<task dir>/receipt.json`.
+The receipt is `<task dir>/receipt.json`. A run through the Claude Code binding still writes
+`receipt.md` there instead.
 
 `{ output, sources: { ok, failed, over_cap }, healed, decide, open, gap_round, children }`
 

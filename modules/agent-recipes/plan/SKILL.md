@@ -38,6 +38,8 @@ time. It is the plan directory the implement skill reads:
 <dir>/runner/        the runner's status.json, board and log
 ```
 
+The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
+
 A task file opens with a header, one `key: value` per line, then a blank line
 and the body (what to change and why, acceptance):
 

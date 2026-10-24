@@ -22,7 +22,11 @@ setTimeout(() => {
   if (a[0] === "run" || a[0] === "resume") {
     const dir = a[0] === "resume" ? a[1] : JSON.parse(flag("--args")).dir;
     fs.mkdirSync(path.join(dir, "runner"), { recursive: true });
-    fs.writeFileSync(path.join(dir, "runner", "status.json"), JSON.stringify({ state: "complete" }));
+    if (a[0] === "run" && JSON.parse(flag("--args")).die) {
+      console.error("a run is already going in " + dir);
+      process.exit(1);
+    }
+    fs.writeFileSync(path.join(dir, "runner", "status.json"), JSON.stringify({ state: "complete", pid: process.pid }));
     fs.writeFileSync(path.join(dir, "receipt.json"), JSON.stringify({ answer: "x".repeat(3000) }));
   } else if (a[0] === "dispatch") {
     fs.writeFileSync(flag("--result-file"), JSON.stringify({ ok: true, status: "done", output: "o.md", outputExists: true, gate: null, usage: { prompt: 5, cached: 1, output: 2 } }));
@@ -92,6 +96,35 @@ const ctx = { cwd: tmp };
   assert.equal(pi.sent[1].message.customType, "recipe-dispatch");
   assert.equal(pi.sent[1].message.details.result.status, "done");
   assert.equal(pi.sent[1].options.triggerTurn, true);
+}
+
+// a run that exits without writing its own status is not reported with an older run's status
+{
+  const pi = fakePi();
+  recipeTools(pi, { env });
+  const dir = path.join(tmp, "task3");
+  fs.mkdirSync(path.join(dir, "runner"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "runner", "status.json"), JSON.stringify({ state: "running", pid: 1 }));
+  await pi.tools.recipe_run.execute("1", { recipe: "plan", args: { dir, die: true } }, null, null, ctx);
+  await sleep(700);
+  assert.equal(pi.sent.length, 1);
+  const text = pi.sent[0].message.content[0].text;
+  assert.match(text, /the run exited before starting: exit 1/);
+  assert.match(text, /a run is already going/);
+  assert.doesNotMatch(text, /running\./);
+}
+
+// a run that cannot be spawned is an error, not a silent start
+{
+  const pi = fakePi();
+  recipeTools(pi, { env });
+  const dir = path.join(tmp, "task4");
+  await assert.rejects(
+    () => pi.tools.recipe_run.execute("1", { recipe: "plan", args: { dir }, cwd: path.join(tmp, "no-such-dir") }, null, null, ctx),
+    /could not start the run: .*ENOENT/,
+  );
+  await sleep(300);
+  assert.equal(pi.sent.length, 0);
 }
 
 {

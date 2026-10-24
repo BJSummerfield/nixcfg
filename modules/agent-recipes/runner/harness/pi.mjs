@@ -33,9 +33,6 @@ export function piArgv(spec) {
   } else {
     argv.push("--session-dir", spec.sessionDir, "--session-id", spec.sessionId ?? spec.runId);
   }
-  // pi reads a leading "-" as a flag and a leading "@" as a file to attach.
-  if (/^[-@]/.test(spec.brief)) argv.push("--");
-  argv.push(spec.brief);
   return argv;
 }
 
@@ -87,6 +84,10 @@ export async function start(spec) {
 
   if (spec.signal?.aborted) return outcome({ status: "aborted" });
 
+  if (spec.resume && !spec.sessionFile && !findSessionFile(spec.sessionDir, spec.sessionId)) {
+    return outcome({ error: "no session file to resume" });
+  }
+
   fs.mkdirSync(spec.logDir, { recursive: true });
   fs.mkdirSync(path.dirname(spec.transcriptFile), { recursive: true });
   const events = fs.createWriteStream(path.join(spec.logDir, "events.jsonl"), { flags: "a" });
@@ -99,9 +100,13 @@ export async function start(spec) {
   const child = spawn(command, [...prefix, ...piArgv(spec)], {
     cwd: spec.cwd,
     detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...spec.env, RECIPE_CHILD: "1", PI_SUBAGENT_CHILD: "1" },
   });
+  // pi attaches an argument starting with "@" as a file, and one argument
+  // cannot exceed 128 KiB, so the brief goes in on stdin.
+  child.stdin?.on("error", () => {});
+  child.stdin?.end(spec.brief);
 
   let spawnError = null;
   let gone = false;
@@ -239,13 +244,16 @@ export async function start(spec) {
     code !== 0 ||
     lastAssistant === null ||
     stopReason === "error" ||
-    stopReason === "aborted";
+    stopReason === "aborted" ||
+    stopReason === "length";
   if (!failed) return outcome({ ...fields, status: "done" });
 
   const error = spawnError
     ? spawnError.message
-    : lastAssistant?.errorMessage ||
-      stderrTail.trim() ||
-      (code !== 0 ? `exit ${code ?? signal}` : "no assistant message");
+    : stopReason === "length"
+      ? "output limit reached"
+      : lastAssistant?.errorMessage ||
+        stderrTail.trim() ||
+        (code !== 0 ? `exit ${code ?? signal}` : "no assistant message");
   return outcome({ ...fields, status: "failed", error });
 }

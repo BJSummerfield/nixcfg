@@ -47,6 +47,8 @@ to the plan:
 <dir>/runner/               the runner's status.json, board and log
 ```
 
+The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
+
 Task worktrees are managed by the runner under
 `/var/tmp/pi-worktrees/<repository name>/`, one per implementer attempt, and
 that directory is emptied of anything older than 20 days. When the

@@ -363,7 +363,28 @@ export function createPort(opts) {
 
       let gate = null;
       if (item.gate) {
-        gate = await runGate(item.gate, { cwd: childCwd, item, outcome, signal });
+        let gateRecorded = false;
+        try {
+          gate = await runGate(item.gate, {
+            cwd: childCwd,
+            item,
+            outcome,
+            signal,
+            onSpawn: ({ pid }) => {
+              gateRecorded = true;
+              appendJsonl(log, {
+                type: "gate-start",
+                key: item.key,
+                runId,
+                pid,
+                pidStart: procStartTime(pid),
+                at: at(),
+              });
+            },
+          });
+        } finally {
+          if (gateRecorded) appendJsonl(log, { type: "gate-end", key: item.key, runId, at: at() });
+        }
         if (stopped()) return aborted("run stopped during the gate");
       }
 
@@ -426,8 +447,17 @@ export async function killUnfinished(runDir, { stateDir, graceMs } = {}) {
   const log = path.join(runDir, "children.jsonl");
   const records = readRecords(log);
   const ended = new Set(records.filter((r) => r.type === "end").map((r) => r.runId));
+  const gateEnded = new Set(records.filter((r) => r.type === "gate-end").map((r) => r.runId));
   const killed = [];
   for (const rec of records) {
+    if (rec.type === "gate-start" && !gateEnded.has(rec.runId)) {
+      gateEnded.add(rec.runId);
+      if (rec.pid && rec.pidStart && procStartTime(rec.pid) === String(rec.pidStart)) {
+        await killTree(rec.pid, { graceMs });
+      }
+      appendJsonl(log, { type: "gate-end", key: rec.key, runId: rec.runId, at: new Date().toISOString() });
+      continue;
+    }
     if (rec.type !== "start" || ended.has(rec.runId)) continue;
     ended.add(rec.runId);
     if (rec.pid && rec.pidStart && procStartTime(rec.pid) === String(rec.pidStart)) {

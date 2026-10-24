@@ -28,8 +28,11 @@ fs.writeFileSync(
 import path from "node:path";
 const argv = process.argv.slice(2);
 const flag = (name) => argv[argv.indexOf(name) + 1];
+let stdin = "";
+process.stdin.setEncoding("utf8");
+for await (const chunk of process.stdin) stdin += chunk;
 fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({
-  argv, cwd: process.cwd(), pid: process.pid,
+  argv, stdin, cwd: process.cwd(), pid: process.pid,
   env: { RECIPE_CHILD: process.env.RECIPE_CHILD, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, EXTRA: process.env.EXTRA },
 }));
 const dir = flag("--session-dir");
@@ -94,6 +97,12 @@ process.exit(1);
 );
 
 fs.writeFileSync(
+  path.join(fakes, "long.mjs"),
+  `process.stdout.write(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "cut off" }], usage: { input: 5, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 6 }, stopReason: "length" } }) + "\\n");
+`,
+);
+
+fs.writeFileSync(
   path.join(fakes, "silent.mjs"),
   `process.stderr.write("could not load model\\n");
 process.stdout.write(JSON.stringify({ type: "session", id: "x" }) + "\\n");
@@ -141,13 +150,11 @@ const run = (spec) => {
     "--tools", "read,bash",
     "-e", "/ext/a.js", "-e", "/ext/b.js",
     "--session-dir", spec.sessionDir, "--session-id", "r1-argv",
-    "Do the thing.",
   ]);
   const resumed = piArgv({ ...spec, runId: "r2-argv", resume: true, sessionFile: "/s/old_r1-argv.jsonl" });
-  assert.deepEqual(resumed.slice(-3), ["--session", "/s/old_r1-argv.jsonl", "Do the thing."]);
+  assert.deepEqual(resumed.slice(-2), ["--session", "/s/old_r1-argv.jsonl"]);
   assert.ok(!resumed.includes("--session-dir") && !resumed.includes("--session-id"));
-  assert.deepEqual(piArgv({ ...spec, brief: "- list" }).slice(-2), ["--", "- list"]);
-  assert.deepEqual(piArgv({ ...spec, brief: "@notes" }).slice(-2), ["--", "@notes"]);
+  assert.ok(!piArgv(spec).includes(spec.brief));
   assert.ok(!piArgv({ ...spec, role: { prompt: "p" }, model: undefined }).some((a) => ["--tools", "--model", "--thinking"].includes(a)));
 }
 
@@ -166,6 +173,7 @@ const run = (spec) => {
   assert.equal(spawned.length, 1);
   assert.equal(spawned[0].pid, record.pid);
   assert.deepEqual(record.argv, piArgv(spec));
+  assert.equal(record.stdin, "Do the thing.");
   assert.equal(record.cwd, fs.realpathSync(tmp));
   assert.deepEqual(record.env, { RECIPE_CHILD: "1", PI_SUBAGENT_CHILD: "1", EXTRA: "yes" });
   assert.equal(
@@ -201,9 +209,26 @@ const run = (spec) => {
   const again = await run(resumedSpec);
   const resumedRecord = JSON.parse(fs.readFileSync(resumedSpec.record, "utf8"));
   assert.equal(again.status, "done");
-  assert.deepEqual(resumedRecord.argv.slice(-3), ["--session", outcome.sessionFile, "Do the thing."]);
+  assert.deepEqual(resumedRecord.argv.slice(-2), ["--session", outcome.sessionFile]);
+  assert.equal(resumedRecord.stdin, "Do the thing.");
   assert.ok(!resumedRecord.argv.includes("--session-id"));
   assert.equal(again.sessionFile, outcome.sessionFile);
+}
+
+// a brief that starts with "@" or "-", or is far larger than one argument can be, arrives intact
+{
+  for (const [label, brief] of [
+    ["at", "@notes.md is the file\nand more"],
+    ["dash", "--help me"],
+    ["big", `@${"x".repeat(300 * 1024)}\nend`],
+  ]) {
+    const spec = specFor(`brief-${label}`, { brief });
+    const outcome = await run(spec);
+    assert.equal(outcome.status, "done");
+    const record = JSON.parse(fs.readFileSync(spec.record, "utf8"));
+    assert.equal(record.stdin, brief);
+    assert.ok(record.argv.every((a) => a.length < 4096));
+  }
 }
 
 // a deadline kills the whole tree
@@ -245,6 +270,18 @@ const run = (spec) => {
   const silent = await run(specFor("silent", { bin: fake("silent") }));
   assert.equal(silent.status, "failed");
   assert.equal(silent.error, "could not load model");
+
+  const truncated = await run(specFor("long", { bin: fake("long") }));
+  assert.equal(truncated.status, "failed");
+  assert.equal(truncated.stopReason, "length");
+  assert.equal(truncated.error, "output limit reached");
+  assert.equal(truncated.finalText, "cut off");
+
+  const noSession = specFor("nosession", { resume: true, sessionFile: undefined });
+  const lost = await run(noSession);
+  assert.equal(lost.status, "failed");
+  assert.equal(lost.error, "no session file to resume");
+  assert.ok(!fs.existsSync(noSession.logDir));
 
   const missing = await run(specFor("missing", { bin: [path.join(tmp, "no-such-pi")] }));
   assert.equal(missing.status, "failed");

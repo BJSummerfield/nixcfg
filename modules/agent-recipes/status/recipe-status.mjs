@@ -4,9 +4,10 @@
 //
 // The runner keeps its files under <task dir>/runner/: status.json holds the
 // run's state, pid and the board (the graph's last emit), and children.jsonl
-// one `start` and one `settle` line per child. Children still running are the
-// ones with a start and no settle, and failed ones exclude a child whose retry
-// succeeded. A run recorded as running whose process is gone is shown as
+// one `start`, one `end` and one `settle` line per child. Children still
+// running are the ones with a start and no settle; once the run is no longer
+// going, one that has an end but no settle was killed and is shown as stopped.
+// Failed ones exclude a child whose retry succeeded. A run recorded as running whose process is gone is shown as
 // stopped.
 
 import fs from "node:fs";
@@ -36,15 +37,16 @@ function alive(pid) {
   }
 }
 
-function children(dir) {
+function children(dir, live) {
   const started = new Map();
+  const ended = new Set();
   const settled = new Map();
   const usage = { prompt: 0, cached: 0, output: 0, peakContext: 0 };
   let text = "";
   try {
     text = fs.readFileSync(path.join(dir, "runner", "children.jsonl"), "utf8");
   } catch {
-    return { running: [], done: 0, failed: [], usage };
+    return { running: [], stopped: [], done: 0, failed: [], usage };
   }
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
@@ -55,6 +57,7 @@ function children(dir) {
       continue;
     }
     if (r.type === "start") started.set(r.key, r);
+    if (r.type === "end") ended.add(r.runId);
     if (r.type === "settle") settled.set(r.key, r.result || {});
   }
   for (const r of settled.values()) {
@@ -64,10 +67,13 @@ function children(dir) {
     usage.output += u.output || 0;
     usage.peakContext = Math.max(usage.peakContext, u.peakContext || 0);
   }
-  const running = [...started.keys()].filter((k) => !settled.has(k));
+  const unsettled = [...started.keys()].filter((k) => !settled.has(k));
+  const isStopped = (k) => !live && ended.has(started.get(k).runId);
+  const running = unsettled.filter((k) => !isStopped(k));
+  const stopped = unsettled.filter(isStopped);
   const recovered = (k) => settled.has(k + "-retry") && settled.get(k + "-retry").ok !== false;
   const failed = [...settled].filter(([k, r]) => r.ok === false && !recovered(k)).map(([k]) => k);
-  return { running, done: settled.size, failed, usage };
+  return { running, stopped, done: settled.size, failed, usage };
 }
 
 function stateOf(s) {
@@ -105,7 +111,7 @@ function render(dir, s, c, now) {
   } else {
     lines.push("stage: no board yet");
   }
-  lines.push(`children: ${c.running.length} running${c.running.length ? ` (${c.running.join(", ")})` : ""}, ${c.done} settled${c.failed.length ? `, failed: ${c.failed.join(", ")}` : ""}`);
+  lines.push(`children: ${c.running.length} running${c.running.length ? ` (${c.running.join(", ")})` : ""}${c.stopped.length ? `, ${c.stopped.length} stopped (${c.stopped.join(", ")})` : ""}, ${c.done} settled${c.failed.length ? `, failed: ${c.failed.join(", ")}` : ""}`);
   const u = c.usage;
   lines.push(`usage: prompt ${u.prompt}, cached ${u.cached}, output ${u.output}, peak context ${u.peakContext}`);
   return lines.join("\n");
@@ -119,11 +125,11 @@ function main(argv, now) {
   const statusFile = path.join(dir, "runner", "status.json");
   const s = readJson(statusFile);
   if (!s) return { code: 1, text: `recipe-status: no run found for ${dir} (no ${statusFile})` };
-  const c = children(dir);
+  const c = children(dir, stateOf(s) === "running");
   if (json) {
     return {
       code: 0,
-      text: JSON.stringify({ state: stateOf(s), pid: s.pid ?? null, board: s.board || null, children: { running: c.running, done: c.done, failed: c.failed }, usage: c.usage }),
+      text: JSON.stringify({ state: stateOf(s), pid: s.pid ?? null, board: s.board || null, children: { running: c.running, stopped: c.stopped, done: c.done, failed: c.failed }, usage: c.usage }),
     };
   }
   return { code: 0, text: render(dir, s, c, now) };
