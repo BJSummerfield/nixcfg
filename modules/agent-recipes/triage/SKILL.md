@@ -21,6 +21,8 @@ here. It follows these rules:
 
 ## Reading the receipt
 
+The receipt is `<task dir>/receipt.json`.
+
 `{ output, sources: { ok, failed, over_cap }, healed, decide, open, gap_round, children }`
 
 - `output` is null when no source was found, no extract passed its check or
