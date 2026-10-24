@@ -53,6 +53,19 @@ function binOf(spec) {
   return ["claude"];
 }
 
+const PARENT_SESSION_VARS = [
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_PID",
+  "CLAUDE_CODE_MESSAGING_SOCKET",
+  "CLAUDE_CODE_MESSAGING_TOKEN",
+];
+
+function childEnv(spec) {
+  const env = { ...process.env, ...spec.env, RECIPE_CHILD: "1" };
+  for (const name of PARENT_SESSION_VARS) delete env[name];
+  return env;
+}
+
 export async function start(spec) {
   const startedAt = Date.now();
   const usage = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
@@ -80,7 +93,7 @@ export async function start(spec) {
     cwd: spec.cwd,
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...spec.env, RECIPE_CHILD: "1" },
+    env: childEnv(spec),
   });
   // The brief can exceed one argument's size limit, so it goes in on stdin.
   child.stdin?.on("error", () => {});

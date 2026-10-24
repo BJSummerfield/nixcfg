@@ -173,9 +173,12 @@ reads the result.
 recipe-run start investigate --harness claude --cwd <repo path> --args '{"dir":"<dir>","goal":"<goal>","repo":"<repo path>","reproduce":"<command>","verify":"<command>","check":"<command>","source":"web"}' --timeout-ms 14400000 --max-children 60
 ```
 
-All paths are absolute. It returns at once. Then run `recipe-run wait <dir>`
-with Bash in the background; when it exits, read `<dir>/receipt.json`, the
-whole receipt, and report as in the pi binding. `recipe-status <dir>`
+All paths are absolute. It returns at once. Then run `recipe-run wait <dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<dir>/receipt.json`, the
+whole receipt, and report as in the pi binding. `verify`, `check` and `source` are
+optional. `recipe-status <dir>`
 shows progress from any shell. A stopped run continues with `recipe-run resume
 <dir> --detach`.
 

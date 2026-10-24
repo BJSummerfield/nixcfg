@@ -30,7 +30,6 @@ to the plan:
                             branch the run made
 <dir>/abandoned.json        what `recipe-gate abandon` removed
 <dir>/deps/<id>/            worktree where a task's dependencies are merged
-<dir>/wt/<id>/              task worktrees (Claude Code binding)
 <dir>/review/<id>-<n>/      the reviewer's own worktree for review n of a task
 <dir>/resolve-<scope>-<n>.md report of resolver n for a merge (a task id or integration)
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
@@ -218,8 +217,10 @@ reads the result.
 recipe-run start implement --harness claude --cwd <repo path> --args '{"plan":"<plan dir>","repo":"<repo path>"}' --timeout-ms 14400000 --max-children <16 x tasks + 6>
 ```
 
-All paths are absolute. It returns at once. Then run `recipe-run wait <plan dir>`
-with Bash in the background; when it exits, read `<plan dir>/receipt.json`, the
+All paths are absolute. It returns at once. Then run `recipe-run wait <plan dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<plan dir>/receipt.json`, the
 whole receipt, and report as in the pi binding. `recipe-status <plan dir>`
 shows progress from any shell. A stopped run continues with `recipe-run resume
 <plan dir> --detach`.

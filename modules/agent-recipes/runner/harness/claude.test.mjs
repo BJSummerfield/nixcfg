@@ -34,7 +34,9 @@ process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) stdin += chunk;
 fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({
   argv, stdin, cwd: process.cwd(), pid: process.pid,
-  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, EXTRA: process.env.EXTRA },
+  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, EXTRA: process.env.EXTRA,
+    SESSION: process.env.CLAUDE_CODE_SESSION_ID, PID: process.env.CLAUDE_PID,
+    SOCKET: process.env.CLAUDE_CODE_MESSAGING_SOCKET, TOKEN: process.env.CLAUDE_CODE_MESSAGING_TOKEN },
 }));
 const session_id = argv[argv.indexOf("--session-id") + 1] ?? argv[argv.indexOf("--resume") + 1];
 const usage = (fields) => ({
@@ -195,7 +197,9 @@ assert.equal(usesEngine, false);
 {
   const spec = specFor("ok");
   const spawned = [];
+  Object.assign(process.env, { CLAUDE_CODE_SESSION_ID: "parent", CLAUDE_PID: "1", CLAUDE_CODE_MESSAGING_SOCKET: "/x.sock", CLAUDE_CODE_MESSAGING_TOKEN: "t" });
   const outcome = await run({ ...spec, onSpawn: (info) => spawned.push(info) });
+  for (const name of ["CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN"]) delete process.env[name];
   const record = JSON.parse(fs.readFileSync(spec.record, "utf8"));
 
   assert.equal(outcome.status, "done");

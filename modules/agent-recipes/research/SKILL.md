@@ -99,8 +99,10 @@ reads the result.
 recipe-run start research --harness claude --args '{"dir":"<task dir>","goal":"<goal>","output":"<output path>","format":"<format>"}' --timeout-ms 5400000 --max-children 120
 ```
 
-All paths are absolute. It returns at once. Then run `recipe-run wait <task dir>`
-with Bash in the background; when it exits, read `<task dir>/receipt.json`, the
+All paths are absolute. It returns at once. Then run `recipe-run wait <task dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<task dir>/receipt.json`, the
 whole receipt, and report as in the pi binding. `recipe-status <task dir>`
 shows progress from any shell. A stopped run continues with `recipe-run resume
 <task dir> --detach`.
