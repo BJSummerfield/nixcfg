@@ -33,7 +33,7 @@ process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) stdin += chunk;
 fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({
   argv, stdin, cwd: process.cwd(), pid: process.pid,
-  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, EXTRA: process.env.EXTRA },
+  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, EXTRA: process.env.EXTRA },
 }));
 const dir = flag("--session-dir");
 if (dir) {
@@ -175,7 +175,7 @@ const run = (spec) => {
   assert.deepEqual(record.argv, piArgv(spec));
   assert.equal(record.stdin, "Do the thing.");
   assert.equal(record.cwd, fs.realpathSync(tmp));
-  assert.deepEqual(record.env, { RECIPE_CHILD: "1", PI_SUBAGENT_CHILD: "1", EXTRA: "yes" });
+  assert.deepEqual(record.env, { RECIPE_CHILD: "1", EXTRA: "yes" });
   assert.equal(
     outcome.sessionFile,
     path.join(spec.sessionDir, "--work--", "2026-10-24T00-00-00-000Z_r1-ok.jsonl"),

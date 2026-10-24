@@ -101,7 +101,7 @@ export async function start(spec) {
     cwd: spec.cwd,
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...spec.env, RECIPE_CHILD: "1", PI_SUBAGENT_CHILD: "1" },
+    env: { ...process.env, ...spec.env, RECIPE_CHILD: "1" },
   });
   // pi attaches an argument starting with "@" as a file, and one argument
   // cannot exceed 128 KiB, so the brief goes in on stdin.
