@@ -47,8 +47,6 @@ to the plan:
 <dir>/runner/               the runner's status.json, board and log
 ```
 
-The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
-
 Task worktrees are managed by the runner under
 `/var/tmp/pi-worktrees/<repository name>/`, one per implementer attempt, and
 that directory is emptied of anything older than 20 days. When the
@@ -213,83 +211,15 @@ unasked, and do not answer a `decide` question for the user.
 
 ## Claude Code binding
 
-Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
-child API and must be opted into per run, and a headless `claude -p` runner for
-the same script has not been built. So the main session does the script's work
-with the Agent tool, one `subagent_type` per role (`implementer`, `reviewer`;
-their definitions are installed), in the same order and with the same
-`recipe-gate` checks. Turns in the starting session are unavoidable here, and
-nothing stops a helper from being retried more than once; keep to the limits
-below.
+The same graph runs with Claude Code children; this session only starts it and
+reads the result.
 
-1. Run `recipe-gate plan <dir> --repo <repo>` yourself. Refuse a plan that is
-   not ok and report the findings. Run `recipe-gate pin <dir> --repo <repo>`
-   and keep the `base` it prints: it is the `--base` of a task without
-   dependencies. Order the tasks into waves by `depends`. When resuming, also
-   run `recipe-gate resume <dir> --repo <repo> --branch <branch>` and apply
-   the pi rules: a task with a branch and a clean review (or merged) is done
-   and not dispatched; with a branch and any other review, or none, it is
-   dispatched into a worktree made `--onto refs/heads/<its branch>` with the
-   line "Work already on this branch from an earlier run: continue it; do not
-   start over." and the earlier review file; a task whose branch is gone and
-   not merged starts fresh; its dependency merge is made as for a fresh task
-   (a gone, merged dependency is dropped and the merge is `--onto
-   refs/heads/<integration branch>`), and every merge passes
-   `--refresh yes`; number its review files on from the gate's `reviews`; a task in `answers` gets "Decision from the user: <text>". A
-   failing gate is an `open` line and a fresh run. List the three groups in
-   the receipt's `resumed`.
-2. Per task, make its worktree yourself: `recipe-gate merge <dir>/wt/<id>
-   --dir <dir> --branch <branch>-task-<id> --tips <deps> --kind task --id
-   <id>`, where `<deps>` is `id:branch,...` of its dependencies (omit
-   `--tips` for a task without any). For a task with dependencies keep the
-   `head` this merge prints: it is that task's base. A conflict goes to one `implementer`
-   with the resolver brief (the worktree, the conflicted files, the check),
-   then run the merge again. Dispatch one `implementer` per task, several in
-   one message, without isolation, told to work in that worktree, with a
-   brief as in step 3 above (task file, plan, repository, report path,
-   commit and leave nothing uncommitted). The branch already holds the
-   dependencies; the implementer never merges. Ask each to end its report
-   with its branch and worktree path.
-3. In that worktree run `recipe-gate task <report> --check '<check>' --owns
-   '<owns>' --repo <repo> --base <base> --run <dir> --id <id>`, where
-   `<base>` is the pinned base for a task without dependencies and the `head`
-   of its step-2 merge otherwise. A blocked or
-   failed report goes to a diagnosis (step 5 of this list); a red gate goes
-   to a fix round.
-4. For each review make the reviewer's worktree the same way, at a fresh path
-   per round: `recipe-gate merge <dir>/review/<id>-<n> --dir <dir> --branch
-   <branch>-review-<id>-<n> --onto refs/heads/<task branch> --kind review
-   --id <id>`, with no tips. Dispatch a fresh `reviewer` (diff variant)
-   there with the task file, branch, that worktree, diff command (from the
-   same `<base>` as step 3), check and `<dir>/review-<id>-<n>.md`; run
-   `recipe-gate verdict <file> --run <dir> --id <id>` inside that review
-   worktree, never in your own checkout. On needs-work send the findings to the same implementer
-   (SendMessage to its agent id) so it fixes them in its worktree; if that
-   agent cannot be continued, dispatch a new `implementer` without isolation
-   told to work in the existing worktree. At most two fix rounds, then a
-   diagnosis. Retry a helper that fails by itself once.
-5. Where the pi script diagnoses (step 7 of What runs), dispatch a fresh
-   `reviewer` (diagnosis variant) with the task file, the step, what went
-   wrong, the evidence files, the allowed actions and
-   `<dir>/diagnosis-<id>-<n>.md`, read it with `recipe-gate diagnosis <file>
-   --allow <actions>`, and act on it with the same limits. Do not decide in
-   its place: a `decide` goes to the user.
-6. Run the integration merge yourself: `recipe-gate merge <dir>/integration
-   --dir <dir> --branch <branch> --tips id:branch,... --kind integration
-   --id integration`, with the finished branches no other finished task
-   builds on, in the plan's order. A conflict goes to one `implementer`
-   with the resolver brief, and the merge runs again. Then dispatch one
-   `implementer` with the integration brief (heavy checks and `pr.md` in
-   that worktree, no merging), and run `recipe-gate integrate <dir> --tasks
-   id:branch,... --branch <branch> --tidy yes` to confirm and tidy.
-7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
-   dispatched, and report as in the pi binding, with `left` and the
-   `cleanup` command.
+```
+recipe-run start implement --harness claude --cwd <repo path> --args '{"plan":"<plan dir>","repo":"<repo path>"}' --timeout-ms 14400000 --max-children <16 x tasks + 6>
+```
 
-What differs from pi: the main session spends turns on every step and
-re-reads its own conversation after each helper returns; a fix round
-continues a helper through SendMessage rather than a retained run; waves
-cannot be forced to three at a time; there is no spawn cap or timeout
-enforced for you; the worktrees are the ones you made, so the ledger in
-`<dir>/run.json` is filled by the merge gates and by `task` and `verdict`
-with `--run`.
+All paths are absolute. It returns at once. Then run `recipe-run wait <plan dir>`
+with Bash in the background; when it exits, read `<plan dir>/receipt.json`, the
+whole receipt, and report as in the pi binding. `recipe-status <plan dir>`
+shows progress from any shell. A stopped run continues with `recipe-run resume
+<plan dir> --detach`.
