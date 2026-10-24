@@ -1,4 +1,4 @@
-// Ends a subagent run cleanly when it stops converging, in two independent
+// Ends a recipe-runner child cleanly when it stops converging, in two independent
 // ways: a reply cut off by the output limit, or three compactions in a row
 // with no edit or write.
 //
@@ -9,8 +9,8 @@
 // tool calls are exactly what did not converge.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
-// into every session, the interactive one included; this is reached through
-// subagents.defaultSubagentOnlyExtensions alone.
+// into every session, the interactive one included; recipe-runner children
+// load it through roles.json.
 
 const PI_RESERVE_TOKENS = 4096;
 const MIN_RECOVERY_HEADROOM_TOKENS = 2000;

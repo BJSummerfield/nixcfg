@@ -10,8 +10,5 @@
 #
 # If `pi remove` fails, manually rm ~/.pi/agent/npm/node_modules/<name>.
 {
-  # pi-subagents is currently vendored (build-time patched for scene_gen #153);
-  # see modules/pi-coding-agent/home.nix. Its version pin lives in
-  # modules/pi-coding-agent/pi-subagents-patched.nix.
   piPackages = [ "npm:pi-web-access@0.40.0" ];
 }
