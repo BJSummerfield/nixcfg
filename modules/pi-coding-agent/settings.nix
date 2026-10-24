@@ -309,6 +309,19 @@ in
     ) (builtins.attrNames roles)
   );
 
+  runnerModel = qualified llm.provider llm.default;
+
+  runnerRoles = builtins.mapAttrs (name: role: {
+    inherit (role)
+      tools
+      thinking
+      output
+      claude
+      ;
+    prompt = prompt "pi" name;
+    acceptance = role.frontmatter.acceptanceRole or null;
+  }) roles;
+
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
   };
