@@ -286,7 +286,7 @@ function takeHandoff(h, g, info, step) {
     commits: g.commits,
     firstContext: info.firstContext,
     budgetTokens: info.budget ? info.budget.tokens : undefined,
-    remainder: remainderOf(given),
+    remainder: remainderOf(given, g.head),
   });
   if (call.action === "decide") {
     return askPerson(h, step, "the " + (step === "change" ? "change" : "fix round") + " handed off and " + call.reason + "; the work is on " + h.branch, given.note);
@@ -490,7 +490,7 @@ function takePiece(h, result) {
       commits: g.commits,
       firstContext: info.firstContext,
       budgetTokens: info.budget ? info.budget.tokens : undefined,
-      remainder: remainderOf(given),
+      remainder: remainderOf(given, g.head),
     });
     if (call.action !== "relay") {
       return askPerson(h, "piece", "piece " + p.spec.id + " handed off and " + (call.action === "split" ? "would need another split: " : "") + call.reason + "; the work is on " + g.branch, given.note);
@@ -701,7 +701,7 @@ for (let attempt = 1; !found; attempt++) {
   if (g) noteMade("hypothesize" + tag, "hypothesize", g.branch, g.worktree);
   if (r.ok && g && g.ok && list(g.hypotheses).length >= 2) {
     found = list(g.hypotheses).slice(0, 2);
-    hypothesesFile = file;
+    hypothesesFile = r.file || file;
   } else {
     const signal = !r.ok ? "the reviewer failed: " + (r.error || "failed") : g ? "no usable hypotheses: " + g.problem : "the hypotheses gate did not run";
     const d = await diagnose(wholeRun, troubleOf("hypothesize", signal, [r.file], ["retry", "decide"]), dir, diagnosisContext({}), STEPS.hypothesize, childMs);

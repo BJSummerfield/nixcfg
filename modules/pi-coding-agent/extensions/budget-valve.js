@@ -11,9 +11,9 @@
 //
 // A context at the budget (RECIPE_BUDGET_TOKENS) gets one steer asking for a
 // handoff: write the note (and, for an implementer, commit first) and nothing
-// else. Only that is allowed from then on. A child that keeps going is ended,
-// but never before its note and commit are done: it is ended once they are,
-// or after a further reserve of tokens, or after a few more turns.
+// else. Only that is allowed from then on. A child is ended once its note and
+// commit are done, or after a further reserve of tokens, or after a few more
+// turns, whichever comes first.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
 // into every session, the interactive one included; recipe-runner children
@@ -68,9 +68,10 @@ function handoffText(action, output, budget) {
   if (action === "unread") {
     return (
       opening +
-      `Write the partial result you have so far to ${where}, in the format your task asks for, ` +
-      "then add one line `unread: <path>` for each input you have not read in full. " +
-      `${first} Repeat the unread lines in your reply. ` +
+      `Write the partial result you have so far to ${where}, in the format your task asks for, in one write. ` +
+      `${first} Directly under that first line, before the partial result, put one line ` +
+      "`unread: <path>` for each input you have not read in full. " +
+      "Repeat the unread lines in your reply. " +
       "Only writing that file is allowed from now on; anything else is refused."
     );
   }

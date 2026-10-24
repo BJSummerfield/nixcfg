@@ -567,6 +567,33 @@ const reviewClean = (branch) => ({ ok: true, verdict: "clean", branch, worktree:
   assert.match(r3.decide[0].question, /same remainder/);
 }
 
+// The split planner reads the hypotheses file the hypothesize step settled on, which is the merged file after a handoff.
+{
+  const gate = { ...hypotheses, branch: "pi/hyp", worktree: "/wt/hypothesize" };
+  const f = fake({
+    hypothesize: { structuredOutput: gate, handoff: { line: "handoff: cache.js left", unread: ["cache.js"], note: "/t/d/hypotheses.md", empty: false } },
+    "hypothesize-part-1": gate,
+    "hypothesize-merge": gate,
+    "change-1": handedOff("change-1", taskHandoff("pi/h1", "H1"), "wiring left"),
+    "change-1-2": handedOff("change-1-2", taskHandoff("pi/h1b", "H1"), "tests left"),
+    "split-1-1": pieces,
+  });
+  await run(f.runs, args);
+  assert.match(byKey(f)["split-1-1"].task, /Task file: \/t\/d\/hypotheses\.merged\.md$/m);
+}
+
+// Handoffs that ended before their note, on different heads, relay again rather than count as the same remainder.
+{
+  const ended = (key, branch, head) => ({
+    ...handedOff(key, taskHandoff(branch, head), "ended by the context valve before its note", { note: null }),
+    handoff: { line: "handoff: ended by the context valve before its note", unread: [], note: null, empty: true },
+  });
+  const f = fake({ "change-1": ended("change-1", "pi/h1", "H1"), "change-1-2": ended("change-1-2", "pi/h1b", "H2") });
+  const r = await run(f.runs, args);
+  assert.ok(keys(f).includes("change-1-3"));
+  assert.equal(r.decide.length, 0);
+}
+
 // A fix round that hands off is relayed after its verify gate has supplied the head.
 {
   const f = fake({

@@ -511,6 +511,50 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(bare.error, "context budget reached and no handoff was written");
 }
 
+// A reviewer ended by the valve after one write keeps every unread line, even past the first 4 KB of its note.
+{
+  const valve = { fired: true, tokens: 131000, budget: 130000, action: "unread", ended: true };
+  const harness = fakeHarness((spec) => {
+    const body = "- a finding with some detail about the code\n".repeat(150);
+    fs.writeFileSync(spec.item.output, `handoff: reviewed a.mjs; b.mjs and c.mjs left\n\n## Findings\n${body}\nunread: b.mjs\nunread: c.mjs\n`);
+    return { status: "failed", error: "aborted", finalText: "", valve };
+  });
+  const budget = { tokens: 130000, reserve: 40000, action: "unread" };
+  const config = { roles: { reviewer: { prompt: "p", tools: [], thinking: "low", acceptance: null, budget } } };
+  const { port, dir } = setup("valve-unread", { harness, config });
+  const output = path.join(dir, "review.md");
+  const r = await port.runOne(item("review", { agent: "reviewer", output }));
+  assert.ok(fs.statSync(output).size > 4096);
+  assert.equal(r.status, "done");
+  assert.deepEqual(r.handoff, { line: "handoff: reviewed a.mjs; b.mjs and c.mjs left", unread: ["b.mjs", "c.mjs"], note: output, empty: false });
+}
+
+// A valve-ended child without commits that wrote output but no handoff line: stop and unread roles keep the output as a handoff with no unread list; empty output, or a commit role, fails.
+{
+  const valve = (action) => ({ fired: true, tokens: 100500, budget: 100000, action, ended: true });
+  const harness = fakeHarness((spec) => {
+    const text = spec.item.key.startsWith("blank") ? "  \n" : "findings without a first line\n";
+    fs.writeFileSync(spec.item.output, text);
+    return { status: "failed", error: "aborted", finalText: "", valve: valve(spec.roleName === "builder" ? "commit" : "stop") };
+  });
+  const role = (action) => ({ prompt: "p", tools: [], thinking: "low", acceptance: null, budget: { tokens: 100000, reserve: 20000, action } });
+  const config = { roles: { scout: role("stop"), reviewer: role("unread"), builder: role("commit") } };
+  const { port, dir } = setup("valve-unmarked", { harness, config });
+  const out = (name) => path.join(dir, `${name}.md`);
+  for (const agent of ["scout", "reviewer"]) {
+    const r = await port.runOne(item(`kept-${agent}`, { agent, output: out(`kept-${agent}`) }));
+    assert.equal(r.status, "done");
+    assert.deepEqual(r.handoff, { line: "handoff: output written without a handoff line", unread: [], note: out(`kept-${agent}`), empty: false });
+  }
+  const blank = await port.runOne(item("blank", { agent: "scout", output: out("blank") }));
+  assert.equal(blank.status, "failed");
+  assert.equal(blank.error, "context budget reached and no handoff was written");
+  assert.equal(blank.handoff, null);
+  const commit = await port.runOne(item("kept-builder", { agent: "builder", output: out("kept-builder") }));
+  assert.equal(commit.status, "failed");
+  assert.equal(commit.handoff, null);
+}
+
 // A timeout stays a timeout even with a handoff line.
 {
   const harness = fakeHarness(() => ({ status: "timeout", finalText: "handoff: ran out of time" }));

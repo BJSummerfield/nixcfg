@@ -1316,6 +1316,34 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(keys(f).slice(2, 5), [["impl-a"], ["impl-a-2"], ["split-a-1"]]);
 }
 
+// A retry after a relay's successor stopped for a reason of its own starts on the relay branch but is not recorded as a further relay.
+{
+  const f = fake({
+    impl: {
+      "impl-a": handedOff("a"),
+      "impl-a-2": { result: { ok: true, structuredOutput: null } },
+    },
+    diagnose: { "diagnose-a-1": diagnosis("retry", "the check can be run again") },
+  });
+  await run(f.runs, base);
+  const k = byKey(f);
+  assert.equal(k["impl-a-2"].handoffOf, "run-impl-a");
+  assert.ok(k["impl-a-3"], "the retry ran");
+  assert.equal(k["impl-a-3"].baseRef, "refs/heads/pi/a");
+  assert.equal(k["impl-a-3"].handoffOf, undefined);
+  assert.equal(k["impl-a-3"].handoffAs, undefined);
+}
+
+// Two handoffs that ended before their note, on different heads, are two steps of progress, not the same remainder.
+{
+  const ended = (id, head) => handedOff(id, { note: null, line: "ended by the context valve before its note", gate: { head, reason: "report missing", report: null } });
+  const f = fake({ impl: { "impl-a": ended("a", "h1"), "impl-a-2": ended("a-2", "h2") } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f).slice(2, 5), [["impl-a"], ["impl-a-2"], ["impl-a-3"]]);
+  assert.equal(receipt.decide.length, 0);
+}
+
+
 // The same remainder twice is a decision.
 {
   const f = fake({

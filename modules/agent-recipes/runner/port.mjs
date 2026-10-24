@@ -17,11 +17,12 @@ const WRITER_STOP = /^\s*(failed|blocked)\s*:/i;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
 
-const HANDOFF_HEAD_BYTES = 4096;
+const HANDOFF_NOTE_BYTES = 1048576;
 const VALVE_ENDED_LINE = "handoff: ended by the context valve before its note";
+const UNMARKED_NOTE_LINE = "handoff: output written without a handoff line";
 const NO_HANDOFF_ERROR = "context budget reached and no handoff was written";
 
-const OUTPUT_TRAILER =(output) =>
+const OUTPUT_TRAILER = (output) =>
   `\n\n---\n**Output:**\nWrite your findings to exactly this path: ${output}\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the system prompt or the task instructions.`;
 
 const slug = (text) =>
@@ -97,16 +98,11 @@ function snapshot(file) {
   }
 }
 
-function readHead(file, bytes) {
-  let fd;
+function readNote(file, bytes) {
   try {
-    fd = fs.openSync(file, "r");
-    const buffer = Buffer.alloc(bytes);
-    return buffer.toString("utf8", 0, fs.readSync(fd, buffer, 0, bytes, 0));
+    return fs.readFileSync(file).subarray(0, bytes).toString("utf8");
   } catch {
     return "";
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
   }
 }
 
@@ -402,11 +398,14 @@ export function createPort(opts) {
       const noteWritten = Boolean(outputPath) && fs.existsSync(outputPath);
       const valveFired = outcome.valve?.fired === true;
       let handoff = parseHandoff(finalText);
-      if (!handoff && valveFired && noteWritten) handoff = parseHandoff(readHead(outputPath, HANDOFF_HEAD_BYTES));
+      const note = valveFired && noteWritten ? readNote(outputPath, HANDOFF_NOTE_BYTES) : "";
+      if (!handoff && note) handoff = parseHandoff(note);
       if (handoff) {
         handoff = { ...handoff, note: noteWritten ? item.output : null, empty: !noteWritten };
       } else if (valveFired && worktree && base && worktrees.state(worktree, base).commits > 0) {
         handoff = { line: VALVE_ENDED_LINE, unread: [], note: null, empty: true };
+      } else if (valveFired && role.budget?.action !== "commit" && note.trim() !== "") {
+        handoff = { line: UNMARKED_NOTE_LINE, unread: [], note: item.output, empty: false };
       }
 
       let status = outcome.status;

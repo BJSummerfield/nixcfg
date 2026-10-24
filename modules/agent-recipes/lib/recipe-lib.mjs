@@ -204,9 +204,10 @@ export function recipeLib(port) {
     return (result && result.handoff) || null;
   }
 
-  function remainderOf(handoff) {
+  function remainderOf(handoff, head) {
     const line = String((handoff && handoff.line) || "").replace(/^\s*handoff\s*:/i, "");
-    return line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const text = handoff && handoff.empty && head ? line + " " + head : line;
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   }
 
   // A piece shares its parent's `root`, so splits count once per original task.

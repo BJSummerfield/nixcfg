@@ -248,7 +248,7 @@ const commitCall = ["bash", { command: "git add -A && git commit -m x" }];
 // A tool-call turn at the budget fires once per action, with that action's text.
 for (const [action, pattern] of [
   ["commit", /Commit everything you changed with git first[\s\S]*Done, Left and Watch for/],
-  ["unread", /one line `unread: <path>`[\s\S]*Repeat the unread lines/],
+  ["unread", /Directly under that first line, before the partial result[\s\S]*`unread: <path>`[\s\S]*Repeat the unread lines/],
   ["stop", /Write what you have found so far/],
 ]) {
   const { h, turn } = session(action);

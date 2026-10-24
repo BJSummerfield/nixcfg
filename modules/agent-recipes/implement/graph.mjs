@@ -308,9 +308,10 @@ export default async function implement(args, port) {
       worktree: true,
     });
     item.baseRef = t.relayRef || t.baseRef;
-    if (t.relayRef && t.runId) {
-      item.handoffOf = t.runId;
+    if (t.relayRef && t.handoffFrom) {
+      item.handoffOf = t.handoffFrom;
       item.handoffAs = "relay";
+      t.handoffFrom = null;
     }
     return item;
   }
@@ -367,13 +368,14 @@ export default async function implement(args, port) {
       commits: g.commits,
       firstContext: result.usage && result.usage.firstContext,
       budgetTokens: result.budget && result.budget.tokens,
-      remainder: remainderOf(handoff),
+      remainder: remainderOf(handoff, g.head),
     });
     t.relayNote = handoff.note || null;
     if (next.action === "relay") {
       noteMade(t.id, "relay", g.branch || t.branch, g.worktree || t.worktree);
       t.track.relays++;
       t.relayRef = "refs/heads/" + t.branch;
+      t.handoffFrom = t.runId;
       t.relayFindings = step === "fix" ? t.findings : null;
       t.next = "implement";
       return;
@@ -606,6 +608,7 @@ export default async function implement(args, port) {
         track: handoffTrack(),
         head: null,
         relayRef: null,
+        handoffFrom: null,
         relayNote: null,
         relayFindings: null,
         joined: false,

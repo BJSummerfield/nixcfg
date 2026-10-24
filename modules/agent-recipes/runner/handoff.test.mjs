@@ -26,5 +26,6 @@ for (const action of HANDOFF_ACTIONS) {
   assert.match(handoffPrompt(action, { tokens: 5 }), /reply as text/);
   assert.equal(/git/.test(p), action === "commit");
   assert.equal(/unread:/.test(p), action === "unread");
+  assert.equal(/Directly under the first line, before the partial result/.test(p), action === "unread");
 }
 assert.throws(() => handoffPrompt("nope", { output: "x", tokens: 1 }), /unknown/);

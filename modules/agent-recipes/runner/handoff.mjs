@@ -25,7 +25,7 @@ const ACTION_STEPS = {
   commit:
     "Commit everything you have done with git first, then write the note with the sections `Done`, `Left` and `Watch for`.",
   unread:
-    "Write the partial result in the requested format, then add one line `unread: <path>` for each input you have not read in full.",
+    "Write the partial result in the requested format, in one write. Directly under the first line, before the partial result, put one line `unread: <path>` for each input you have not read in full.",
   stop: "Write what you found so far in the requested format.",
 };
 

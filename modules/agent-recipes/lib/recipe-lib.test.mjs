@@ -321,6 +321,10 @@ console.log("recipe library: ok");
   assert.equal(L.handedOff({ handoff: null }), null);
   assert.equal(L.handedOff({}), null);
   assert.equal(L.remainderOf({ line: "handoff: Tests for the parser; wire-up left!" }), "tests for the parser wire up left");
+  const empty = { line: "handoff: ended by the context valve before its note", empty: true };
+  assert.notEqual(L.remainderOf(empty, "aaa111"), L.remainderOf(empty, "bbb222"));
+  assert.equal(L.remainderOf(empty, "aaa111"), L.remainderOf(empty, "AAA111"));
+  assert.equal(L.remainderOf({ line: "handoff: x", empty: false }, "aaa111"), "x");
 
   const info = (over) => Object.assign({ head: "h1", commits: 2, firstContext: 10000, budgetTokens: 100000, remainder: "r1" }, over);
 
