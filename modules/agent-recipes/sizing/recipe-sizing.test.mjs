@@ -55,6 +55,16 @@ for (let i = 0; i < 20; i++) {
 for (let i = 0; i < 5; i++) transcript("scout", [assistant(7000), assistant(1000, 70000)]);
 transcript("scout", [{ recordType: "message", message: { role: "user" } }]);
 
+// Handoff records: one planner run is relayed, another split (three split records
+// count once); a Claude-style run has only an outcome record; coders have 3 runs.
+const outcome = (runId, handoff, budget) => ({ recordType: "outcome", runId, role: "x", peakContext: 1, firstContext: 1, budget, valve: false, handoff });
+const handoffOutcome = (runId, as) => ({ recordType: "handoff-outcome", runId, as, by: "next" });
+transcript("planner", [outcome("p1", true, 5000), handoffOutcome("p1", "relay")]);
+transcript("planner", [outcome("p2", true, 6000), handoffOutcome("p2", "split"), handoffOutcome("p2", "split"), handoffOutcome("p2", "split")]);
+transcript("planner", [outcome("p3", false, null)]);
+transcript("planner", [assistant(7000), outcome("p4", false, 7000)]);
+for (let i = 0; i < 3; i++) transcript("coder", [outcome(`c${i}`, i === 0, 9000)]);
+
 const sizing = (...args) => {
   const r = spawnSync(process.execPath, [script, path.join(tmp, "sessions"), ...args], { encoding: "utf8" });
   return { status: r.status, stderr: r.stderr, json: r.stdout ? JSON.parse(r.stdout) : null };
@@ -84,6 +94,12 @@ const sizing = (...args) => {
   assert.equal(reviewer.cold_per_run, 0.2);
   assert.equal("k_read" in reviewer, false);
   assert.equal("growth_p90" in reviewer, false);
+  assert.deepEqual(r.json.handoffs, {
+    planner: { runs: 4, handoff_rate: 0.5, relay_rate: 0.5, split_rate: 0.5, budget: 7000, low_samples: true },
+    coder: { runs: 3, handoff_rate: 0.33, relay_rate: 0, split_rate: 0, budget: 9000, low_samples: true },
+  });
+  assert.equal("coder" in r.json.roles, false);
+  assert.equal("reviewer" in r.json.handoffs, false);
 }
 
 // With a current file: defaults are replaced, measured values move at most x1.5,

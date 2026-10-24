@@ -195,6 +195,8 @@ const gate = (...args) => {
 // next heading; anything missing is invalid.
 {
   const v = (text) => gate("verdict", write("review.md", text)).json;
+  assert.equal(v("handoff: half done\nDoes what was asked: yes\nSound: yes\n").verdict, "invalid");
+  assert.equal(v("handoff: half done\nDoes what was asked: yes\nSound: yes\n").clean, false);
   assert.deepEqual(v("Does what was asked: yes, as briefed.\nSound: yes, check passed.\n\n## Blocking\n"), {
     asked: "yes",
     sound: "yes",
@@ -554,6 +556,17 @@ const gate = (...args) => {
   assert.deepEqual(merged.json.files, ["a.txt"]);
   assert.equal(merged.json.base, git(wt2, "rev-parse", "HEAD~1"));
 
+  // A handoff report is never passing and runs no check.
+  const wtH = worktree("pi/handoff");
+  commit(wtH, "a.txt", "half\n");
+  const handoff = taskGate(wtH, report("handoff: half done\nthe rest"), "--check", "echo ran");
+  assert.equal(handoff.json.ok, false);
+  assert.deepEqual(handoff.json.report, { status: "handoff", why: "half done" });
+  assert.equal(handoff.json.reason, "report handoff: half done");
+  assert.equal(handoff.json.commits, 1);
+  assert.ok(handoff.json.head);
+  assert.equal(handoff.json.check.exit, null);
+
   // Usage: task needs a check; without --repo there is no base.
   assert.equal(gateIn(wt2, "task", report("done")).status, 2);
   const noRepo = gateIn(wt2, "task", report("done"), "--check", "true");
@@ -881,6 +894,24 @@ const gate = (...args) => {
   assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, review_file: null, merged: false });
   assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, review_file: path.join(run, "review-d.1-1.md"), merged: true });
   assert.equal(r.tasks.dx1.reviews, 4);
+  const hand = "handoff: half done\n" + ok;
+  fs.writeFileSync(path.join(run, "review-h-1.md"), hand);
+  fs.writeFileSync(path.join(run, "review-h-1.merged.md"), bad);
+  fs.writeFileSync(path.join(run, "review-o-1.md"), hand);
+  fs.writeFileSync(path.join(run, "review-o-2.md"), hand);
+  fs.writeFileSync(path.join(run, "review-o-0.md"), bad);
+  fs.writeFileSync(path.join(run, "review-q-3.md"), hand);
+  const withHand = JSON.parse(fs.readFileSync(path.join(run, "run.json"), "utf8"));
+  withHand.made.push({ kind: "task", id: "h", branch: "pi/a", worktree: "/x/h" }, { kind: "task", id: "o", branch: "pi/a", worktree: "/x/o" }, { kind: "task", id: "q", branch: "pi/a", worktree: "/x/q" });
+  fs.writeFileSync(path.join(run, "run.json"), JSON.stringify(withHand));
+  const h = gate("resume", run, "--repo", repo, "--branch", "integ").json.tasks;
+  assert.equal(h.h.review, "needs-work");
+  assert.equal(h.h.review_file, path.join(run, "review-h-1.merged.md"));
+  assert.equal(h.o.review, "needs-work");
+  assert.equal(h.o.reviews, 2);
+  assert.equal(h.q.review, null);
+  assert.equal(h.q.reviews, 3);
+  assert.equal(h.q.review_file, null);
   assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
   assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
 }
