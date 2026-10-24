@@ -5,7 +5,7 @@ const SYNTH_TOKENS = 70000;
 
 const dir = args.dir;
 const goal = args.goal;
-const output = args.output;
+const output = args.output || dir + "/summary.md";
 const format =
   args.format || "a markdown document whose first section answers the goal, every claim carrying a URL and a quotation or location";
 const maxSources = Math.min(args.maxSources || MAX_SOURCES, MAX_SOURCES);
@@ -168,16 +168,15 @@ function synthesize(files, split, tag, out) {
   }
   const partials = [];
   const groups = groupFiles(files, split);
-  let chain = Promise.resolve();
-  groups.forEach(function (group, g) {
-    chain = chain.then(function () {
+  const steps = groups.map(function (group, g) {
+    return function () {
       return launch([synthItem("synthesis-" + g + tag, group, dir + "/synthesis-" + g + tag + ".md", "partial")]).then(function (r) {
         if (r[0].ok) partials.push(r[0].file);
         else open.push("partial synthesis " + g + tag + " failed");
       });
-    });
+    };
   });
-  return chain.then(function () {
+  return inTurn(steps).then(function () {
     if (partials.length === 0) return null;
     return launch([synthItem("synthesis-combine" + tag, partials, out, "combine")]).then(function (r) {
       return r[0].ok ? r[0].file : null;

@@ -1,11 +1,13 @@
 /**
  * Dry run of the plan graph on the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (child order, briefs,
- * gate commands, revisions, research, review, retry, receipt); pi-subagents' semantics
- * are not exercised, and the gate results are the fake's, not a real plan.
+ * gate commands, revisions, research, review, retry, receipt); the gate results
+ * are the fake's, not a real plan. One scenario runs again in pi-subagents' own
+ * sandbox.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { hostRun } from "../lib/host-run.mjs";
 
 const source =
   fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
@@ -110,6 +112,7 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(k.review.task, /located/);
   assert.deepEqual(receipt.open, []);
   assertUniqueOutputs(f);
+  assert.deepEqual(await hostRun(source, fake().runs, { ...base, locate: "Where is X?" }), JSON.parse(JSON.stringify(receipt)));
 }
 
 // A locator that fails leaves one open line and the scout runs as before.

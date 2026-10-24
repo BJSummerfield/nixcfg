@@ -2,11 +2,12 @@
  * Dry run of the implement graph with the shared library against a fake `runs`. Run by
  * `nix flake check`. It proves the script's own logic (waves, briefs, gate
  * commands, review and fix rounds, set-aside and skipped tasks, retry,
- * integration, receipt); pi-subagents' semantics and the gates are not
- * exercised, and the gate results are the fake's.
+ * integration, receipt); the gates are not exercised, and the gate results
+ * are the fake's. One scenario runs again in pi-subagents' own sandbox.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { hostRun } from "../lib/host-run.mjs";
 
 const source =
   fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
@@ -160,7 +161,7 @@ function assertUniqueOutputs(f) {
 // depends on c and is skipped.
 {
   const plan = planOf([spec("a"), spec("b", [], "which flag order?"), spec("c"), spec("d", ["a", "b"]), spec("e", ["c"])]);
-  const f = fake({
+  const answers = {
     plan,
     review: {
       "review-b-1": needsWork,
@@ -168,8 +169,10 @@ function assertUniqueOutputs(f) {
       "review-c-2": needsWork,
       "review-c-3": needsWork,
     },
-  });
+  };
+  const f = fake(answers);
   const receipt = await run(f.runs, base);
+  assert.deepEqual(await hostRun(source, fake(answers).runs, base), JSON.parse(JSON.stringify(receipt)));
   assert.deepEqual(keys(f), [
     ["intake"],
     ["pin"],

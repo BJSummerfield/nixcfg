@@ -297,10 +297,12 @@ evalAll "nixos" inputs.self.nixosConfigurations
     pkgs.runCommand "pi-recipe-implement"
       {
         nativeBuildInputs = [ pkgs.nodejs ];
+        PI_SUBAGENTS = piSubagents;
       }
       ''
         mkdir lib implement
         cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
         cp ${../modules/agent-recipes/implement/graph.js} implement/graph.js
         cp ${../modules/agent-recipes/implement/graph.test.mjs} implement/graph.test.mjs
         node implement/graph.test.mjs
@@ -310,10 +312,12 @@ evalAll "nixos" inputs.self.nixosConfigurations
     pkgs.runCommand "pi-recipe-plan"
       {
         nativeBuildInputs = [ pkgs.nodejs ];
+        PI_SUBAGENTS = piSubagents;
       }
       ''
         mkdir lib plan
         cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
         cp ${../modules/agent-recipes/plan/graph.js} plan/graph.js
         cp ${../modules/agent-recipes/plan/graph.test.mjs} plan/graph.test.mjs
         node plan/graph.test.mjs
@@ -323,10 +327,12 @@ evalAll "nixos" inputs.self.nixosConfigurations
     pkgs.runCommand "pi-recipe-research"
       {
         nativeBuildInputs = [ pkgs.nodejs ];
+        PI_SUBAGENTS = piSubagents;
       }
       ''
         mkdir lib research
         cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
         cp ${../modules/agent-recipes/research/graph.js} research/graph.js
         cp ${../modules/agent-recipes/research/graph.test.mjs} research/graph.test.mjs
         node research/graph.test.mjs
@@ -336,10 +342,12 @@ evalAll "nixos" inputs.self.nixosConfigurations
     pkgs.runCommand "pi-recipe-investigate"
       {
         nativeBuildInputs = [ pkgs.nodejs ];
+        PI_SUBAGENTS = piSubagents;
       }
       ''
         mkdir lib investigate
         cp ${../modules/agent-recipes/lib/recipe-lib.js} lib/recipe-lib.js
+        cp ${../modules/agent-recipes/lib/host-run.mjs} lib/host-run.mjs
         cp ${../modules/agent-recipes/investigate/graph.js} investigate/graph.js
         cp ${../modules/agent-recipes/investigate/graph.test.mjs} investigate/graph.test.mjs
         node investigate/graph.test.mjs

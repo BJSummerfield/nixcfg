@@ -2,11 +2,12 @@
  * Dry run of the investigate graph with the shared library against a fake
  * `runs`. Run by `nix flake check`. It proves the script's own logic (pin,
  * reproduction, hypotheses, change and fix rounds, stuck detection, research,
- * the round cap, the receipt); pi-subagents' semantics and the gates are not
- * exercised, and the gate results are the fake's.
+ * the round cap, the receipt); the gates are not exercised, and the gate
+ * results are the fake's. One scenario runs again in pi-subagents' own sandbox.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { hostRun } from "../lib/host-run.mjs";
 
 const source =
   fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
@@ -102,6 +103,7 @@ function assertSound(f) {
 {
   const f = fake();
   const r = await run(f.runs, args);
+  assert.deepEqual(await hostRun(source, fake().runs, args), JSON.parse(JSON.stringify(r)));
   assert.deepEqual(keys(f), ["pin", "reproduce", "hypothesize", "change-1", "review-1-1"]);
   const k = byKey(f);
   assert.equal(k.pin.gate.command, "recipe-gate pin '/t/d' --repo '/r'");

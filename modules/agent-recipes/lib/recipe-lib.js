@@ -142,6 +142,16 @@ function launchBig(item) {
   });
 }
 
+// Runs each step after the previous one settles. The chain starts at the
+// first step's own promise: pi-subagents only counts a launch as awaited when
+// the promise the script awaits grows from a launch, so a chain rooted at
+// Promise.resolve() fails the run once the script has awaited anything.
+function inTurn(steps) {
+  return steps.reduce(function (chain, step) {
+    return chain ? chain.then(step) : step();
+  }, null) || Promise.resolve();
+}
+
 // Small items run together first; big items then run one after another, so a
 // big node never shares the engine with another big one. Results keep the
 // caller's order.
@@ -153,20 +163,25 @@ function launch(items, runFirst) {
     if (!item.big) slots.push(i);
   });
   const results = new Array(items.length);
-  let chain = (small.length ? launchSmall(small, runFirst) : Promise.resolve([])).then(function (done) {
-    done.forEach(function (result, j) {
-      results[slots[j]] = result;
+  const steps = [];
+  if (small.length) {
+    steps.push(function () {
+      return launchSmall(small, runFirst).then(function (done) {
+        done.forEach(function (result, j) {
+          results[slots[j]] = result;
+        });
+      });
     });
-  });
+  }
   items.forEach(function (item, i) {
     if (!item.big) return;
-    chain = chain.then(function () {
+    steps.push(function () {
       return launchBig(item).then(function (result) {
         results[i] = result;
       });
     });
   });
-  return chain.then(function () {
+  return inTurn(steps).then(function () {
     return results;
   });
 }
