@@ -35,6 +35,9 @@ to the plan:
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
                             a replanned attempt n is impl-<id>-<n>.md
 <dir>/review-<id>-<n>.md    review n of the task
+<dir>/split/<id>-<n>/       the planner's plan for split n of a task, and join/, the
+                            worktree where its pieces are merged
+<dir>/join-<id>-<n>.md      the check that joined the pieces of split n
 <dir>/fix-<id>-<n>.md       report of fix round n
 <dir>/diagnosis-<id>-<n>.md diagnosis n of the task (or of the integration)
 <dir>/integration.md        report of the integration step (integration-2.md
@@ -103,6 +106,25 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    task's base, the files changed outside `owns`, whether anything is
    uncommitted and the result of the task's check run once more. A report
    that says `blocked` or `failed` goes to a diagnosis (step 7).
+   An implementer that reaches its context budget stops with a note whose
+   first line is `handoff:`, after committing what it did. The script
+   relays it: a fresh implementer starts on the first one's branch and is
+   told to continue from the note and not to redo the committed work (the
+   brief has no note line when the child was cut off before writing one).
+   Relays go on while each one commits something new and loads its context
+   cheaply. A task is split instead when it has been relayed twice, when a
+   relay committed nothing, or when a relay spent over half its budget just
+   loading context. A planner child, checked by the plan check, writes two
+   or more independent pieces that start from the branch and are each
+   smaller than the task. The pieces are tasks of the same wave: they run
+   with the others, each in its own worktree, and are not reviewed on their
+   own. When all are done, `recipe-gate merge` joins them onto the task's
+   branch and one reviewer reads the whole diff from the task's base. A task
+   is split at most twice, counting its pieces. A task goes to the user
+   instead, as a question, when the same remainder comes back, when a piece
+   hands off with nothing committed, when the pieces are not smaller than the
+   task, when a piece cannot be joined, or when a third split would be
+   needed. Only the task, not its pieces, is integrated in step 5.
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
    branch, a new one for every review round (`<dir>/review/<id>-<n>`), reads
    the branch's own diff, runs the check there and never touches the
@@ -111,7 +133,11 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    red, the same implementer is resumed in the same worktree with the
    findings and fixes them in new commits; then a fresh review. At most two
    fix rounds; a task still not clean goes to a diagnosis. Other tasks go
-   on.
+   on. A fix round that hands off is checked by the task check once for its
+   head, then relayed from the branch with the findings. A needs-work verdict
+   on the joined pieces of a split task starts a fresh implementer on the
+   joined branch, with the findings, since no session can be resumed there;
+   it counts as a fix round.
 5. The finished branches that no other finished task builds on are merged by
    `recipe-gate merge` into the integration worktree `<dir>/integration`,
    branch `implement/<name of the plan directory>`, made from the base ref;
@@ -144,7 +170,11 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    dependencies owns them) or `decide`. Each task gets at most two
    diagnoses, and the same diagnosis twice counts as `decide`. A `decide`
    sets the task aside and goes in the receipt as a question for the user;
-   tasks that depend on it are skipped.
+   tasks that depend on it are skipped. Relay, split, piece and join steps
+   are bounded by the limits in step 3 and do not count as review or fix
+   rounds; a wave that splits a task gets four more rounds. A resolver that
+   hands off is not relayed: the merge check that follows it still sees the
+   conflict, and the limit of three resolvers ends it.
 8. After every round the script emits a board (each task's state, next step,
    fix rounds and diagnoses, what healed, what needs a decision);
    `recipe-status <plan dir>` prints it with the children still running,
@@ -187,10 +217,15 @@ run continues with the same call plus `resume: true`.
 { base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
   resumed: {done: [ids], continued: [ids], answered: [ids]},
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
+  handoffs: [{id, relays, splits, pieces: [ids]}],
   heavy_check, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
+`handoffs` is present only when a task was relayed or split. The pieces of a
+split task are listed under it in `report`, indented, and are not in `merged`;
+the branches of the implementers that were relayed are in `left` with kind
+`relay`.
 `base` is the commit every task started from. `left` holds the worktrees and
 branches still in the repository, and `cleanup` is the command that removes
 them (`recipe-gate abandon <plan dir>`, keeping the integration branch once
