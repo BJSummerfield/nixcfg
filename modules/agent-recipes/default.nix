@@ -114,6 +114,11 @@ let
       }
     ) resolvedRoles
   );
+
+  claudeModelAssertions = lib.mapAttrsToList (name: _: {
+    assertion = defaults.roles ? name;
+    message = "agent-recipes: claude.models.${name} names a role that is not in the role table";
+  }) cfg.claude.models;
 in
 {
   options.mine.user.agent-recipes = {
@@ -145,7 +150,7 @@ in
       description = "Per-role override of claude.model in the default role table";
     };
     roles = mkOption {
-      type = types.attrs;
+      type = types.attrsOf types.anything;
       default = { };
       description = "Per-role overrides merged over the default role table";
     };
@@ -180,7 +185,7 @@ in
   config = mkIf cfg.enable {
     home.packages = [ tools ];
 
-    assertions = roleAssertions;
+    assertions = roleAssertions ++ claudeModelAssertions;
 
     mine.user.agent-recipes.resolved = {
       roles = resolvedRoles;
