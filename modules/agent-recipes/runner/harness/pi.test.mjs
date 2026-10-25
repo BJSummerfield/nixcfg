@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { handoffPrompt } from "../handoff.mjs";
 import { LOOP_REPEATS, piArgv, start } from "./pi.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,18 +118,135 @@ const stubTail = `for (const line of lines) process.stdout.write(JSON.stringify(
 `;
 
 fs.writeFileSync(
-  path.join(fakes, "valve.mjs"),
-  stubHead + `const entry = (data) => ({ type: "entry_appended", entry: { customType: "budget-valve", data } });
+  path.join(fakes, "budget.mjs"),
+  `import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+const argv = process.argv.slice(2);
+const flag = (name) => argv[argv.indexOf(name) + 1];
+let stdin = "";
+process.stdin.setEncoding("utf8");
+for await (const chunk of process.stdin) stdin += chunk;
+const resumed = argv.includes("--session");
+const lingers = !resumed || process.env.FAKE_MODE !== "loops";
+const grandchild = lingers
+  ? spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" })
+  : null;
+fs.writeFileSync(process.env.FAKE_RECORD + (resumed ? ".2" : ".1"), JSON.stringify({
+  argv, stdin, pid: process.pid, grandchild: grandchild?.pid,
+  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, EXTRA: process.env.EXTRA, RECIPE_HANDOFF_GUARD: process.env.RECIPE_HANDOFF_GUARD },
+}));
+const dir = flag("--session-dir");
+if (dir) {
+  const folder = path.join(dir, "--work--");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "2026-10-24T00-00-00-000Z_" + flag("--session-id") + ".jsonl"), "");
+}
+const usage = (fields) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, ...fields });
+const assistant = (content, u, stopReason = "toolUse") => ({ type: "message_end", message: { role: "assistant", content, usage: u, stopReason } });
+const result = (id, name, isError = false) => ({
+  type: "message_end",
+  message: { role: "toolResult", toolCallId: id, toolName: name, content: [{ type: "text", text: isError ? "refused" : "ok" }], isError },
+});
+const turnEnd = (message, results) => ({ type: "turn_end", message, toolResults: results.map((r) => r.message) });
+const lines = [];
+if (!resumed) {
+  const t1 = assistant(
+    [{ type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } }],
+    usage({ input: 10, output: 90, cacheRead: 900, totalTokens: 1000 }),
+  );
+  const r1 = result("c1", "bash");
+  const t2 = assistant(
+    [{ type: "toolCall", id: "c2", name: "bash", arguments: { command: "pwd" } }],
+    usage({ input: 5, output: 195, cacheRead: 5800, totalTokens: 6000 }),
+  );
+  const r2 = result("c2", "bash");
+  lines.push(
+    { type: "session", version: 3, id: "x", cwd: process.cwd() },
+    { type: "message_end", message: { role: "user", content: "go" } },
+    t1, r1, turnEnd(t1.message, [r1]),
+    t2, r2, turnEnd(t2.message, [r2]),
+  );
+} else if (process.env.FAKE_MODE === "") {
+  const output = process.env.RECIPE_OUTPUT;
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, "handoff: wrote the note and committed\\n");
+  const a = assistant(
+    [
+      { type: "toolCall", id: "w1", name: "write", arguments: { path: output } },
+      { type: "toolCall", id: "b1", name: "bash", arguments: { command: "git commit -m handoff" } },
+    ],
+    usage({ input: 100, output: 200, cacheRead: 5900, totalTokens: 6200 }),
+  );
+  const rw = result("w1", "write");
+  const rb = result("b1", "bash");
+  lines.push(a, rw, rb, turnEnd(a.message, [rw, rb]));
+} else if (process.env.FAKE_MODE === "loops") {
+  for (let i = 0; i < 4; i++) {
+    const a = assistant(
+      [{ type: "toolCall", id: "h" + i, name: "bash", arguments: { command: "ls" } }],
+      usage({ input: 1100 + i, totalTokens: 1100 + i }),
+    );
+    const r = result("h" + i, "bash", true);
+    lines.push(a, r, turnEnd(a.message, [r]));
+  }
+  lines.push(
+    assistant([{ type: "text", text: "bye" }], usage({ input: 1200, totalTokens: 1200 }), "stop"),
+    { type: "agent_settled", aborted: false },
+  );
+}
+for (const line of lines) process.stdout.write(JSON.stringify(line) + "\\n");
+if (lingers) setTimeout(() => {}, 60000);
+`,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "thrash.mjs"),
+  `import fs from "node:fs";
+import path from "node:path";
+const argv = process.argv.slice(2);
+const flag = (name) => argv[argv.indexOf(name) + 1];
+let stdin = "";
+process.stdin.setEncoding("utf8");
+for await (const chunk of process.stdin) stdin += chunk;
+fs.writeFileSync(process.env.FAKE_RECORD + ".1", JSON.stringify({
+  argv, stdin, pid: process.pid,
+  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, EXTRA: process.env.EXTRA, RECIPE_HANDOFF_GUARD: process.env.RECIPE_HANDOFF_GUARD },
+}));
+const dir = flag("--session-dir");
+if (dir) {
+  const folder = path.join(dir, "--work--");
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, "2026-10-24T00-00-00-000Z_" + flag("--session-id") + ".jsonl"), "");
+}
+const usage = (fields) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, ...fields });
+const assistant = (content, u, stopReason = "toolUse") => ({ type: "message_end", message: { role: "assistant", content, usage: u, stopReason } });
+const result = (id, name) => ({
+  type: "message_end",
+  message: { role: "toolResult", toolCallId: id, toolName: name, content: [{ type: "text", text: "ok" }], isError: false },
+});
+const turnEnd = (message, results) => ({ type: "turn_end", message, toolResults: results.map((r) => r.message) });
+const t1 = assistant(
+  [{ type: "toolCall", id: "r1", name: "read", arguments: {} }],
+  usage({ input: 100, output: 900, totalTokens: 1000 }),
+);
+const r1 = result("r1", "read");
+const t2 = assistant(
+  [{ type: "toolCall", id: "r2", name: "read", arguments: {} }],
+  usage({ input: 100, output: 900, cacheRead: 5000, totalTokens: 6000 }),
+);
+const r2 = result("r2", "read");
 const lines = [
-  assistant([call("read")], 9000),
-  assistant([call("write")], 31000),
-  assistant([call("write")], 40000),
-  { type: "entry_appended", entry: { customType: "other", data: { kind: "handoff" } } },
-  entry({ kind: "handoff", role: "worker", action: "commit and write a note", budget: 30000, reserve: 5000, tokens: 40000 }),
-  entry({ kind: "ended", role: "worker" }),
-  assistant([{ type: "text", text: "bye" }], 41000, "stop"),
+  { type: "session", version: 3, id: "x", cwd: process.cwd() },
+  { type: "message_end", message: { role: "user", content: "go" } },
+  t1, r1, turnEnd(t1.message, [r1]),
+  { type: "message_end", message: { role: "custom", customType: "budget-valve-thrash", content: [{ type: "text", text: "not converging" }], display: true } },
+  t2, r2, turnEnd(t2.message, [r2]),
+  assistant([{ type: "text", text: "FAILED: compaction thrash" }], usage({ input: 1, totalTokens: 1 }), "stop"),
+  { type: "agent_settled", aborted: false },
 ];
-` + stubTail,
+for (const line of lines) process.stdout.write(JSON.stringify(line) + "\\n");
+`,
 );
 
 fs.writeFileSync(
@@ -266,20 +384,6 @@ setTimeout(() => {}, 60000);
 `,
 );
 
-fs.writeFileSync(
-  path.join(fakes, "loop-after-valve.mjs"),
-  stubHead + `const entry = (data) => ({ type: "entry_appended", entry: { customType: "budget-valve", data } });
-const lines = [
-  entry({ kind: "handoff", role: "worker", action: "commit and write a note", budget: 30000, tokens: 40000 }),
-  ...[0, 1, 2, 3].flatMap(() => [
-    assistant([call("bash", { command: "ls" })], 100),
-    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "refused" }], isError: true } },
-  ]),
-  assistant([{ type: "text", text: "bye" }], 100, "stop"),
-];
-` + stubTail,
-);
-
 const fake = (name) => [process.execPath, path.join(fakes, `${name}.mjs`)];
 
 function specFor(label, overrides = {}) {
@@ -308,6 +412,24 @@ function specFor(label, overrides = {}) {
 const run = (spec) => {
   fs.mkdirSync(path.dirname(spec.record), { recursive: true });
   return start({ ...spec, env: { ...spec.env, FAKE_RECORD: spec.record } });
+};
+
+const budgetSpec = (label, mode, overrides = {}) => {
+  const spec = specFor(label, {
+    bin: fake("budget"),
+    budget: { tokens: 5000, reserve: 10000, action: "commit" },
+    item: { output: path.join(tmp, label, "notes", "note.md") },
+    ...overrides,
+  });
+  return { ...spec, env: { ...spec.env, FAKE_MODE: mode, ...(spec.item?.output ? { RECIPE_OUTPUT: spec.item.output } : {}) } };
+};
+const records = (spec) => [1, 2].map((n) => {
+  const file = `${spec.record}.${n}`;
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+});
+const gone = (record) => {
+  if (!record) return;
+  assert.ok(!alive(record.pid) && !(record.grandchild && alive(record.grandchild)), "a process survived");
 };
 
 // argv forms
@@ -422,19 +544,98 @@ const run = (spec) => {
   assert.ok(!JSON.stringify(lines[0]).includes(spec.brief));
 }
 
-// the valve's entries, and the context at the first write
+// a budget hit at a tool-call turn hands off, and the handoff ends with the note and the commit
 {
-  const spec = specFor("valve", { bin: fake("valve") });
-  const outcome = await run(spec);
-  assert.equal(outcome.status, "done");
-  assert.deepEqual(outcome.valve, { fired: true, tokens: 40000, budget: 30000, action: "commit and write a note", ended: true });
-  assert.equal(outcome.usage.firstContext, 31000);
-  assert.equal(outcome.usage.peakContext, 41000);
+  const spec = budgetSpec("budget-commit", "");
+  const spawned = [];
+  const started = Date.now();
+  const outcome = await run({ ...spec, onSpawn: (info) => spawned.push(info.pid) });
+  assert.ok(Date.now() - started < 15000);
+  const [first, second] = records(spec);
+  const session = path.join(spec.sessionDir, "--work--", "2026-10-24T00-00-00-000Z_r1-budget-commit.jsonl");
+  assert.equal(outcome.status, "budget");
+  assert.equal(outcome.finalText, "");
+  assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "commit", ended: true });
+  assert.deepEqual(outcome.usage, { prompt: 12715, cached: 12600, output: 485, peakContext: 6200, firstContext: 6200, turns: 3, compactions: 0 });
+  assert.equal(outcome.sessionFile, session);
+  assert.deepEqual(spawned, [first.pid, second.pid]);
+  gone(first);
+  gone(second);
+  assert.deepEqual(first.argv.slice(-4), ["--session-dir", spec.sessionDir, "--session-id", "r1-budget-commit"]);
+  assert.equal(first.stdin, "Do the thing.");
+  assert.deepEqual(first.env, { RECIPE_CHILD: "1", EXTRA: "yes" });
+  assert.deepEqual(second.argv.slice(-2), ["--session", session]);
+  assert.deepEqual(second.argv.slice(0, -2), first.argv.slice(0, -4));
+  assert.ok(!second.argv.includes("--session-dir") && !second.argv.includes("--session-id"));
+  assert.equal(second.env.RECIPE_HANDOFF_GUARD, "1");
+  assert.equal(second.stdin, handoffPrompt("commit", { output: spec.item.output, tokens: 6000 }));
+  assert.ok(fs.readFileSync(spec.item.output, "utf8").startsWith("handoff: "));
   const transcript = fs.readFileSync(spec.transcriptFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-  const valves = transcript.filter((r) => r.recordType === "valve");
-  assert.deepEqual(valves.map((r) => r.data.kind), ["handoff", "ended"]);
-  assert.equal(valves[0].data.tokens, 40000);
+  const c2 = transcript.find((r) => r.recordType === "message" && r.message.role === "toolResult" && r.message.toolCallId === "c2");
+  assert.ok(c2, "the c2 tool result is in the transcript");
+}
 
+// a thrash message stops the trigger, so the valve's ending never hands off
+{
+  const spec = budgetSpec("thrash", "", { bin: fake("thrash") });
+  const outcome = await run(spec);
+  const [first, second] = records(spec);
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.valve, null);
+  assert.equal(outcome.finalText, "FAILED: compaction thrash");
+  assert.equal(second, null);
+  gone(first);
+}
+
+// an abort during the handoff turn reports aborted
+{
+  const controller = new AbortController();
+  const spec = budgetSpec("budget-abort", "hang2", { signal: controller.signal });
+  let spawns = 0;
+  const outcome = await run({
+    ...spec,
+    onSpawn: () => {
+      spawns += 1;
+      if (spawns === 2) setTimeout(() => controller.abort(), 300);
+    },
+  });
+  const [first, second] = records(spec);
+  assert.equal(outcome.status, "aborted");
+  assert.equal(outcome.valve.fired, true);
+  assert.equal(outcome.valve.ended, false);
+  gone(first);
+  gone(second);
+}
+
+// the handoff has its own, shorter deadline
+{
+  const spec = budgetSpec("budget-timeout", "hang2", { handoffTimeoutMs: 1500 });
+  const outcome = await run(spec);
+  const [first, second] = records(spec);
+  assert.equal(outcome.status, "timeout");
+  assert.match(outcome.error, /timed out after 1500ms/);
+  gone(first);
+  gone(second);
+}
+
+// no budget, and a zero one, never trigger
+{
+  for (const [label, budget] of [
+    ["budget-null", null],
+    ["budget-zero", { tokens: 0, reserve: 0, action: "stop" }],
+  ]) {
+    const spec = budgetSpec(label, "", { budget, timeoutMs: 1500 });
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "timeout");
+    assert.equal(outcome.valve, null);
+    assert.equal(second, null);
+    gone(first);
+  }
+}
+
+// the context at the first write
+{
   const committed = await run(specFor("commit", { bin: fake("commit") }));
   assert.equal(committed.usage.firstContext, 12000);
   assert.equal(committed.valve, null);
@@ -571,12 +772,19 @@ const run = (spec) => {
   assert.ok(!alive(Number(fs.readFileSync(spec.record, "utf8"))), "looped child survived");
 }
 
-// identical turns after a valve handoff do not trip
+// identical turns during the handoff do not trip the loop guard
 {
-  const outcome = await run(specFor("loop-after-valve", { bin: fake("loop-after-valve") }));
+  const spec = budgetSpec("loops", "loops");
+  const outcome = await run(spec);
+  const [first, second] = records(spec);
   assert.equal(outcome.status, "done");
   assert.equal(outcome.loop, undefined);
   assert.equal(outcome.valve?.fired, true);
+  assert.equal(outcome.valve?.ended, false);
+  assert.equal(outcome.finalText, "bye");
+  assert.equal(second.stdin, handoffPrompt("commit", { output: spec.item.output, tokens: 6000 }));
+  gone(first);
+  gone(second);
 }
 
 // the binary can come from RECIPE_PI_BIN
