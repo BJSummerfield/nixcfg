@@ -173,7 +173,8 @@ export async function runRecipe(opts) {
     state: "running",
     pid: process.pid,
     pidStart: procStartTime(process.pid),
-    startedAt: new Date().toISOString(),
+    startedAt: resume ? (previous.startedAt ?? new Date().toISOString()) : new Date().toISOString(),
+    resumedAt: resume ? new Date().toISOString() : null,
     lastUpdate: null,
     args,
     cwd,
@@ -243,7 +244,7 @@ export async function runRecipe(opts) {
   if (stopWhy) {
     status.state = "stopped";
     status.error = stopWhy;
-    receipt = { stopped: true, failed: `stopped: ${stopWhy}`, interrupted: interruptedKeys(runDir), board: status.board };
+    receipt = { stopped: true, reason: stopWhy, interrupted: interruptedKeys(runDir), board: status.board };
   } else if (outcome.error) {
     status.state = "failed";
     status.error = String(outcome.error?.message ?? outcome.error);

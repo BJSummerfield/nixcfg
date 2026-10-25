@@ -24,8 +24,9 @@ fs.mkdirSync(fakes);
 
 // The canned lines follow what `claude -p --output-format stream-json
 // --verbose` printed: session state and init lines, one assistant line per
-// content block (repeating the message id and usage), user lines carrying
-// tool results, a rate-limit line and a closing result line.
+// content block (repeating the message id and usage, each snapshot taken
+// while the message was still streaming), user lines carrying tool results,
+// a rate-limit line and a closing result line with the true total.
 fs.writeFileSync(
   path.join(fakes, "ok.mjs"),
   `import fs from "node:fs";
@@ -58,16 +59,16 @@ const assistant = (id, content, fields) => ({
 const lines = [
   { type: "system", subtype: "session_state_changed", state: "running", session_id },
   { type: "system", subtype: "init", cwd: process.cwd(), session_id, tools: ["Read", "Write"], model: "claude-sonnet-5-5", permissionMode: "default" },
-  assistant("msg_1", [{ type: "thinking", thinking: "hm" }], { input_tokens: 3, cache_creation_input_tokens: 1000, cache_read_input_tokens: 500, output_tokens: 10 }),
-  assistant("msg_1", [{ type: "tool_use", id: "t1", name: "Read", input: {} }], { input_tokens: 3, cache_creation_input_tokens: 1000, cache_read_input_tokens: 500, output_tokens: 40 }),
+  assistant("msg_1", [{ type: "thinking", thinking: "hm" }], { input_tokens: 3, cache_creation_input_tokens: 1000, cache_read_input_tokens: 500, output_tokens: 5 }),
+  assistant("msg_1", [{ type: "tool_use", id: "t1", name: "Read", input: {} }], { input_tokens: 3, cache_creation_input_tokens: 1000, cache_read_input_tokens: 500, output_tokens: 5 }),
   { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "file body" }] }, session_id },
   { type: "system", subtype: "compact_boundary", session_id },
-  assistant("msg_2", [{ type: "text", text: "All" }, { type: "text", text: "done" }], { input_tokens: 2, cache_read_input_tokens: 1600, output_tokens: 30 }),
+  assistant("msg_2", [{ type: "text", text: "All" }, { type: "text", text: "done" }], { input_tokens: 2, cache_read_input_tokens: 1600, output_tokens: 5 }),
   { type: "rate_limit_event", rate_limit_info: { status: "allowed" }, session_id },
   {
     type: "result", subtype: "success", is_error: false, num_turns: 2, result: "All done\\u2028twice", stop_reason: "end_turn",
     terminal_reason: "completed", session_id, total_cost_usd: 0.01,
-    usage: usage({ input_tokens: 5, cache_creation_input_tokens: 1000, cache_read_input_tokens: 2100, output_tokens: 70 }),
+    usage: usage({ input_tokens: 5, cache_creation_input_tokens: 1000, cache_read_input_tokens: 2100, output_tokens: 300 }),
   },
   { type: "system", subtype: "session_state_changed", state: "idle", session_id },
 ];
@@ -122,6 +123,7 @@ process.exit(1);
 fs.writeFileSync(
   path.join(fakes, "noresult.mjs"),
   `process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: "x" }) + "\\n");
+process.stdout.write(JSON.stringify({ type: "assistant", message: { id: "msg_1", role: "assistant", content: [], usage: { input_tokens: 5, output_tokens: 7 } } }) + "\\n");
 `,
 );
 
@@ -149,7 +151,7 @@ const message = (id, block, usage) => line({
   type: "assistant", session_id,
   message: { id, role: "assistant", content: [block], usage: { cache_creation_input_tokens: 0, ...usage } },
 });
-const result = (text) => line({ type: "result", subtype: "success", is_error: false, result: text, stop_reason: "end_turn", session_id });
+const result = (text) => line({ type: "result", subtype: "success", is_error: false, result: text, stop_reason: "end_turn", session_id, usage: { input_tokens: 1, output_tokens: 500 } });
 if (resumed) {
   message("msg_h", { type: "text", text: "handoff: x" }, { input_tokens: 5, cache_read_input_tokens: 6000, output_tokens: 50 });
   if (mode === "hang2") await new Promise(() => {});
@@ -263,9 +265,11 @@ assert.equal(usesEngine, false);
   assert.equal(outcome.exitCode, 0);
   assert.equal(outcome.stopReason, "end_turn");
   assert.equal(outcome.finalText, "All done twice");
-  // msg_1 arrives on two lines with the same usage and counts once
+  // msg_1 arrives on two lines with the same usage and counts once, and the
+  // output total comes from the result event (300) rather than the streamed
+  // lines (5 each)
   assert.deepEqual(outcome.usage, {
-    prompt: 3105, cached: 2100, output: 70, peakContext: 1632, turns: 2, compactions: 1, firstContext: 1632,
+    prompt: 3105, cached: 2100, output: 300, peakContext: 1607, turns: 2, compactions: 1, firstContext: 1607,
   });
   assert.equal(outcome.valve, null);
   const sessionFile = path.join(config, "projects", fs.realpathSync(tmp).replace(/[^a-zA-Z0-9]/g, "-"), `${claudeSessionId("r1-ok")}.jsonl`);
@@ -390,6 +394,8 @@ assert.equal(usesEngine, false);
   const none = await run(specFor("noresult", { bin: fake("noresult") }));
   assert.equal(none.status, "failed");
   assert.equal(none.error, "no result line");
+  // no result event, so the output total is the assistant-line sum
+  assert.equal(none.usage.output, 7);
 
   const missing = await run(specFor("missing", { bin: [path.join(tmp, "no-such-claude")] }));
   assert.equal(missing.status, "failed");
@@ -426,8 +432,10 @@ assert.equal(usesEngine, false);
     assert.equal(outcome.finalText, "handoff: x");
     assert.equal(outcome.exitCode, 0);
     assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "commit", ended: false });
+    // the killed first process never produced a result event, so its 380
+    // comes from the streamed lines; the handoff turn's result says 500
     assert.deepEqual(outcome.usage, {
-      prompt: 15125, cached: 14600, output: 430, peakContext: 6055, turns: 4, compactions: 0, firstContext: 2500,
+      prompt: 15125, cached: 14600, output: 880, peakContext: 6055, turns: 4, compactions: 0, firstContext: 2500,
     });
     assert.equal(spawned.length, 2);
     assert.deepEqual(spawned, [first.pid, second.pid]);

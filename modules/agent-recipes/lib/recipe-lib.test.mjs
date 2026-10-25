@@ -61,6 +61,20 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.deepEqual(lines, ["a"], "the caller's lines are not modified");
 }
 
+// searcher and extractor have no shell: their gated briefs carry no self-gate
+// line; the locator keeps it.
+{
+  const L = await load(fake(() => null).runs);
+  const angle = { id: "a", question: "Q?" };
+  for (const item of [L.searchItem("g", angle, "/t/s.md", 9), L.extractItem("e", "g", "u", "a", "/p", "/t/e.md", "", 9), L.extractFileItem("ef", "g", "/r/x", null, "a", "/t/ef.md", 9)]) {
+    assert.ok(!item.task.includes("run `recipe-gate"), item.key);
+    assert.ok(item.gate, item.key);
+  }
+  const loc = L.locateItem("g", angle, "/r", "/t/l.md", 9);
+  assert.match(loc.task, /When the file is written, run `recipe-gate paths '\/t\/l\.md'`/);
+  assert.equal(L.searchItem("g", angle, "/t/s.md", 9).agent, "searcher");
+}
+
 // retryItem(): every mention of the output moves, including the gate command
 // and the self-gate line; resume follows the failed run.
 {
@@ -119,6 +133,79 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   const single = await L.one(mk("c", true));
   assert.deepEqual(calls, ["one:c"]);
   assert.equal(single.file, "/t/c.md");
+}
+
+// A done child whose output the gate rejected after the port filled it from
+// the reply is retried once, and the retry names the file the child must
+// write; the retry itself, an over-cap verdict and a rejected file are not
+// retried; without the flag the retry brief is unchanged.
+{
+  const reply = (key, gate) => ({ ok: true, status: "done", runId: `run-${key}`, outputFromReply: true, structuredOutput: gate });
+
+  const f = fake((item) => reply(item.key, { ok: false }));
+  const L = await load(f.runs);
+  const results = await L.launch([L.searchItem("g", { id: "a", question: "Q?" }, "/t/w.md", 9)]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["search-a"], ["search-a-retry"]]);
+  assert.equal(f.batches[1][0].output, "/t/w.retry.md");
+  assert.match(f.batches[1][0].task, /The previous attempt did not write the output file\. Write it to \/t\/w\.retry\.md\.$/);
+  assert.equal(results[0].ok, true);
+  assert.equal(results[0].file, "/t/w.retry.md");
+  assert.equal(L.tally.children, 2, "the reply-filled retry is not retried again");
+
+  const g = fake((item) => reply(item.key, { ok: false }));
+  const M = await load(g.runs);
+  const single = await M.one(M.node("b", "writer", ["Output: /t/b.md"], "/t/b.md", { gate: "recipe-gate x '/t/b.md'", big: true }));
+  assert.deepEqual(g.batches.map((b) => b.map((i) => i.key)), [["b"], ["b-retry"]]);
+  assert.equal(g.batches[1][0].output, "/t/b.retry.md");
+  assert.match(g.batches[1][0].task, /The previous attempt did not write the output file\. Write it to \/t\/b\.retry\.md\.$/);
+  assert.equal(single.ok, true);
+  assert.equal(single.file, "/t/b.retry.md");
+  assert.equal(M.tally.children, 2, "the big reply-filled retry is not retried again");
+
+  const c = fake((item) => (item.key === "w" ? reply("w", { ok: false, over_cap: true }) : ok(item.key)));
+  const C = await load(c.runs);
+  await C.launch([C.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
+  assert.deepEqual(c.batches.map((b) => b.map((i) => i.key)), [["w"]], "an over-cap verdict is not retried");
+  assert.equal(C.tally.children, 1);
+
+  const d = fake((item) => (item.key === "w" ? { ok: true, status: "done", runId: "run-w", outputFromReply: false, structuredOutput: { ok: false } } : ok(item.key)));
+  const D = await load(d.runs);
+  await D.launch([D.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
+  assert.deepEqual(d.batches.map((b) => b.map((i) => i.key)), [["w"]], "a rejected file is not retried");
+  assert.equal(D.tally.children, 1);
+
+  const h = fake((item) => (item.key === "w" ? failed("w", "engine") : ok(item.key)));
+  const N = await load(h.runs);
+  await N.launch([N.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
+  assert.equal(h.batches[1][0].task, h.batches[0][0].task.replaceAll("/t/w.md", "/t/w.retry.md"), "no flag: the retry brief is the moved brief");
+}
+
+// A gate result without an ok field is no rejection: a reviewer with a clean
+// verdict run from its reply runs once.
+{
+  const f = fake((item) =>
+    item.key === "rev" ? { ok: true, status: "done", runId: "run-rev", outputFromReply: true, structuredOutput: { asked: "yes", sound: "yes", clean: true, verdict: "clean" } } : ok(item.key),
+  );
+  const L = await load(f.runs);
+  const single = await L.one(L.node("rev", "reviewer", ["Review."], "/t/rev.md", { gate: "recipe-gate verdict '/t/rev.md'", big: true }));
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["rev"]], "a clean verdict without ok is not retried");
+  assert.equal(single.file, "/t/rev.md");
+  assert.equal(L.tally.children, 1);
+}
+
+// A gate reason on a rejected reply-filled result reaches the retry brief.
+{
+  const f = fake((item) => reply(item.key, item.key === "search-a" ? { ok: false, reason: "no urls" } : { ok: false }));
+  function reply(key, gate) {
+    return { ok: true, status: "done", runId: `run-${key}`, outputFromReply: true, structuredOutput: gate };
+  }
+  const L = await load(f.runs);
+  const results = await L.launch([L.searchItem("g", { id: "a", question: "Q?" }, "/t/w.md", 9)]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["search-a"], ["search-a-retry"]]);
+  assert.ok(f.batches[1][0].task.includes("/t/w.retry.md"), "the retry brief names the output path");
+  assert.ok(f.batches[1][0].task.includes("no urls"), "the retry brief carries the gate reason");
+  assert.equal(results[0].file, "/t/w.retry.md");
+  assert.equal(L.tally.children, 2);
 }
 
 // diagnose(): at most two diagnoses per subject, then a decision; the same
@@ -217,7 +304,7 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.equal(loc.gate.command, "recipe-gate paths '/t/l.md'");
   const fe = L.extractFileItem("e", "g", "/r/src/a.js", { start: 5, end: 40 }, "a", "/t/e.md", 9);
   assert.equal(fe.agent, "extractor");
-  assert.match(fe.task, /^Goal: g\nFile: \/r\/src\/a\.js\nRange: 5-40\nAngle: a\nOutput: \/t\/e\.md\n/);
+  assert.match(fe.task, /^Goal: g\nFile: \/r\/src\/a\.js\nRange: 5-40\nAngle: a\nOutput: \/t\/e\.md$/);
   assert.equal(fe.gate.command, "recipe-gate extract '/t/e.md'");
   assert.ok(!/Range:/.test(L.extractFileItem("e", "g", "/r/x", null, "a", "/t/e.md", 9).task));
   L.tally.children = 3;

@@ -62,8 +62,10 @@ export function recipeLib(rawPort) {
     return "When the file is written, run `" + gate + "`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.";
   }
 
-  // `opts.selfGate` false is for a gate with side effects, such as one that
-  // tidies worktrees, which the child must not run itself.
+  // `opts.selfGate` false is for a child that cannot or must not run the gate
+  // itself: searchers and extractors have no shell, and some gates have side
+  // effects, such as one that tidies worktrees. The runner runs the gate after
+  // the child either way.
   function node(key, agent, lines, output, opts) {
     const o = opts || {};
     const text = lines.slice();
@@ -93,6 +95,17 @@ export function recipeLib(rawPort) {
       output: moved,
       task: item.task.split(item.output).join(moved),
     });
+    // The port filled the output from the child's reply, so the brief names
+    // the file the child must write itself this time; a gate reason tells the
+    // child why the previous output was rejected.
+    if (failed.outputFromReply) {
+      const reason = failed.structuredOutput && failed.structuredOutput.reason;
+      copy.task +=
+        "\n" +
+        (reason
+          ? "The previous attempt was rejected: " + reason + ". Write it to " + moved + "."
+          : "The previous attempt did not write the output file. Write it to " + moved + ".");
+    }
     if (item.resume) copy.resume = failed.runId || item.resume;
     if (item.gate) {
       copy.gate = Object.assign({}, item.gate, {
@@ -108,6 +121,16 @@ export function recipeLib(rawPort) {
     return /reported as not-satisfied/.test(String(result.error || ""));
   }
 
+  // An over-cap extract must reach the graph's split; a handoff in the reply
+  // is the child's result, not a failed file write. Only an explicit
+  // rejection is one: the reviewer's gate reports a verdict, not an ok field.
+  function replyRejected(item, result) {
+    const verdict = result.structuredOutput;
+    return Boolean(
+      result.ok && result.outputFromReply && !result.handoff && item.gate && verdict && verdict.ok === false && !verdict.over_cap,
+    );
+  }
+
   function launchSmall(items, runFirst) {
     tally.children += items.length;
     return (runFirst || port.runMany)(items).then(function (first) {
@@ -118,7 +141,7 @@ export function recipeLib(rawPort) {
       const again = [];
       const where = [];
       first.forEach(function (result, i) {
-        if (!result.ok && !stoppedItself(result)) {
+        if ((result.ok && replyRejected(items[i], result)) || (!result.ok && !stoppedItself(result))) {
           again.push(retryItem(items[i], result));
           where.push(i);
         }
@@ -147,7 +170,7 @@ export function recipeLib(rawPort) {
   function launchBig(item) {
     tally.children++;
     return port.runOne(item).then(function (first) {
-      if (first.ok || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
+      if ((first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
       const again = retryItem(item, first);
       tally.children++;
       return port.runOne(again).then(function (second) {
@@ -481,14 +504,14 @@ export function recipeLib(rawPort) {
       "searcher",
       ["Goal: " + goal, "Angle: " + angle.id, "Question: " + angle.question, "Output: " + file],
       file,
-      { gate: "recipe-gate urls " + quote(file), timeoutMs: childMs },
+      { gate: "recipe-gate urls " + quote(file), timeoutMs: childMs, selfGate: false },
     );
   }
 
   function extractItem(key, goal, url, angle, page, file, part, childMs) {
     const lines = ["Goal: " + goal, "URL: " + url, "Angle: " + angle, "Page: " + page, "Output: " + file];
     if (part) lines.push(part);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
   }
 
   function locateItem(goal, angle, repo, file, childMs) {
@@ -505,7 +528,7 @@ export function recipeLib(rawPort) {
     const lines = ["Goal: " + goal, "File: " + path];
     if (range) lines.push("Range: " + range.start + "-" + range.end);
     lines.push("Angle: " + angle, "Output: " + file);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
   }
 
   function rankAndCap(found, limit) {
