@@ -95,9 +95,8 @@ export function recipeLib(rawPort) {
       output: moved,
       task: item.task.split(item.output).join(moved),
     });
-    // The child answered in its reply but left the file unwritten, so the
-    // port filled it there; say so so the child writes the file itself this
-    // time.
+    // The port filled the output from the child's reply, so the brief names
+    // the file the child must write itself this time.
     if (failed.outputFromReply) copy.task += "\n" + "The previous attempt did not write the output file. Write it to " + moved + ".";
     if (item.resume) copy.resume = failed.runId || item.resume;
     if (item.gate) {
@@ -114,6 +113,15 @@ export function recipeLib(rawPort) {
     return /reported as not-satisfied/.test(String(result.error || ""));
   }
 
+  // An over-cap extract must reach the graph's split; a handoff in the reply
+  // is the child's result, not a failed file write.
+  function replyRejected(item, result) {
+    const verdict = result.structuredOutput;
+    return Boolean(
+      result.ok && result.outputFromReply && !result.handoff && item.gate && verdict && !verdict.ok && !verdict.over_cap,
+    );
+  }
+
   function launchSmall(items, runFirst) {
     tally.children += items.length;
     return (runFirst || port.runMany)(items).then(function (first) {
@@ -124,7 +132,7 @@ export function recipeLib(rawPort) {
       const again = [];
       const where = [];
       first.forEach(function (result, i) {
-        if (!result.ok && !stoppedItself(result)) {
+        if ((result.ok && replyRejected(items[i], result)) || (!result.ok && !stoppedItself(result))) {
           again.push(retryItem(items[i], result));
           where.push(i);
         }
@@ -153,7 +161,7 @@ export function recipeLib(rawPort) {
   function launchBig(item) {
     tally.children++;
     return port.runOne(item).then(function (first) {
-      if (first.ok || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
+      if ((first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
       const again = retryItem(item, first);
       tally.children++;
       return port.runOne(again).then(function (second) {
