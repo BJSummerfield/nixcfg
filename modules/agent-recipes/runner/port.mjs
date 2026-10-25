@@ -10,7 +10,6 @@ import { makeWorktree, removeWorktree, worktreeState } from "./worktree.mjs";
 
 const DEFAULT_STATE_DIR = "/var/tmp/recipe-runner";
 const WRITER_STOP = /^\s*(failed|blocked)\s*:/i;
-const DONE_LINE = /^\s*done\b/i;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
 
@@ -379,9 +378,9 @@ export function createPort(opts) {
         return aborted();
       }
 
-      // A looped child's last text was sent alongside a tool call in the middle of
-      // the loop, never as a final reply: a handoff it mentions would start a relay
-      // on nothing, and only a file the child wrote itself counts as its deliverable.
+      // A looped child's text was sent alongside a tool call, so it says nothing
+      // about completion: only a file the child wrote itself is its deliverable,
+      // and a handoff it mentions would start a relay on nothing.
       const looped = outcome.status === "looped";
       const finalText = String(outcome.finalText ?? "");
       let outputFromReply = false;
@@ -413,8 +412,7 @@ export function createPort(opts) {
       let error = outcome.error;
       const reported = handoff ? null : writerStop(role, outcome);
       if (looped) {
-        const delivered =
-          noteWritten && !outputFromReply && DONE_LINE.test(finalText.trimStart().split("\n")[0]);
+        const delivered = noteWritten && !outputFromReply;
         status = delivered ? "done" : "failed";
         if (delivered) error = undefined;
       } else if (handoff && status !== "timeout") {
