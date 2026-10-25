@@ -427,14 +427,19 @@ const gate = (...args) => {
   assert.deepEqual(clean.json, {
     ok: true,
     tasks: [
-      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], research: "", est: 7500 },
-      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], research: "Which flag does tool x 2.0 use to set the cache dir?", est: 5500 },
+      { id: "t1", file: path.join(cleanDir, "tasks", "t1.md"), owns: ["src/a.txt"], reads: ["src/b.txt"], check: "nix eval .#x", depends: [], research: "", bytes: 12000, est: 7500 },
+      { id: "t2", file: path.join(cleanDir, "tasks", "t2.md"), owns: ["new/c.txt"], reads: ["src/b.txt"], check: "statix check new/c.nix", depends: ["t1"], research: "Which flag does tool x 2.0 use to set the cache dir?", bytes: 8000, est: 5500 },
     ],
+    sizing: { base: 1000, k_read: 2, growth_p90: 500 },
     oversize: [],
     overlaps: [],
     missing: [],
     cycles: [],
   });
+  for (const t of clean.json.tasks) {
+    const s = clean.json.sizing;
+    assert.equal(t.est, Math.ceil(s.base + (s.k_read * t.bytes) / 4 + s.growth_p90));
+  }
 
   const over = planGate(mkPlan({ t1: task(base), t2: task(t2) }), "--limit", "7000");
   assert.deepEqual(over.json.oversize, ["t1"]);
@@ -516,10 +521,15 @@ const gate = (...args) => {
   };
   const home = dir();
   const d = mkPlan({ t1: task(base) });
-  assert.equal(withHome(home, d).tasks[0].est, 20000);
+  const defaults = withHome(home, d);
+  assert.deepEqual(defaults.sizing, { base: 7000, k_read: 1, growth_p90: 10000 });
+  assert.equal(defaults.tasks[0].bytes, 12000);
+  assert.equal(defaults.tasks[0].est, 20000);
   fs.mkdirSync(path.join(home, ".pi/agent/recipes"), { recursive: true });
   fs.writeFileSync(path.join(home, ".pi/agent/recipes/sizing.json"), JSON.stringify({ roles: { implementer: { base: 2000, growth_p90: 1000 } } }));
-  assert.equal(withHome(home, d).tasks[0].est, 2000 + 3000 + 1000);
+  const partial = withHome(home, d);
+  assert.deepEqual(partial.sizing, { base: 2000, k_read: 1, growth_p90: 1000 });
+  assert.equal(partial.tasks[0].est, 2000 + 3000 + 1000);
   assert.equal(gate("plan", d, "--repo", repo, "--sizing", path.join(tmp, "absent.json")).status, 1);
 }
 
