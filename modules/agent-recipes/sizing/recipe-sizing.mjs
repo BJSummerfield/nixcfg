@@ -1,12 +1,16 @@
 // Proposes sizing.json from the runner's records (<task dir>/runner). Offline: file reads only.
 //
-//   recipe-sizing <sessions-dir> [--current sizing.json] [--min-samples 20] [--engine-rev REV]
+//   recipe-sizing <sessions-dir>... [--current sizing.json] [--min-samples 20] [--engine-rev REV]
 //
-// Every `<run-id>_<role>_transcript.jsonl` under the sessions dir is one run.
+// The positional directories are pooled: every
+// `<run-id>_<role>_transcript.jsonl` found under any of them is one run, and
+// symlinks to directories and files are followed, each real file counted once.
 // A run the runner ended for repeating the same turn has `loop` in its settle
 // result (children.jsonl); its token counts reflect the loop, not the task,
 // so its transcript is left out of every estimate. `looped` counts the
-// children left out, per role.
+// children left out, per role. A child the graph ran for something other than
+// a task (settled under `integrate` or `resolve-*`) is left out the same way
+// and counted in `excluded`, per role.
 // A request's context is usage.input (uncached) + usage.cacheRead (cached).
 // Per role: base is the median first-request context, peak_p90 the 90th
 // percentile of the run's peak, growth_p90 the 90th percentile of peak minus
@@ -17,6 +21,17 @@
 // (peak - base) on tokens returned by `read` (chars / 4); it exists only for
 // roles that read files they were told about. The old role name `worker` is
 // the implementer.
+// For the implementer, k_read and growth_p90 are instead fitted the way the
+// plan gate spends them: the gate sizes a task from the declared bytes of its
+// owns and reads files, so each task of the intake settle's
+// structuredOutput.tasks pairs its declared bytes (its bytes when recorded,
+// else recovered from its est and the sizing the gate used) with the context
+// at the first write of the first attempt (usage.firstContext of the
+// impl-<id> settle). With at least --min-samples pairs, k_read is the
+// least-squares slope through the origin of (firstContext - base) on
+// declared bytes / 4 and growth_p90 the 90th percentile of the leftover;
+// `plan_fit` reports the pairs, the values and how often the new estimate
+// would cover the firstContext (covered, coverage).
 //
 // `handoffs` lists, per role with outcome records, how often runs handed off
 // (handoff_rate) and what became of the handoffs: the share relayed and the
@@ -40,17 +55,52 @@ const MAX_CHANGE = 1.5;
 const K_READ_ROLES = new Set(["implementer", "reviewer"]);
 const ROLE_ALIASES = { worker: "implementer" };
 const CLAMPED = ["base", "k_read", "growth_p90", "peak_p90", "compact_rate", "cold_per_run"];
+const DEFAULT_SIZING = { base: 7000, k_read: 1, growth_p90: 10000 };
+const TRANS_NAME = /^[0-9a-f-]{36}_.+_transcript\.jsonl$/;
 
 class Usage extends Error {}
 
-function transcripts(dir) {
-  const found = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...transcripts(full));
-    else if (/^[0-9a-f-]{36}_.+_transcript\.jsonl$/.test(entry.name)) found.push(full);
+function walk(dirs, visitFile) {
+  const seen = new Set();
+  const visit = (dir, real) => {
+    seen.add(real);
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      let st = entry;
+      if (entry.isSymbolicLink()) {
+        try {
+          st = fs.statSync(full);
+        } catch {
+          continue;
+        }
+      }
+      if (st.isDirectory()) {
+        const sub = fs.realpathSync(full);
+        if (!seen.has(sub)) visit(full, sub);
+      } else if (st.isFile()) {
+        const file = fs.realpathSync(full);
+        if (!seen.has(file)) {
+          seen.add(file);
+          visitFile(file);
+        }
+      }
+    }
+  };
+  for (const dir of dirs) {
+    const real = fs.realpathSync(dir);
+    if (!seen.has(real)) visit(dir, real);
   }
-  return found;
+}
+
+function findFiles(dirs) {
+  const transcripts = [];
+  const children = [];
+  walk(dirs, (file) => {
+    const name = path.basename(file);
+    if (TRANS_NAME.test(name)) transcripts.push(file);
+    else if (name === "children.jsonl") children.push(file);
+  });
+  return { transcripts, children };
 }
 
 function roleOf(file) {
@@ -58,19 +108,9 @@ function roleOf(file) {
   return ROLE_ALIASES[name] ?? name;
 }
 
-function childrenLogs(dir) {
-  const found = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) found.push(...childrenLogs(full));
-    else if (entry.name === "children.jsonl") found.push(full);
-  }
-  return found;
-}
-
-function loopedRunIds(dir) {
-  const ids = new Set();
-  for (const file of childrenLogs(dir))
+function settleRecords(files) {
+  const records = [];
+  for (const file of files)
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
       let r;
       try {
@@ -78,9 +118,9 @@ function loopedRunIds(dir) {
       } catch {
         continue;
       }
-      if (r?.type === "settle" && r.runId && r.result?.loop) ids.add(r.runId);
+      if (r?.type === "settle") records.push(r);
     }
-  return ids;
+  return records;
 }
 
 function readHandoffs(file, into) {
@@ -157,6 +197,39 @@ const median = (values) => percentile(values, 0.5);
 const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
 const round = (n, places = 0) => Math.round(n * 10 ** places) / 10 ** places;
 
+function planPairs(files) {
+  const pairs = [];
+  for (const file of files) {
+    const settles = settleRecords([file]);
+    const byKey = new Map();
+    for (const r of settles) if (r.key !== undefined && !byKey.has(r.key)) byKey.set(r.key, r);
+    for (const r of settles) {
+      if (r.key !== "intake" || !Array.isArray(r.result?.structuredOutput?.tasks)) continue;
+      for (const t of r.result.structuredOutput.tasks) {
+        const first = byKey.get(`impl-${t.id}`)?.result?.usage?.firstContext;
+        const sizing = { ...DEFAULT_SIZING, ...(t.sizing ?? {}) };
+        const bytes = typeof t.bytes === "number" ? t.bytes : (t.est - sizing.base - sizing.growth_p90) * 4 / sizing.k_read;
+        if (!Number.isFinite(bytes) || !Number.isFinite(first)) continue;
+        pairs.push({ tokens: bytes / 4, firstContext: first });
+      }
+    }
+  }
+  return pairs;
+}
+
+function fitPlan(pairs, base) {
+  let sxy = 0;
+  let sx2 = 0;
+  for (const p of pairs) {
+    sxy += p.tokens * (p.firstContext - base);
+    sx2 += p.tokens ** 2;
+  }
+  const k = round(sx2 === 0 ? 0 : sxy / sx2, 2);
+  const growth = round(percentile(pairs.map((p) => Math.max(0, p.firstContext - base - k * p.tokens)), 0.9));
+  const covered = pairs.filter((p) => base + k * p.tokens + growth >= p.firstContext).length;
+  return { pairs: pairs.length, k_read: k, growth_p90: growth, covered, coverage: round(covered / pairs.length, 2) };
+}
+
 function measure(role, runs) {
   const out = {
     samples: runs.length,
@@ -190,22 +263,38 @@ function clamp(measured, current) {
   return out;
 }
 
-function propose(sessionsDir, currentFile, minSamples, engineRev) {
+function propose(sessionsDirs, currentFile, minSamples, engineRev) {
   const current = currentFile ? JSON.parse(fs.readFileSync(currentFile, "utf8")) : { engine_rev: null, roles: {} };
+  const { transcripts, children } = findFiles(sessionsDirs);
   const byRole = {};
   const rawHandoffs = {};
   const loopedOut = {};
-  const looped = loopedRunIds(sessionsDir);
-  for (const file of transcripts(sessionsDir)) {
+  const excludedOut = {};
+  const keys = new Map();
+  const looped = new Set();
+  for (const r of settleRecords(children)) {
+    if (!r.runId) continue;
+    if (r.result?.loop) looped.add(r.runId);
+    keys.set(r.runId, r.key);
+  }
+  for (const file of transcripts) {
     const { runId, run } = readRun(file);
     const role = roleOf(file);
     if (runId !== null && looped.has(runId)) {
       loopedOut[role] = (loopedOut[role] ?? 0) + 1;
       continue;
     }
+    const key = runId === null ? undefined : keys.get(runId);
+    if (key === "integrate" || (typeof key === "string" && key.startsWith("resolve-"))) {
+      excludedOut[role] = (excludedOut[role] ?? 0) + 1;
+      continue;
+    }
     if (run) (byRole[role] ??= []).push(run);
     readHandoffs(file, rawHandoffs);
   }
+  const pairs = planPairs(children);
+  const implementerRuns = byRole.implementer;
+  const planFit = implementerRuns?.length > 0 && pairs.length >= minSamples ? fitPlan(pairs, round(median(implementerRuns.map((r) => r.base)))) : null;
   const roles = { ...current.roles };
   for (const [role, runs] of Object.entries(byRole)) {
     if (runs.length < minSamples) {
@@ -213,6 +302,10 @@ function propose(sessionsDir, currentFile, minSamples, engineRev) {
       continue;
     }
     const measured = measure(role, runs);
+    if (role === "implementer" && planFit) {
+      measured.k_read = planFit.k_read;
+      measured.growth_p90 = planFit.growth_p90;
+    }
     roles[role] = { ...clamp({ ...current.roles[role], ...measured }, current.roles[role]) };
   }
   return {
@@ -220,6 +313,8 @@ function propose(sessionsDir, currentFile, minSamples, engineRev) {
     roles,
     handoffs: summariseHandoffs(rawHandoffs, minSamples),
     looped: loopedOut,
+    excluded: excludedOut,
+    plan_fit: planFit ?? { pairs: pairs.length },
   };
 }
 
@@ -237,10 +332,10 @@ function parseArgs(argv) {
 
 try {
   const { positional, flags } = parseArgs(process.argv.slice(2));
-  if (positional.length !== 1) throw new Usage("usage: recipe-sizing <sessions-dir> [--current file] [--min-samples N] [--engine-rev REV]");
+  if (positional.length < 1) throw new Usage("usage: recipe-sizing <sessions-dir>... [--current file] [--min-samples N] [--engine-rev REV]");
   const minSamples = flags["min-samples"] === undefined ? 20 : Number(flags["min-samples"]);
   if (!Number.isInteger(minSamples) || minSamples < 1) throw new Usage("--min-samples must be a positive integer");
-  process.stdout.write(JSON.stringify(propose(positional[0], flags.current, minSamples, flags["engine-rev"]), null, 2) + "\n");
+  process.stdout.write(JSON.stringify(propose(positional, flags.current, minSamples, flags["engine-rev"]), null, 2) + "\n");
 } catch (err) {
   process.stderr.write(`recipe-sizing: ${err.message}\n`);
   process.exit(err instanceof Usage ? 2 : 1);
