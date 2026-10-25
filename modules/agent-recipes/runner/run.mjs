@@ -166,7 +166,11 @@ export async function runRecipe(opts) {
     // Housekeeping only; a failed sweep must not stop the run.
   }
 
-  const replay = resume ? readRecords(path.join(runDir, "children.jsonl")) : [];
+  const childrenLog = path.join(runDir, "children.jsonl");
+  const replay = resume ? readRecords(childrenLog) : [];
+  // The port appends only when a child starts; a reader that sees the status
+  // below say running must already find the log.
+  fs.appendFileSync(childrenLog, "");
 
   const status = {
     recipe,

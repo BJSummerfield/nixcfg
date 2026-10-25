@@ -62,9 +62,11 @@ process.stdout.write(JSON.stringify({
 
 fs.writeFileSync(
   graphFile,
-  `import path from "node:path";
+  `import fs from "node:fs";
+import path from "node:path";
 
 export default async function tiny(args, port) {
+  while (args.hold && !fs.existsSync(args.hold)) await new Promise((resolve) => setTimeout(resolve, 20));
   const node = (key, task) => ({
     key,
     agent: "worker",
@@ -225,9 +227,11 @@ try {
 
   // stop ends a run whose child sleeps, with no child left.
   {
-    const s = scenario("sleep");
+    const s = scenario("sleep", { hold: path.join(tmp, "hold-sleep") });
     const info = json(cli(runArgs("start", s)).stdout);
     strays.add(info.pid);
+    assert.deepEqual(records(s.dir), [], "a started run has its children log before any child");
+    fs.writeFileSync(s.args.hold, "");
     const sleeper = await until(() => records(s.dir).find((rec) => rec.type === "start")?.pid, "the child record");
     assert.ok(alive(sleeper));
     const stopped = cli(["stop", s.dir]);
