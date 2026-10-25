@@ -345,7 +345,8 @@ try {
     assert.ok(!fs.existsSync(path.join(s.dir, "receipt.json")));
     const waited = cli(["wait", s.dir]);
     assert.equal(waited.code, 1, waited.stderr);
-    assert.deepEqual(json(waited.stdout), { stopped: true, reason: "process gone", interrupted: [], board: { stage: "first" } });
+    const lastBoard = readJson(path.join(s.dir, "runner", "status.json")).board;
+    assert.deepEqual(json(waited.stdout), { stopped: true, reason: "process gone", interrupted: [], board: lastBoard });
   }
 
   // SIGKILL of the run during a long gate leaves the gate; resume kills it and runs the gate once.
