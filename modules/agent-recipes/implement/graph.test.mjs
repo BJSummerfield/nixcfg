@@ -646,8 +646,8 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(emits.at(-1).merged, ["a", "b"]);
 }
 
-// A writer that reports its own work as not done is rejected by pi-subagents'
-// acceptance; it is not retried, and its blocked report goes to a diagnosis.
+// A writer that reports its own work as not done is marked stopped by the
+// runner; it is not retried, and its blocked report goes to a diagnosis.
 {
   const rejected = "Acceptance rejected: Required criterion 'criterion-1' was reported as not-satisfied.";
   const f = fake({

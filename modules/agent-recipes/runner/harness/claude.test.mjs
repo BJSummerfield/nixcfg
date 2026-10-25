@@ -35,7 +35,7 @@ process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) stdin += chunk;
 fs.writeFileSync(process.env.FAKE_RECORD, JSON.stringify({
   argv, stdin, cwd: process.cwd(), pid: process.pid,
-  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, PI_SUBAGENT_CHILD: process.env.PI_SUBAGENT_CHILD, EXTRA: process.env.EXTRA,
+  env: { RECIPE_CHILD: process.env.RECIPE_CHILD, EXTRA: process.env.EXTRA,
     SESSION: process.env.CLAUDE_CODE_SESSION_ID, PID: process.env.CLAUDE_PID,
     SOCKET: process.env.CLAUDE_CODE_MESSAGING_SOCKET, TOKEN: process.env.CLAUDE_CODE_MESSAGING_TOKEN },
 }));

@@ -101,7 +101,7 @@ export async function start(spec) {
 
   const [command, ...prefix] = binOf(spec);
   const argv = [...prefix, ...piArgv(spec)];
-  const env = { ...process.env, ...spec.env, RECIPE_CHILD: "1", PI_SUBAGENT_CHILD: "1" };
+  const env = { ...process.env, ...spec.env, RECIPE_CHILD: "1" };
   recordSpawn(spec.logDir, { command, argv, cwd: spec.cwd, env });
   const child = spawn(command, argv, {
     cwd: spec.cwd,
