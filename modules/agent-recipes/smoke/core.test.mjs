@@ -123,6 +123,49 @@ test("setupPlan copies the plan and both tasks", () => {
   }
 });
 
+test("setupRepo and setupPlan make read-only fixture copies writable", () => {
+  const setModes = (root, fileMode, dirMode) => {
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        fs.chmodSync(p, entry.isDirectory() ? dirMode : fileMode);
+      }
+    };
+    walk(root);
+  };
+  const assertWritable = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === ".git") continue;
+      const p = path.join(dir, entry.name);
+      assert.ok(fs.statSync(p).mode & 0o200, `${p} is not owner-writable`);
+      if (entry.isDirectory()) assertWritable(p);
+    }
+  };
+
+  const fixtures = path.join(tmp, "readonly-fixtures");
+  const tinycalc = path.join(fixtures, "tinycalc");
+  fs.mkdirSync(path.join(tinycalc, "src"), { recursive: true });
+  fs.writeFileSync(path.join(tinycalc, "package.json"), "{}\n");
+  fs.writeFileSync(path.join(tinycalc, "src", "index.js"), "export const add = (a, b) => a + b;\n");
+  const tinycalcPlan = path.join(fixtures, "tinycalc-plan");
+  fs.mkdirSync(path.join(tinycalcPlan, "tasks"), { recursive: true });
+  fs.writeFileSync(path.join(tinycalcPlan, "plan.md"), "# plan\n");
+  fs.writeFileSync(path.join(tinycalcPlan, "tasks", "one.md"), "task one\n");
+  setModes(fixtures, 0o444, 0o555);
+
+  const head = setupRepo(fixtures, path.join(tmp, "readonly-repo"));
+  assert.match(head, /^[0-9a-f]{40}$/);
+  assertWritable(path.join(tmp, "readonly-repo"));
+
+  const plan = setupPlan(fixtures, path.join(tmp, "readonly-plan"));
+  assertWritable(plan);
+  assert.ok(fs.existsSync(path.join(plan, "tasks", "one.md")));
+
+  // restore the write bits so the temporary directory can be removed
+  setModes(fixtures, 0o644, 0o755);
+});
+
 test("withRoleOverrides deep-merges into roles without touching anything else", () => {
   const config = {
     concurrency: 3,

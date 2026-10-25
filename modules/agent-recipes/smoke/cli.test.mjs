@@ -208,6 +208,28 @@ test("an interrupt stops the tracked run, skips the rest and still writes the re
   assert.match(stdout, /third\s+skip/);
 });
 
+test("a run that outlives its test is stopped before the report", async () => {
+  const out = fs.mkdtempSync(path.join(tmp, "straggler-"));
+  const runDir = path.join(out, "straggler");
+  const straggler = {
+    name: "straggler",
+    run: async (ctx) => {
+      ctx.track(runDir);
+      return { name: "straggler", pass: true, ms: 100, children: 0, usage: { prompt: 0, cached: 0, output: 0 }, detail: "" };
+    },
+  };
+  const spawn = fakeSpawn();
+  // the fake spawn's exit timer is unref'd, so something ref'd must keep the loop alive until the stop child exits
+  const settle = sleep(100);
+  const { code, stderr } = await runCli(["--force", "--out", out], { TESTS: [straggler], spawn });
+  await settle;
+  assert.equal(code, 0);
+  assert.equal(stderr, "", "a normal exit leaves no stop error");
+  const stop = spawn.calls.find((c) => c.args[1] === "stop" && c.args[2] === runDir);
+  assert.ok(stop, "the tracked run got a stop on the way out");
+  assert.equal(stop.code, 0, "the stop child ran to completion");
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {
