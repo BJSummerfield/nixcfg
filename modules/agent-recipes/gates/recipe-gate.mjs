@@ -40,7 +40,8 @@
 //                 [--base SHA] [--run DIR --id ID]
 //                                  run in a task worktree -> {ok, reason, report:{status,
 //                                  why}, branch, worktree, head, base, clean, commits,
-//                                  files, outside, check:{command, exit, tail, signature},
+//                                  identity:{expected, mismatched}, files, outside,
+//                                  check:{command, exit, tail, signature},
 //                                  verify:{command, exit, tail, signature} | null, signature}
 //   repro <dir> --command CMD [--expect fail|pass] [--id ID] [--in DIR]
 //                                  run a command and judge its exit status ->
@@ -139,7 +140,9 @@
 // whose paths are normalised as in plan. The check is run once with
 // `sh -c` in the working directory (--in DIR replaces it for everything the
 // gate does); ok needs a passing report, at least one commit, a clean tree, no
-// outside files, verify exit 0 and check exit 0, and reason names the first
+// outside files, every commit in base..HEAD made with the configured git
+// identity (author and committer; skipped when the worktree configures no
+// user.email), verify exit 0 and check exit 0, and reason names the first
 // failure. --check is optional when --verify is given. --verify is run before
 // the check under the same condition (a passing report and a HEAD); a command
 // that was not run has exit null. Each command may take 10 minutes.
@@ -182,8 +185,9 @@
 // integrate: reads the integration worktree at <dir>/integration, <dir>/pr.md
 // and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
 // merged lists the task ids whose branch is an ancestor of its HEAD. ok needs
-// every task merged, a clean tree, a pull request text and heavy checks that
-// passed or were not needed. With --tidy yes and ok true it then removes the
+// every task merged, a clean tree, every commit since the run's pinned base
+// made with the configured git identity, a pull request text and heavy checks
+// that passed or were not needed. With --tidy yes and ok true it then removes the
 // worktree and deletes the branch of every merged task, and prunes stale
 // worktree entries; tidied lists those tasks and tidy_problems what it kept.
 // It then clears the review and dependency worktrees and the base ref the run
@@ -718,6 +722,24 @@ function runCommand(cwd, command) {
   };
 }
 
+// A commit made with an identity other than the worktree's configured one is
+// not attributed to the repository's account on the host, so a gate that
+// only looks at the working tree would let it reach a pull request.
+function commitIdentities(cwd, range) {
+  const email = git(cwd, ["config", "user.email"]);
+  const name = git(cwd, ["config", "user.name"]);
+  if (!email) return { expected: null, mismatched: [] };
+  const matches = (n, e) => e === email && (!name || n === name);
+  const mismatched = [];
+  for (const line of (git(cwd, ["log", "--format=%h %an <%ae> %cn <%ce>", range]) ?? "").split("\n")) {
+    const m = line.match(/^(\S+) (.+?) <(.+)> (.+?) <(.+)>$/);
+    if (m && (!matches(m[2], m[3]) || !matches(m[4], m[5]))) mismatched.push(`${m[1]} ${m[2]} <${m[3]}>`);
+  }
+  return { expected: { name: name ?? null, email }, mismatched };
+}
+
+const identityLabel = ({ name, email }) => (name ? `${name} <${email}>` : email);
+
 function task(report, flags) {
   if (!flags.check && !flags.verify) throw new Usage("task needs --check or --verify");
   const cwd = flags.in ?? process.cwd();
@@ -741,6 +763,7 @@ function task(report, flags) {
   const changed = base && fromBase ? (git(cwd, ["diff", "--name-only", base, "HEAD"]) ?? "").split("\n").filter(Boolean) : [];
   const clean = git(cwd, ["status", "--porcelain"]) === "";
   const outside = owns.length ? changed.filter((f) => !owned(f, owns)) : [];
+  const identity = base && fromBase ? commitIdentities(cwd, `${base}..HEAD`) : { expected: null, mismatched: [] };
 
   const check = { command: flags.check ?? null, exit: null, tail: "", signature: null };
   const verify = flags.verify ? { command: flags.verify, exit: null, tail: "", signature: null } : null;
@@ -763,6 +786,8 @@ function task(report, flags) {
   else if (commits === 0) reason = "no commits on the branch";
   else if (!clean) reason = "uncommitted changes in the worktree";
   else if (outside.length) reason = `changed files outside owns: ${outside.slice(0, LIST_CAP).join(", ")}`;
+  else if (identity.mismatched.length)
+    reason = `commits not made with the configured git identity ${identityLabel(identity.expected)}: ${identity.mismatched.slice(0, LIST_CAP).join(", ")}`;
   else if (verify && verify.exit !== 0) reason = `verify failed (exit ${verify.exit}): ${verify.tail}`;
   else if (check.command && check.exit !== 0) reason = `check failed (exit ${check.exit}): ${check.tail}`;
 
@@ -779,6 +804,7 @@ function task(report, flags) {
     base,
     clean,
     commits,
+    identity,
     files: changed.slice(0, LIST_CAP),
     outside: outside.slice(0, LIST_CAP),
     check,
@@ -883,12 +909,18 @@ function integrate(dir, flags) {
   const clean = head ? git(worktree, ["status", "--porcelain"]) === "" : false;
   const pr_text = (readIfExists(path.join(dir, "pr.md")) ?? "").trim().slice(0, PR_CHARS);
   const heavy_check = heavyCheck(path.join(dir, "heavy.md"));
+  const pinned = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null")?.base ?? null;
 
   const reasons = [];
   if (!head) reasons.push("no integration worktree");
   else if (flags.branch && branch !== flags.branch) reasons.push(`integration worktree is on ${branch}, not ${flags.branch}`);
   if (unmerged.length) reasons.push(`not merged: ${unmerged.join(", ")}`);
   if (head && !clean) reasons.push("uncommitted changes in the integration worktree");
+  if (head && pinned) {
+    const identity = commitIdentities(worktree, `${pinned}..HEAD`);
+    if (identity.mismatched.length)
+      reasons.push(`commits not made with the configured git identity ${identityLabel(identity.expected)}: ${identity.mismatched.slice(0, LIST_CAP).join(", ")}`);
+  }
   if (!pr_text) reasons.push("pr.md missing or empty");
   if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
   const ok = reasons.length === 0;

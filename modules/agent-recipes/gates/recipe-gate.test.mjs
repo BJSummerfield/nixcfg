@@ -699,6 +699,128 @@ const gate = (...args) => {
   assert.equal(absent.json.reasons[0], "no integration worktree");
 }
 
+// task and integrate: commits must be made with the configured git identity.
+{
+  const env = {
+    ...process.env,
+    HOME: tmp,
+    GIT_AUTHOR_NAME: "agent",
+    GIT_AUTHOR_EMAIL: "agent@example.com",
+    GIT_COMMITTER_NAME: "agent",
+    GIT_COMMITTER_EMAIL: "agent@example.com",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const report = (text) => write("report.md", text);
+  // GIT_AUTHOR_* and GIT_COMMITTER_* outrank -c, so the override only takes
+  // effect with them out of the environment.
+  const overrideEnv = { ...env };
+  for (const k of ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"]) delete overrideEnv[k];
+  const overrideCommit = (cwd, msg) => {
+    const r = spawnSync("git", ["-c", "user.name=agent", "-c", "user.email=agent@localhost", "commit", "-q", "-m", msg], {
+      cwd,
+      env: overrideEnv,
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+  };
+
+  const source = dir();
+  git(source, "init", "-q", "-b", "main");
+  git(source, "config", "user.name", "agent");
+  git(source, "config", "user.email", "agent@example.com");
+  fs.writeFileSync(path.join(source, "a.txt"), "a\n");
+  git(source, "add", "-A");
+  git(source, "commit", "-q", "-m", "init");
+
+  // A branch whose commits use the configured identity passes.
+  const wt = path.join(dir(), "wt");
+  git(source, "worktree", "add", "-q", "-b", "pi/id", wt, "main");
+  fs.writeFileSync(path.join(wt, "a.txt"), "a2\n");
+  git(wt, "add", "-A");
+  git(wt, "commit", "-q", "-m", "id");
+  const ok = gateIn(wt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "a.txt");
+  assert.equal(ok.status, 0);
+  assert.equal(ok.json.ok, true, ok.json.reason);
+  assert.deepEqual(ok.json.identity, { expected: { name: "agent", email: "agent@example.com" }, mismatched: [] });
+
+  // A commit made with an overridden identity fails and is listed.
+  fs.writeFileSync(path.join(wt, "a.txt"), "a3\n");
+  git(wt, "add", "-A");
+  overrideCommit(wt, "wrong identity");
+  const badSha = git(wt, "rev-parse", "--short", "HEAD");
+  const bad = gateIn(wt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "a.txt");
+  assert.equal(bad.status, 0);
+  assert.equal(bad.json.ok, false);
+  assert.equal(bad.json.check.exit, 0);
+  assert.match(bad.json.reason, /^commits not made with the configured git identity agent <agent@example\.com>: /);
+  assert.deepEqual(bad.json.identity.mismatched, [`${badSha} agent <agent@localhost>`]);
+  assert.match(bad.json.reason, new RegExp(`${badSha} agent <agent@localhost>`));
+
+  // With no user.email configured the check is skipped.
+  const unconfigured = dir();
+  git(unconfigured, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(unconfigured, "a.txt"), "a\n");
+  git(unconfigured, "add", "-A");
+  git(unconfigured, "commit", "-q", "-m", "init");
+  const wt2 = path.join(dir(), "wt2");
+  git(unconfigured, "worktree", "add", "-q", "-b", "pi/noid", wt2, "main");
+  fs.writeFileSync(path.join(wt2, "a.txt"), "x\n");
+  git(wt2, "add", "-A");
+  git(wt2, "commit", "-q", "-m", "noid");
+  const skipped = gateIn(wt2, "task", report("done"), "--repo", unconfigured, "--check", "true", "--owns", "a.txt");
+  assert.equal(skipped.status, 0);
+  assert.equal(skipped.json.ok, true, skipped.json.reason);
+  assert.deepEqual(skipped.json.identity, { expected: null, mismatched: [] });
+
+  // integrate: fails when the integration branch holds such a commit, passes otherwise.
+  const badid = path.join(dir(), "badid");
+  git(source, "worktree", "add", "-q", "-b", "pi/badid", badid, "main");
+  fs.writeFileSync(path.join(badid, "b.txt"), "b\n");
+  git(badid, "add", "-A");
+  overrideCommit(badid, "wrong identity");
+  const badSha2 = git(badid, "rev-parse", "--short", "HEAD");
+  const plan = dir();
+  const pinned = gateIn(source, "pin", plan, "--repo", source);
+  assert.equal(pinned.status, 0);
+  assert.equal(pinned.json.ok, true, pinned.json.reason);
+  const iw = path.join(plan, "integration");
+  git(source, "worktree", "add", "-q", "-b", "implement/x", iw, "main");
+  git(iw, "merge", "-q", "--no-edit", "pi/badid");
+  fs.writeFileSync(path.join(plan, "pr.md"), "Title\n");
+  fs.writeFileSync(path.join(plan, "heavy.md"), "none\n");
+  const failed = gateIn(source, "integrate", plan, "--tasks", "bad:pi/badid", "--branch", "implement/x");
+  assert.equal(failed.status, 0);
+  assert.equal(failed.json.ok, false);
+  const identityReason = failed.json.reasons.find((s) => s.startsWith("commits not made with the configured git identity"));
+  assert.match(identityReason, new RegExp(`${badSha2} agent <agent@localhost>`));
+
+  const goodid = path.join(dir(), "goodid");
+  git(source, "worktree", "add", "-q", "-b", "pi/goodid", goodid, "main");
+  fs.writeFileSync(path.join(goodid, "c.txt"), "c\n");
+  git(goodid, "add", "-A");
+  git(goodid, "commit", "-q", "-m", "good identity");
+  const plan2 = dir();
+  gateIn(source, "pin", plan2, "--repo", source);
+  const iw2 = path.join(plan2, "integration");
+  git(source, "worktree", "add", "-q", "-b", "implement/y", iw2, "main");
+  git(iw2, "merge", "-q", "--no-edit", "pi/goodid");
+  fs.writeFileSync(path.join(plan2, "pr.md"), "Title\n");
+  fs.writeFileSync(path.join(plan2, "heavy.md"), "none\n");
+  const passed = gateIn(source, "integrate", plan2, "--tasks", "good:pi/goodid", "--branch", "implement/y");
+  assert.equal(passed.status, 0);
+  assert.equal(passed.json.ok, true, passed.json.reasons.join("; "));
+  assert.deepEqual(passed.json.reasons, []);
+}
+
 // integrate --tidy: after a passing check, merged tasks lose their worktree and
 // branch; an unmerged branch, a dirty worktree and a failing check keep them.
 {
