@@ -175,7 +175,14 @@ export async function start(spec) {
         const context = u.totalTokens || (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
         const calls = (Array.isArray(event.message.content) ? event.message.content : [])
           .filter((block) => block?.type === "toolCall")
-          .map((block) => ({ id: block.id, tool: block.name, path: block.arguments?.path, command: block.arguments?.command }));
+          .map((block) => ({
+            id: block.id,
+            tool: block.name,
+            // tool paths in the child's events are relative to the child's working directory
+            path:
+              typeof block.arguments?.path === "string" ? path.resolve(spec.cwd ?? ".", block.arguments.path) : block.arguments?.path,
+            command: block.arguments?.command,
+          }));
         const results = (Array.isArray(event.toolResults) ? event.toolResults : []).map((result) => ({
           id: result?.toolCallId,
           isError: result?.isError === true,
@@ -367,6 +374,9 @@ export async function start(spec) {
     turn = null;
     prevTurnKey = null;
     repeats = 0;
+    // a resumed pi that exits without an assistant message must not report
+    // the first process's text
+    lastAssistant = null;
     const session = spec.sessionFile ?? findSessionFile(spec.sessionDir, spec.sessionId);
     const output = spec.item?.output ? path.resolve(spec.cwd ?? ".", spec.item.output) : null;
     run = await runProcess({
