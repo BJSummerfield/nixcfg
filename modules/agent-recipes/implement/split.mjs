@@ -1,6 +1,4 @@
-// The pure side of splitting a task that could not finish in one context:
-// the planner item, the pieces made from its plan, when they are all done,
-// and how they are joined and reviewed. The graph owns the phases.
+// Pure functions only: the graph owns the phases of a split.
 
 export function splitItem(lib, t, o) {
   return lib.splitPlanItem({

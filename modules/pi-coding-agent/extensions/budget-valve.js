@@ -1,7 +1,5 @@
 // Ends a recipe-runner child cleanly when it stops converging or outgrows its
-// context budget, in three independent ways: a reply cut off by the output
-// limit, three compactions in a row with no edit or write, or a context at the
-// role's budget.
+// context budget.
 //
 // A cut-off reply gets one more turn to carry on in smaller pieces; a second
 // cut-off gets one final, tool-permitting notice to save partial work and
@@ -9,11 +7,8 @@
 // tool-blocking notice to stop and reply FAILED: right away, since more
 // tool calls are exactly what did not converge.
 //
-// A context at the budget (RECIPE_BUDGET_TOKENS) gets one steer asking for a
-// handoff: write the note (and, for an implementer, commit first) and nothing
-// else. Only that is allowed from then on. A child is ended once its note and
-// commit are done, or after a further reserve of tokens, or after a few more
-// turns, whichever comes first.
+// A child at its budget (RECIPE_BUDGET_TOKENS) hands off before pi compacts it
+// and loses what it knew, and is ended soon after so it cannot keep growing.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
 // into every session, the interactive one included; recipe-runner children
@@ -164,8 +159,6 @@ function splitCommand(command) {
   return segments;
 }
 
-// The git subcommands of a command made only of allowed git calls (also
-// `git -C <dir> ...`) and `cd <dir>`, or null when it is anything else.
 function gitSubcommands(command) {
   const segments = typeof command === "string" ? splitCommand(command) : null;
   if (!segments) return null;
@@ -202,7 +195,6 @@ export default function budgetValve(pi, env = process.env) {
   let turnsSinceFire = 0;
   let noteDone = false;
   let commitDone = false;
-  // Allowed post-fire tool calls that count toward finishing the handoff.
   const handoffCalls = new Map();
 
   const send = (customType, text, deliverAs, display) =>

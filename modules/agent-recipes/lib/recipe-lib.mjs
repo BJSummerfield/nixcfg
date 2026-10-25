@@ -213,8 +213,6 @@ export function recipeLib(rawPort) {
     });
   }
 
-  // Handoffs. A child that reached its context budget ends with a reply whose
-  // first line is "handoff: ..."; these helpers decide what follows it.
   function handedOff(result) {
     return (result && result.handoff) || null;
   }
@@ -333,8 +331,6 @@ export function recipeLib(rawPort) {
     return continueUnread(item, result);
   }
 
-  // A copy of the item writing to `output` with `task` as its brief; the gate
-  // command follows the output like a retry's does.
   function withOutput(item, output, task) {
     const copy = Object.assign({}, item, { output: output, task: task });
     delete copy.resume;
@@ -385,10 +381,6 @@ export function recipeLib(rawPort) {
     });
   }
 
-  // Runs parts over the unread input (two halves; one part for a single
-  // path), then one merge of the same role over the notes and part files.
-  // Resolves the merge result, or a failed result when a part or the merge
-  // cannot be completed.
   function continueUnread(item, result) {
     const unread = list(result.handoff && result.handoff.unread);
     const note = (result.handoff && result.handoff.note) || null;

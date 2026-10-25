@@ -161,8 +161,6 @@ export async function start(spec) {
 
   const budgetTokens = spec.budget?.tokens > 0 ? spec.budget.tokens : null;
 
-  // Runs one claude process to its end. With `watchBudget`, the first assistant
-  // message that calls a tool at or over the budget kills the tree.
   async function runProcess({ argv, brief, timeoutMs, watchBudget }) {
     const [command, ...prefix] = binOf(spec);
     const env = childEnv(spec);

@@ -385,9 +385,6 @@ export default async function implement(args, port) {
     return null;
   }
 
-  // Decides what follows a handoff: the next implementer on the branch, a split
-  // into pieces, or a person. `g` is a task gate result that carries the head
-  // and the number of commits.
   function takeHandoff(t, handoff, g, result, step) {
     t.head = g.head;
     const next = afterHandoff(t.track, {
