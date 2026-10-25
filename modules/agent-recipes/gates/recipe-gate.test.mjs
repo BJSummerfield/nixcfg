@@ -211,6 +211,37 @@ const gate = (...args) => {
   assert.equal(gate("extract", write("e.md", `File: ${spaced}\n\n> row 4\n`)).json.ok, true);
 }
 
+// A blockquote's first line may be only a location, and its code lines may be
+// wrapped in backticks or set off by a fence; none of that is the text matched
+// in the file, so the same passage passes and only invented code fails.
+{
+  const repo = dir();
+  const abs = path.join(repo, "calc.js");
+  fs.writeFileSync(abs, 'export const FIXTURE_TAG = "tinycalc-q7v2";\nline two\nline three\n');
+
+  // The live shape that used to fail: a location line, a blank >, one backticked line.
+  const sample = gate("extract", write("e.md", `File: ${abs}\n\n> calc.js:1\n>\n> \`export const FIXTURE_TAG = "tinycalc-q7v2";\`\n`), "--repo", repo);
+  assert.equal(sample.status, 0);
+  assert.equal(sample.json.ok, true, JSON.stringify(sample.json));
+  assert.equal(sample.json.quotes, 1);
+  assert.deepEqual(sample.json.missing, []);
+
+  // A start-end location with several backticked lines, still within the range.
+  const ranged = gate("extract", write("e.md", `File: ${abs}\nRange: 1-3\n\n> calc.js:1-3\n>\n> \`export const FIXTURE_TAG = "tinycalc-q7v2";\`\n> \`line two\`\n> \`line three\`\n`), "--repo", repo);
+  assert.equal(ranged.json.ok, true, JSON.stringify(ranged.json));
+  assert.deepEqual(ranged.json.missing, []);
+
+  // A fenced block inside the quote drops its fence lines but keeps its body.
+  const fenced = gate("extract", write("e.md", `File: ${abs}\nRange: 1-3\n\n> calc.js:1-3\n>\n> \`\`\`js\n> line two\n> line three\n> \`\`\`\n`), "--repo", repo);
+  assert.equal(fenced.json.ok, true, JSON.stringify(fenced.json));
+  assert.deepEqual(fenced.json.missing, []);
+
+  // A location line does not rescue invented code.
+  const invented = gate("extract", write("e.md", `File: ${abs}\n\n> calc.js:1\n>\n> \`no such line anywhere\`\n`), "--repo", repo);
+  assert.equal(invented.json.ok, false);
+  assert.deepEqual(invented.json.missing, ["no such line anywhere"]);
+}
+
 // size: bytes under the directory, recursively; split by the half-window rule.
 {
   const d = dir();

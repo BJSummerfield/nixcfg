@@ -318,6 +318,23 @@ function paths(file) {
   return { ok: true, paths: list };
 }
 
+// The extractor wraps a passage's location and code in a blockquote, but the
+// location line, the backticks and the fence lines are not text to find in
+// the file, so they are dropped before a quote is matched against it.
+const QUOTE_LOCATION = /^`?[^`:\s]+:\d+(?:-\d+)?`?$/;
+
+function quoteBody(lines) {
+  const body = [];
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    if (i === 0 && QUOTE_LOCATION.test(t)) return;
+    if (/^```/.test(t)) return;
+    const wrapped = t.match(/^`(.+)`$/);
+    body.push(wrapped ? wrapped[1] : t);
+  });
+  return body;
+}
+
 function quoteTexts(text) {
   const out = [];
   let current = null;
@@ -328,7 +345,7 @@ function quoteTexts(text) {
       current.push(body[1]);
     } else if (!body) current = null;
   }
-  return out.map((q) => q.join(" ").replace(/\s+/g, " ").trim());
+  return out.map((q) => quoteBody(q).join(" ").replace(/\s+/g, " ").trim());
 }
 
 function extract(file, flags) {
