@@ -19,11 +19,16 @@ in
   config = mkIf cfg.enable {
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-      ".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
-      ".pi/agent/subagent-extensions/save-page.js".source = ./extensions/save-page.js;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
         builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;
+    };
+
+    mine.user.agent-recipes = {
+      inherit (data.recipes) window compactionReserve maxTokens;
+      pi = {
+        inherit (data.recipes) provider model;
+      };
     };
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
