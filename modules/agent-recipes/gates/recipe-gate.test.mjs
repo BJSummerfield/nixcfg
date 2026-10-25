@@ -130,7 +130,9 @@ const gate = (...args) => {
 // extract from a repository file: quotes must appear in the named file and range.
 {
   const repo = dir();
-  fs.writeFileSync(path.join(repo, "s.js"), "line one\nfunction go() {\n  return 1;\n}\nlast line\n");
+  // "last line" sits past the range margin of the Range: 1-1 case below.
+  const js = ["line one", "function go() {", "  return 1;", "}", ...Array.from({ length: 10 }, () => "pad"), "last line"].join("\n") + "\n";
+  fs.writeFileSync(path.join(repo, "s.js"), js);
   const good = gate("extract", write("e.md", "File: s.js\nRange: 2-4\n\n> function go() {\n>   return 1;\n\n> }\n"), "--repo", repo);
   assert.equal(good.json.ok, true);
   assert.equal(good.json.quotes, 2);
@@ -142,6 +144,24 @@ const gate = (...args) => {
   assert.equal(outside.json.ok, false);
   const nofile = gate("extract", write("e.md", "File: gone.js\n\n> x\n"), "--repo", repo);
   assert.equal(nofile.json.ok, false);
+}
+
+// A locator's range is approximate: quotes within the margin of it pass; only quotes far outside it, or absent from the file, are missing.
+{
+  const repo = dir();
+  const abs = path.join(repo, "page.md");
+  fs.writeFileSync(abs, Array.from({ length: 100 }, (_, i) => `row ${i + 1}`).join("\n") + "\n");
+  const ranged = (quote) => gate("extract", write("e.md", `File: ${abs}\nRange: 11-28\n\n${quote}\n`));
+  const justBefore = ranged("> row 10");
+  assert.equal(justBefore.json.ok, true);
+  assert.deepEqual(justBefore.json.missing, []);
+  assert.equal(ranged("> row 31").json.ok, true);
+  const far = ranged("> row 78");
+  assert.equal(far.json.ok, false);
+  assert.deepEqual(far.json.missing, ["row 78"]);
+  const absent = ranged("> invented row");
+  assert.equal(absent.json.ok, false);
+  assert.deepEqual(absent.json.missing, ["invented row"]);
 }
 
 // extract shaped as the extractor prompt describes: File, Range, Source, then quotes.
@@ -168,7 +188,7 @@ const gate = (...args) => {
 // A File header with a parenthesised suffix still names the file; its ranges apply when no Range line is given.
 {
   const repo = dir();
-  const body = Array.from({ length: 30 }, (_, i) => `row ${i + 1}`).join("\n");
+  const body = Array.from({ length: 60 }, (_, i) => `row ${i + 1}`).join("\n");
   const abs = path.join(repo, "page.md");
   fs.writeFileSync(abs, body + "\n");
   const suffixed = (quotes, extra = "") => write("e.md", `File: ${abs} (lines 3-5, 20-22)\n${extra}Source: ${abs}\n\n${quotes}\n`);
@@ -176,9 +196,9 @@ const gate = (...args) => {
   assert.equal(good.json.ok, true);
   assert.equal(good.json.file, abs);
   assert.deepEqual(good.json.missing, []);
-  const outside = gate("extract", suffixed("> row 10"));
+  const outside = gate("extract", suffixed("> row 60"));
   assert.equal(outside.json.ok, false);
-  assert.deepEqual(outside.json.missing, ["row 10"]);
+  assert.deepEqual(outside.json.missing, ["row 60"]);
   const ruled = gate("extract", suffixed("> row 10", "Range: 9-11\n"));
   assert.equal(ruled.json.ok, true);
   const words = gate("extract", write("e.md", `File: ${abs} lines 3-5\n\n> row 4\n`));
