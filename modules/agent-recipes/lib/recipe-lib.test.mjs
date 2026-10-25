@@ -312,6 +312,330 @@ console.log("recipe library: ok");
   assert.notEqual(A.healed, B.healed);
 }
 
+// Handoff rules: relay first, split when the relay made no progress, started
+// late or the relays ran out, decide on repeats and on exhausted splits.
+{
+  const L = await load(fake(() => null).runs);
+  assert.deepEqual(L.handoffLimits, { MAX_RELAYS: 2, MAX_SPLITS: 2, START_FRACTION: 0.5 });
+  assert.equal(L.handedOff({ handoff: { line: "handoff: x" } }).line, "handoff: x");
+  assert.equal(L.handedOff({ handoff: null }), null);
+  assert.equal(L.handedOff({}), null);
+  assert.equal(L.remainderOf({ line: "handoff: Tests for the parser; wire-up left!" }), "tests for the parser wire up left");
+  const empty = { line: "handoff: ended by the context valve before its note", empty: true };
+  assert.notEqual(L.remainderOf(empty, "aaa111"), L.remainderOf(empty, "bbb222"));
+  assert.equal(L.remainderOf(empty, "aaa111"), L.remainderOf(empty, "AAA111"));
+  assert.equal(L.remainderOf({ line: "handoff: x", empty: false }, "aaa111"), "x");
+
+  const info = (over) => Object.assign({ head: "h1", commits: 2, firstContext: 10000, budgetTokens: 100000, remainder: "r1" }, over);
+
+  const first = L.handoffTrack();
+  assert.deepEqual(first, { relays: 0, heads: [], remainders: [], piece: false, root: { splits: 0 } });
+  assert.equal(L.afterHandoff(first, info()).action, "relay");
+  assert.deepEqual(first.heads, ["h1"]);
+  assert.deepEqual(first.remainders, ["r1"]);
+
+  const same = L.handoffTrack();
+  L.afterHandoff(same, info());
+  same.relays++;
+  const stalled = L.afterHandoff(same, info({ remainder: "r2" }));
+  assert.equal(stalled.action, "split");
+  assert.match(stalled.reason, /committed nothing/);
+
+  const late = L.handoffTrack();
+  L.afterHandoff(late, info());
+  late.relays++;
+  assert.equal(L.afterHandoff(late, info({ head: "h2", remainder: "r2", firstContext: 50000 })).action, "relay", "exactly half is not above half");
+  assert.equal(L.afterHandoff(late, info({ head: "h3", remainder: "r3", firstContext: 50001 })).action, "split");
+  const unknown = L.handoffTrack();
+  L.afterHandoff(unknown, info());
+  unknown.relays++;
+  assert.equal(L.afterHandoff(unknown, info({ head: "h2", remainder: "r2", firstContext: undefined, budgetTokens: null })).action, "relay");
+
+  const spent = L.handoffTrack();
+  spent.relays = 2;
+  assert.equal(L.afterHandoff(spent, info({ head: "h9", remainder: "r9" })).action, "split");
+
+  const echo = L.handoffTrack();
+  L.afterHandoff(echo, info());
+  const again = L.afterHandoff(echo, info({ head: "h2" }));
+  assert.deepEqual(again, { action: "decide", reason: "the same remainder came back" });
+  const blank = L.handoffTrack();
+  L.afterHandoff(blank, info({ remainder: "" }));
+  assert.equal(L.afterHandoff(blank, info({ remainder: "", head: "h2" })).action, "relay", "an empty remainder never repeats");
+
+  const root = L.handoffTrack();
+  const piece = L.handoffTrack(root);
+  assert.equal(piece.piece, true);
+  assert.equal(piece.root, root.root);
+  assert.equal(L.afterHandoff(piece, info({ commits: 0 })).reason, "nothing committed after a split");
+  assert.equal(L.afterHandoff(root, info({ commits: 0, remainder: "q" })).action, "relay", "a task of the plan with no commits is not a piece");
+
+  const shared = L.handoffTrack();
+  shared.root.splits = 2;
+  shared.relays = 2;
+  const escalated = L.afterHandoff(shared, info({ remainder: "z" }));
+  assert.equal(escalated.action, "decide");
+  assert.match(escalated.reason, /split twice already/);
+  const neighbour = L.handoffTrack(shared);
+  neighbour.relays = 2;
+  assert.equal(L.afterHandoff(neighbour, info({ remainder: "y" })).action, "decide", "pieces share the splits of their task");
+}
+
+// relayLines(): with and without a note.
+{
+  const L = await load(fake(() => null).runs);
+  assert.deepEqual(L.relayLines("/t/note.md", "task-a"), [
+    "Continue this task from the handoff note at /t/note.md; the branch task-a holds the committed work, so build on it and do not redo it.",
+  ]);
+  assert.deepEqual(L.relayLines(null, "task-a"), ["Continue this task; the branch task-a holds the committed work, so build on it and do not redo it."]);
+}
+
+// splitPlanItem(): a big planner node with the plan gate over the worktree.
+{
+  const L = await load(fake(() => null).runs);
+  const o = {
+    key: "split-a-1",
+    splitDir: "/t/split/a-1",
+    parentId: "a",
+    taskFile: "/t/tasks/a.md",
+    note: "/t/note.md",
+    branch: "task-a",
+    base: "abc123",
+    worktree: "/w/it's",
+    owns: ["x.mjs", "y"],
+    limit: 50000,
+    sizing: "/s.json",
+    timeoutMs: 9,
+    handoffOf: "run-1",
+  };
+  const item = L.splitPlanItem(o);
+  assert.equal(item.agent, "planner");
+  assert.equal(item.big, true);
+  assert.equal(item.maxRuntimeMs, 9);
+  assert.equal(item.output, "/t/split/a-1/planner.md");
+  assert.equal(item.handoffOf, "run-1");
+  assert.equal(item.handoffAs, "split");
+  assert.equal(item.gate.command, "recipe-gate plan '/t/split/a-1' --repo '/w/it'\\''s' --limit 50000 --sizing '/s.json'");
+  assert.match(item.task, /^Task file: \/t\/tasks\/a\.md$/m);
+  assert.match(item.task, /^Handoff note: \/t\/note\.md$/m);
+  assert.match(item.task, /^Branch: task-a$/m);
+  assert.match(item.task, /git diff abc123\.\.task-a/);
+  assert.match(item.task, /^Files the pieces may own: x\.mjs, y$/m);
+  assert.match(item.task, /ids start with a-\./);
+  assert.match(item.task, /depends: none/);
+  assert.match(item.task, /\/t\/split\/a-1\/tasks\/<id>\.md/);
+
+  const bare = L.splitPlanItem(Object.assign({}, o, { note: null, limit: undefined, sizing: undefined, owns: null, handoffOf: undefined }));
+  assert.ok(!/Handoff note/.test(bare.task));
+  assert.equal(bare.gate.command, "recipe-gate plan '/t/split/a-1' --repo '/w/it'\\''s'");
+  assert.ok(!("handoffOf" in bare));
+  assert.equal(bare.handoffAs, "split");
+}
+
+// piecesFrom(): each rule alone, then a good split.
+{
+  const L = await load(fake(() => null).runs);
+  const piece = (id, over) => Object.assign({ id: id, owns: ["lib/a.mjs"], depends: [], est: 40000, file: "/t/" + id + ".md" }, over);
+  const gate = (tasks, over) => Object.assign({ ok: true, tasks: tasks }, over);
+  const o = { parentId: "a", parentEst: 80000, parentOwns: ["lib"], taken: ["a-old"] };
+  const good = L.piecesFrom(gate([piece("a-1"), piece("a-2", { owns: ["lib/b.mjs"] })]), o);
+  assert.equal(good.ok, true);
+  assert.deepEqual(good.pieces.map((p) => p.id), ["a-1", "a-2"]);
+  assert.equal(good.problem, null);
+
+  const bad = (g, over) => L.piecesFrom(g, Object.assign({}, o, over));
+  assert.match(bad(gate([piece("a-1"), piece("a-2")], { ok: false })).problem, /plan gate/);
+  assert.match(bad(null).problem, /plan gate/);
+  assert.match(bad(gate([piece("a-1")])).problem, /fewer than two/);
+  assert.match(bad(gate([piece("a-1"), piece("b-2")])).problem, /b-2 does not start with a-/);
+  assert.match(bad(gate([piece("a-1"), piece("a-old")])).problem, /a-old is already taken/);
+  assert.match(bad(gate([piece("a-1"), piece("a-2", { depends: ["a-1"] })])).problem, /a-2 depends on a-1/);
+  assert.match(bad(gate([piece("a-1"), piece("a-2", { owns: ["other/c.mjs"] })])).problem, /a-2 owns files outside/);
+  assert.match(bad(gate([piece("a-1"), piece("a-2", { owns: ["library/c.mjs"] })])).problem, /a-2 owns files outside/, "a shared name prefix is not inside");
+  assert.match(bad(gate([piece("a-1"), piece("a-2", { est: 80000 })])).problem, /a-2 is not estimated smaller/);
+  assert.equal(bad(gate([piece("a-1"), piece("a-2", { owns: ["other/c.mjs"] })]), { parentOwns: null }).ok, true, "no parent paths: not checked");
+  assert.equal(bad(gate([piece("a-1"), piece("a-2")]), { parentEst: null }).ok, true);
+  assert.equal(bad(gate([piece("a-1"), piece("a-old")]), { taken: new Set(["a-old"]) }).ok, false, "a set of taken ids works too");
+}
+
+// Unread input: a synthesizer that read one file of three runs two parts and
+// one merge; the merge is the result and sees only the note and the parts.
+{
+  const handoff = { line: "handoff: read a only; b and c left", unread: ["/in/b.md", "/in/c.md", "/in/d.md"], note: "/t/syn.md", empty: false };
+  const f = fake((item) => {
+    if (item.key === "syn") return Object.assign(ok("syn", { ok: true }), { handoff });
+    return ok(item.key, { ok: true, from: item.key });
+  });
+  const L = await load(f.runs);
+  const item = L.node("syn", "synthesizer", ["Synthesize the inputs.", "Output: /t/syn.md"], "/t/syn.md", { gate: "recipe-gate synth '/t/syn.md'", resume: "run-old" });
+  const result = await L.one(item);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-part-1", "syn-part-2"], ["syn-merge"]]);
+  const [p1, p2] = f.batches[1];
+  assert.equal(p1.output, "/t/syn.part-1.md");
+  assert.equal(p2.output, "/t/syn.part-2.md");
+  assert.equal(p1.gate.command, "recipe-gate synth '/t/syn.part-1.md'");
+  assert.match(p1.task, /When the file is written, run `recipe-gate synth '\/t\/syn\.part-1\.md'`/);
+  assert.ok(!p1.task.includes("Output: /t/syn.md"));
+  assert.match(p1.task, /^Output: \/t\/syn\.part-1\.md$/m);
+  assert.match(p1.task, /This continues an earlier synthesizer that handed off; its notes are at \/t\/syn\.md\. Read only these inputs, which it did not reach: \/in\/b\.md, \/in\/c\.md$/m);
+  assert.match(p2.task, /did not reach: \/in\/d\.md$/m);
+  assert.ok(!("resume" in p1));
+  assert.deepEqual([p1.handoffOf, p1.handoffAs, p1.splitDepth], ["run-syn", "split", 1]);
+
+  const merge = f.batches[2][0];
+  assert.equal(merge.agent, "synthesizer");
+  assert.equal(merge.output, "/t/syn.merged.md");
+  assert.equal(merge.gate.command, "recipe-gate synth '/t/syn.merged.md'");
+  assert.equal(merge.splitDepth, 2);
+  assert.deepEqual([merge.handoffOf, merge.handoffAs], ["run-syn", "split"]);
+  assert.match(merge.task, /^Merge the partial results of earlier synthesizer runs\. Read only the handoff note \/t\/syn\.md and these part files: \/t\/syn\.part-1\.md, \/t\/syn\.part-2\.md; do not open the original inputs\.$/m);
+  assert.match(merge.task, /Write the whole result, in the format of those files, to \/t\/syn\.merged\.md\./);
+  assert.ok(!merge.task.includes("Synthesize the inputs."));
+  assert.ok(!merge.task.includes("/in/"));
+  assert.match(merge.task, /run `recipe-gate synth '\/t\/syn\.merged\.md'`/);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.file, "/t/syn.merged.md");
+  assert.equal(result.structuredOutput.from, "syn-merge");
+  assert.equal(L.tally.children, 4, "the first child, two parts and the merge");
+}
+
+// A reviewer through a big item: one unread path is one part, parts and merge
+// run one at a time.
+{
+  const calls = [];
+  const handoff = { line: "handoff: partial", unread: ["/in/x.diff"], note: null, empty: true };
+  const f = fake((item) => (item.key === "rev" ? Object.assign(ok("rev"), { handoff }) : ok(item.key, { ok: true })));
+  const L = await load({
+    all: async (items) => {
+      calls.push(items.map((i) => i.key));
+      return f.runs.all(items);
+    },
+  });
+  const item = L.node("rev", "reviewer", ["Review.", "Write the report to /t/rev.md"], "/t/rev.md", { gate: "recipe-gate verdict '/t/rev.md'", big: true });
+  const result = await L.launch([item]);
+  assert.deepEqual(calls, [["rev"], ["rev-part-1"], ["rev-merge"]]);
+  assert.equal(result[0].file, "/t/rev.merged.md");
+  assert.ok(f.batches[1][0].big, "a part of a big item is big");
+  assert.match(f.batches[1][0].task, /handed off before writing notes\. Read only these inputs, which it did not reach: \/in\/x\.diff$/m);
+  assert.match(f.batches[2][0].task, /^Merge the partial results of earlier reviewer runs\. Read only these part files: \/t\/rev\.part-1\.md; do not open/m);
+}
+
+// A part that hands off with a shorter list is split again; the sub-merge
+// stands in for the part.
+{
+  const f = fake((item) => {
+    if (item.key === "syn") return Object.assign(ok("syn"), { handoff: { line: "handoff: a", unread: ["/i/1", "/i/2", "/i/3", "/i/4"], note: "/t/syn.md", empty: false } });
+    if (item.key === "syn-part-1") return Object.assign(ok(item.key), { handoff: { line: "handoff: b", unread: ["/i/2"], note: item.output, empty: false } });
+    return ok(item.key, { ok: true });
+  });
+  const L = await load(f.runs);
+  const item = L.node("syn", "synthesizer", ["Synthesize.", "Output: /t/syn.md"], "/t/syn.md", { gate: "recipe-gate synth '/t/syn.md'" });
+  const result = await L.one(item);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [
+    ["syn"],
+    ["syn-part-1", "syn-part-2"],
+    ["syn-part-1-part-1"],
+    ["syn-part-1-merge"],
+    ["syn-merge"],
+  ]);
+  const sub = f.batches[2][0];
+  assert.equal(sub.output, "/t/syn.part-1.part-1.md");
+  assert.equal(sub.splitDepth, 2);
+  assert.match(sub.task, /^Synthesize\.$/m);
+  assert.equal((sub.task.match(/This continues an earlier/g) || []).length, 1, "only the newest input list is in the brief");
+  assert.match(sub.task, /its notes are at \/t\/syn\.part-1\.md\. Read only these inputs, which it did not reach: \/i\/2$/m);
+  assert.match(f.batches[3][0].task, /part files: \/t\/syn\.part-1\.part-1\.md;/);
+  assert.match(f.batches[4][0].task, /part files: \/t\/syn\.part-1\.merged\.md, \/t\/syn\.part-2\.md;/);
+  assert.equal(result.ok, true);
+  assert.equal(result.file, "/t/syn.merged.md");
+}
+
+// A part that hands off with the same list, or at the split limit, fails the
+// step; so does a failed part.
+{
+  const withHandoff = (key, unread) => Object.assign(ok(key), { handoff: { line: "handoff: " + key, unread: unread, note: null, empty: true } });
+  const make = async (respond) => {
+    const f = fake(respond);
+    const L = await load(f.runs);
+    const item = L.node("syn", "synthesizer", ["Synthesize.", "Output: /t/syn.md"], "/t/syn.md", { gate: "recipe-gate synth '/t/syn.md'" });
+    return { f, result: await L.one(item) };
+  };
+
+  const same = await make((item) => {
+    if (item.key === "syn") return withHandoff("syn", ["/i/1", "/i/2"]);
+    if (item.key === "syn-part-1") return withHandoff(item.key, ["/i/1"]);
+    return ok(item.key);
+  });
+  assert.equal(same.result.ok, false);
+  assert.match(same.result.error, /part syn-part-1 failed: a part handed off again without reading any of its input/);
+  assert.deepEqual(same.f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-part-1", "syn-part-2"]]);
+
+  const deep = await make((item) => {
+    if (item.key === "syn") return withHandoff("syn", ["/i/1", "/i/2", "/i/3", "/i/4"]);
+    if (item.key === "syn-part-1") return withHandoff(item.key, ["/i/2"]);
+    if (item.key === "syn-part-1-part-1") return withHandoff(item.key, ["/i/2"]);
+    return ok(item.key);
+  });
+  assert.equal(deep.result.ok, false);
+  assert.match(deep.result.error, /a part handed off at the split limit/);
+  assert.ok(!deep.f.batches.some((b) => b.some((i) => /merge/.test(i.key))), "no merge after a failed part");
+
+  const lost = await make((item) => {
+    if (item.key === "syn") return withHandoff("syn", ["/i/1", "/i/2"]);
+    if (item.key === "syn-part-2" || item.key === "syn-part-2-retry") return failed(item.key, "engine");
+    return ok(item.key);
+  });
+  assert.equal(lost.result.ok, false);
+  assert.match(lost.result.error, /part syn-part-2 failed: engine/);
+  assert.deepEqual(lost.f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-part-1", "syn-part-2"], ["syn-part-2-retry"]]);
+}
+
+// A merge that hands off fails the step and is not split again.
+{
+  const handoff = { line: "handoff: x", unread: ["/i/1", "/i/2"], note: null, empty: true };
+  const f = fake((item) => (item.key === "syn" || item.key === "syn-merge" ? Object.assign(ok(item.key), { handoff }) : ok(item.key)));
+  const L = await load(f.runs);
+  const result = await L.one(L.node("syn", "synthesizer", ["Synthesize.", "Output: /t/syn.md"], "/t/syn.md"));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "the merge handed off");
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-part-1", "syn-part-2"], ["syn-merge"]]);
+  assert.ok(!("gate" in f.batches[2][0]), "an item without a gate stays without one");
+}
+
+// A reviewer or synthesizer handoff without an unread list is a failure; an
+// implementer or scout handoff is returned untouched.
+{
+  const handoff = { line: "handoff: x", unread: [], note: "/t/r.md", empty: false };
+  const f = fake((item) => Object.assign(ok(item.key, { ok: true, verdict: "invalid" }), { handoff }));
+  const L = await load(f.runs);
+  for (const agent of ["reviewer", "synthesizer"]) {
+    const r = await L.one(L.node(agent, agent, ["x"], "/t/" + agent + ".md"));
+    assert.deepEqual(r, { ok: false, error: "handed off without listing unread input", runId: "run-" + agent, file: "/t/" + agent + ".md" });
+  }
+  for (const agent of ["implementer", "scout", undefined]) {
+    const r = await L.one(L.node("k-" + agent, agent, ["x"], "/t/" + agent + ".md"));
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.handoff, handoff);
+    assert.equal(r.file, "/t/" + agent + ".md");
+  }
+  assert.equal(f.batches.length, 5, "nothing was continued");
+}
+
+// A retried child is continued under its retry output.
+{
+  const f = fake((item) => {
+    if (item.key === "syn") return failed("syn", "engine");
+    if (item.key === "syn-retry") return Object.assign(ok(item.key), { handoff: { line: "handoff: x", unread: ["/i/1"], note: item.output, empty: false } });
+    return ok(item.key, { ok: true });
+  });
+  const L = await load(f.runs);
+  const result = await L.launch([L.node("syn", "synthesizer", ["Synthesize.", "Output: /t/syn.md"], "/t/syn.md")]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-retry"], ["syn-retry-part-1"], ["syn-retry-merge"]]);
+  assert.equal(f.batches[2][0].output, "/t/syn.retry.part-1.md");
+  assert.equal(result[0].file, "/t/syn.retry.merged.md");
+}
+
 // A child cut short by a stop ends the graph instead of reaching the retry or the caller.
 {
   const f = fake((item) => (item.key === "b" ? { ...failed(item.key, "run stopped"), status: "aborted" } : ok(item.key, undefined)));

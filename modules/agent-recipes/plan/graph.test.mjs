@@ -6,8 +6,12 @@
  * runner's port.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import graph from "./graph.mjs";
 import { portOf, runThroughRunner } from "../runner/fake.mjs";
+import { parseHandoff } from "../runner/handoff.mjs";
 
 const run = (runs, args, emit) => graph(Object.freeze(args), portOf(runs, emit));
 
@@ -43,6 +47,8 @@ const found = (task, n, kind = "primary") => ({ url: `https://example.com/${task
 const extractOk = { ok: true, bytes: 5000, quotes: 3, over_cap: false };
 const extractOver = { ok: false, bytes: 30000, quotes: 5, over_cap: true };
 const extractRejected = { ok: false, bytes: 10, quotes: 0, over_cap: false };
+// A reply that starts with `handoff:`; the gate's value rides along.
+const handedOff = (reply, structuredOutput = invalid) => ({ reply, structuredOutput });
 const decided = diagnosis("decide", "a person has to choose");
 
 // `planner`, `reviewer` and `diagnose` map a child key to its result; an
@@ -52,6 +58,10 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
+    if (given && given.reply) {
+      const handoff = { ...parseHandoff(given.reply), note: null, empty: true };
+      return { ...ok(key, given.structuredOutput), finalText: given.reply, handoff };
+    }
     return typeof given === "string" ? failed(key, given) : ok(key, given);
   };
   return {
@@ -581,6 +591,74 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(k.scout.task, /Input:/);
   assert.doesNotMatch(k.review.task, /Input:/);
   assert.match(k.review.task, /Goal: The goal\.\nTargets: glob src\/\*\.js\nChange: rename foo to bar\n/);
+}
+
+// A reviewer that hands off without listing what it did not read fails the step: its partial file is never read as a verdict and the usual healing runs.
+{
+  const f = fake({ reviewer: { review: handedOff("handoff: read two of five tasks") } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"], ["diagnose-1"]]);
+  assert.equal(receipt.review, null);
+  assert.match(receipt.open.join("\n"), /no review verdict/);
+  assert.equal(receipt.decide.length, 1);
+}
+
+// The same failure healed by a retry reaches a fresh review; the partial one is not a verdict.
+{
+  const f = fake({
+    reviewer: { review: handedOff("handoff: read two of five tasks", clean) },
+    diagnose: { "diagnose-1": diagnosis("retry", "ran out of room") },
+  });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"], ["diagnose-1"], ["review-2"]]);
+  assert.equal(receipt.review, "clean");
+  assert.equal(receipt.healed.length, 1);
+}
+
+// A reviewer that hands off with unread task files is continued by parts over those files and a merge; the merged review's verdict is the one used.
+{
+  const reply = "handoff: read t1 only\nunread: /t/d/tasks/t2.md, /t/d/tasks/t3.md, /t/d/tasks/t4.md";
+  const f = fake({
+    reviewer: { review: handedOff(reply, clean), "review-merge": needsWork },
+  });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f).slice(0, 7), [["scout"], ["plan"], ["review"], ["review-part-1"], ["review-part-2"], ["review-merge"], ["revise-1"]]);
+  const k = byKey(f);
+  assert.match(k["review-part-1"].task, /Read only these inputs, which it did not reach: \/t\/d\/tasks\/t2\.md, \/t\/d\/tasks\/t3\.md$/);
+  assert.match(k["review-part-2"].task, /Read only these inputs, which it did not reach: \/t\/d\/tasks\/t4\.md$/);
+  assert.equal(k["review-part-1"].output, "/t/d/review.part-1.md");
+  assert.equal(k["review-part-1"].gate.command, "recipe-gate verdict '/t/d/review.part-1.md'");
+  assert.match(k["review-merge"].task, /these part files: \/t\/d\/review\.part-1\.md, \/t\/d\/review\.part-2\.md; do not open the original inputs/);
+  assert.equal(k["review-merge"].output, "/t/d/review.merged.md");
+  assert.match(k["revise-1"].task, /review at \/t\/d\/review\.merged\.md/);
+  assert.equal(receipt.review, "clean");
+  assertUniqueOutputs(f);
+}
+
+// A planner that hands off is not continued; its plan meets the plan check like any short plan, and a failing check goes to the revision path.
+{
+  const f = fake({ planner: { plan: handedOff("handoff: tasks t1 to t3 written; t4 left", bad), "revise-1": good } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["revise-1"], ["review"]]);
+  assert.match(byKey(f)["revise-1"].task, /oversize: t1/);
+  assert.equal(receipt.review, "clean");
+  assert.deepEqual(receipt.open, []);
+}
+
+// A reviewer handoff with unread files through the runner's port gives the same receipt as a direct run; the port writes the reply to the output path, so the directory is real.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plan-graph-"));
+  fs.mkdirSync(path.join(dir, "tasks"));
+  const args = { ...base, dir };
+  const reply = `handoff: read t1 only\nunread: ${dir}/tasks/t2.md, ${dir}/tasks/t3.md`;
+  const make = () => fake({ reviewer: { review: handedOff(reply, clean), "review-merge": needsWork } });
+  const direct = make();
+  const receipt = await run(direct.runs, args);
+  const through = make();
+  assert.deepEqual(await runThroughRunner(graph, through.runs, args), JSON.parse(JSON.stringify(receipt)));
+  assert.deepEqual(keys(through), keys(direct));
+  assert.equal(through.items().filter((item) => item.key.startsWith("review-part-")).length, 2);
+  fs.rmSync(dir, { recursive: true });
 }
 
 console.log("plan graph: ok");

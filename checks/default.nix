@@ -157,6 +157,35 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node budget-valve.test.mjs
         touch $out
       '';
+  pi-runner-budgets =
+    let
+      piSettings = import ../modules/pi-coding-agent/settings.nix;
+    in
+    pkgs.runCommand "pi-runner-budgets"
+      {
+        nativeBuildInputs = [ pkgs.nodejs ];
+        passAsFile = [ "data" ];
+        data = builtins.toJSON (piSettings.runnerLimits // { roles = piSettings.runnerRoles; });
+      }
+      ''
+        node -e '
+          const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+          const names = ["implementer", "scout", "locator", "planner", "reviewer", "synthesizer", "searcher", "extractor"];
+          const xhigh = ["planner", "reviewer", "synthesizer"];
+          const errors = [];
+          for (const n of names) {
+            const b = d.roles[n]?.budget;
+            if (!b) { errors.push(n + ": no budget"); continue; }
+            if (!Number.isInteger(b.tokens) || b.tokens <= 0) errors.push(n + ": tokens");
+            if (!Number.isInteger(b.reserve) || b.reserve <= 0) errors.push(n + ": reserve");
+            if (!["commit", "unread", "stop"].includes(b.action)) errors.push(n + ": action");
+            if (b.tokens + b.reserve > d.window - d.compactionReserve) errors.push(n + ": no room for the handoff turn");
+            if (xhigh.includes(n) && b.reserve < d.maxTokens) errors.push(n + ": reserve below one reply");
+          }
+          if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
+        ' "$dataPath"
+        touch $out
+      '';
   pi-save-page =
     pkgs.runCommand "pi-save-page"
       {

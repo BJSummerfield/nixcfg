@@ -2,6 +2,8 @@
 
 const MAX_HEALS = 2;
 const REASON_CHARS = 300;
+const HANDOFF_LIMITS = Object.freeze({ MAX_RELAYS: 2, MAX_SPLITS: 2, START_FRACTION: 0.5 });
+const UNREAD_ROLES = ["reviewer", "synthesizer"];
 
 // Thrown when the runner reports a child cut short by a stop. The graph ends
 // there: an interrupted child is not a failed one, and nothing after it may
@@ -56,14 +58,16 @@ export function recipeLib(rawPort) {
     return Boolean(result.ok && result.structuredOutput && result.structuredOutput.ok);
   }
 
+  function selfGateLine(gate) {
+    return "When the file is written, run `" + gate + "`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.";
+  }
+
   // `opts.selfGate` false is for a gate with side effects, such as one that
   // tidies worktrees, which the child must not run itself.
   function node(key, agent, lines, output, opts) {
     const o = opts || {};
     const text = lines.slice();
-    if (o.gate && o.selfGate !== false) {
-      text.push("When the file is written, run `" + o.gate + "`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.");
-    }
+    if (o.gate && o.selfGate !== false) text.push(selfGateLine(o.gate));
     const item = { key: key };
     if (agent !== undefined) item.agent = agent;
     Object.assign(item, {
@@ -110,6 +114,7 @@ export function recipeLib(rawPort) {
       const merged = first.map(function (result, i) {
         return Object.assign({}, result, { file: items[i].output });
       });
+      const finals = items.slice();
       const again = [];
       const where = [];
       first.forEach(function (result, i) {
@@ -118,13 +123,21 @@ export function recipeLib(rawPort) {
           where.push(i);
         }
       });
-      if (again.length === 0) return merged;
+      const finish = function () {
+        return Promise.all(
+          merged.map(function (result, i) {
+            return unreadStep(finals[i], result);
+          }),
+        );
+      };
+      if (again.length === 0) return finish();
       tally.children += again.length;
       return port.runMany(again).then(function (second) {
         second.forEach(function (result, j) {
           merged[where[j]] = Object.assign({}, result, { file: again[j].output });
+          finals[where[j]] = again[j];
         });
-        return merged;
+        return finish();
       });
     });
   }
@@ -134,11 +147,11 @@ export function recipeLib(rawPort) {
   function launchBig(item) {
     tally.children++;
     return port.runOne(item).then(function (first) {
-      if (first.ok || stoppedItself(first)) return Object.assign({}, first, { file: item.output });
+      if (first.ok || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
       const again = retryItem(item, first);
       tally.children++;
       return port.runOne(again).then(function (second) {
-        return Object.assign({}, second, { file: again.output });
+        return unreadStep(again, Object.assign({}, second, { file: again.output }));
       });
     });
   }
@@ -197,6 +210,195 @@ export function recipeLib(rawPort) {
       });
     }).then(function (results) {
       return results[0];
+    });
+  }
+
+  function handedOff(result) {
+    return (result && result.handoff) || null;
+  }
+
+  function remainderOf(handoff, head) {
+    const line = String((handoff && handoff.line) || "").replace(/^\s*handoff\s*:/i, "");
+    const text = handoff && handoff.empty && head ? line + " " + head : line;
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  // A piece shares its parent's `root`, so splits count once per original task.
+  function handoffTrack(parentTrack) {
+    return {
+      relays: 0,
+      heads: [],
+      remainders: [],
+      piece: Boolean(parentTrack),
+      root: parentTrack ? parentTrack.root : { splits: 0 },
+    };
+  }
+
+  function afterHandoff(track, info) {
+    const limits = HANDOFF_LIMITS;
+    const head = info.head || null;
+    const remainder = info.remainder || "";
+    const lastHead = track.heads.length ? track.heads[track.heads.length - 1] : null;
+    const repeated = remainder !== "" && track.remainders.indexOf(remainder) >= 0;
+    if (head) track.heads.push(head);
+    if (remainder) track.remainders.push(remainder);
+    if (repeated) return { action: "decide", reason: "the same remainder came back" };
+    if (track.piece && info.commits === 0) return { action: "decide", reason: "nothing committed after a split" };
+    let reason = null;
+    if (track.relays >= limits.MAX_RELAYS) reason = "relayed " + track.relays + " times already";
+    else if (track.relays >= 1 && head && head === lastHead) reason = "the relay committed nothing";
+    else if (track.relays >= 1 && info.firstContext > 0 && info.budgetTokens > 0 && info.firstContext > limits.START_FRACTION * info.budgetTokens) {
+      reason = "the relay spent over half its budget loading context";
+    }
+    if (reason === null) return { action: "relay", reason: "first handoff of this task" };
+    if (track.root.splits >= limits.MAX_SPLITS) return { action: "decide", reason: "split twice already; " + reason };
+    return { action: "split", reason: reason };
+  }
+
+  function relayLines(note, branch) {
+    const held = "the branch " + branch + " holds the committed work, so build on it and do not redo it.";
+    if (note) return ["Continue this task from the handoff note at " + note + "; " + held];
+    return ["Continue this task; " + held];
+  }
+
+  function splitPlanItem(o) {
+    const file = o.splitDir + "/planner.md";
+    let gate = "recipe-gate plan " + quote(o.splitDir) + " --repo " + quote(o.worktree);
+    if (o.limit) gate += " --limit " + Number(o.limit);
+    if (o.sizing) gate += " --sizing " + quote(o.sizing);
+    const lines = ["Split a task that its implementer could not finish within one context (the plan variant).", "Task file: " + o.taskFile];
+    if (o.note) lines.push("Handoff note: " + o.note);
+    lines.push(
+      "Branch: " + o.branch,
+      "Worktree: " + o.worktree + " (read only; change nothing there)",
+      "Work so far: git diff " + o.base + ".." + o.branch,
+      "Files the pieces may own: " + (o.owns && o.owns.length ? o.owns.join(", ") : "any file the task needs"),
+      "Piece ids start with " + o.parentId + "-.",
+      "Plan two or more pieces, each smaller than the task, independent of each other (depends: none), each starting from the branch " + o.branch + "; work already committed there is not redone.",
+      "Plan directory: " + o.splitDir,
+      "Write " + o.splitDir + "/plan.md and one " + o.splitDir + "/tasks/<id>.md per piece in the task header format.",
+      "Write a short summary of the split to " + file,
+    );
+    const item = node(o.key, "planner", lines, file, { gate: gate, timeoutMs: o.timeoutMs, big: true });
+    if (o.handoffOf) item.handoffOf = o.handoffOf;
+    item.handoffAs = "split";
+    return item;
+  }
+
+  function insidePaths(paths, parents) {
+    return paths.every(function (p) {
+      return parents.some(function (q) {
+        return p === q || p.startsWith(q + "/");
+      });
+    });
+  }
+
+  function piecesFrom(gate, o) {
+    const prefix = o.parentId + "-";
+    const taken = Array.from(o.taken || []);
+    const refuse = function (problem) {
+      return { ok: false, pieces: [], problem: problem };
+    };
+    if (!gate || !gate.ok) return refuse("the split plan did not pass the plan gate");
+    const tasks = list(gate.tasks);
+    if (tasks.length < 2) return refuse("the split plan has fewer than two pieces");
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (!String(t.id).startsWith(prefix)) return refuse("piece " + t.id + " does not start with " + prefix);
+      if (taken.indexOf(t.id) >= 0) return refuse("piece id " + t.id + " is already taken");
+      if (list(t.depends).length) return refuse("piece " + t.id + " depends on " + list(t.depends).join(", ") + "; pieces must be independent");
+      if (o.parentOwns && !insidePaths(list(t.owns), o.parentOwns)) return refuse("piece " + t.id + " owns files outside the task's own");
+      if (Number.isFinite(o.parentEst) && !(t.est < o.parentEst)) return refuse("piece " + t.id + " is not estimated smaller than the task");
+    }
+    return { ok: true, pieces: tasks, problem: null };
+  }
+
+  function failedStep(item, result, error) {
+    return { ok: false, error: error, runId: result.runId, file: result.file || item.output };
+  }
+
+  // A reviewer or synthesizer that handed off is continued over the input it
+  // did not read; any other role's handoff is the graph's to act on.
+  function unreadStep(item, result) {
+    if (!result.ok || !result.handoff || UNREAD_ROLES.indexOf(item.agent) < 0) return Promise.resolve(result);
+    if (item.merging) return Promise.resolve(failedStep(item, result, "the merge handed off"));
+    const unread = list(result.handoff.unread);
+    if (unread.length === 0) return Promise.resolve(failedStep(item, result, "handed off without listing unread input"));
+    if (item.splitDepth) {
+      if (item.splitDepth >= HANDOFF_LIMITS.MAX_SPLITS) return Promise.resolve(failedStep(item, result, "a part handed off at the split limit"));
+      if (unread.length >= item.unreadGiven) return Promise.resolve(failedStep(item, result, "a part handed off again without reading any of its input"));
+    }
+    return continueUnread(item, result);
+  }
+
+  function withOutput(item, output, task) {
+    const copy = Object.assign({}, item, { output: output, task: task });
+    delete copy.resume;
+    if (item.gate) {
+      copy.gate = Object.assign({}, item.gate, {
+        command: item.gate.command.split(quote(item.output)).join(quote(output)),
+      });
+    }
+    return copy;
+  }
+
+  // A part of a part is cut from the original brief, not from the earlier
+  // part's brief, so only the newest list of inputs is in it.
+  function partItem(item, note, k, paths, handoffOf) {
+    const base = item.unreadBase || { task: item.task, output: item.output };
+    const moved = sibling(item.output, "part-" + k);
+    const lines = [
+      base.task.split(base.output).join(moved),
+      "This continues an earlier " + item.agent + " that handed off" + (note ? "; its notes are at " + note : " before writing notes") + ". Read only these inputs, which it did not reach: " + paths.join(", "),
+    ];
+    return Object.assign(withOutput(item, moved, lines.join("\n")), {
+      key: item.key + "-part-" + k,
+      handoffOf: handoffOf,
+      handoffAs: "split",
+      splitDepth: (item.splitDepth || 0) + 1,
+      unreadGiven: paths.length,
+      unreadBase: { task: base.task, output: base.output },
+    });
+  }
+
+  function mergeItem(item, note, files, handoffOf) {
+    const merged = sibling(item.output, "merged");
+    const text = [
+      "Merge the partial results of earlier " + item.agent + " runs. Read only " + (note ? "the handoff note " + note + " and " : "") + "these part files: " + files.join(", ") + "; do not open the original inputs.",
+      "Write the whole result, in the format of those files, to " + merged + ".",
+    ];
+    const selfGated = item.gate && item.task.indexOf("run `" + item.gate.command + "`") >= 0;
+    if (selfGated) text.push(selfGateLine(item.gate.command.split(quote(item.output)).join(quote(merged))));
+    const copy = withOutput(item, merged, text.join("\n"));
+    delete copy.unreadBase;
+    delete copy.unreadGiven;
+    return Object.assign(copy, {
+      key: item.key + "-merge",
+      handoffOf: handoffOf,
+      handoffAs: "split",
+      splitDepth: HANDOFF_LIMITS.MAX_SPLITS,
+      merging: true,
+    });
+  }
+
+  function continueUnread(item, result) {
+    const unread = list(result.handoff && result.handoff.unread);
+    const note = (result.handoff && result.handoff.note) || null;
+    const cut = Math.ceil(unread.length / 2);
+    const groups = unread.length > 1 ? [unread.slice(0, cut), unread.slice(cut)] : [unread];
+    const parts = groups.map(function (paths, i) {
+      return partItem(item, note, i + 1, paths, result.runId);
+    });
+    return launch(parts).then(function (done) {
+      for (let i = 0; i < done.length; i++) {
+        if (!done[i].ok) return failedStep(item, result, "part " + parts[i].key + " failed: " + (done[i].error || "no result"));
+      }
+      const files = done.map(function (r) {
+        return r.file;
+      });
+      return launch([mergeItem(item, note, files, result.runId)]).then(function (results) {
+        return results[0];
+      });
     });
   }
 
@@ -455,6 +657,15 @@ export function recipeLib(rawPort) {
     inTurn,
     launch,
     one,
+    handoffLimits: HANDOFF_LIMITS,
+    handedOff,
+    remainderOf,
+    handoffTrack,
+    afterHandoff,
+    relayLines,
+    splitPlanItem,
+    piecesFrom,
+    continueUnread,
     subjectOf,
     troubleOf,
     exhausted,

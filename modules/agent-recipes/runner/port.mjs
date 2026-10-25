@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { runGate as defaultRunGate } from "./gate.mjs";
+import { parseHandoff } from "./handoff.mjs";
 import { bigLock as defaultBigLock, procStartTime, reserveTokens as defaultReserve, roleEstimate, semaphore } from "./limits.mjs";
 import { killTree } from "./tree-kill.mjs";
 import { makeWorktree, removeWorktree, worktreeState } from "./worktree.mjs";
@@ -11,6 +12,10 @@ const DEFAULT_STATE_DIR = "/var/tmp/recipe-runner";
 const WRITER_STOP = /^\s*(failed|blocked)\s*:/i;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
+
+const HANDOFF_NOTE_BYTES = 1048576;
+const VALVE_ENDED_LINE = "handoff: ended by the context valve before its note";
+const NO_HANDOFF_ERROR = "context budget reached and no handoff was written";
 
 const OUTPUT_TRAILER = (output) =>
   `\n\n---\n**Output:**\nWrite your findings to exactly this path: ${output}\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the system prompt or the task instructions.`;
@@ -85,6 +90,14 @@ function snapshot(file) {
     return { exists: true, mtimeMs: stat.mtimeMs, size: stat.size };
   } catch {
     return { exists: false };
+  }
+}
+
+function readNote(file, bytes) {
+  try {
+    return fs.readFileSync(file).subarray(0, bytes).toString("utf8");
+  } catch {
+    return "";
   }
 }
 
@@ -235,6 +248,7 @@ export function createPort(opts) {
         childCwd = resumed.cwd;
         worktree = resumed.worktree ?? null;
         branch = resumed.branch ?? null;
+        base = resumed.base ?? null;
       } else if (item.worktree === true) {
         made = worktrees.make({
           repo: cwd,
@@ -273,12 +287,41 @@ export function createPort(opts) {
         sessionFile,
         resume: Boolean(resumed),
         timeoutMs: item.maxRuntimeMs ?? defaultTimeoutMs,
-        env: opts.env ?? {},
+        env: {
+          ...(opts.env ?? {}),
+          RECIPE_ROLE: roleName,
+          ...(outputPath ? { RECIPE_OUTPUT: outputPath } : {}),
+          ...(role.budget
+            ? {
+                RECIPE_BUDGET_TOKENS: String(role.budget.tokens),
+                RECIPE_BUDGET_RESERVE: String(role.budget.reserve),
+                RECIPE_HANDOFF_ACTION: String(role.budget.action),
+              }
+            : {}),
+        },
+        budget: role.budget ?? null,
         logDir: path.join(runDir, "children", runId),
         transcriptFile: path.join(runDir, "transcripts", `${randomUUID()}_${roleName}_transcript.jsonl`),
         signal,
         bin: opts.bin,
-        onSpawn: ({ pid } = {}) => begin(pid),
+        onSpawn: ({ pid } = {}) => {
+          if (!started) begin(pid);
+          else if (!finished) respawn(pid);
+        },
+      };
+
+      const respawn = (pid) => {
+        childPid = pid ?? null;
+        record = { ...record, pid: childPid, pidStart: childPid ? procStartTime(childPid) : null };
+        appendJsonl(log, {
+          type: "respawn",
+          key: item.key,
+          runId,
+          pid: record.pid,
+          pidStart: record.pidStart,
+          at: at(),
+        });
+        writeJson(indexFile(stateDir, runId), record);
       };
 
       const begin = (pid) => {
@@ -294,6 +337,8 @@ export function createPort(opts) {
           cwd: childCwd,
           worktree,
           branch,
+          base,
+          transcriptFile: spec.transcriptFile,
           sessionDir,
           sessionId,
           sessionFile: sessionFile ?? null,
@@ -345,14 +390,35 @@ export function createPort(opts) {
         }
       }
 
+      const noteWritten = Boolean(outputPath) && fs.existsSync(outputPath);
+      const valveFired = outcome.valve?.fired === true;
+      let handoff = parseHandoff(finalText);
+      const note = valveFired && noteWritten ? readNote(outputPath, HANDOFF_NOTE_BYTES) : "";
+      if (!handoff && note) handoff = parseHandoff(note);
+      if (handoff) {
+        handoff = { ...handoff, note: noteWritten ? item.output : null, empty: !noteWritten };
+      } else if (valveFired && worktree && base && worktrees.state(worktree, base).commits > 0) {
+        handoff = { line: VALVE_ENDED_LINE, unread: [], note: null, empty: true };
+      }
+      const finishedUnmarked = !handoff && valveFired && role.budget?.action !== "commit" && note.trim() !== "";
+
       let status = outcome.status;
       let error = outcome.error;
-      const reported = writerStop(role, outcome);
-      if (reported) {
+      const reported = handoff ? null : writerStop(role, outcome);
+      if (handoff && status !== "timeout") {
+        status = "done";
+        error = undefined;
+      } else if (reported) {
         status = "stopped";
         error = `reported as not-satisfied: ${reported}`;
       } else if (status === "timeout") {
         error ??= `timed out after ${spec.timeoutMs} ms`;
+      } else if (finishedUnmarked) {
+        status = "done";
+        error = undefined;
+      } else if (valveFired && !handoff) {
+        status = "failed";
+        error = NO_HANDOFF_ERROR;
       } else if (status !== "done") {
         error ??= "child failed";
       }
@@ -411,7 +477,39 @@ export function createPort(opts) {
         sessionFile: outcome.sessionFile ?? record.sessionFile,
         usage: outcome.usage ?? { ...EMPTY_USAGE },
         ms: outcome.ms ?? 0,
+        handoff,
+        budget: role.budget ?? null,
+        valve: outcome.valve ?? null,
       };
+      appendJsonl(spec.transcriptFile, {
+        recordType: "outcome",
+        runId,
+        role: roleName,
+        peakContext: result.usage.peakContext ?? 0,
+        firstContext: result.usage.firstContext ?? result.usage.peakContext ?? 0,
+        budget: role.budget?.tokens ?? null,
+        valve: valveFired,
+        handoff: Boolean(handoff),
+      });
+      if (item.handoffOf) {
+        const predecessor = lookupRun(item.handoffOf)?.transcriptFile;
+        if (predecessor) {
+          appendJsonl(predecessor, {
+            recordType: "handoff-outcome",
+            runId: item.handoffOf,
+            as: item.handoffAs ?? null,
+            by: runId,
+          });
+        }
+        appendJsonl(log, {
+          type: "handoff",
+          key: item.key,
+          runId: item.handoffOf,
+          as: item.handoffAs ?? null,
+          by: runId,
+          at: at(),
+        });
+      }
       appendJsonl(log, { type: "settle", key: item.key, runId, fingerprint: fp, at: at(), result });
       return result;
     } catch (error) {
@@ -446,6 +544,10 @@ export async function killUnfinished(runDir, { stateDir, graceMs } = {}) {
   const ended = new Set(records.filter((r) => r.type === "end").map((r) => r.runId));
   const gateEnded = new Set(records.filter((r) => r.type === "gate-end").map((r) => r.runId));
   const killed = [];
+  const latest = new Map();
+  for (const rec of records) {
+    if (rec.type === "start" || rec.type === "respawn") latest.set(rec.runId, rec);
+  }
   for (const rec of records) {
     if (rec.type === "gate-start" && !gateEnded.has(rec.runId)) {
       gateEnded.add(rec.runId);
@@ -457,8 +559,9 @@ export async function killUnfinished(runDir, { stateDir, graceMs } = {}) {
     }
     if (rec.type !== "start" || ended.has(rec.runId)) continue;
     ended.add(rec.runId);
-    if (rec.pid && rec.pidStart && procStartTime(rec.pid) === String(rec.pidStart)) {
-      await killTree(rec.pid, { graceMs });
+    const live = latest.get(rec.runId);
+    if (live.pid && live.pidStart && procStartTime(live.pid) === String(live.pidStart)) {
+      await killTree(live.pid, { graceMs });
       killed.push(rec.runId);
     }
     appendJsonl(log, { type: "end", key: rec.key, runId: rec.runId, at: new Date().toISOString() });

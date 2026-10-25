@@ -72,7 +72,10 @@ function findSessionFile(dir, sessionId) {
 
 export async function start(spec) {
   const startedAt = Date.now();
-  const usage = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
+  const usage = { prompt: 0, cached: 0, output: 0, peakContext: 0, firstContext: 0, turns: 0, compactions: 0 };
+  let valve = null;
+  let writeContext = null;
+  let commitContext = null;
   const outcome = (fields) => ({
     status: "failed",
     exitCode: null,
@@ -80,6 +83,7 @@ export async function start(spec) {
     stopReason: null,
     finalText: "",
     usage,
+    valve,
     sessionFile: findSessionFile(spec.sessionDir, spec.sessionId) ?? spec.sessionFile ?? null,
     ms: Date.now() - startedAt,
     ...fields,
@@ -133,6 +137,16 @@ export async function start(spec) {
 
   const onEvent = (event) => {
     if (event?.type === "compaction_end" && event.result) usage.compactions++;
+    if (event?.type === "entry_appended" && event.entry?.customType === "budget-valve") {
+      const data = event.entry.data ?? {};
+      transcript.write(`${JSON.stringify({ recordType: "valve", data })}\n`);
+      if (data.kind === "handoff") {
+        valve = { ...valve, fired: true, tokens: data.tokens, budget: data.budget, action: data.action, ended: valve?.ended ?? false };
+      } else if (data.kind === "ended") {
+        valve = { fired: true, ...valve, ended: true };
+      }
+      return;
+    }
     if (event?.type !== "message_end" || !event.message) return;
     const message = event.message;
     const record = { recordType: "message", message };
@@ -150,7 +164,14 @@ export async function start(spec) {
     usage.prompt += input + cacheRead + cacheWrite;
     usage.cached += cacheRead;
     usage.output += output;
-    usage.peakContext = Math.max(usage.peakContext, u.totalTokens || input + output + cacheRead + cacheWrite);
+    const context = u.totalTokens || input + output + cacheRead + cacheWrite;
+    usage.peakContext = Math.max(usage.peakContext, context);
+    const calls = Array.isArray(message.content) ? message.content.filter((b) => b?.type === "toolCall") : [];
+    if (writeContext === null && calls.some((b) => b.name === "write" || b.name === "edit")) writeContext = context;
+    if (commitContext === null && calls.some((b) => b.name === "bash" && /git commit/.test(String(b.arguments?.command ?? "")))) {
+      commitContext = context;
+    }
+    usage.firstContext = writeContext ?? commitContext ?? usage.peakContext;
     usage.turns++;
     lastAssistant = {
       stopReason: message.stopReason ?? null,
