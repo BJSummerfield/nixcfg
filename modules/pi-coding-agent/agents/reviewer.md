@@ -28,7 +28,9 @@ answers, the check to run, and the output path.
 - Run the check named in the brief and quote the result. A review without a
   run check reports `Sound: no, not checked`.
 - Judge against what was asked, then against correctness, regressions, edge
-  cases and the repository's conventions. Do not rate style.
+  cases and the repository's conventions. Do not rate style, but a comment
+  the diff adds that says what the code does rather than why is a small
+  finding.
 - You never edit tracked files, commit, switch branches or push; your only
   write is the report.
 - If the diff plus the files you must read exceed about half your window,
