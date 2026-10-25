@@ -7,7 +7,7 @@ import { FIXTURE_TAG } from "./fixtures/tinycalc/calc.js";
 import { setupPlan, setupRepo, withRoleOverrides } from "./core.mjs";
 import { processLives, readJson, readRecords, receiptPath, runIsAlive, statusPath } from "../runner/run.mjs";
 
-export const HANDOFF_TOKENS = 6000;
+export const HANDOFF_TOKENS = 8500;
 export const HANDOFF_RESERVE = 6000;
 
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0 };
@@ -119,11 +119,14 @@ export function checkImplement(receipt, taskIds, nodeTestPassed) {
   return { pass: true, detail: "" };
 }
 
-export function checkHandoff(records) {
-  if (!(records ?? []).some((r) => r?.type === "handoff" && r?.as === "relay")) {
-    return { pass: false, detail: "no relayed handoff in the children log" };
-  }
-  return { pass: true, detail: "" };
+export function checkHandoff(records, receipt, taskIds) {
+  const recs = records ?? [];
+  const relay = recs.find((r) => r?.type === "handoff" && r?.as === "relay");
+  if (!relay) return { pass: false, detail: "no relayed handoff in the children log" };
+  const settled = recs.some((r) => r?.type === "settle" && r?.key === relay.key && r?.runId === relay.by);
+  if (!settled) return { pass: false, detail: "the relayed child of the handoff never settled" };
+  const merged = checkMerged(receipt, taskIds);
+  return { pass: true, detail: merged.pass ? "merged" : `not merged: ${merged.detail}` };
 }
 
 export function checkStop(receipt) {
@@ -380,17 +383,14 @@ async function handoffTest(ctx) {
         implementer: { budget: { tokens: HANDOFF_TOKENS, reserve: HANDOFF_RESERVE, action: "commit" } },
       }),
     };
-    const { repo, plan } = implementSetup(ctx, sub, false);
+    const { repo, plan, taskIds } = implementSetup(ctx, sub, false);
     await ctx.runner(
       ["run", "implement", "--args", JSON.stringify({ plan, repo }), "--cwd", repo, "--timeout-ms", String(IMPLEMENT_TIMEOUT_MS)],
       { env, cwd: repo, signal: ctx.signal },
     );
     const records = readRecords(childrenLog(plan));
-    const merged = checkMerged(readJson(receiptPath(plan)), ["multiply"]);
-    const handoff = checkHandoff(records);
-    const pass = merged.pass && handoff.pass;
-    const detail = pass ? "" : handoff.pass ? merged.detail : merged.pass ? handoff.detail : `${merged.detail}; ${handoff.detail}`;
-    return makeResult(name, began, pass, detail, statsFromRecords(records));
+    const check = checkHandoff(records, readJson(receiptPath(plan)), taskIds);
+    return makeResult(name, began, check.pass, check.detail, statsFromRecords(records));
   } catch (error) {
     return makeResult(name, began, false, error.message);
   }

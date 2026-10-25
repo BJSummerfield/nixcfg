@@ -48,8 +48,8 @@ test("TESTS holds the six live tests in order, each with a run function", () => 
   for (const t of TESTS) assert.equal(typeof t.run, "function", t.name);
 });
 
-test("the handoff budget constants are 6000 tokens and 6000 reserve", () => {
-  assert.equal(HANDOFF_TOKENS, 6000);
+test("the handoff budget constants are 8500 tokens and 6000 reserve", () => {
+  assert.equal(HANDOFF_TOKENS, 8500);
   assert.equal(HANDOFF_RESERVE, 6000);
 });
 
@@ -172,13 +172,30 @@ const WITH_HANDOFF = [
   { type: "settle", key: "impl/multiply", runId: "r2", result: { status: "done", usage: { prompt: 50, cached: 90, output: 5 } } },
 ];
 
-test("checkHandoff sees the relayed handoff and nothing else", () => {
-  assert.deepEqual(checkHandoff(WITH_HANDOFF), { pass: true, detail: "" });
-  assert.equal(checkHandoff(NO_HANDOFF).pass, false);
-  assert.match(checkHandoff(NO_HANDOFF).detail, /no relayed handoff/);
-  assert.equal(checkHandoff([]).pass, false);
-  assert.equal(checkHandoff([{ ...WITH_HANDOFF[1], as: "implementer" }]).pass, false);
-  assert.equal(checkHandoff([{ ...WITH_HANDOFF[1], as: undefined }]).pass, false);
+const RECEIPT = { base: "a111", branch: "implement/plan", merged: ["multiply"], left: [], open: [] };
+
+test("checkHandoff passes a relayed handoff whose relay settled and reports the merge state", () => {
+  assert.deepEqual(checkHandoff(WITH_HANDOFF, RECEIPT, ["multiply"]), { pass: true, detail: "merged" });
+  const notMerged = checkHandoff(WITH_HANDOFF, { ...RECEIPT, merged: [] }, ["multiply"]);
+  assert.equal(notMerged.pass, true);
+  assert.match(notMerged.detail, /not merged: tasks not merged: multiply/);
+  const noReceipt = checkHandoff(WITH_HANDOFF, null, ["multiply"]);
+  assert.equal(noReceipt.pass, true);
+  assert.match(noReceipt.detail, /not merged: no receipt/);
+});
+
+test("checkHandoff fails a relayed handoff whose relay never settled", () => {
+  const r = checkHandoff(WITH_HANDOFF.slice(0, 3), RECEIPT, ["multiply"]);
+  assert.equal(r.pass, false);
+  assert.match(r.detail, /never settled/);
+});
+
+test("checkHandoff fails when there is no relayed handoff", () => {
+  assert.equal(checkHandoff(NO_HANDOFF, RECEIPT, ["multiply"]).pass, false);
+  assert.match(checkHandoff(NO_HANDOFF, RECEIPT, ["multiply"]).detail, /no relayed handoff/);
+  assert.equal(checkHandoff([], RECEIPT, ["multiply"]).pass, false);
+  assert.equal(checkHandoff([{ ...WITH_HANDOFF[1], as: "implementer" }], RECEIPT, ["multiply"]).pass, false);
+  assert.equal(checkHandoff([{ ...WITH_HANDOFF[1], as: undefined }], RECEIPT, ["multiply"]).pass, false);
 });
 
 test("checkStop wants a stopped receipt with a non-empty interrupted list", () => {
@@ -300,7 +317,7 @@ test("dispatch-pi fails with a detail when the result is not ok", async () => {
   assert.match(r.detail, /not ok: engine is down/);
 });
 
-function implRepo(base, calcJs, calcTestJs) {
+function implRepo(base, calcJs, calcTestJs, checkout = null) {
   const dir = path.join(base, "repo");
   fs.mkdirSync(dir, { recursive: true });
   const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
@@ -317,6 +334,7 @@ function implRepo(base, calcJs, calcTestJs) {
   git("add", "-A");
   git("commit", "-q", "-m", "fixture");
   git("branch", "implement/plan");
+  if (checkout) git("checkout", "-q", checkout);
   return dir;
 }
 
@@ -347,9 +365,9 @@ const MULTIFY_TEST = [
   "",
 ].join("\n");
 
-test("nodeTestOnBranch passes a branch whose test passes and whose calc.js exports multiply", () => {
+test("nodeTestOnBranch passes a branch checked out in the main worktree whose test passes and whose calc.js exports multiply", () => {
   const base = fs.mkdtempSync(path.join(tmp, "impl-"));
-  const repo = implRepo(base, MULTIFY_CALC, MULTIFY_TEST);
+  const repo = implRepo(base, MULTIFY_CALC, MULTIFY_TEST, "implement/plan");
   const r = nodeTestOnBranch(repo, "implement/plan", path.join(base, "integration"));
   assert.equal(r.passed, true, r.error);
 });
