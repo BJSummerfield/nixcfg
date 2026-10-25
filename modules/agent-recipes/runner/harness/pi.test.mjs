@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { piArgv, start } from "./pi.mjs";
+import { LOOP_REPEATS, piArgv, start } from "./pi.mjs";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const alive = (pid) => {
@@ -155,6 +155,78 @@ for (let turn = 0; turn < 3; turn++) {
 }
 lines.push({ type: "entry_appended", entry: { customType: "budget-valve", data: { kind: "ended" } } });
 lines.push({ type: "compaction_start" });
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "looped.mjs"),
+  `import { spawn } from "node:child_process";
+import fs from "node:fs";
+const grandchild = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" });
+fs.writeFileSync(process.env.FAKE_RECORD, String(grandchild.pid));
+${stubHead}const lines = [
+  assistant([{ type: "text", text: "done" }], 100, "stop"),
+  ...[0, 1, 2, 3].flatMap(() => [
+    assistant([call("bash", { command: "ls" })], 100),
+    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "no change" }], isError: true } },
+  ]),
+];
+for (const line of lines) process.stdout.write(JSON.stringify(line) + "\\n");
+setTimeout(() => {}, 60000);
+`,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-recovered.mjs"),
+  stubHead + `const lines = [
+  ...[0, 1, 2].flatMap(() => [
+    assistant([call("bash", { command: "ls" })], 100),
+    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "no change" }], isError: true } },
+  ]),
+  assistant([call("bash", { command: "pwd" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "/x" }], isError: false } },
+  assistant([{ type: "text", text: "ok" }], 100, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-poll.mjs"),
+  stubHead + `const lines = [
+  ...[0, 1, 2].map((i) => [
+    assistant([call("bash", { command: "poll" })], 100),
+    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "state " + i }], isError: false } },
+  ]).flat(),
+  assistant([{ type: "text", text: "ready" }], 100, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-interleaved.mjs"),
+  stubHead + `const lines = [
+  assistant([call("bash", { command: "npm test" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "t", toolName: "bash", content: [{ type: "text", text: "1 failing" }], isError: true } },
+  assistant([call("edit", { path: "x.js" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "e", toolName: "edit", content: [{ type: "text", text: "edited" }], isError: false } },
+  assistant([call("bash", { command: "npm test" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "t", toolName: "bash", content: [{ type: "text", text: "1 failing" }], isError: true } },
+  assistant([{ type: "text", text: "ok" }], 100, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-after-valve.mjs"),
+  stubHead + `const entry = (data) => ({ type: "entry_appended", entry: { customType: "budget-valve", data } });
+const lines = [
+  entry({ kind: "handoff", role: "worker", action: "commit and write a note", budget: 30000, tokens: 40000 }),
+  ...[0, 1, 2, 3].flatMap(() => [
+    assistant([call("bash", { command: "ls" })], 100),
+    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "refused" }], isError: true } },
+  ]),
+  assistant([{ type: "text", text: "bye" }], 100, "stop"),
+];
 ` + stubTail,
 );
 
@@ -389,6 +461,47 @@ const run = (spec) => {
   const missing = await run(specFor("missing", { bin: [path.join(tmp, "no-such-pi")] }));
   assert.equal(missing.status, "failed");
   assert.match(missing.error, /ENOENT/);
+}
+
+// a model that repeats the same turn with the same result is ended
+{
+  const spec = specFor("looped", { bin: fake("looped") });
+  const outcome = await run(spec);
+  assert.equal(LOOP_REPEATS, 4);
+  assert.equal(outcome.status, "looped");
+  assert.equal(outcome.error, "repeated bash 4 times with the same result");
+  assert.deepEqual(outcome.loop, { tool: "bash", repeats: 4 });
+  assert.equal(outcome.finalText, "");
+  assert.ok(!alive(Number(fs.readFileSync(spec.record, "utf8"))), "looped child survived");
+}
+
+// three identical turns, then a different one, then a turn without calls end done
+{
+  const outcome = await run(specFor("loop-recovered", { bin: fake("loop-recovered") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+}
+
+// the same call with a different result each time does not trip
+{
+  const outcome = await run(specFor("loop-poll", { bin: fake("loop-poll") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+}
+
+// the same call repeated after a different turn does not trip
+{
+  const outcome = await run(specFor("loop-interleaved", { bin: fake("loop-interleaved") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+}
+
+// identical turns after a valve handoff do not trip
+{
+  const outcome = await run(specFor("loop-after-valve", { bin: fake("loop-after-valve") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+  assert.equal(outcome.valve?.fired, true);
 }
 
 // the binary can come from RECIPE_PI_BIN
