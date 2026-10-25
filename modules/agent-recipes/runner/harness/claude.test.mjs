@@ -128,14 +128,22 @@ process.stdout.write(JSON.stringify({ type: "assistant", message: { id: "msg_1",
 );
 
 // A first run that reads, writes and then calls a tool far over the budget,
-// and would otherwise sleep for a minute; a resumed run that answers at once.
-// FAKE_MODE picks the shape: `text` makes the big message a plain answer,
-// `nowrite` drops the Write, `commit` swaps it for a git commit, `hang2` keeps
-// the resumed run alive.
+// and would otherwise sleep for a minute; a resumed run that answers at once
+// or plays out the handoff turn. FAKE_MODE picks the shape: `text` makes the
+// big message a plain answer, `nowrite` drops the Write, `commit` swaps it
+// for a git commit, `hang2` keeps the resumed run alive; on the resumed run
+// `note` writes the note and `note-commit` writes it and commits, both
+// resolving the output against the working directory as the child would,
+// `note-error` gets its write rejected and then calls a tool on five more
+// turns, `note-abort` writes the note once signalled and stays alive,
+// `elsewhere` writes another file and exits, `grow` calls a tool with a
+// context past the reserve, and `six` calls a tool on six turns, then hangs
+// until killed.
 fs.writeFileSync(
   path.join(fakes, "budget.mjs"),
   `import { spawn } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
 const argv = process.argv.slice(2);
 let stdin = "";
 process.stdin.setEncoding("utf8");
@@ -152,11 +160,70 @@ const message = (id, block, usage) => line({
   message: { id, role: "assistant", content: [block], usage: { cache_creation_input_tokens: 0, ...usage } },
 });
 const result = (text) => line({ type: "result", subtype: "success", is_error: false, result: text, stop_reason: "end_turn", session_id, usage: { input_tokens: 1, output_tokens: 500 } });
+const toolResult = (id) => line({
+  type: "user", session_id,
+  message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, is_error: false, content: "ok" }] },
+});
 if (resumed) {
-  message("msg_h", { type: "text", text: "handoff: x" }, { input_tokens: 5, cache_read_input_tokens: 6000, output_tokens: 50 });
-  if (mode === "hang2") await new Promise(() => {});
-  result("handoff: x");
-  process.exit(0);
+  if (mode === "note" || mode === "note-commit") {
+    const output = path.resolve(process.cwd(), process.env.FAKE_OUTPUT);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, "handoff: done and left\\n\\nDone\\n- x\\n");
+    message("msg_h1", { type: "tool_use", id: "h1", name: "Write", input: { file_path: output } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+    toolResult("h1");
+    if (mode === "note-commit") {
+      message("msg_h2", { type: "tool_use", id: "h2", name: "Bash", input: { command: "git commit -m x" } }, { input_tokens: 5, cache_read_input_tokens: 6100, output_tokens: 50 });
+      toolResult("h2");
+    }
+    await new Promise(() => {});
+  } else if (mode === "note-error") {
+    const output = path.resolve(process.cwd(), process.env.FAKE_OUTPUT);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    message("msg_h1", { type: "tool_use", id: "h1", name: "Write", input: { file_path: output } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+    line({
+      type: "user", session_id,
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "h1", is_error: true, content: "denied" }] },
+    });
+    for (let i = 2; i <= 6; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      message("msg_h" + i, { type: "tool_use", id: "h" + i, name: "Read", input: { file_path: "f" + i } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+      toolResult("h" + i);
+    }
+    await new Promise(() => {});
+  } else if (mode === "note-abort") {
+    const output = path.resolve(process.cwd(), process.env.FAKE_OUTPUT);
+    process.on("SIGTERM", () => {
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, "handoff: done and left\\n\\nDone\\n- x\\n");
+      message("msg_h1", { type: "tool_use", id: "h1", name: "Write", input: { file_path: output } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+      toolResult("h1");
+    });
+    setTimeout(() => {}, 60000);
+    await new Promise(() => {});
+  } else if (mode === "elsewhere") {
+    const elsewhere = process.env.FAKE_OUTPUT + ".else";
+    fs.mkdirSync(path.dirname(elsewhere), { recursive: true });
+    fs.writeFileSync(elsewhere, "not the note\\n");
+    message("msg_h1", { type: "tool_use", id: "h1", name: "Write", input: { file_path: elsewhere } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+    toolResult("h1");
+    result("wrote elsewhere");
+    process.exit(0);
+  } else if (mode === "grow") {
+    message("msg_h1", { type: "tool_use", id: "h1", name: "Read", input: { file_path: "x" } }, { input_tokens: 10, cache_read_input_tokens: 15950, output_tokens: 50 });
+    toolResult("h1");
+    await new Promise(() => {});
+  } else if (mode === "six") {
+    for (let i = 1; i <= 6; i += 1) {
+      message("msg_h" + i, { type: "tool_use", id: "h" + i, name: "Read", input: { file_path: "f" + i } }, { input_tokens: 5, cache_read_input_tokens: 6050, output_tokens: 50 });
+      toolResult("h" + i);
+    }
+    await new Promise(() => {});
+  } else {
+    message("msg_h", { type: "text", text: "handoff: x" }, { input_tokens: 5, cache_read_input_tokens: 6000, output_tokens: 50 });
+    if (mode === "hang2") await new Promise(() => {});
+    result("handoff: x");
+    process.exit(0);
+  }
 }
 message("msg_a", { type: "tool_use", id: "t1", name: "Read", input: {} }, { input_tokens: 10, cache_read_input_tokens: 900, output_tokens: 90 });
 if (mode === "commit") {
@@ -411,7 +478,7 @@ assert.equal(usesEngine, false);
       item: { output: path.join(tmp, label, "notes", "note.md") },
       ...overrides,
     });
-    return { ...spec, env: { ...spec.env, FAKE_MODE: mode } };
+    return { ...spec, env: { ...spec.env, FAKE_MODE: mode, FAKE_OUTPUT: spec.item.output } };
   };
   const records = (spec) => [1, 2].map((n) => {
     const file = `${spec.record}.${n}`;
@@ -550,6 +617,130 @@ assert.equal(usesEngine, false);
     const [first, second] = records(spec);
     assert.equal(outcome.status, "aborted");
     assert.equal(outcome.valve.fired, true);
+    gone(first);
+    gone(second);
+  }
+
+  // an abort that lands before the end condition holds keeps its status,
+  // even though the note write still comes through and completes it
+  {
+    const controller = new AbortController();
+    const spec = budgetSpec("budget-note-abort", "note-abort", {
+      budget: { tokens: 5000, reserve: 10000, action: "stop" },
+      signal: controller.signal,
+    });
+    let spawns = 0;
+    const outcome = await run({
+      ...spec,
+      onSpawn: () => {
+        if (++spawns === 2) setTimeout(() => controller.abort(), 300);
+      },
+    });
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "aborted");
+    assert.equal(outcome.valve.fired, true);
+    assert.equal(outcome.valve.ended, false);
+    assert.ok(fs.existsSync(spec.item.output), "the note was written after the abort");
+    gone(first);
+    gone(second);
+  }
+
+  // a handoff turn that writes the note is ended right after, with no result line of its own
+  {
+    const spec = budgetSpec("budget-note", "note", { budget: { tokens: 5000, reserve: 10000, action: "stop" } });
+    const started = Date.now();
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.ok(Date.now() - started < 15000, "the handoff process was not killed");
+    assert.equal(outcome.status, "budget");
+    assert.equal(outcome.finalText, "");
+    assert.equal(outcome.exitCode, null);
+    assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "stop", ended: true });
+    assert.equal(fs.readFileSync(spec.item.output, "utf8"), "handoff: done and left\n\nDone\n- x\n");
+    gone(first);
+    gone(second);
+  }
+
+  // a relative output the handoff turn writes is resolved against the
+  // working directory, so the note still ends the turn
+  {
+    const spec = budgetSpec("budget-note-rel", "note", {
+      budget: { tokens: 5000, reserve: 10000, action: "stop" },
+      item: { output: "notes/note.md" },
+    });
+    const started = Date.now();
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.ok(Date.now() - started < 15000, "the handoff process was not killed");
+    assert.equal(outcome.status, "budget");
+    assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "stop", ended: true });
+    assert.equal(fs.readFileSync(path.join(tmp, "notes", "note.md"), "utf8"), "handoff: done and left\n\nDone\n- x\n");
+    gone(first);
+    gone(second);
+  }
+
+  // for the commit action the commit must be in as well
+  {
+    const spec = budgetSpec("budget-note-commit", "note-commit");
+    const started = Date.now();
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.ok(Date.now() - started < 15000, "the handoff process was not killed");
+    assert.equal(outcome.status, "budget");
+    assert.equal(outcome.valve.ended, true);
+    assert.equal(outcome.valve.action, "commit");
+    assert.ok(fs.existsSync(spec.item.output));
+    gone(first);
+    gone(second);
+  }
+
+  // a note write that errors is not the note, so the turn runs on to the
+  // turn limit and ends there
+  {
+    const spec = budgetSpec("budget-note-error", "note-error", { budget: { tokens: 5000, reserve: 10000, action: "stop" } });
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "budget");
+    assert.equal(outcome.valve.ended, true);
+    assert.ok(!fs.existsSync(spec.item.output), "the failed write left no note");
+    const logged = fs.readFileSync(path.join(spec.logDir, "events.jsonl"), "utf8");
+    assert.match(logged, /msg_h6/);
+    gone(first);
+    gone(second);
+  }
+
+  // a write elsewhere is not the note, so the turn that ends on its own keeps today's outcome
+  {
+    const spec = budgetSpec("budget-elsewhere", "elsewhere", { budget: { tokens: 5000, reserve: 10000, action: "stop" } });
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "done");
+    assert.equal(outcome.finalText, "wrote elsewhere");
+    assert.equal(outcome.valve.fired, true);
+    assert.equal(outcome.valve.ended, false);
+    assert.ok(fs.existsSync(spec.item.output + ".else"));
+    gone(first);
+    gone(second);
+  }
+
+  // a turn whose context grew past the reserve is ended
+  {
+    const spec = budgetSpec("budget-grow", "grow");
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "budget");
+    assert.equal(outcome.valve.ended, true);
+    gone(first);
+    gone(second);
+  }
+
+  // six turns with tool calls end the handoff turn
+  {
+    const spec = budgetSpec("budget-six", "six");
+    const outcome = await run(spec);
+    const [first, second] = records(spec);
+    assert.equal(outcome.status, "budget");
+    assert.equal(outcome.valve.ended, true);
     gone(first);
     gone(second);
   }
