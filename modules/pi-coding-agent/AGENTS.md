@@ -32,8 +32,12 @@ environment file and their own prompt.
   `FAILED:` was cut off by the output valve and counts as failed.
 - `resume: <runId>` continues a child in its own cwd; `recipe_run` with
   `resume: true` continues a recipe from its task directory.
-- After a pi or paseo restart the wake is lost. A run with an output file is
-  done; one without is dispatched once more, then recorded as failed.
+- After a pi or paseo restart the wake is lost. A recipe run carries on
+  without the session: check it with `recipe-status <task dir>` or wait for it
+  with `recipe-run wait <task dir>`, and do not start it again; the runner
+  refuses a second start while the first is alive. A dispatched helper with
+  an output file is done; one without is dispatched once more, then recorded
+  as failed.
 
 ## Context
 
