@@ -30,7 +30,6 @@ to the plan:
                             branch the run made
 <dir>/abandoned.json        what `recipe-gate abandon` removed
 <dir>/deps/<id>/            worktree where a task's dependencies are merged
-<dir>/review/<id>-<n>/      the reviewer's own worktree for review n of a task
 <dir>/resolve-<scope>-<n>.md report of resolver n for a merge (a task id or integration)
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
                             a replanned attempt n is impl-<id>-<n>.md
