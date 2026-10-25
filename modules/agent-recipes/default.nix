@@ -180,10 +180,17 @@ in
       type = types.attrs;
       description = "Role table and model limits as written to roles.json, before prompt paths are added";
     };
+    package = mkOption {
+      type = types.package;
+      readOnly = true;
+      description = "The recipe tools package";
+    };
   };
 
   config = mkIf cfg.enable {
     home.packages = [ tools ];
+
+    mine.user.agent-recipes.package = tools;
 
     assertions = roleAssertions ++ claudeModelAssertions;
 
