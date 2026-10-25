@@ -1,18 +1,12 @@
-// Ends a recipe-runner child cleanly when it stops converging, and confines
-// a resumed handoff turn to its lane.
-//
-// A cut-off reply gets one more turn to carry on in smaller pieces; a second
-// cut-off gets one final, tool-permitting notice to save partial work and
-// reply FAILED:, then the run is left to pi. A compaction thrash gets a
-// tool-blocking notice to stop and reply FAILED: right away, since more
-// tool calls are exactly what did not converge.
-//
-// The runner kills a child that hit its context budget and resumes the
-// session with a handoff brief. On that resumed turn it sets
-// RECIPE_HANDOFF_GUARD; while guarded the valve refuses every tool call but
-// a write of the output file and, for a commit action, whitelisted git
-// subcommands, and the truncation and thrash handling stays off. The runner
-// ends the turn, so a refusal the valve issues is never terminal.
+// The runner can only spawn, watch and kill a child process, so anything
+// that has to reach a live session runs here. A reply cut off by the output
+// budget would end the run unless the session is given another turn, and
+// only the session itself can trigger that turn. A session that keeps
+// compacting without progress can only be stopped from the outside by
+// killing it, so the stop has to come from inside. A resumed handoff turn
+// is confined by refusing tool calls, which the runner cannot do from
+// outside the process, and the runner ends that turn, so a refusal is never
+// terminal.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
 // into every session, the interactive one included; recipe-runner children
