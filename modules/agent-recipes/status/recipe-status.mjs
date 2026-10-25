@@ -88,12 +88,14 @@ function minutes(ms) {
 function render(dir, s, c, now) {
   const board = s.board || null;
   const lines = [];
+  const state = stateOf(s);
   const t0 = s.startedAt ? new Date(s.startedAt).getTime() : NaN;
   const t1 = s.lastUpdate ? new Date(s.lastUpdate).getTime() : now;
   const started = Number.isNaN(t0) ? "?" : new Date(t0).toISOString().slice(0, 16).replace("T", " ");
   const age = Number.isNaN(t0) ? "" : `, ${minutes((s.state === "running" ? now : t1) - t0)}`;
   lines.push(`${dir}`);
-  lines.push(`run ${s.pid ?? "?"}: ${stateOf(s)}, started ${started} UTC${age}`);
+  const reason = state === "stopped" && s.error ? s.error : null;
+  lines.push(`run ${s.pid ?? "?"}: ${state}${reason ? ` (${reason})` : ""}, started ${started} UTC${age}`);
   if (board) {
     lines.push(`stage: ${board.stage}`);
     if (Array.isArray(board.tasks)) {
@@ -125,11 +127,12 @@ function main(argv, now) {
   const statusFile = path.join(dir, "runner", "status.json");
   const s = readJson(statusFile);
   if (!s) return { code: 1, text: `recipe-status: no run found for ${dir} (no ${statusFile})` };
-  const c = children(dir, stateOf(s) === "running");
+  const state = stateOf(s);
+  const c = children(dir, state === "running");
   if (json) {
     return {
       code: 0,
-      text: JSON.stringify({ state: stateOf(s), pid: s.pid ?? null, board: s.board || null, children: { running: c.running, stopped: c.stopped, done: c.done, failed: c.failed }, usage: c.usage }),
+      text: JSON.stringify({ state, pid: s.pid ?? null, board: s.board || null, reason: state === "stopped" && s.error ? s.error : null, children: { running: c.running, stopped: c.stopped, done: c.done, failed: c.failed }, usage: c.usage }),
     };
   }
   return { code: 0, text: render(dir, s, c, now) };

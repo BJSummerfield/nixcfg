@@ -181,6 +181,7 @@ try {
     const status = readJson(path.join(s.dir, "runner", "status.json"));
     assert.equal(status.state, "complete");
     assert.equal(status.recipe, "tiny");
+    assert.equal(status.resumedAt, null);
     assert.deepEqual(status.board, { stage: "second" });
     const receipt = readJson(path.join(s.dir, "receipt.json"));
     assert.equal(receipt.a, "done");
@@ -242,8 +243,9 @@ try {
     const status = readJson(path.join(s.dir, "runner", "status.json"));
     assert.equal(status.state, "stopped");
     const stoppedReceipt = readJson(path.join(s.dir, "receipt.json"));
-    assert.match(stoppedReceipt.failed, /^stopped: SIGTERM/);
     assert.equal(stoppedReceipt.stopped, true);
+    assert.match(stoppedReceipt.reason, /^SIGTERM/);
+    assert.ok(!("failed" in stoppedReceipt), "a deliberate stop is not a failure");
     assert.deepEqual(stoppedReceipt.interrupted, records(s.dir).filter((rec) => rec.type === "start").map((rec) => rec.key));
     assert.ok(stoppedReceipt.interrupted.length > 0);
     assert.equal(gateRuns(s.args.gateLog, "a"), 0, "a killed child got a gate");
@@ -260,7 +262,8 @@ try {
     await until(() => records(s.dir).some((rec) => rec.type === "settle" && rec.key === "a"), "node a to settle");
     await until(() => fakeStarts(s, "B").length === 1, "node b to start");
     assert.equal(cli(["stop", s.dir]).code, 0);
-    assert.equal(readJson(path.join(s.dir, "runner", "status.json")).state, "stopped");
+    const stoppedStatus = readJson(path.join(s.dir, "runner", "status.json"));
+    assert.equal(stoppedStatus.state, "stopped");
     assert.equal(gateRuns(s.args.gateLog, "a"), 1);
     assert.equal(gateRuns(s.args.gateLog, "b"), 0);
 
@@ -273,7 +276,10 @@ try {
     assert.equal(fakeStarts(s, "B").length, 2);
     assert.equal(gateRuns(s.args.gateLog, "a"), 1);
     assert.equal(gateRuns(s.args.gateLog, "b"), 1);
-    assert.equal(readJson(path.join(s.dir, "runner", "status.json")).state, "complete");
+    const finalStatus = readJson(path.join(s.dir, "runner", "status.json"));
+    assert.equal(finalStatus.state, "complete");
+    assert.equal(finalStatus.startedAt, stoppedStatus.startedAt, "a resume overwrote when the run first started");
+    assert.ok(new Date(finalStatus.resumedAt) > new Date(stoppedStatus.startedAt), "the resume recorded no resume time");
   }
 
   // SIGKILL of the run leaves its child; resume kills it before doing anything.
