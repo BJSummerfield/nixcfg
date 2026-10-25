@@ -10,6 +10,7 @@ import { makeWorktree, removeWorktree, worktreeState } from "./worktree.mjs";
 
 const DEFAULT_STATE_DIR = "/var/tmp/recipe-runner";
 const WRITER_STOP = /^\s*(failed|blocked)\s*:/i;
+const DONE_LINE = /^\s*done\b/i;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
 
@@ -378,6 +379,9 @@ export function createPort(opts) {
         return aborted();
       }
 
+      // A looped child never reported its work, so a handoff it mentions would
+      // start a relay on nothing.
+      const looped = outcome.status === "looped";
       const finalText = String(outcome.finalText ?? "");
       let outputFromReply = false;
       if (outputPath && finalText !== "") {
@@ -394,12 +398,12 @@ export function createPort(opts) {
 
       const noteWritten = Boolean(outputPath) && fs.existsSync(outputPath);
       const valveFired = outcome.valve?.fired === true;
-      let handoff = parseHandoff(finalText);
-      const note = valveFired && noteWritten ? readNote(outputPath, HANDOFF_NOTE_BYTES) : "";
+      let handoff = looped ? null : parseHandoff(finalText);
+      const note = !looped && valveFired && noteWritten ? readNote(outputPath, HANDOFF_NOTE_BYTES) : "";
       if (!handoff && note) handoff = parseHandoff(note);
       if (handoff) {
         handoff = { ...handoff, note: noteWritten ? item.output : null, empty: !noteWritten };
-      } else if (valveFired && worktree && base && worktrees.state(worktree, base).commits > 0) {
+      } else if (!looped && valveFired && worktree && base && worktrees.state(worktree, base).commits > 0) {
         handoff = { line: VALVE_ENDED_LINE, unread: [], note: null, empty: true };
       }
       const finishedUnmarked = !handoff && valveFired && role.budget?.action !== "commit" && note.trim() !== "";
@@ -407,7 +411,11 @@ export function createPort(opts) {
       let status = outcome.status;
       let error = outcome.error;
       const reported = handoff ? null : writerStop(role, outcome);
-      if (handoff && status !== "timeout") {
+      if (looped) {
+        const delivered = noteWritten && DONE_LINE.test(finalText.trimStart().split("\n")[0]);
+        status = delivered ? "done" : "failed";
+        if (delivered) error = undefined;
+      } else if (handoff && status !== "timeout") {
         status = "done";
         error = undefined;
       } else if (reported) {
@@ -483,6 +491,7 @@ export function createPort(opts) {
         handoff,
         budget: role.budget ?? null,
         valve: outcome.valve ?? null,
+        loop: outcome.loop ?? null,
       };
       appendJsonl(spec.transcriptFile, {
         recordType: "outcome",

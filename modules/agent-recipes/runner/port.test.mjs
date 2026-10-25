@@ -606,6 +606,75 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(late.handoff.line, "handoff: ran out of time");
 }
 
+// A looped child that had delivered settles done with its gate, and its loop
+// rides on the result and the settle record; one that wrote nothing fails with
+// the harness's error, and none is aborted.
+{
+  const loop = { tool: "bash", repeats: 4 };
+  const loopError = `repeated ${loop.tool} ${loop.repeats} times with the same result`;
+  const looped = (finalText) => ({ status: "looped", error: loopError, loop, finalText });
+  const harness = fakeHarness((spec) => {
+    if (spec.item.key === "delivered") fs.writeFileSync(spec.item.output, "the report\n");
+    if (spec.item.key === "concerns") fs.writeFileSync(spec.item.output, "the report\n");
+    const text = { delivered: "done", concerns: "done, concerns" }[spec.item.key] ?? "";
+    return looped(text);
+  });
+  const { port, runDir, dir, gates } = setup("looped", { harness });
+  const gate = { command: "check" };
+  const out = (name) => path.join(dir, `${name}.md`);
+  const delivered = await port.runOne(item("delivered", { output: out("delivered"), gate }));
+  assert.equal(delivered.status, "done");
+  assert.equal(delivered.ok, true);
+  assert.equal(delivered.error, undefined);
+  assert.deepEqual(delivered.loop, loop);
+  assert.equal(delivered.handoff, null);
+  const concerns = await port.runOne(item("concerns", { output: out("concerns") }));
+  assert.equal(concerns.status, "done");
+  assert.equal(concerns.ok, true);
+  const bare = await port.runOne(item("noth"));
+  assert.equal(bare.status, "failed");
+  assert.equal(bare.ok, false);
+  assert.equal(bare.error, loopError);
+  assert.deepEqual(bare.loop, loop);
+  assert.equal(bare.handoff, null);
+  assert.ok(bare.runId);
+  assert.deepEqual(gates.map((g) => g.item.key), ["delivered"]);
+  const settled = readLog(runDir).filter((r) => r.type === "settle");
+  assert.deepEqual(settled.map((r) => [r.key, r.result.status, r.result.loop]), [
+    ["delivered", "done", loop],
+    ["concerns", "done", loop],
+    ["noth", "failed", loop],
+  ]);
+  assert.ok(settled.every((r) => r.result.status !== "aborted"));
+}
+
+// A looped implementer whose worktree has commits gets no handoff and so no relay.
+{
+  const loop = { tool: "bash", repeats: 4 };
+  const budget = { tokens: 100000, reserve: 30000, action: "commit" };
+  const harness = fakeHarness(() => ({
+    status: "looped",
+    error: `repeated ${loop.tool} ${loop.repeats} times with the same result`,
+    loop,
+    finalText: "handoff: left the work half committed",
+  }));
+  const config = { roles: { implementer: { prompt: "p", tools: [], thinking: "low", acceptance: null, budget } } };
+  const worktrees = {
+    make: ({ item: i }) => ({ ok: true, worktree: `/wt/${i.key}`, branch: `recipe/${i.key}`, head: "base1" }),
+    state: () => ({ exists: true, clean: false, commits: 2 }),
+    remove: () => ({ ok: true }),
+  };
+  const { port, runDir } = setup("looped-implementer", { harness, config, deps: { worktrees } });
+  const r = await port.runOne(item("impl", { agent: "implementer", worktree: true }));
+  assert.equal(r.status, "failed");
+  assert.equal(r.handoff, null);
+  assert.deepEqual(r.loop, loop);
+  assert.equal(r.worktree, "/wt/impl");
+  const settled = readLog(runDir).filter((rec) => rec.type === "settle");
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0].result.handoff, null);
+}
+
 // The outcome record lands in the child's transcript; a successor's handoff-outcome lands in the predecessor's.
 {
   const budget = { tokens: 100000, reserve: 30000, action: "commit" };
