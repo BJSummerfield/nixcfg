@@ -116,7 +116,7 @@ let
   );
 
   claudeModelAssertions = lib.mapAttrsToList (name: _: {
-    assertion = defaults.roles ? name;
+    assertion = defaults.roles ? ${name};
     message = "agent-recipes: claude.models.${name} names a role that is not in the role table";
   }) cfg.claude.models;
 in
