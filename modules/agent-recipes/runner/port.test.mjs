@@ -255,10 +255,29 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(fs.readFileSync(written, "utf8"), "from the child");
   assert.equal(fs.existsSync(empty), false);
   assert.deepEqual(results.map((r) => r.outputExists), [true, true, true, false]);
+  assert.deepEqual(results.map((r) => r.outputFromReply), [true, true, false, false]);
   const seen = Object.fromEntries(gates.map((g) => [path.basename(g.item.output), g.outputText]));
   assert.equal(seen["missing.md"], "reply for missing.md");
   assert.equal(seen["unchanged.md"], "reply for unchanged.md");
   assert.equal(seen["written.md"], "from the child");
+}
+
+// A child that writes its real output somewhere else than its output path
+// gets the reply in its output; the flag says the file carries no child work.
+{
+  const dir = path.join(tmp, "wrongpath");
+  fs.mkdirSync(dir);
+  const given = path.join(dir, "given.md");
+  const stray = path.join(dir, "stray.md");
+  const harness = fakeHarness(async () => {
+    fs.writeFileSync(stray, "the real output");
+    return { finalText: "the reply" };
+  });
+  const { port } = setup("wrongpath", { harness });
+  const result = await port.runOne(item("w", { output: given }));
+  assert.equal(result.outputFromReply, true);
+  assert.equal(fs.readFileSync(given, "utf8"), "the reply");
+  assert.equal(fs.readFileSync(stray, "utf8"), "the real output");
 }
 
 // maxChildren gives skipped; so do an unknown role and an unknown resume id.

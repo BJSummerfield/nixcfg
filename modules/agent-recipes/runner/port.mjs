@@ -379,6 +379,7 @@ export function createPort(opts) {
       }
 
       const finalText = String(outcome.finalText ?? "");
+      let outputFromReply = false;
       if (outputPath && finalText !== "") {
         const after = snapshot(outputPath);
         const untouched =
@@ -387,6 +388,7 @@ export function createPort(opts) {
         if (untouched) {
           fs.mkdirSync(path.dirname(outputPath), { recursive: true });
           fs.writeFileSync(outputPath, finalText);
+          outputFromReply = true;
         }
       }
 
@@ -470,6 +472,7 @@ export function createPort(opts) {
         gate,
         output: item.output ?? null,
         outputExists: outputPath ? fs.existsSync(outputPath) : false,
+        outputFromReply,
         finalText,
         cwd: childCwd,
         worktree,
