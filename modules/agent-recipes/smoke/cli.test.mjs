@@ -20,12 +20,16 @@ fs.writeFileSync(configFile, JSON.stringify({ model: "local/smoke" }));
 function fakeSpawn() {
   const calls = [];
   const spawn = (file, args, opts = {}) => {
-    calls.push({ file, args, opts });
+    const call = { file, args, opts, code: null };
+    calls.push(call);
     const child = new EventEmitter();
     child.pid = 900000 + calls.length;
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    const timer = setTimeout(() => child.emit("exit", opts.signal?.aborted ? 130 : 0, null), 20);
+    const timer = setTimeout(() => {
+      call.code = opts.signal?.aborted ? 130 : 0;
+      child.emit("exit", call.code, null);
+    }, 20);
     timer.unref();
     return child;
   };
@@ -192,7 +196,9 @@ test("an interrupt stops the tracked run, skips the rest and still writes the re
   const { code, stdout, stderr } = await runCli(["--force", "--out", out], { TESTS: [okTest, second, third], spawn });
   assert.equal(code, 1);
   assert.match(stderr, /interrupt/);
-  assert.ok(spawn.calls.some((c) => c.args[1] === "stop" && c.args[2] === runDir), "the tracked run got a stop");
+  const stop = spawn.calls.find((c) => c.args[1] === "stop" && c.args[2] === runDir);
+  assert.ok(stop, "the tracked run got a stop");
+  assert.equal(stop.code, 0, "the stop child ran to completion");
   const record = JSON.parse(fs.readFileSync(path.join(out, `recipe-smoke-${STAMP}.json`), "utf8"));
   assert.deepEqual(
     record.results.map((r) => r.pass),

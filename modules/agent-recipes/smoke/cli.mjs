@@ -100,6 +100,7 @@ export async function main(argv, deps = {}) {
   const runner = makeRunner(d, livePids);
   const controller = new AbortController();
   const interrupted = { flag: false };
+  let cleanup;
   const ctx = {
     env: process.env,
     fixturesDir: FIXTURES_DIR,
@@ -115,16 +116,21 @@ export async function main(argv, deps = {}) {
     interrupted.flag = true;
     process.stderr.write("recipe-smoke: interrupt received, stopping the runs\n");
     controller.abort();
-    void (async () => {
+    // The stop children run past this signal, so they get no abort signal of their own.
+    cleanup = (async () => {
       for (const dir of [...tracked]) {
         try {
-          await runner(["stop", dir], { signal: controller.signal });
-        } catch {}
+          await runner(["stop", dir]);
+        } catch (error) {
+          process.stderr.write(`recipe-smoke: stopping ${dir} failed: ${error.message}\n`);
+        }
       }
       for (const pid of [...livePids]) {
         try {
           await killTree(pid);
-        } catch {}
+        } catch (error) {
+          process.stderr.write(`recipe-smoke: killing the process tree of ${pid} failed: ${error.message}\n`);
+        }
       }
     })();
   };
@@ -150,6 +156,7 @@ export async function main(argv, deps = {}) {
     process.removeListener("SIGINT", onSignal);
     process.removeListener("SIGTERM", onSignal);
   }
+  if (cleanup) await cleanup;
 
   const finishedAt = d.clock();
   const table = core.formatTable(results);
