@@ -201,8 +201,10 @@ export async function main(argv, deps = {}) {
   fs.copyFileSync(txtFile, txtDest);
   process.stdout.write(`${jsonDest}\n${txtDest}\n`);
 
-  const failedDir = moveFailed(workdir, results, path.join(destDir, `recipe-smoke-${stamp}-failed`));
-  if (failedDir) process.stdout.write(`${failedDir}\n`);
+  if (!opts.keep) {
+    const failedDir = moveFailed(workdir, results, path.join(destDir, `recipe-smoke-${stamp}-failed`));
+    if (failedDir) process.stdout.write(`${failedDir}\n`);
+  }
   core.removeWorkdir(workdir, opts.keep);
   return results.every((r) => r.pass === true) ? 0 : 1;
 }

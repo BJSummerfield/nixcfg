@@ -161,14 +161,29 @@ test("the report covers a pass, a failure and a throw, and the result files are 
 });
 
 test("--keep keeps the workdir, and without it the workdir is removed", async () => {
+  const dirTest = (name, pass) => ({
+    name,
+    run: async (ctx) => {
+      const dir = path.join(ctx.workdir, name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "transcript.jsonl"), `${JSON.stringify({ type: "settle", name })}\n`);
+      return { name, pass, ms: 100, children: 0, usage: { prompt: 0, cached: 0, output: 0 }, detail: pass ? "" : "the run failed" };
+    },
+  });
   const keepOut = fs.mkdtempSync(path.join(tmp, "keep-"));
-  const { code } = await runCli(["--force", "--keep", "--out", keepOut], { TESTS: [okTest], spawn: fakeSpawn() });
-  assert.equal(code, 0);
+  const keepStdout = await (async () => {
+    const { code, stdout } = await runCli(["--force", "--keep", "--out", keepOut], { TESTS: [dirTest("f", false)], spawn: fakeSpawn() });
+    assert.equal(code, 1);
+    return stdout;
+  })();
   const kept = fs.readdirSync(keepOut, { withFileTypes: true }).filter((e) => e.isDirectory());
   assert.equal(kept.length, 1);
   assert.match(kept[0].name, /^recipe-smoke-/);
+  assert.ok(!kept[0].name.endsWith("-failed"), "no copy of the failed test's directory is made");
   assert.ok(fs.existsSync(path.join(keepOut, kept[0].name, "result.json")));
   assert.ok(fs.existsSync(path.join(keepOut, kept[0].name, "result.txt")));
+  assert.ok(fs.existsSync(path.join(keepOut, kept[0].name, "f")), "the failed test's directory stays in the kept workdir");
+  assert.doesNotMatch(keepStdout, /-failed$/, "the kept path is not printed");
 
   const goneOut = fs.mkdtempSync(path.join(tmp, "gone-"));
   await runCli(["--force", "--out", goneOut], { TESTS: [okTest], spawn: fakeSpawn() });
