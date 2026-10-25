@@ -159,5 +159,41 @@ fs.writeFileSync(
   assert.equal(sizing("--current", path.join(tmp, "absent.json")).status, 1);
 }
 
+// A child the runner ended for repeating the same turn is left out of every
+// estimate and counted; the role's numbers are the normal child's alone.
+transcript("extractor", [assistant(7000), assistant(1000, 40000), assistant(1000, 80000), outcome("e-looped", false, null)]);
+transcript("extractor", [assistant(7000), assistant(1000, 7000), outcome("e-normal", false, null)]);
+fs.writeFileSync(
+  path.join(sessions, "children.jsonl"),
+  [
+    { type: "start", key: "e1", runId: "e-looped", role: "extractor" },
+    {
+      type: "settle",
+      key: "e1",
+      runId: "e-looped",
+      fingerprint: "f1",
+      at: "t",
+      result: { status: "failed", error: "repeated bash 4 times with the same result", loop: { tool: "bash", repeats: 4 } },
+    },
+    { type: "start", key: "e2", runId: "e-normal", role: "extractor" },
+    { type: "settle", key: "e2", runId: "e-normal", fingerprint: "f2", at: "t", result: { status: "done", loop: null } },
+  ]
+    .map((r) => JSON.stringify(r))
+    .join("\n") + "\n",
+);
+{
+  const r = sizing("--min-samples", "1");
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.roles.extractor, {
+    samples: 1,
+    base: 7000,
+    peak_p90: 8000,
+    compact_rate: 0,
+    cold_per_run: 0,
+    growth_p90: 1000,
+  });
+  assert.deepEqual(r.json.looped, { extractor: 1 });
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-sizing: all assertions passed");
