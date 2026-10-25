@@ -149,14 +149,16 @@ export async function start(spec) {
   let firstCommit = null;
 
   const tally = (messages) => {
+    let output = 0;
     for (const u of messages.values()) {
       const context = contextOf(u);
       usage.prompt += (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
       usage.cached += u.cache_read_input_tokens ?? 0;
-      usage.output += u.output_tokens ?? 0;
+      output += u.output_tokens ?? 0;
       usage.peakContext = Math.max(usage.peakContext, context);
       usage.turns++;
     }
+    return output;
   };
 
   const budgetTokens = spec.budget?.tokens > 0 ? spec.budget.tokens : null;
@@ -293,7 +295,12 @@ export async function start(spec) {
     await killing;
     watcher?.stop();
 
-    tally(messages);
+    // The assistant lines snapshot the usage while the message is still
+    // streaming, so their sum badly undercounts output; the result event says
+    // the true total, and a killed or crashed process never emits one.
+    const assistantOutput = tally(messages);
+    const resultOutput = result?.usage?.output_tokens;
+    usage.output += typeof resultOutput === "number" ? resultOutput : assistantOutput;
     return { code, signal, result, spawnError, stderrTail, forced, budgetHit, timeoutMs };
   }
 
