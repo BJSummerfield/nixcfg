@@ -237,7 +237,11 @@ try {
     assert.ok(!alive(info.pid));
     const status = readJson(path.join(s.dir, "runner", "status.json"));
     assert.equal(status.state, "stopped");
-    assert.match(readJson(path.join(s.dir, "receipt.json")).failed, /^stopped: SIGTERM/);
+    const stoppedReceipt = readJson(path.join(s.dir, "receipt.json"));
+    assert.match(stoppedReceipt.failed, /^stopped: SIGTERM/);
+    assert.equal(stoppedReceipt.stopped, true);
+    assert.deepEqual(stoppedReceipt.interrupted, records(s.dir).filter((rec) => rec.type === "start").map((rec) => rec.key));
+    assert.ok(stoppedReceipt.interrupted.length > 0);
     assert.equal(gateRuns(s.args.gateLog, "a"), 0, "a killed child got a gate");
     assert.equal(records(s.dir).filter((rec) => rec.type === "settle").length, 0);
     assert.equal(cli(["wait", s.dir]).code, 1);

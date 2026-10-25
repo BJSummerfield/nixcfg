@@ -367,6 +367,7 @@ export function createPort(opts) {
         try {
           gate = await runGate(item.gate, {
             cwd: childCwd,
+            env: { ...process.env, ...(config.worktreeDir ? { RECIPE_WORKTREE_ROOT: config.worktreeDir } : {}) },
             item,
             outcome,
             signal,

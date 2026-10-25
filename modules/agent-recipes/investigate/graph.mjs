@@ -227,7 +227,7 @@ function reviewItem(h) {
     "Hypothesis " + h.rank + ": " + h.claim,
     "Repository: " + repo,
     "Branch: " + h.branch,
-    "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/h" + h.rank + "-" + h.reviews + "); read and run the verify command there. The implementer's worktree " + h.worktree + " is not yours: never read or run anything in it.",
+    "Worktree: your working directory is your own worktree of the branch; read and run the verify command there and make no other worktree. The implementer's worktree " + h.worktree + " is not yours: never read or run anything in it.",
     "Diff to review: git diff " + pinned.base + ".." + h.branch,
     reproLine(),
   ].concat(commandLines());

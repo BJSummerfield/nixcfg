@@ -109,6 +109,30 @@ process.stdout.write(JSON.stringify({ type: "session", id: "x" }) + "\\n");
 `,
 );
 
+const stubHead = `const usage = (total) => ({ input: total, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: total });
+const assistant = (content, total, stopReason = "toolUse") => ({ type: "message_end", message: { role: "assistant", content, usage: usage(total), stopReason } });
+const call = (name, args = {}) => ({ type: "toolCall", id: name, name, arguments: args });
+`;
+const stubTail = `for (const line of lines) process.stdout.write(JSON.stringify(line) + "\\n");
+`;
+
+fs.writeFileSync(
+  path.join(fakes, "deltas.mjs"),
+  stubHead + `const lines = [{ type: "session", id: "x" }];
+for (let turn = 0; turn < 3; turn++) {
+  lines.push({ type: "message_start", message: { role: "assistant" } });
+  for (let i = 0; i < 200; i++) {
+    lines.push({ type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "x".repeat(i) }] }, assistantMessageEvent: { type: "text_delta", delta: "x" } });
+    if (i % 50 === 0) lines.push({ type: "tool_execution_update", toolCallId: "c", partialResult: "p".repeat(i) });
+  }
+  lines.push(assistant([turn < 2 ? call("read") : { type: "text", text: "done" }], 1000 + turn, turn < 2 ? "toolUse" : "stop"));
+  lines.push({ type: "tool_execution_end", toolCallId: "c" });
+}
+lines.push({ type: "entry_appended", entry: { customType: "budget-valve", data: { kind: "ended" } } });
+lines.push({ type: "compaction_start" });
+` + stubTail,
+);
+
 const fake = (name) => [process.execPath, path.join(fakes, `${name}.mjs`)];
 
 function specFor(label, overrides = {}) {
@@ -184,7 +208,8 @@ const run = (spec) => {
   const events = fs.readFileSync(path.join(spec.logDir, "events.jsonl"), "utf8").split("\n");
   assert.equal(events.pop(), "");
   assert.equal(events[0], "not json at all");
-  assert.equal(events.length, 10);
+  assert.equal(events.length, 9);
+  assert.ok(!events.some((line) => line.includes("message_update")));
   const split = events.find((line) => line.includes("line\\u2028two") || line.includes("line two"));
   assert.equal(JSON.parse(split).message.content[1].text, "line two");
   assert.equal(fs.readFileSync(path.join(spec.logDir, "stderr.log"), "utf8"), "warning from pi\n");
@@ -213,6 +238,40 @@ const run = (spec) => {
   assert.equal(resumedRecord.stdin, "Do the thing.");
   assert.ok(!resumedRecord.argv.includes("--session-id"));
   assert.equal(again.sessionFile, outcome.sessionFile);
+}
+
+// a stream of deltas leaves one events line per finished message, and the other events stay
+{
+  const spec = specFor("deltas", { bin: fake("deltas") });
+  const outcome = await run(spec);
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.usage.turns, 3);
+  const events = fs.readFileSync(path.join(spec.logDir, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(
+    events.map((e) => e.type),
+    [
+      "session",
+      ...[0, 1, 2].flatMap(() => ["message_start", "message_end", "tool_execution_end"]),
+      "entry_appended",
+      "compaction_start",
+    ],
+  );
+}
+
+// each process a child ran is recorded with its argv and RECIPE_* variables, never the brief
+{
+  const spec = specFor("spawnlog", { env: { EXTRA: "yes", RECIPE_ROLE: "worker", RECIPE_BUDGET_TOKENS: "100000" } });
+  await run(spec);
+  const lines = fs.readFileSync(path.join(spec.logDir, "spawn.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(lines.length, 1);
+  assert.deepEqual(lines[0].command, process.execPath);
+  assert.deepEqual(lines[0].argv.slice(1), piArgv(spec));
+  assert.equal(lines[0].cwd, spec.cwd);
+  assert.equal(lines[0].env.RECIPE_ROLE, "worker");
+  assert.equal(lines[0].env.RECIPE_BUDGET_TOKENS, "100000");
+  assert.equal(lines[0].env.RECIPE_CHILD, "1");
+  assert.ok(Object.keys(lines[0].env).every((name) => name.startsWith("RECIPE_")));
+  assert.ok(!JSON.stringify(lines[0]).includes(spec.brief));
 }
 
 // a brief that starts with "@" or "-", or is far larger than one argument can be, arrives intact

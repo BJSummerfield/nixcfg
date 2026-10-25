@@ -187,6 +187,14 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(r1.status, "done");
 }
 
+// A gate learns where the runner puts worktrees, so it can record the ones that are the run's.
+{
+  const { port, gates } = setup("gate-env", { harness: fakeHarness(() => ({})), config: { worktreeDir: "/some/where" } });
+  await port.runOne(item("g", { gate: { command: "check" } }));
+  assert.equal(gates[0].env.RECIPE_WORKTREE_ROOT, "/some/where");
+  assert.equal(gates[0].env.PATH, process.env.PATH);
+}
+
 // A failed child still gets its gate, and so does a resumed one.
 {
   const harness = fakeHarness((spec) => (spec.item.key === "bad" ? { status: "failed", error: "boom", finalText: "" } : {}));

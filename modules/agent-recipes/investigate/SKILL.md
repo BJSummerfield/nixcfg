@@ -52,7 +52,6 @@ each must be safe to repeat and must not hold a secret.
 <dir>/fix-<rank>-<n>.md            report of fix round n
 <dir>/verify-<rank>-<n>.md         marker of the gate-only step after a fix round
 <dir>/review-<rank>-<n>.md         review n of the change
-<dir>/review/h<rank>-<n>/          the reviewer's own worktree
 <dir>/diagnosis-<subject>-<n>.md   a diagnosis
 <dir>/research/h<rank>-r<n>/       the extracts of a research question
 <dir>/receipt.json                 the receipt

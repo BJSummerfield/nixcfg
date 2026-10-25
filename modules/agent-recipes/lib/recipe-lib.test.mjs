@@ -311,3 +311,12 @@ console.log("recipe library: ok");
   assert.equal(B.decide.length, 0);
   assert.notEqual(A.healed, B.healed);
 }
+
+// A child cut short by a stop ends the graph instead of reaching the retry or the caller.
+{
+  const f = fake((item) => (item.key === "b" ? { ...failed(item.key, "run stopped"), status: "aborted" } : ok(item.key, undefined)));
+  const L = await load(f.runs);
+  await assert.rejects(L.launch([L.node("a", "writer", ["x"], "/t/a.md"), L.node("b", "writer", ["x"], "/t/b.md")]), { name: "RunStopped" });
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["a", "b"]]);
+  await assert.rejects(L.one(L.node("b", "writer", ["x"], "/t/b.md")), { name: "RunStopped" });
+}

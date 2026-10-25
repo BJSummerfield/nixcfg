@@ -107,7 +107,7 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    uncommitted and the result of the task's check run once more. A report
    that says `blocked` or `failed` goes to a diagnosis (step 7).
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
-   branch, a new one for every review round (`<dir>/review/<id>-<n>`), reads
+   branch, a new one for every review round (made by the runner under its worktree root), reads
    the branch's own diff, runs the check there and never touches the
    implementer's worktree. It gives a verdict (`recipe-gate verdict`, which
    records the review worktree). On needs-work, or when the task gate was
