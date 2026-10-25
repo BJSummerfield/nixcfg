@@ -135,27 +135,44 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.equal(single.file, "/t/c.md");
 }
 
-// A result whose output the port filled from the reply is retried once, and
-// the retry names the path the child must write; without the flag the retry
-// brief is unchanged.
+// A done child whose output the gate rejected after the port filled it from
+// the reply is retried once, and the retry names the file the child must
+// write; the retry itself, an over-cap verdict and a rejected file are not
+// retried; without the flag the retry brief is unchanged.
 {
-  const f = fake((item) => (item.key === "w" ? { ok: false, runId: "run-w", outputFromReply: true, error: "gate rejected" } : ok(item.key)));
+  const reply = (key, gate) => ({ ok: true, status: "done", runId: `run-${key}`, outputFromReply: true, structuredOutput: gate });
+
+  const f = fake((item) => reply(item.key, { ok: false }));
   const L = await load(f.runs);
-  const results = await L.launch([L.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
-  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["w"], ["w-retry"]]);
-  const retry = f.batches[1][0];
-  assert.equal(retry.output, "/t/w.retry.md");
-  assert.match(retry.task, /The previous attempt did not write the output file\. Write it to \/t\/w\.retry\.md\.$/);
+  const results = await L.launch([L.searchItem("g", { id: "a", question: "Q?" }, "/t/w.md", 9)]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["search-a"], ["search-a-retry"]]);
+  assert.equal(f.batches[1][0].output, "/t/w.retry.md");
+  assert.match(f.batches[1][0].task, /The previous attempt did not write the output file\. Write it to \/t\/w\.retry\.md\.$/);
   assert.equal(results[0].ok, true);
   assert.equal(results[0].file, "/t/w.retry.md");
+  assert.equal(L.tally.children, 2, "the reply-filled retry is not retried again");
 
-  const g = fake((item) => (item.key === "b" ? { ok: false, runId: "run-b", outputFromReply: true } : ok(item.key)));
+  const g = fake((item) => reply(item.key, { ok: false }));
   const M = await load(g.runs);
   const single = await M.one(M.node("b", "writer", ["Output: /t/b.md"], "/t/b.md", { gate: "recipe-gate x '/t/b.md'", big: true }));
   assert.deepEqual(g.batches.map((b) => b.map((i) => i.key)), [["b"], ["b-retry"]]);
+  assert.equal(g.batches[1][0].output, "/t/b.retry.md");
   assert.match(g.batches[1][0].task, /The previous attempt did not write the output file\. Write it to \/t\/b\.retry\.md\.$/);
   assert.equal(single.ok, true);
-  assert.equal(M.tally.children, 2, "the retry is not retried again");
+  assert.equal(single.file, "/t/b.retry.md");
+  assert.equal(M.tally.children, 2, "the big reply-filled retry is not retried again");
+
+  const c = fake((item) => (item.key === "w" ? reply("w", { ok: false, over_cap: true }) : ok(item.key)));
+  const C = await load(c.runs);
+  await C.launch([C.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
+  assert.deepEqual(c.batches.map((b) => b.map((i) => i.key)), [["w"]], "an over-cap verdict is not retried");
+  assert.equal(C.tally.children, 1);
+
+  const d = fake((item) => (item.key === "w" ? { ok: true, status: "done", runId: "run-w", outputFromReply: false, structuredOutput: { ok: false } } : ok(item.key)));
+  const D = await load(d.runs);
+  await D.launch([D.node("w", "writer", ["Output: /t/w.md"], "/t/w.md", { gate: "recipe-gate x '/t/w.md'" })]);
+  assert.deepEqual(d.batches.map((b) => b.map((i) => i.key)), [["w"]], "a rejected file is not retried");
+  assert.equal(D.tally.children, 1);
 
   const h = fake((item) => (item.key === "w" ? failed("w", "engine") : ok(item.key)));
   const N = await load(h.runs);
