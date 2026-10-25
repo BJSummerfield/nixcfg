@@ -3,14 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { FIXTURE_TAG } from "./fixtures/tinycalc/calc.js";
 import { setupPlan, setupRepo, withRoleOverrides } from "./core.mjs";
-import { processLives, readJson, readRecords, receiptPath } from "../runner/run.mjs";
+import { processLives, readJson, readRecords, receiptPath, runIsAlive, statusPath } from "../runner/run.mjs";
 
-export const HANDOFF_TOKENS = 24000;
-export const HANDOFF_RESERVE = 8000;
+export const HANDOFF_TOKENS = 6000;
+export const HANDOFF_RESERVE = 6000;
 
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0 };
-// The run and wait deadlines mirror the timeoutMs of each recipe's binding.
 const RESEARCH_TIMEOUT_MS = 5400000;
 const IMPLEMENT_TIMEOUT_MS = 14400000;
 const WAIT_TIMEOUT_MS = 7200000;
@@ -36,16 +36,54 @@ export function statsFromRecords(records) {
   return { children, usage };
 }
 
-export function checkDispatch(result, outputText) {
+export function checkDispatch(result, outputText, tag) {
   if (!result) return { pass: false, detail: "no dispatch result file" };
   if (result.ok !== true) return { pass: false, detail: `dispatch was not ok: ${result.error ?? result.status ?? "unknown"}` };
   const u = result.usage ?? {};
   if (num(u.prompt) <= 0 || num(u.output) <= 0) {
     return { pass: false, detail: `usage shows prompt ${num(u.prompt)} and output ${num(u.output)} tokens` };
   }
+  if (num(u.turns) < 2) {
+    return { pass: false, detail: `only ${num(u.turns)} assistant turn(s); the brief needs a tool round trip` };
+  }
   if (outputText === null) return { pass: false, detail: "the output file was not written" };
-  if (!/\badd\b/.test(outputText)) return { pass: false, detail: "the output does not name add" };
+  if (!outputText.includes(tag)) return { pass: false, detail: "the output does not state the fixture tag" };
   return { pass: true, detail: "" };
+}
+
+export function checkDispatchModel(recorded, expected) {
+  if (recorded === null) return { pass: false, detail: "no model recorded in the spawn log" };
+  if (recorded !== expected) return { pass: false, detail: `the child ran on ${recorded}, not ${expected}` };
+  return { pass: true, detail: "" };
+}
+
+// The harness records the child's argv in spawn.jsonl under the run directory,
+// so the model can only come out of there.
+export function spawnModel(runDir) {
+  const files = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name === "spawn.jsonl") files.push(p);
+    }
+  };
+  walk(runDir);
+  for (const file of files) {
+    for (const record of readRecords(file)) {
+      const argv = record?.argv;
+      if (!Array.isArray(argv)) continue;
+      const i = argv.indexOf("--model");
+      if (i >= 0 && typeof argv[i + 1] === "string") return argv[i + 1];
+    }
+  }
+  return null;
 }
 
 export function checkResearch(receipt, outputText) {
@@ -82,7 +120,7 @@ export function checkImplement(receipt, taskIds, nodeTestPassed) {
 }
 
 export function checkHandoff(records) {
-  if (!(records ?? []).some((r) => r?.type === "handoff")) {
+  if (!(records ?? []).some((r) => r?.type === "handoff" && r?.as === "relay")) {
     return { pass: false, detail: "no relayed handoff in the children log" };
   }
   return { pass: true, detail: "" };
@@ -93,8 +131,21 @@ export function checkStop(receipt) {
   if (receipt.stopped !== true) {
     return { pass: false, detail: `receipt says ${receipt.failed ? `failed: ${oneLine(receipt.failed)}` : JSON.stringify(receipt.stopped)}, not stopped` };
   }
-  if (!Array.isArray(receipt.interrupted)) return { pass: false, detail: "the receipt lists no interrupted children" };
+  if (!Array.isArray(receipt.interrupted) || receipt.interrupted.length === 0) {
+    return { pass: false, detail: "the receipt lists no interrupted children" };
+  }
   return { pass: true, detail: "" };
+}
+
+export function stopReady(records) {
+  const recs = records ?? [];
+  const settled = new Set(recs.filter((r) => r?.type === "settle").map((r) => r.runId));
+  let seenSettle = false;
+  for (const r of recs) {
+    if (r?.type === "settle") seenSettle = true;
+    else if (r?.type === "start" && seenSettle && !settled.has(r.runId)) return true;
+  }
+  return false;
 }
 
 export function settledAgain(before, after) {
@@ -124,8 +175,21 @@ function subDir(ctx, name) {
   return dir;
 }
 
-function runnerOpts(ctx, cwd) {
-  return { env: ctx.env, cwd, signal: ctx.signal };
+function runnerOpts(env, cwd, signal) {
+  return { env, cwd, signal };
+}
+
+function runnerConfigSource(ctx) {
+  return ctx.env?.RECIPE_RUNNER_CONFIG ?? path.join(os.homedir(), ".pi", "agent", "recipes", "roles.json");
+}
+
+function writeRunnerConfig(ctx, sub, overrides = null) {
+  const config = JSON.parse(fs.readFileSync(runnerConfigSource(ctx), "utf8"));
+  const patched = overrides ? withRoleOverrides(config, overrides) : config;
+  patched.worktreeDir = path.join(sub, "worktrees");
+  const file = path.join(sub, "roles.json");
+  fs.writeFileSync(file, JSON.stringify(patched, null, 2));
+  return file;
 }
 
 const childrenLog = (taskDir) => path.join(taskDir, "runner", "children.jsonl");
@@ -143,14 +207,22 @@ function gitEnv() {
   return { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" };
 }
 
-function nodeTestOnBranch(repo, branch, wt) {
+export function nodeTestOnBranch(repo, branch, wt) {
   const git = (...args) => spawnSync("git", args, { cwd: repo, encoding: "utf8", env: gitEnv() });
-  const add = git("worktree", "add", wt, branch);
+  const add = git("worktree", "add", "--detach", wt, branch);
   if (add.status !== 0) return { passed: false, error: `cannot check out ${branch}: ${oneLine(add.stderr || add.stdout)}` };
   try {
     const run = spawnSync(process.execPath, ["--test"], { cwd: wt, encoding: "utf8" });
-    if (run.status === 0) return { passed: true, error: "" };
-    return { passed: false, error: `node --test failed on ${branch}: ${oneLine(`${run.stdout ?? ""} ${run.stderr ?? ""}`).slice(-300)}` };
+    if (run.status !== 0) {
+      return { passed: false, error: `node --test failed on ${branch}: ${oneLine(`${run.stdout ?? ""} ${run.stderr ?? ""}`).slice(-300)}` };
+    }
+    const multiplyCheck = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", `const m = await import(${JSON.stringify(path.join(wt, "calc.js"))}); process.exit(typeof m.multiply === "function" ? 0 : 1);`],
+      { cwd: wt, encoding: "utf8" },
+    );
+    if (multiplyCheck.status !== 0) return { passed: false, error: `calc.js on ${branch} does not export multiply` };
+    return { passed: true, error: "" };
   } finally {
     git("worktree", "remove", "--force", wt);
   }
@@ -198,7 +270,9 @@ function implementSetup(ctx, sub, full) {
 
 function implementCheck(name, began, sub, repo, plan, taskIds) {
   const receipt = readJson(receiptPath(plan));
-  const t = nodeTestOnBranch(repo, `implement/${path.basename(plan)}`, path.join(sub, "integration"));
+  const t = receipt?.branch
+    ? nodeTestOnBranch(repo, receipt.branch, path.join(sub, "integration"))
+    : { passed: false, error: receipt ? "the receipt names no integration branch" : "no receipt" };
   const check = checkImplement(receipt, taskIds, t.passed);
   const detail =
     check.pass || check.detail !== "node --test failed on the integration branch" || !t.error
@@ -207,12 +281,15 @@ function implementCheck(name, began, sub, repo, plan, taskIds) {
   return makeResult(name, began, check.pass, detail, statsFromRecords(readRecords(childrenLog(plan))));
 }
 
-const dispatchBrief = "Read calc.js in this repository and list the names of the functions it exports.";
+const DISPATCH_ROLE = "scout";
+const dispatchBrief = "Read calc.js in this repository and state the value of its exported constant FIXTURE_TAG.";
 
 async function dispatchTest(name, ctx, harness) {
   const began = Date.now();
   try {
     const sub = subDir(ctx, name);
+    const env = { ...ctx.env, RECIPE_RUNNER_CONFIG: writeRunnerConfig(ctx, sub) };
+    const runDir = path.join(sub, "run");
     const repo = path.join(sub, "repo");
     const outFile = path.join(sub, "output.md");
     const resultFile = path.join(sub, "dispatch-result.json");
@@ -221,18 +298,20 @@ async function dispatchTest(name, ctx, harness) {
       [
         "dispatch",
         "--role",
-        "scout",
+        DISPATCH_ROLE,
         "--brief",
         dispatchBrief,
         "--output",
         outFile,
         "--result-file",
         resultFile,
+        "--dir",
+        runDir,
         "--cwd",
         repo,
         ...(harness ? ["--harness", harness] : []),
       ],
-      runnerOpts(ctx, repo),
+      runnerOpts(env, repo, ctx.signal),
     );
     const result = readJson(resultFile);
     const stats = result
@@ -241,8 +320,14 @@ async function dispatchTest(name, ctx, harness) {
           usage: { prompt: num(result.usage?.prompt), cached: num(result.usage?.cached), output: num(result.usage?.output) },
         }
       : undefined;
-    const check = checkDispatch(result, fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null);
-    return makeResult(name, began, check.pass, check.detail, stats);
+    const config = readJson(path.join(sub, "roles.json"));
+    const role = config?.roles?.[DISPATCH_ROLE] ?? {};
+    const expectedModel = harness ? role.claude?.model : (role.model ?? config?.model);
+    const check = checkDispatch(result, fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : null, FIXTURE_TAG);
+    const modelCheck = checkDispatchModel(spawnModel(runDir), expectedModel);
+    const pass = check.pass && modelCheck.pass;
+    const detail = pass ? "" : modelCheck.pass ? check.detail : check.pass ? modelCheck.detail : `${check.detail}; ${modelCheck.detail}`;
+    return makeResult(name, began, pass, detail, stats);
   } catch (error) {
     return makeResult(name, began, false, error.message);
   }
@@ -252,10 +337,12 @@ async function researchTest(ctx) {
   const name = "research";
   const began = Date.now();
   try {
-    const { repo, taskDir, args } = researchSetup(ctx, subDir(ctx, name));
+    const sub = subDir(ctx, name);
+    const env = { ...ctx.env, RECIPE_RUNNER_CONFIG: writeRunnerConfig(ctx, sub) };
+    const { repo, taskDir, args } = researchSetup(ctx, sub);
     await ctx.runner(
       ["run", name, "--args", JSON.stringify(args), "--cwd", repo, "--timeout-ms", String(RESEARCH_TIMEOUT_MS)],
-      runnerOpts(ctx, repo),
+      runnerOpts(env, repo, ctx.signal),
     );
     const receipt = readJson(receiptPath(taskDir));
     const check = checkResearch(receipt, outputText(taskDir, receipt));
@@ -270,10 +357,11 @@ async function implementTest(ctx) {
   const began = Date.now();
   try {
     const sub = subDir(ctx, name);
+    const env = { ...ctx.env, RECIPE_RUNNER_CONFIG: writeRunnerConfig(ctx, sub) };
     const { repo, plan, taskIds } = implementSetup(ctx, sub, ctx.full);
     await ctx.runner(
       ["run", name, "--args", JSON.stringify({ plan, repo }), "--cwd", repo, "--timeout-ms", String(IMPLEMENT_TIMEOUT_MS)],
-      runnerOpts(ctx, repo),
+      runnerOpts(env, repo, ctx.signal),
     );
     return implementCheck(name, began, sub, repo, plan, taskIds);
   } catch (error) {
@@ -286,14 +374,13 @@ async function handoffTest(ctx) {
   const began = Date.now();
   try {
     const sub = subDir(ctx, name);
-    const configPath = ctx.env?.RECIPE_RUNNER_CONFIG ?? path.join(os.homedir(), ".pi", "agent", "recipes", "roles.json");
-    const overridden = withRoleOverrides(JSON.parse(fs.readFileSync(configPath, "utf8")), {
-      implementer: { budget: { tokens: HANDOFF_TOKENS, reserve: HANDOFF_RESERVE } },
-    });
-    const configCopy = path.join(sub, "roles.json");
-    fs.writeFileSync(configCopy, JSON.stringify(overridden, null, 2));
+    const env = {
+      ...ctx.env,
+      RECIPE_RUNNER_CONFIG: writeRunnerConfig(ctx, sub, {
+        implementer: { budget: { tokens: HANDOFF_TOKENS, reserve: HANDOFF_RESERVE, action: "commit" } },
+      }),
+    };
     const { repo, plan } = implementSetup(ctx, sub, false);
-    const env = { ...ctx.env, RECIPE_RUNNER_CONFIG: configCopy };
     await ctx.runner(
       ["run", "implement", "--args", JSON.stringify({ plan, repo }), "--cwd", repo, "--timeout-ms", String(IMPLEMENT_TIMEOUT_MS)],
       { env, cwd: repo, signal: ctx.signal },
@@ -312,33 +399,38 @@ async function handoffTest(ctx) {
 async function stopResumeTest(ctx) {
   const name = "stop-resume";
   const began = Date.now();
+  const sub = subDir(ctx, name);
+  let env = null;
+  let setup = null;
   try {
-    const { repo, taskDir, args } = researchSetup(ctx, subDir(ctx, name));
+    env = { ...ctx.env, RECIPE_RUNNER_CONFIG: writeRunnerConfig(ctx, sub) };
+    setup = researchSetup(ctx, sub);
+    const { repo, taskDir, args } = setup;
     const started = await ctx.runner(
       ["start", "research", "--args", JSON.stringify(args), "--cwd", repo, "--timeout-ms", String(RESEARCH_TIMEOUT_MS)],
-      runnerOpts(ctx, repo),
+      runnerOpts(env, repo, ctx.signal),
     );
     if (started.code !== 0) {
       return makeResult(name, began, false, `recipe-run start failed: ${oneLine(`${started.stderr} ${started.stdout}`)}`);
     }
     ctx.track?.(taskDir);
     const log = childrenLog(taskDir);
-    if (!(await waitFor(log, (r) => r.some((x) => x.type === "start"), CHILD_START_TIMEOUT_MS, ctx.signal))) {
-      return makeResult(name, began, false, "no child started before the stop", statsFromRecords(readRecords(log)));
+    if (!(await waitFor(log, stopReady, CHILD_START_TIMEOUT_MS, ctx.signal))) {
+      return makeResult(name, began, false, "no settled node with a live child before the stop", statsFromRecords(readRecords(log)));
     }
-    const stopped = await ctx.runner(["stop", taskDir], runnerOpts(ctx, repo));
+    const stopped = await ctx.runner(["stop", taskDir], runnerOpts(env, repo, ctx.signal));
     const before = readRecords(log);
     const pids = before
       .filter((r) => (r.type === "start" || r.type === "respawn") && r.pid)
       .map((r) => ({ pid: r.pid, start: r.pidStart }));
     const gone = await allGone(pids, ctx.signal);
     const stopCheck = checkStop(readJson(receiptPath(taskDir)));
-    const resumed = await ctx.runner(["resume", taskDir, "--detach"], runnerOpts(ctx, repo));
+    const resumed = await ctx.runner(["resume", taskDir, "--detach"], runnerOpts(env, repo, ctx.signal));
     if (resumed.code !== 0) {
       return makeResult(name, began, false, `recipe-run resume failed: ${oneLine(`${resumed.stderr} ${resumed.stdout}`)}`, statsFromRecords(before));
     }
     ctx.track?.(taskDir);
-    const waited = await ctx.runner(["wait", taskDir, "--timeout-ms", String(WAIT_TIMEOUT_MS)], runnerOpts(ctx, repo));
+    const waited = await ctx.runner(["wait", taskDir, "--timeout-ms", String(WAIT_TIMEOUT_MS)], runnerOpts(env, repo, ctx.signal));
     const after = readRecords(log);
     const again = settledAgain(before, after);
     const receipt = readJson(receiptPath(taskDir));
@@ -360,6 +452,12 @@ async function stopResumeTest(ctx) {
     return makeResult(name, began, pass, detail, statsFromRecords(after));
   } catch (error) {
     return makeResult(name, began, false, error.message);
+  } finally {
+    // A timed-out wait or a thrown step leaves the run alive; the stop is a
+    // no-op for a run that already ended.
+    if (setup && runIsAlive(readJson(statusPath(setup.taskDir)))) {
+      await ctx.runner(["stop", setup.taskDir], runnerOpts(env ?? ctx.env, setup.repo ?? process.cwd(), undefined));
+    }
   }
 }
 
