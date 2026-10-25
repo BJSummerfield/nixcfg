@@ -1,7 +1,7 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
 
 export default async function investigate(args, port) {
-const { quote, list, short, node, stoppedItself, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, remainderOf, handoffTrack, afterHandoff, relayLines, splitPlanItem, piecesFrom } = recipeLib(port);
+const { quote, list, short, node, stoppedItself, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, handoffTrack, beginRelay, clearRelay, relayBriefLines, stampRelay, reportHandoff, handoffCall, acceptSplit, splitPlanItem } = recipeLib(port);
 
 const MAX_RESEARCH = 2;
 const MAX_REVIEWS = 2;
@@ -182,7 +182,7 @@ function changeItem(h) {
   const lines = ["Job: test one hypothesis (the investigate variant).", "Goal: " + goal, "Hypothesis " + h.rank + ": " + h.claim, "Check first: " + h.check, reproLine()]
     .concat(commandLines())
     .concat(["Repository: " + repo + " (you are in your own worktree of " + (h.relayRef ? "the branch " + h.relayBranch : "the base") + ", on your own branch)"])
-    .concat(h.relayRef ? relayLines(h.relayNote, h.relayBranch) : [])
+    .concat(relayBriefLines(h))
     .concat(takeNotes(h));
   lines.push("If the evidence refutes the hypothesis, change nothing and write `blocked: hypothesis refuted: <evidence>` as the first line of the report.");
   lines.push("Commit your work on the branch and leave nothing uncommitted.");
@@ -193,12 +193,7 @@ function changeItem(h) {
     timeoutMs: bigMs,
     worktree: true,
   });
-  item.baseRef = h.relayRef || pinned.base_ref;
-  if (h.relayRef && h.handoffFrom) {
-    item.handoffOf = h.handoffFrom;
-    item.handoffAs = "relay";
-    h.handoffFrom = null;
-  }
+  stampRelay(item, h, pinned.base_ref);
   return item;
 }
 
@@ -265,9 +260,10 @@ function pendingOf(result) {
 
 function handoffInfo(source, g, report) {
   if (source && source.handoff) return source;
-  if (!g.report || g.report.status !== "handoff") return null;
+  const handoff = reportHandoff(g, report);
+  if (!handoff) return null;
   return {
-    handoff: { line: "handoff: " + (g.report.why || ""), unread: [], note: report, empty: false },
+    handoff: handoff,
     firstContext: undefined,
     budget: source && source.budget ? source.budget : null,
     runId: source && source.runId ? source.runId : null,
@@ -281,13 +277,7 @@ function takeHandoff(h, g, info, step) {
   h.head = g.head || null;
   h.handoffFrom = info.runId;
   h.handoffInfo = { note: given.note || null, budget: info.budget };
-  const call = afterHandoff(h.track, {
-    head: g.head,
-    commits: g.commits,
-    firstContext: info.firstContext,
-    budgetTokens: info.budget ? info.budget.tokens : undefined,
-    remainder: remainderOf(given, g.head),
-  });
+  const call = handoffCall(h.track, given, g, { firstContext: info.firstContext, budgetTokens: info.budget ? info.budget.tokens : undefined });
   if (call.action === "decide") {
     return askPerson(h, step, "the " + (step === "change" ? "change" : "fix round") + " handed off and " + call.reason + "; the work is on " + h.branch, given.note);
   }
@@ -295,10 +285,7 @@ function takeHandoff(h, g, info, step) {
     h.next = "split";
     return;
   }
-  h.track.relays++;
-  h.relayRef = "refs/heads/" + h.branch;
-  h.relayBranch = h.branch;
-  h.relayNote = given.note || null;
+  beginRelay(h, h.track, { branch: h.branch, note: given.note, from: h.handoffFrom });
   if (step === "verify" && h.findings) h.notes.push(h.findings);
   h.next = "change";
 }
@@ -408,9 +395,8 @@ function takeSplit(h, result) {
   const g = result.structuredOutput;
   if (!result.ok || !g) return askPerson(h, "split", "the split plan failed: " + (result.error || "its plan gate did not run"), result.file);
   const budget = h.handoffInfo.budget;
-  const found = piecesFrom(g, { parentId: "h" + h.rank, parentEst: budget ? budget.tokens : null, parentOwns: null, taken: pieceIds });
+  const found = acceptSplit(h.track, g, { parentId: "h" + h.rank, parentEst: budget ? budget.tokens : null, parentOwns: null, taken: pieceIds });
   if (!found.ok) return askPerson(h, "split", found.problem, result.file);
-  h.track.root.splits++;
   found.pieces.forEach(function (p) {
     pieceIds.push(p.id);
   });
@@ -418,9 +404,10 @@ function takeSplit(h, result) {
   h.pieceNo = 0;
   h.piece = null;
   h.prev = { branch: h.branch, worktree: h.worktree, head: h.head };
-  h.relayRef = null;
-  h.relayBranch = null;
-  h.relayNote = null;
+  // the split drops the relay state but keeps the run the handoff came from
+  const from = h.handoffFrom;
+  clearRelay(h);
+  h.handoffFrom = from;
   h.next = "piece";
 }
 
@@ -443,7 +430,7 @@ function pieceItem(h) {
       "Do what the task file asks and nothing beyond it; other pieces cover the rest. The verify command runs after the last piece.",
       "Repository: " + repo + " (you are in your own worktree of the branch " + (p.relayBranch || h.prev.branch) + ", on your own branch)",
     ])
-    .concat(p.relayRef ? relayLines(p.relayNote, p.relayBranch) : [])
+    .concat(relayBriefLines(p))
     .concat(takeNotes(h));
   lines.push("Commit your work on the branch and leave nothing uncommitted.");
   lines.push("Write the report to " + report);
@@ -464,12 +451,7 @@ function pieceItem(h) {
     quote("h" + h.rank + "-" + p.spec.id),
   ].join(" ");
   const item = node("piece-" + tag, "implementer", lines, report, { gate: command, gateTimeoutMs: TASK_GATE_MS, timeoutMs: bigMs, worktree: true });
-  item.baseRef = p.relayRef || "refs/heads/" + h.prev.branch;
-  if (p.relayRef && p.handoffFrom) {
-    item.handoffOf = p.handoffFrom;
-    item.handoffAs = "relay";
-    p.handoffFrom = null;
-  }
+  stampRelay(item, p, "refs/heads/" + h.prev.branch);
   return item;
 }
 
@@ -485,21 +467,11 @@ function takePiece(h, result) {
   if (handing) {
     const given = info.handoff;
     if (!g.branch || !g.worktree) return heal(h, "piece", "piece " + p.spec.id + " handed off but has no branch", [p.report], ["retry", "decide"]);
-    const call = afterHandoff(p.track, {
-      head: g.head,
-      commits: g.commits,
-      firstContext: info.firstContext,
-      budgetTokens: info.budget ? info.budget.tokens : undefined,
-      remainder: remainderOf(given, g.head),
-    });
+    const call = handoffCall(p.track, given, g, { firstContext: info.firstContext, budgetTokens: info.budget ? info.budget.tokens : undefined });
     if (call.action !== "relay") {
       return askPerson(h, "piece", "piece " + p.spec.id + " handed off and " + (call.action === "split" ? "would need another split: " : "") + call.reason + "; the work is on " + g.branch, given.note);
     }
-    p.track.relays++;
-    p.relayRef = "refs/heads/" + g.branch;
-    p.relayBranch = g.branch;
-    p.relayNote = given.note || null;
-    p.handoffFrom = info.runId;
+    beginRelay(p, p.track, { branch: g.branch, note: given.note, from: info.runId });
     h.next = "piece";
     return;
   }
