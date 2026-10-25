@@ -607,8 +607,8 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
 }
 
 // A looped child that had delivered settles done with its gate, and its loop
-// rides on the result and the settle record; one that wrote nothing fails with
-// the harness's error, and none is aborted.
+// rides on the result and the settle record; one whose done line was mid-loop
+// text, and one that wrote nothing, fail with the harness's error; none is aborted.
 {
   const loop = { tool: "bash", repeats: 4 };
   const loopError = `repeated ${loop.tool} ${loop.repeats} times with the same result`;
@@ -616,7 +616,11 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   const harness = fakeHarness((spec) => {
     if (spec.item.key === "delivered") fs.writeFileSync(spec.item.output, "the report\n");
     if (spec.item.key === "concerns") fs.writeFileSync(spec.item.output, "the report\n");
-    const text = { delivered: "done", concerns: "done, concerns" }[spec.item.key] ?? "";
+    const text = {
+      delivered: "done",
+      concerns: "done, concerns",
+      unwritten: "done\n\n`out.md`",
+    }[spec.item.key] ?? "";
     return looped(text);
   });
   const { port, runDir, dir, gates } = setup("looped", { harness });
@@ -631,6 +635,13 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   const concerns = await port.runOne(item("concerns", { output: out("concerns") }));
   assert.equal(concerns.status, "done");
   assert.equal(concerns.ok, true);
+  const unwritten = await port.runOne(item("unwritten", { output: out("unwritten") }));
+  assert.equal(unwritten.status, "failed");
+  assert.equal(unwritten.ok, false);
+  assert.equal(unwritten.error, loopError);
+  assert.deepEqual(unwritten.loop, loop);
+  assert.equal(unwritten.handoff, null);
+  assert.equal(unwritten.outputFromReply, true);
   const bare = await port.runOne(item("noth"));
   assert.equal(bare.status, "failed");
   assert.equal(bare.ok, false);
@@ -643,6 +654,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.deepEqual(settled.map((r) => [r.key, r.result.status, r.result.loop]), [
     ["delivered", "done", loop],
     ["concerns", "done", loop],
+    ["unwritten", "failed", loop],
     ["noth", "failed", loop],
   ]);
   assert.ok(settled.every((r) => r.result.status !== "aborted"));
