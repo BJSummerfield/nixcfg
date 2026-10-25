@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { HANDOFF_TIMEOUT_MS, budgetTrigger, handoffEnd, valveRecord } from "../budget.mjs";
 import { handoffPrompt } from "../handoff.mjs";
 import { killTree, watchTree } from "../tree-kill.mjs";
 import { recordSpawn } from "./spawn-log.mjs";
@@ -13,7 +14,6 @@ export const usesEngine = false;
 
 const TAIL_CHARS = 1500;
 const STREAM_GRACE_MS = 1000;
-const HANDOFF_TIMEOUT_MS = 600_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GIT_COMMIT = /\bgit\b[^\n;&|]*\bcommit\b/;
 
@@ -161,9 +161,10 @@ export async function start(spec) {
     return output;
   };
 
-  const budgetTokens = spec.budget?.tokens > 0 ? spec.budget.tokens : null;
+  const trigger = budgetTrigger(spec.budget);
+  let hit = null;
 
-  async function runProcess({ argv, brief, timeoutMs, watchBudget }) {
+  async function runProcess({ argv, brief, timeoutMs, trigger, endTurn }) {
     const [command, ...prefix] = binOf(spec);
     const env = childEnv(spec);
     recordSpawn(spec.logDir, { command, argv: [...prefix, ...argv], cwd: spec.cwd, env });
@@ -197,7 +198,11 @@ export async function start(spec) {
     let anonymous = 0;
     let result = null;
     let stderrTail = "";
-    let budgetHit = null;
+
+    // A tool_use block and the tool_result that answers it arrive as separate
+    // lines, so each message's calls are kept with the results that complete them.
+    const turns = new Map();
+    const turnOfCall = new Map();
 
     let forced = null;
     let killing = Promise.resolve();
@@ -207,12 +212,19 @@ export async function start(spec) {
       forced = status;
       killing = killTree(child.pid, { groups: [...watcher.groups()] }).catch(() => {});
     };
+    const endKill = () => {
+      // A decided end outranks a deadline or abort that started at the same moment.
+      if (gone || !child.pid || forced === "budget") return;
+      forced = "budget";
+      killing = killTree(child.pid, { groups: [...watcher.groups()] }).catch(() => {});
+    };
 
     const onEvent = (event) => {
       if (event?.type === "system" && event.subtype === "compact_boundary") usage.compactions++;
       if (event?.type === "assistant" && event.message) {
+        const id = event.message.id ?? `anonymous-${anonymous++}`;
         const u = event.message.usage ?? {};
-        messages.set(event.message.id ?? `anonymous-${anonymous++}`, u);
+        messages.set(id, u);
         const context = contextOf(u);
         const calls = Array.isArray(event.message.content)
           ? event.message.content.filter((block) => block?.type === "tool_use")
@@ -221,9 +233,37 @@ export async function start(spec) {
           if (call.name === "Write" || call.name === "Edit") firstWrite ??= context;
           else if (call.name === "Bash" && GIT_COMMIT.test(String(call.input?.command ?? ""))) firstCommit ??= context;
         }
-        if (watchBudget && budgetTokens !== null && calls.length > 0 && context >= budgetTokens && !budgetHit) {
-          budgetHit = { tokens: context };
-          kill("budget");
+        let turn = null;
+        if (calls.length > 0) {
+          turn = turns.get(id);
+          if (!turn) {
+            turn = { calls: [], results: [], context };
+            turns.set(id, turn);
+          }
+          turn.context = context;
+          for (const call of calls) {
+            turn.calls.push({ id: call.id, tool: String(call.name ?? "").toLowerCase(), path: call.input?.file_path, command: call.input?.command });
+            turnOfCall.set(call.id, turn);
+          }
+        }
+        if (trigger) {
+          const fired = trigger.observe({ context, calls: turn?.calls ?? [] });
+          if (fired) {
+            hit = fired;
+            kill("budget");
+          }
+        }
+      }
+      if (event?.type === "user" && endTurn) {
+        const content = event.message?.content;
+        if (!Array.isArray(content)) return;
+        for (const block of content) {
+          if (block?.type !== "tool_result" || block.tool_use_id == null) continue;
+          const turn = turnOfCall.get(block.tool_use_id);
+          if (!turn || turn.results.length >= turn.calls.length) continue;
+          turn.results.push({ id: block.tool_use_id, isError: block.is_error === true });
+          if (turn.results.length !== turn.calls.length) continue;
+          if (endTurn.observe(turn)) endKill();
         }
       }
       if (event?.type === "result") result = event;
@@ -301,7 +341,7 @@ export async function start(spec) {
     const assistantOutput = tally(messages);
     const resultOutput = result?.usage?.output_tokens;
     usage.output += typeof resultOutput === "number" ? resultOutput : assistantOutput;
-    return { code, signal, result, spawnError, stderrTail, forced, budgetHit, timeoutMs };
+    return { code, signal, result, spawnError, stderrTail, forced, timeoutMs };
   }
 
   const finish = async (run) => {
@@ -338,18 +378,20 @@ export async function start(spec) {
     argv: claudeArgv(spec),
     brief: spec.brief,
     timeoutMs: spec.timeoutMs,
-    watchBudget: true,
+    trigger,
   });
 
   if (run.forced === "budget") {
-    valve = { fired: true, tokens: run.budgetHit.tokens, budget: budgetTokens, action: spec.budget.action, ended: false };
+    valve = valveRecord(spec.budget, hit.tokens, false);
     if (spec.signal?.aborted) return finish({ ...run, forced: "aborted" });
+    const end = handoffEnd(spec.budget, { firedTokens: hit.tokens, output: spec.item?.output });
     run = await runProcess({
       argv: claudeArgv({ ...spec, resume: true }, handoffGrant(spec)),
-      brief: handoffPrompt(spec.budget.action, { output: spec.item?.output, tokens: run.budgetHit.tokens }),
+      brief: handoffPrompt(spec.budget.action, { output: spec.item?.output, tokens: hit.tokens }),
       timeoutMs: HANDOFF_TIMEOUT_MS,
-      watchBudget: false,
+      endTurn: end,
     });
+    if (run.forced === "budget") valve.ended = true;
   }
   return finish(run);
 }
