@@ -54,55 +54,12 @@ let
     leave 76561198044411510 TeChNo ViKiNg (0 online)
   '';
 
-  recipeSrc = builtins.path {
-    path = ../modules/agent-recipes;
-    name = "agent-recipes-src";
+  recipeChecks = import ../modules/agent-recipes/checks.nix {
+    inherit pkgs;
+    inherit (nixpkgs) lib;
+    resolved =
+      inputs.self.nixosConfigurations.redtruck.config.containers.devbox.config.home-manager.users.agent.mine.user.agent-recipes.resolved;
   };
-  recipeTest =
-    name: test: extra:
-    pkgs.runCommand name (
-      {
-        nativeBuildInputs = [
-          pkgs.nodejs
-          pkgs.git
-          pkgs.bash
-        ];
-      }
-      // removeAttrs extra [ "after" ]
-    ) "cp -r --no-preserve=mode ${recipeSrc} src; cd src; node ${test}\n${extra.after or ""}touch $out";
-  recipeTestFiles =
-    rel:
-    let
-      abs = ../modules/agent-recipes + "/${rel}";
-    in
-    if !builtins.pathExists abs then
-      [ ]
-    else
-      nixpkgs.lib.concatLists (
-        nixpkgs.lib.mapAttrsToList (
-          n: type:
-          let
-            p = "${rel}/${n}";
-          in
-          if type == "directory" then
-            recipeTestFiles p
-          else if type == "regular" && nixpkgs.lib.hasSuffix ".test.mjs" n then
-            [ p ]
-          else
-            [ ]
-        ) (builtins.readDir abs)
-      );
-  discoveredRecipeChecks = builtins.listToAttrs (
-    map (
-      file:
-      let
-        name = "pi-recipe-${
-          builtins.replaceStrings [ "/" ] [ "-" ] (nixpkgs.lib.removeSuffix ".test.mjs" file)
-        }";
-      in
-      nixpkgs.lib.nameValuePair name (recipeTest name file { })
-    ) (recipeTestFiles "runner" ++ recipeTestFiles "extension")
-  );
 in
 evalAll "nixos" inputs.self.nixosConfigurations
 // evalAll "darwin" inputs.self.darwinConfigurations
@@ -143,60 +100,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         deadnix --fail . --exclude ${hwConfigGlob}
         touch $out
       '';
-  # The valve gives a subagent one more turn when its reply is cut off. Its input
-  # (stopReason) is pi's, not ours, so the branches are worth pinning even though
-  # the harness semantics around them can only be verified by reading pi's source.
-  pi-budget-valve =
-    pkgs.runCommand "pi-budget-valve"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        cp ${../modules/pi-coding-agent/extensions/budget-valve.js} budget-valve.js
-        cp ${../modules/pi-coding-agent/extensions/budget-valve.test.mjs} budget-valve.test.mjs
-        node budget-valve.test.mjs
-        touch $out
-      '';
-  pi-runner-budgets =
-    let
-      piSettings = import ../modules/pi-coding-agent/settings.nix;
-    in
-    pkgs.runCommand "pi-runner-budgets"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-        passAsFile = [ "data" ];
-        data = builtins.toJSON (piSettings.runnerLimits // { roles = piSettings.runnerRoles; });
-      }
-      ''
-        node -e '
-          const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-          const names = ["implementer", "scout", "locator", "planner", "reviewer", "synthesizer", "searcher", "extractor"];
-          const xhigh = ["planner", "reviewer", "synthesizer"];
-          const errors = [];
-          for (const n of names) {
-            const b = d.roles[n]?.budget;
-            if (!b) { errors.push(n + ": no budget"); continue; }
-            if (!Number.isInteger(b.tokens) || b.tokens <= 0) errors.push(n + ": tokens");
-            if (!Number.isInteger(b.reserve) || b.reserve <= 0) errors.push(n + ": reserve");
-            if (!["commit", "unread", "stop"].includes(b.action)) errors.push(n + ": action");
-            if (b.tokens + b.reserve > d.window - d.compactionReserve) errors.push(n + ": no room for the handoff turn");
-            if (xhigh.includes(n) && b.reserve < d.maxTokens) errors.push(n + ": reserve below one reply");
-          }
-          if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
-        ' "$dataPath"
-        touch $out
-      '';
-  pi-save-page =
-    pkgs.runCommand "pi-save-page"
-      {
-        nativeBuildInputs = [ pkgs.nodejs ];
-      }
-      ''
-        cp ${../modules/pi-coding-agent/extensions/save-page.js} save-page.js
-        cp ${../modules/pi-coding-agent/extensions/save-page.test.mjs} save-page.test.mjs
-        node save-page.test.mjs
-        touch $out
-      '';
   # The resume card replaces pi's default summariser with a fixed template on
   # every compaction. Its input (session_before_compact's payload shape) is
   # pi's, not ours, so pinning it here only proves the template, not pi's side.
@@ -211,21 +114,6 @@ evalAll "nixos" inputs.self.nixosConfigurations
         node resume-card.test.mjs
         touch $out
       '';
-  pi-recipe-gate = recipeTest "pi-recipe-gate" "gates/recipe-gate.test.mjs" { };
-  pi-recipe-git = recipeTest "pi-recipe-git" "gates/recipe-git.test.mjs" {
-    after = ''
-      status=0
-      ${pkgs.callPackage ../modules/agent-recipes/package.nix { }}/bin/recipe-gate bogus x || status=$?
-      test "$status" = 2
-    '';
-  };
-  pi-recipe-lib = recipeTest "pi-recipe-lib" "lib/recipe-lib.test.mjs" { };
-  pi-recipe-implement = recipeTest "pi-recipe-implement" "implement/graph.test.mjs" { };
-  pi-recipe-plan = recipeTest "pi-recipe-plan" "plan/graph.test.mjs" { };
-  pi-recipe-research = recipeTest "pi-recipe-research" "research/graph.test.mjs" { };
-  pi-recipe-investigate = recipeTest "pi-recipe-investigate" "investigate/graph.test.mjs" { };
-  pi-recipe-sizing = recipeTest "pi-recipe-sizing" "sizing/recipe-sizing.test.mjs" { };
-  pi-recipe-status = recipeTest "pi-recipe-status" "status/recipe-status.test.mjs" { };
   valheim-notify-parser =
     pkgs.runCommand "valheim-notify-parser"
       {
@@ -237,7 +125,7 @@ evalAll "nixos" inputs.self.nixosConfigurations
         touch $out
       '';
 }
-// discoveredRecipeChecks
+// recipeChecks
 // nixpkgs.lib.mapAttrs' (
   name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
 ) inputs.self.packages.x86_64-linux
