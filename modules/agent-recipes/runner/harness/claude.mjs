@@ -213,8 +213,8 @@ export async function start(spec) {
       killing = killTree(child.pid, { groups: [...watcher.groups()] }).catch(() => {});
     };
     const endKill = () => {
-      // A decided end outranks a deadline or abort that started at the same moment.
-      if (gone || !child.pid || forced === "budget") return;
+      // a deadline or an abort that started first keeps its status
+      if (forced || gone || !child.pid) return;
       forced = "budget";
       killing = killTree(child.pid, { groups: [...watcher.groups()] }).catch(() => {});
     };
@@ -242,7 +242,15 @@ export async function start(spec) {
           }
           turn.context = context;
           for (const call of calls) {
-            turn.calls.push({ id: call.id, tool: String(call.name ?? "").toLowerCase(), path: call.input?.file_path, command: call.input?.command });
+            const file = call.input?.file_path;
+            // the end check compares the path with the output, so both must
+            // count from the child's working directory
+            turn.calls.push({
+              id: call.id,
+              tool: String(call.name ?? "").toLowerCase(),
+              path: typeof file === "string" ? path.resolve(spec.cwd ?? ".", file) : file,
+              command: call.input?.command,
+            });
             turnOfCall.set(call.id, turn);
           }
         }
@@ -384,7 +392,8 @@ export async function start(spec) {
   if (run.forced === "budget") {
     valve = valveRecord(spec.budget, hit.tokens, false);
     if (spec.signal?.aborted) return finish({ ...run, forced: "aborted" });
-    const end = handoffEnd(spec.budget, { firedTokens: hit.tokens, output: spec.item?.output });
+    const output = spec.item?.output ? path.resolve(spec.cwd ?? ".", spec.item.output) : null;
+    const end = handoffEnd(spec.budget, { firedTokens: hit.tokens, output });
     run = await runProcess({
       argv: claudeArgv({ ...spec, resume: true }, handoffGrant(spec)),
       brief: handoffPrompt(spec.budget.action, { output: spec.item?.output, tokens: hit.tokens }),
