@@ -38,8 +38,6 @@ time. It is the plan directory the implement skill reads:
 <dir>/runner/        the runner's status.json, board and log
 ```
 
-The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
-
 A task file opens with a header, one `key: value` per line, then a blank line
 and the body (what to change and why, acceptance):
 
@@ -145,52 +143,17 @@ a `decide` question for the user.
 
 ## Claude Code binding
 
-Claude Code runs no pi-subagents workflow script: its Workflow tool has a different
-child API and must be opted into per run, and a headless `claude -p` runner for
-the same script has not been built. So the main session does the script's work
-with the Agent tool, one `subagent_type` per role (`scout`, `planner`,
-`reviewer`; their definitions are installed), in the same order and with the
-same `recipe-gate` checks. Turns in the starting session are unavoidable
-here, and nothing stops a helper from being retried more than once; keep to
-the limits below.
+The same graph runs with Claude Code children; this session only starts it and
+reads the result.
 
-0. When `locate` is given, dispatch `locator` first with the question and
-   the repository, writing `<dir>/locate.md`, and check it with
-   `recipe-gate paths`. On a pass, tell the scout to read it first and list
-   it for the planner; on a failure note an open line and go on.
-1. Dispatch `scout` with the goal, the input, the repository and the questions
-   in step 1 above, writing `<dir>/scout.md`. If it fails, retry once; if it
-   fails again, plan without notes.
-2. Dispatch `planner` for the implementation plan job (the batch job when
-   `batch` was given, with its `Targets:` and `Change:` lines) with the goal, input,
-   repository, scout notes and plan directory, telling it to write `plan.md`
-   and `tasks/<id>.md` in the format above and to run `recipe-gate plan <dir>
-   --repo <repo>` before it finishes.
-3. Run `recipe-gate plan <dir> --repo <repo>` yourself. When `ok` is false,
-   dispatch `planner` again with the JSON findings, up to twice, then record
-   what is still wrong. An empty plan with `missing: ["no tasks"]` and a
-   reason in `plan.md` is not revised.
-4. For each task whose `research` is set, dispatch `searcher` with the
-   question, writing `<dir>/research/<id>/search.md`, check it with
-   `recipe-gate urls`, keep at most 3 sources for the task (primary sources
-   first), and dispatch `extractor` per source writing
-   `<dir>/research/<id>/extract-<k>.md` from `page-<k>.md`, checked with
-   `recipe-gate extract`. Record the count that passed; a task with none
-   is an open line.
-5. Dispatch a fresh `reviewer` (plan variant) with the goal, input, repository,
-   scout notes, plan directory and the gate command, writing `<dir>/review.md`
-   (the second review `<dir>/review.2.md`); read its verdict with `recipe-gate
-   verdict`. On needs-work, dispatch `planner` once with the review, re-run
-   the plan gate and review once more.
-6. Where the pi script diagnoses (step 7 of What runs), dispatch a fresh
-   `reviewer` (diagnosis variant) with the step, what went wrong, the
-   evidence files, the allowed actions and `<dir>/diagnosis-<n>.md`, read it
-   with `recipe-gate diagnosis <file> --allow <actions>`, and act on it with
-   the same limits. Do not decide in its place: a `decide` goes to the user.
-7. Write `<dir>/receipt.md` in the receipt shape above, counting every helper
-   dispatched, and report as in the pi binding.
+```
+recipe-run start plan --harness claude --args '{"dir":"<task dir>","goal":"<goal>","input":"<input path>","batch":{"rule":"<glob|grep|list ...>","change":"<change>"},"repo":"<repo path>"}' --timeout-ms 5400000 --max-children 30
+```
 
-What differs from pi: the main session spends turns on every step and
-re-reads its own conversation after each helper returns; the reviewer is
-fresh but runs under the same session's orchestration; there is no spawn cap
-or timeout enforced for you.
+All paths are absolute. It returns at once. Then run `recipe-run wait <task dir> --timeout-ms 7000000`
+with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
+wait timed out while the run is still going: run the same wait again. On exit 0
+or 1 read `<task dir>/receipt.json`, the
+whole receipt, and report as in the pi binding. `recipe-status <task dir>`
+shows progress from any shell. A stopped run continues with `recipe-run resume
+<task dir> --detach`.
