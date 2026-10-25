@@ -1,7 +1,10 @@
 # Writing rules
 
 - Code comments are short and say only why, and only when the code cannot
-  show it. They are plain English a stranger can read alone: never mention
+  show it. A comment never says what the code does; the reader has the code
+  for that, and this includes a function header that restates its name,
+  arguments or return value. They are plain English a stranger can read
+  alone: never mention
   agents, sessions, runs, roles, tools, review rounds, temp paths or the
   conversation. A repository's own `AGENTS.md` may restrict comments
   further.
