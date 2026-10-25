@@ -477,6 +477,100 @@ console.log("recipe library: ok");
   assert.deepEqual(L.relayLines(null, "task-a"), ["Continue this task; the branch task-a holds the committed work, so build on it and do not redo it."]);
 }
 
+// beginRelay(): the relay state and one counted relay when a track is given;
+// a null track is not counted; clearRelay() undoes the state.
+{
+  const L = await load(fake(() => null).runs);
+  const state = { relayRef: null, relayBranch: null, relayNote: null, handoffFrom: null };
+  const track = L.handoffTrack();
+  L.beginRelay(state, track, { branch: "task-a", note: "/t/note.md", from: "run-1" });
+  assert.deepEqual(state, { relayRef: "refs/heads/task-a", relayBranch: "task-a", relayNote: "/t/note.md", handoffFrom: "run-1" });
+  assert.equal(track.relays, 1);
+  L.clearRelay(state);
+  assert.deepEqual(state, { relayRef: null, relayBranch: null, relayNote: null, handoffFrom: null });
+  L.beginRelay(state, null, { branch: "task-a" });
+  assert.deepEqual(state, { relayRef: "refs/heads/task-a", relayBranch: "task-a", relayNote: null, handoffFrom: null });
+  assert.equal(track.relays, 1, "a relay without a track is not counted");
+}
+
+// relayBriefLines(): the relay's brief lines when there is a relay, none
+// when there is not.
+{
+  const L = await load(fake(() => null).runs);
+  const state = { relayRef: null, relayBranch: null, relayNote: null, handoffFrom: null };
+  assert.deepEqual(L.relayBriefLines(state), []);
+  L.beginRelay(state, null, { branch: "task-a", note: "/t/note.md", from: "run-1" });
+  assert.deepEqual(L.relayBriefLines(state), L.relayLines("/t/note.md", "task-a"));
+  L.clearRelay(state);
+  assert.deepEqual(L.relayBriefLines(state), []);
+}
+
+// stampRelay(): the relay branch and the stamp once; without a relay the
+// fallback base and no stamps.
+{
+  const L = await load(fake(() => null).runs);
+  const state = { relayRef: null, relayBranch: null, relayNote: null, handoffFrom: null };
+  L.beginRelay(state, L.handoffTrack(), { branch: "task-a", from: "run-1" });
+  const first = { key: "k1" };
+  assert.equal(L.stampRelay(first, state, "base-ref"), first);
+  assert.deepEqual([first.baseRef, first.handoffOf, first.handoffAs], ["refs/heads/task-a", "run-1", "relay"]);
+  assert.equal(state.handoffFrom, null, "the stamp is used once");
+  const second = { key: "k2" };
+  L.stampRelay(second, state, "base-ref");
+  assert.equal(second.baseRef, "refs/heads/task-a");
+  assert.ok(!("handoffOf" in second) && !("handoffAs" in second), "a second item is not stamped");
+  const fresh = { relayRef: null, relayBranch: null, relayNote: null, handoffFrom: null };
+  const bare = { key: "k3" };
+  L.stampRelay(bare, fresh, "base-ref");
+  assert.equal(bare.baseRef, "base-ref");
+  assert.ok(!("handoffOf" in bare) && !("handoffAs" in bare));
+}
+
+// reportHandoff(): a handoff status in the gate report is a handoff, other
+// reports are not.
+{
+  const L = await load(fake(() => null).runs);
+  assert.deepEqual(L.reportHandoff({ report: { status: "handoff", why: "ran out of context" } }, "/t/r.md"), {
+    line: "handoff: ran out of context",
+    unread: [],
+    note: "/t/r.md",
+    empty: false,
+  });
+  assert.equal(L.reportHandoff({ report: { status: "handoff" } }, "/t/r.md").line, "handoff: ", "no why is a blank line");
+  assert.equal(L.reportHandoff({ report: { status: "done", why: "w" } }, "/t/r.md"), null);
+  assert.equal(L.reportHandoff({}, "/t/r.md"), null);
+  assert.equal(L.reportHandoff(null, "/t/r.md"), null);
+}
+
+// handoffCall(): the same decision as the equivalent direct afterHandoff call.
+{
+  const L = await load(fake(() => null).runs);
+  const handoff = { line: "handoff: left the parser tests", unread: [], note: "/t/r.md", empty: false };
+  const g = { head: "h1", commits: 3 };
+  const a = L.handoffTrack();
+  const b = L.handoffTrack();
+  const direct = L.afterHandoff(a, { head: g.head, commits: g.commits, firstContext: 900, budgetTokens: 100000, remainder: L.remainderOf(handoff, g.head) });
+  const via = L.handoffCall(b, handoff, g, { firstContext: 900, budgetTokens: 100000 });
+  assert.deepEqual(via, direct);
+  assert.equal(via.action, "relay");
+  assert.deepEqual(b, a, "the track moves the same way");
+}
+
+// acceptSplit(): an accepted split counts once, a refused one not at all.
+{
+  const L = await load(fake(() => null).runs);
+  const piece = (id) => ({ id: id, owns: ["lib/a.mjs"], depends: [], est: 40000, file: "/t/" + id + ".md" });
+  const o = { parentId: "a", parentEst: 80000, parentOwns: ["lib"], taken: [] };
+  const track = L.handoffTrack();
+  const good = L.acceptSplit(track, { ok: true, tasks: [piece("a-1"), piece("a-2")] }, o);
+  assert.equal(good.ok, true);
+  assert.equal(track.root.splits, 1);
+  const refused = L.acceptSplit(track, { ok: false, tasks: [piece("a-1")] }, o);
+  assert.equal(refused.ok, false);
+  assert.match(refused.problem, /plan gate/);
+  assert.equal(track.root.splits, 1, "a refused split is not counted");
+}
+
 // splitPlanItem(): a big planner node with the plan gate over the worktree.
 {
   const L = await load(fake(() => null).runs);
