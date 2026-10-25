@@ -98,6 +98,18 @@ export async function main(argv, deps = {}) {
   const livePids = new Set();
   const tracked = [];
   const runner = makeRunner(d, livePids);
+  const stopped = new Set();
+  const stopTracked = async () => {
+    for (const dir of [...tracked]) {
+      if (stopped.has(dir)) continue;
+      stopped.add(dir);
+      try {
+        await runner(["stop", dir]);
+      } catch (error) {
+        process.stderr.write(`recipe-smoke: stopping ${dir} failed: ${error.message}\n`);
+      }
+    }
+  };
   const controller = new AbortController();
   const interrupted = { flag: false };
   let cleanup;
@@ -118,13 +130,7 @@ export async function main(argv, deps = {}) {
     controller.abort();
     // The stop children run past this signal, so they get no abort signal of their own.
     cleanup = (async () => {
-      for (const dir of [...tracked]) {
-        try {
-          await runner(["stop", dir]);
-        } catch (error) {
-          process.stderr.write(`recipe-smoke: stopping ${dir} failed: ${error.message}\n`);
-        }
-      }
+      await stopTracked();
       for (const pid of [...livePids]) {
         try {
           await killTree(pid);
@@ -157,6 +163,8 @@ export async function main(argv, deps = {}) {
     process.removeListener("SIGTERM", onSignal);
   }
   if (cleanup) await cleanup;
+  // a test that timed out or threw leaves its run running, and a normal exit must not leak it
+  await stopTracked();
 
   const finishedAt = d.clock();
   const table = core.formatTable(results);

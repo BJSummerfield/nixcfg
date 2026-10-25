@@ -86,8 +86,19 @@ function git(cwd, ...args) {
   return r.stdout.trim();
 }
 
+// fixtures installed from the nix store are read-only, and the copies keep their modes
+function makeWritable(root) {
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const target = path.join(root, entry.name);
+    const mode = fs.statSync(target).mode & 0o777;
+    fs.chmodSync(target, mode | 0o200);
+    if (entry.isDirectory()) makeWritable(target);
+  }
+}
+
 export function setupRepo(fixturesDir, dest) {
   fs.cpSync(path.join(fixturesDir, "tinycalc"), dest, { recursive: true });
+  makeWritable(dest);
   git(dest, "init", "-q", "-b", "main");
   git(dest, "config", "user.name", "recipe-smoke");
   git(dest, "config", "user.email", "smoke@recipe.invalid");
@@ -98,6 +109,7 @@ export function setupRepo(fixturesDir, dest) {
 
 export function setupPlan(fixturesDir, dest) {
   fs.cpSync(path.join(fixturesDir, "tinycalc-plan"), dest, { recursive: true });
+  makeWritable(dest);
   return dest;
 }
 
