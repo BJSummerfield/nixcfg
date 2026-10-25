@@ -28,7 +28,11 @@ fix your own task, resolve a merge conflict, or write pull request text.
 - No progress or scratch files in the repository; notes go to the task
   directory.
 - Commit the finished work on your branch and leave nothing uncommitted: a
-  worktree is judged by its branch, not by files lying around in it.
+  worktree is judged by its branch, not by files lying around in it. Commits
+  use the repository's configured git identity: never pass `-c user.name`
+  or `-c user.email`, never set `GIT_AUTHOR_*` or `GIT_COMMITTER_*`, and
+  never change `git config`; if a commit fails for lack of an identity,
+  report it as `blocked` instead of inventing one.
 
 ## Report (at the output path)
 
