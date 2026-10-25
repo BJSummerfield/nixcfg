@@ -411,6 +411,7 @@ test("abandon removes worktrees, branches and the base ref, and is idempotent", 
   const first = abandon(s.dir, {});
   assert.equal(first.ok, true, first.problems.join("; "));
   assert.equal(first.removed.worktrees.length, 3);
+  assert.deepEqual(first.left, []);
   assert.deepEqual(first.removed.branches.map((b) => b.branch).sort(), ["review-a", "task-a", "task-b"]);
   assert.equal(first.removed.branches.find((b) => b.branch === "task-a").tip, tipA);
   assert.deepEqual(first.removed.refs, [s.base.base_ref]);
@@ -431,6 +432,7 @@ test("abandon honours keep", () => {
   const r = abandon(s.dir, { keep: ["task-a"] });
   assert.equal(r.ok, true, r.problems.join("; "));
   assert.deepEqual(r.kept, ["task-a"]);
+  assert.deepEqual(r.left.map((m) => m.branch), ["task-a"]);
   assert.notEqual(git(s.repo, "branch", "--list", "task-a"), "");
   assert.equal(git(s.repo, "branch", "--list", "task-b"), "");
   assert.equal(fs.existsSync(s.a), false);

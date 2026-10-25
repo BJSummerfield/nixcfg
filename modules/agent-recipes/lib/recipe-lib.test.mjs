@@ -1,19 +1,17 @@
 /**
- * Tests of the shared recipe library alone, against a fake `runs`. The
- * library is loaded the way the installed workflow is: as the leading part of
- * a script run in an AsyncFunction with `runs`, `args` and `emit`.
+ * Tests of the shared recipe library alone, against a fake `runs`.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
+import { recipeLib } from "./recipe-lib.mjs";
 
-const lib = fs.readFileSync(new URL("./recipe-lib.js", import.meta.url), "utf8");
-assert.ok(!/\basync\b/.test(lib), "workflow scripts may not define async functions");
-assert.ok(!/setTimeout/.test(lib), "the sandbox has no setTimeout");
-assert.ok(!/^\s*(import|export)\b/m.test(lib), "the sandbox has no modules");
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const names = "node,port,launch,one,retryItem,stoppedItself,subjectOf,troubleOf,diagnose,rankAndCap,sourcesFound,pathsFound,searchItem,extractItem,locateItem,extractFileItem,gatherSources,board,receipt,healed,decide,tally,sibling";
-const load = (runs, emit) => new AsyncFunction("runs", "args", "emit", `${lib}\nreturn { ${names} };`)(runs, {}, emit);
+const load = (runs, emit) =>
+  recipeLib({
+    runMany: (items) => runs.all(items),
+    runOne: (item) => runs.all([item]).then((r) => r[0]),
+    emit: (view) => {
+      if (typeof emit === "function") emit(view);
+    },
+  });
 
 function fake(respond) {
   const batches = [];
@@ -299,4 +297,26 @@ console.log("recipe library: ok");
     assert.deepEqual((await L.gatherSources({ ...spec, source: "both", repo: "" })).open, ["a repository source needs the repo argument"]);
     assert.equal(f.batches.length, 0);
   }
+}
+
+// Two libraries do not share healing, decision or child counts.
+{
+  const A = await load(fake(() => ok("x")).runs);
+  const B = await load(fake(() => ok("x")).runs);
+  await A.one(A.node("k", "w", ["t"], "/t/k.md"));
+  A.askDecision(A.subjectOf(""), "s", "q", null);
+  assert.equal(A.tally.children, 1);
+  assert.equal(B.tally.children, 0);
+  assert.equal(A.decide.length, 1);
+  assert.equal(B.decide.length, 0);
+  assert.notEqual(A.healed, B.healed);
+}
+
+// A child cut short by a stop ends the graph instead of reaching the retry or the caller.
+{
+  const f = fake((item) => (item.key === "b" ? { ...failed(item.key, "run stopped"), status: "aborted" } : ok(item.key, undefined)));
+  const L = await load(f.runs);
+  await assert.rejects(L.launch([L.node("a", "writer", ["x"], "/t/a.md"), L.node("b", "writer", ["x"], "/t/b.md")]), { name: "RunStopped" });
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["a", "b"]]);
+  await assert.rejects(L.one(L.node("b", "writer", ["x"], "/t/b.md")), { name: "RunStopped" });
 }

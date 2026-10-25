@@ -1,3 +1,8 @@
+import { recipeLib } from "../lib/recipe-lib.mjs";
+
+export default async function investigate(args, port) {
+const { quote, list, short, node, stoppedItself, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources } = recipeLib(port);
+
 const MAX_RESEARCH = 2;
 const MAX_REVIEWS = 2;
 const REPRO_GATE_MS = 660000;
@@ -222,7 +227,7 @@ function reviewItem(h) {
     "Hypothesis " + h.rank + ": " + h.claim,
     "Repository: " + repo,
     "Branch: " + h.branch,
-    "Worktree: your own worktree of the branch (where the binding names a path: " + dir + "/review/h" + h.rank + "-" + h.reviews + "); read and run the verify command there. The implementer's worktree " + h.worktree + " is not yours: never read or run anything in it.",
+    "Worktree: your working directory is your own worktree of the branch; read and run the verify command there and make no other worktree. The implementer's worktree " + h.worktree + " is not yours: never read or run anything in it.",
     "Diff to review: git diff " + pinned.base + ".." + h.branch,
     reproLine(),
   ].concat(commandLines());
@@ -522,3 +527,4 @@ for (let i = 0; i < hyps.length && !ended; i++) {
 if (!winner && !ended) askDecision(wholeRun, "investigate", "no hypothesis led to a clean change; see the outcomes in the receipt", null);
 
 return finish();
+}

@@ -3,19 +3,13 @@
  * `nix flake check`. It proves the script's own logic (angles, ranking and
  * capping, gate commands, retry, split, sizing, review, gap round, receipt);
  * byte counts are the fake gate's, not real extracts. The whole-graph
- * scenario runs again in pi-subagents' own sandbox.
+ * scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import { hostRun } from "../lib/host-run.mjs";
+import graph from "./graph.mjs";
+import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
-const source =
-  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
-assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
-assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const run = (runs, args, emit) => new AsyncFunction("runs", "args", "emit", source)(runs, Object.freeze(args), emit);
+const run = (runs, args, emit) => graph(Object.freeze(args), portOf(runs, emit));
 
 const src = (angle, n, kind) => ({ url: `https://example.com/${angle}/${n}`, angle, why: "w", kind });
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
@@ -101,9 +95,9 @@ function assertUniqueOutputs(f) {
   const f = fake(respond);
 
   const receipt = await run(f.runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 });
-  assert.deepEqual(await hostRun(source, fake(respond).runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 }), JSON.parse(JSON.stringify(receipt)));
+  assert.deepEqual(await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 }), JSON.parse(JSON.stringify(receipt)));
 
-  const unnamed = await hostRun(source, fake(respond).runs, { dir: "/t/d", goal: "The goal.", window: 150000 });
+  const unnamed = await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", window: 150000 });
   assert.equal(unnamed.output, "/t/d/summary.updated.md");
 
   assert.deepEqual(keys(f.batches), [
@@ -437,6 +431,23 @@ function repoFake(locate, extract = {}) {
   assert.equal(f.batches.length, 0);
   assert.equal(receipt.output, null);
   assert.deepEqual(receipt.open, ["a repository source needs the repo argument"]);
+}
+
+// A stop part way through the extracts ends the graph: the interrupted sources are not failed ones,
+// and no later stage runs or reports.
+{
+  const respond = (item) => {
+    if (item.agent === "planner") return ok(item.key, { ok: true, angles: [{ id: "a", question: "Question a?" }] });
+    if (item.agent === "searcher") return ok(item.key, urlList([src("a", 1, "primary"), src("a", 2, "secondary")]));
+    if (item.key === "extract-0") return extractOk(item.key);
+    return { ...failed(item.key, "run stopped"), status: "aborted" };
+  };
+  const f = fake(respond);
+  const views = [];
+  await assert.rejects(run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md" }, (v) => views.push(v)), { name: "RunStopped" });
+  assert.deepEqual(keys(f.batches), [["angles"], ["search-a"], ["extract-0", "extract-1"]]);
+  assert.ok(views.every((v) => !v.sources || v.sources.failed === 0), "an interrupted source was counted as failed");
+  assert.ok(views.every((v) => v.stage !== "finished"));
 }
 
 console.log("research graph: ok");

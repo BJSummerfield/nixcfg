@@ -43,8 +43,11 @@ to the plan:
 <dir>/integration/          worktree of the integration branch
 <dir>/heavy.md              first line pass, none or fail: <why>, then the output
 <dir>/pr.md                 pull request title and body
-<dir>/receipt.md            the receipt
+<dir>/receipt.json          the receipt
+<dir>/runner/               the runner's status.json, board and log
 ```
+
+The Claude Code binding below still writes `receipt.md` in place of `receipt.json`.
 
 Task worktrees are managed by the runner under
 `/var/tmp/pi-worktrees/<repository name>/`, one per implementer attempt, and
@@ -104,7 +107,7 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    uncommitted and the result of the task's check run once more. A report
    that says `blocked` or `failed` goes to a diagnosis (step 7).
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
-   branch, a new one for every review round (`<dir>/review/<id>-<n>`), reads
+   branch, a new one for every review round (made by the runner under its worktree root), reads
    the branch's own diff, runs the check there and never touches the
    implementer's worktree. It gives a verdict (`recipe-gate verdict`, which
    records the review worktree). On needs-work, or when the task gate was
@@ -156,12 +159,10 @@ child's own run would change what the script's run sees. Gates without side
 effects (plan, task, verdict, diagnosis) are run by the child before it
 reports, and again by the script.
 
-The pi mechanism behind the implementer and reviewer runs: a workflow child with `worktree: true`
-gets a managed worktree on its own branch; because it is a workflow child with
-a session, the runner keeps that worktree and branch instead of removing them
-after capturing the patch, so the child can be resumed in it
-(`runs.run` with `resume: <runId>`). The script learns the branch and worktree
-path from the task gate, which runs inside the child's worktree.
+The pi mechanism behind the implementer and reviewer runs is the runner: each
+node gets a fresh worktree on its own branch from its base, under
+`/var/tmp/pi-worktrees/<repository name>/`. The runner keeps the worktree
+for resume, runs the gate in it, and a resumed child carries its gate.
 
 ## pi binding
 
@@ -169,25 +170,21 @@ One call starts the whole run; nothing else is needed from this session until
 it ends.
 
 ```
-subagent({
-  workflow: "/home/agent/.pi/agent/recipes/implement/workflow.js",
-  args: {
-    plan: "<plan dir>", repo: "<repo path>"
-  },
+recipe_run({
+  recipe: "implement",
+  args: { plan: "<plan dir>", repo: "<repo path>" },
   cwd: "<repo path>",
-  async: true,
-  output: "<plan dir>/receipt.md",
-  options: { timeoutMs: 14400000, maxSubagentSpawnsPerRun: <16 x tasks + 6> }
+  timeoutMs: 14400000,
+  maxChildren: <16 x tasks + 6>
 })
 ```
 
 All paths are absolute. `cwd` is the repository, so the worktrees branch from
-it. Wait for the single completion with `bg_wait`; do not poll, steer or read
-intermediate files. Then read only the receipt, `<plan dir>/receipt.md`.
-
-The receipt file is a one-line summary whose Return part is the receipt JSON
-cut at 1,000 characters; the summary names the run's `status.json`, whose
-`workflow.value` holds the whole receipt.
+it. The call returns at once and this session is woken once when the run ends, so do
+not poll, sleep or check on it. Then read `<plan dir>/receipt.json`, the whole
+receipt. `recipe-status <plan dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <plan dir>` waits for the end. A stopped
+run continues with the same call plus `resume: true`.
 
 ```
 { base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
@@ -197,7 +194,6 @@ cut at 1,000 characters; the summary names the run's `status.json`, whose
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
-
 `base` is the commit every task started from. `left` holds the worktrees and
 branches still in the repository, and `cleanup` is the command that removes
 them (`recipe-gate abandon <plan dir>`, keeping the integration branch once
@@ -207,14 +203,6 @@ after a pass.
 whatever the script could not settle, including a plan refused by its check
 and an integration that did not complete. `pr_text` is last because it is the
 longest; the full text is `<plan dir>/pr.md`.
-A child that fails inside the workflow can wake this session once with a
-"Workflow child failed" notice, even though the script retries it. Ignore the
-notice and keep waiting for the workflow's own completion.
-
-A child can also ask this session a question with a supervisor request while
-the run goes on. Do not answer the question itself: the script decides what
-happens to a stuck child. Reply that it should stop and write `blocked:` and
-its question as the first line of its report, then keep waiting.
 
 Tell the user the branch first, then the `report` lines (one per task, in dependency-level order), then what merged, each `decide` question with
 its diagnosis file, each other set-aside task with its reason, the skipped

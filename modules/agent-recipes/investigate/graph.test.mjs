@@ -3,19 +3,13 @@
  * `runs`. Run by `nix flake check`. It proves the script's own logic (pin,
  * reproduction, hypotheses, change and fix rounds, stuck detection, research,
  * the round cap, the receipt); the gates are not exercised, and the gate
- * results are the fake's. One scenario runs again in pi-subagents' own sandbox.
+ * results are the fake's. One scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import { hostRun } from "../lib/host-run.mjs";
+import graph from "./graph.mjs";
+import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
-const source =
-  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
-assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
-assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const run = (runs, args) => new AsyncFunction("runs", "args", "emit", source)(runs, Object.freeze(args), () => {});
+const run = (runs, args, emit = () => {}) => graph(Object.freeze(args), portOf(runs, emit));
 
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
 const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
@@ -81,6 +75,7 @@ function fake(table = {}) {
         return items.map((item) => {
           let given = item.key in table ? table[item.key] : defaults(item);
           if (typeof given === "function") given = given(item);
+          if (given && typeof given === "object" && "structuredOutput" in given) return { ok: true, runId: `run-${item.key}`, ...given };
           return typeof given === "string" ? failed(item.key, given) : ok(item.key, given);
         });
       },
@@ -103,7 +98,7 @@ function assertSound(f) {
 {
   const f = fake();
   const r = await run(f.runs, args);
-  assert.deepEqual(await hostRun(source, fake().runs, args), JSON.parse(JSON.stringify(r)));
+  assert.deepEqual(await runThroughRunner(graph, fake().runs, args), JSON.parse(JSON.stringify(r)));
   assert.deepEqual(keys(f), ["pin", "reproduce", "hypothesize", "change-1", "review-1-1"]);
   const k = byKey(f);
   assert.equal(k.pin.gate.command, "recipe-gate pin '/t/d' --repo '/r'");
@@ -399,4 +394,11 @@ function assertSound(f) {
   assert.ok(!keys(f).some((k) => k.startsWith("change-")));
   assert.equal(r.branch, null);
   assert.ok(r.open.length + r.decide.length > 0);
+}
+
+// A stop while the reproduction runs ends the graph.
+{
+  const f = fake({ reproduce: { structuredOutput: undefined, ok: false, status: "aborted", error: "run stopped" } });
+  await assert.rejects(run(f.runs, args), { name: "RunStopped" });
+  assert.equal(keys(f).at(-1), "reproduce");
 }

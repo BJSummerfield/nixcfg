@@ -3,19 +3,13 @@
  * `nix flake check`. It proves the script's own logic (waves, briefs, gate
  * commands, review and fix rounds, set-aside and skipped tasks, retry,
  * integration, receipt); the gates are not exercised, and the gate results
- * are the fake's. One scenario runs again in pi-subagents' own sandbox.
+ * are the fake's. One scenario runs again through the runner's port.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import { hostRun } from "../lib/host-run.mjs";
+import graph from "./graph.mjs";
+import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
-const source =
-  fs.readFileSync(new URL("../lib/recipe-lib.js", import.meta.url), "utf8") + "\n" + fs.readFileSync(new URL("./graph.js", import.meta.url), "utf8");
-assert.ok(!/\basync\b/.test(source), "workflow scripts may not define async functions");
-assert.ok(!/setTimeout/.test(source), "the sandbox has no setTimeout");
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const run = (runs, args, emit) => new AsyncFunction("runs", "args", "emit", source)(runs, Object.freeze(args), emit);
+const run = (runs, args, emit) => graph(Object.freeze(args), portOf(runs, emit));
 
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
 const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
@@ -172,7 +166,7 @@ function assertUniqueOutputs(f) {
   };
   const f = fake(answers);
   const receipt = await run(f.runs, base);
-  assert.deepEqual(await hostRun(source, fake(answers).runs, base), JSON.parse(JSON.stringify(receipt)));
+  assert.deepEqual(await runThroughRunner(graph, fake(answers).runs, base), JSON.parse(JSON.stringify(receipt)));
   assert.deepEqual(keys(f), [
     ["intake"],
     ["pin"],
@@ -250,7 +244,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(k["review-b-1"].gate, { command: "recipe-gate verdict '/t/p/review-b-1.md' --run '/t/p' --id 'b'", output: "json" });
   assert.match(k["review-b-1"].task, /^Review a diff on a branch \(the diff variant\)\.$/m);
   assert.match(k["review-b-1"].task, /Branch: pi\/b/);
-  assert.match(k["review-b-1"].task, /Worktree: your own worktree of the branch \(where the binding names a path: \/t\/p\/review\/b-1\); .*The implementer.s worktree \/wt\/b is not yours/);
+  assert.match(k["review-b-1"].task, /Worktree: your working directory is your own worktree of the branch; .*make no other worktree\. The implementer.s worktree \/wt\/b is not yours/);
   assert.equal(k["review-b-1"].worktree, true);
   assert.equal(k["review-b-1"].baseRef, "refs/heads/pi/b");
   assert.equal(k["review-b-1"].big, true);
@@ -1072,6 +1066,25 @@ function assertUniqueOutputs(f) {
   assert.match(k.merge.gate.command, / --onto 'refs\/recipes\/p\/base'/);
 }
 
+// A review worktree the tidy could not remove, or one the verdict gate could not record, stays in
+// `left` after a passing integration, with a cleanup command that removes it.
+{
+  const left_over = [{ kind: "review", id: "a", branch: "pi/a", worktree: "/rw/review-a-1" }];
+  const gateOut = { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, heavy_check: "pass", pr_text: "PR", left_over };
+  const stuck = fake({ integrate: { integrate: gateOut } });
+  const receipt = await run(stuck.runs, base);
+  assert.deepEqual(receipt.left, [{ id: "a", kind: "review", branch: "pi/a", worktree: "/rw/review-a-1" }]);
+  assert.equal(receipt.cleanup, "recipe-gate abandon '/t/p' --keep 'implement/p'");
+
+  const stray = fake({ review: { "review-a-1": { ...clean, branch: "recipe/r-review-a-1", worktree: "/rw/r-review-a-1", recorded: false } } });
+  const strayed = await run(stray.runs, base);
+  assert.deepEqual(strayed.left, [{ id: "a", kind: "review", branch: "recipe/r-review-a-1", worktree: "/rw/r-review-a-1" }]);
+  assert.equal(
+    strayed.cleanup,
+    "recipe-gate abandon '/t/p' --keep 'implement/p'; git -C '/r' worktree remove --force '/rw/r-review-a-1'; git -C '/r' branch -D 'recipe/r-review-a-1'",
+  );
+}
+
 // A dependency that is gone and merged is left out of the tips; the merge is made onto the integration branch.
 {
   const back = { ok: true, base: "base0", tasks: { a: { branch: "pi/a", head: null, review: "clean", reviews: 1, review_file: "/t/p/review-a-1.md", merged: true } } };
@@ -1145,6 +1158,13 @@ function assertUniqueOutputs(f) {
   const receipt = await run(f.runs, base);
   assert.ok(!keys(f).flat().includes("resume"));
   assert.deepEqual(receipt.resumed, { done: [], continued: [], answered: [] });
+}
+
+// A stop while an implementer runs ends the graph without a set-aside task or a receipt.
+{
+  const f = fake({ impl: { "impl-a": { result: { ok: false, status: "aborted", error: "run stopped" } } } });
+  await assert.rejects(run(f.runs, base), { name: "RunStopped" });
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"]]);
 }
 
 console.log("implement graph: ok");
