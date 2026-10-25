@@ -284,6 +284,62 @@ export function recipeLib(rawPort) {
     return ["Continue this task; " + held];
   }
 
+  // A relay that is not a handoff, such as a fresh fix on a joined branch,
+  // passes a null track so it is not counted as one.
+  function beginRelay(state, track, o) {
+    state.relayRef = "refs/heads/" + o.branch;
+    state.relayBranch = o.branch;
+    state.relayNote = o.note || null;
+    state.handoffFrom = o.from || null;
+    if (track) track.relays++;
+  }
+
+  function clearRelay(state) {
+    state.relayRef = null;
+    state.relayBranch = null;
+    state.relayNote = null;
+    state.handoffFrom = null;
+  }
+
+  function relayBriefLines(state) {
+    return state.relayRef ? relayLines(state.relayNote, state.relayBranch) : [];
+  }
+
+  function stampRelay(item, state, fallbackBaseRef) {
+    item.baseRef = state.relayRef || fallbackBaseRef;
+    if (state.relayRef && state.handoffFrom) {
+      item.handoffOf = state.handoffFrom;
+      item.handoffAs = "relay";
+      state.handoffFrom = null;
+    }
+    return item;
+  }
+
+  // The gate read the report, so a handoff status in it stands even when the
+  // reply did not carry the handoff line.
+  function reportHandoff(g, noteFile) {
+    if (g && g.report && g.report.status === "handoff") {
+      return { line: "handoff: " + (g.report.why || ""), unread: [], note: noteFile, empty: false };
+    }
+    return null;
+  }
+
+  function handoffCall(track, handoff, g, o) {
+    return afterHandoff(track, {
+      head: g.head,
+      commits: g.commits,
+      firstContext: o.firstContext,
+      budgetTokens: o.budgetTokens,
+      remainder: remainderOf(handoff, g.head),
+    });
+  }
+
+  function acceptSplit(track, gate, o) {
+    const made = piecesFrom(gate, o);
+    if (made.ok) track.root.splits++;
+    return made;
+  }
+
   function splitPlanItem(o) {
     const file = o.splitDir + "/planner.md";
     let gate = "recipe-gate plan " + quote(o.splitDir) + " --repo " + quote(o.worktree);
@@ -686,6 +742,13 @@ export function recipeLib(rawPort) {
     handoffTrack,
     afterHandoff,
     relayLines,
+    beginRelay,
+    clearRelay,
+    relayBriefLines,
+    stampRelay,
+    reportHandoff,
+    handoffCall,
+    acceptSplit,
     splitPlanItem,
     piecesFrom,
     continueUnread,
