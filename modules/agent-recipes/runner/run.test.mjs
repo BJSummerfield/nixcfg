@@ -318,7 +318,11 @@ try {
     assert.equal(stopped.code, 0, stopped.stderr);
     assert.ok(!alive(sleeper), "stop left the dead run's child");
     assert.equal(readJson(path.join(s.dir, "runner", "status.json")).state, "stopped");
-    assert.match(readJson(path.join(s.dir, "receipt.json")).failed, /^stopped: /);
+    const stoppedReceipt = readJson(path.join(s.dir, "receipt.json"));
+    assert.equal(stoppedReceipt.stopped, true);
+    assert.equal(stoppedReceipt.reason, "stop requested (process gone)");
+    assert.ok(!("failed" in stoppedReceipt), "a deliberate stop is not a failure");
+    assert.deepEqual(stoppedReceipt.interrupted, []);
     assert.equal(cli(["wait", s.dir]).code, 1);
 
     const before = fakeStarts(s, "A").length;
@@ -328,6 +332,20 @@ try {
     assert.equal(cli(["wait", s.dir]).code, 0);
     assert.equal(fakeStarts(s, "A").length, before, "the settled node was started again");
     assert.deepEqual(readJson(path.join(s.dir, "receipt.json")).replayed, [true, false]);
+  }
+
+  // wait on a run whose process died and that wrote no receipt reports a stopped receipt.
+  {
+    const s = scenario("seq");
+    const info = json(cli(runArgs("start", s)).stdout);
+    strays.add(info.pid);
+    await until(() => records(s.dir).find((rec) => rec.type === "start" && rec.key === "a")?.pid, "node a to start");
+    process.kill(info.pid, "SIGKILL");
+    await until(() => !alive(info.pid), "the run to die");
+    assert.ok(!fs.existsSync(path.join(s.dir, "receipt.json")));
+    const waited = cli(["wait", s.dir]);
+    assert.equal(waited.code, 1, waited.stderr);
+    assert.deepEqual(json(waited.stdout), { stopped: true, reason: "process gone", interrupted: [], board: { stage: "first" } });
   }
 
   // SIGKILL of the run during a long gate leaves the gate; resume kills it and runs the gate once.
