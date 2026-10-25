@@ -20,14 +20,13 @@ export function splitItem(lib, t, o) {
 }
 
 export function takePieces(lib, t, gate, o) {
-  const made = lib.piecesFrom(gate, {
+  const made = lib.acceptSplit(t.track, gate, {
     parentId: t.id,
     parentEst: t.spec.est,
     parentOwns: t.spec.owns,
     taken: o && o.taken,
   });
   if (!made.ok) return made;
-  t.track.root.splits++;
   const pieces = made.pieces.map(function (p) {
     return {
       id: p.id,
