@@ -404,7 +404,6 @@ function takeSplit(h, result) {
   h.pieceNo = 0;
   h.piece = null;
   h.prev = { branch: h.branch, worktree: h.worktree, head: h.head };
-  // the split drops the relay state but keeps the run the handoff came from
   const from = h.handoffFrom;
   clearRelay(h);
   h.handoffFrom = from;
