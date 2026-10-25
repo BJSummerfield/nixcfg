@@ -1,7 +1,4 @@
-// Shared by every recipe graph. Graphs reach the harness only through
-// `port`: the runner supplies runMany, runOne and emit; the role table in nix
-// supplies each agent's model, tools and thinking. Healing and tally state is
-// per call, so one process can run several graphs.
+// Healing and tally state is per call, so one process can run several graphs.
 
 const MAX_HEALS = 2;
 const REASON_CHARS = 300;
@@ -59,9 +56,8 @@ export function recipeLib(rawPort) {
     return Boolean(result.ok && result.structuredOutput && result.structuredOutput.ok);
   }
 
-  // One child of the graph. `lines` is the brief; a gated node is told to run
-  // its own gate before it reports, unless `opts.selfGate` is false (a gate
-  // with side effects, such as one that tidies worktrees).
+  // `opts.selfGate` false is for a gate with side effects, such as one that
+  // tidies worktrees, which the child must not run itself.
   function node(key, agent, lines, output, opts) {
     const o = opts || {};
     const text = lines.slice();
@@ -108,9 +104,6 @@ export function recipeLib(rawPort) {
     return /reported as not-satisfied/.test(String(result.error || ""));
   }
 
-  // Runs small items together; a child that failed on its own is run once more
-  // under a sibling output path. Each result carries the file it wrote as
-  // `file`.
   function launchSmall(items, runFirst) {
     tally.children += items.length;
     return (runFirst || port.runMany)(items).then(function (first) {
@@ -150,9 +143,8 @@ export function recipeLib(rawPort) {
     });
   }
 
-  // Runs each step after the previous one settles. The chain starts at the
-  // first step's own promise, so the first launch starts as soon as inTurn is
-  // called.
+  // The chain starts at the first step's own promise, so the first launch
+  // starts as soon as inTurn is called.
   function inTurn(steps) {
     return steps.reduce(function (chain, step) {
       return chain ? chain.then(step) : step();
@@ -248,7 +240,6 @@ export function recipeLib(rawPort) {
     return node("diagnose-" + (subject.id ? subject.id + "-" : "") + subject.heals, "reviewer", lines, file, { gate: command, timeoutMs: childMs });
   }
 
-  // Returns the diagnosis with its file, or null after recording a decision.
   function readDiagnosis(subject, trouble, result) {
     subject.lastDiagnosis = result.file;
     const d = result.structuredOutput;
@@ -282,8 +273,6 @@ export function recipeLib(rawPort) {
     });
   }
 
-  // Gather nodes: a searcher lists sources for one question, an extractor
-  // copies the passages of one source. Any graph may use them.
   function searchItem(goal, angle, file, childMs) {
     return node(
       "search-" + angle.id,
@@ -300,8 +289,6 @@ export function recipeLib(rawPort) {
     return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
   }
 
-  // Repository variants: a locator lists files and line ranges for one
-  // question, a file extractor copies the passages of one file.
   function locateItem(goal, angle, repo, file, childMs) {
     return node(
       "locate-" + angle.id,
@@ -319,8 +306,6 @@ export function recipeLib(rawPort) {
     return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
   }
 
-  // Keeps each angle's primary sources first, takes one source per angle in
-  // turn, drops repeats and stops at the limit.
   function rankAndCap(found, limit) {
     const seen = {};
     const byAngle = {};
@@ -354,7 +339,6 @@ export function recipeLib(rawPort) {
     return picked;
   }
 
-  // Lists the sources the searches found that are not already known.
   function sourcesFound(angles, searches, known, open) {
     const found = [];
     searches.forEach(function (s, i) {
@@ -369,9 +353,8 @@ export function recipeLib(rawPort) {
     return found;
   }
 
-  // Lists the files the locators found that are not already known. The url
-  // field is the repository-relative path, with ":start-end" when ranged, so
-  // rankAndCap treats a file like a page.
+  // The url field is the repository-relative path, with ":start-end" when
+  // ranged, so rankAndCap treats a file like a page.
   function pathsFound(angles, results, known, open) {
     const found = [];
     results.forEach(function (s, i) {
@@ -388,8 +371,6 @@ export function recipeLib(rawPort) {
     return found;
   }
 
-  // What a person watching the run sees: the graph's own view of its progress
-  // plus the counters every graph shares.
   function board(stage, view) {
     port.emit(Object.assign({ stage: stage }, view, { children: tally.children, healed: healed, decide: decide }));
   }
@@ -399,8 +380,6 @@ export function recipeLib(rawPort) {
     return Object.assign({}, fields, { healed: healed, decide: decide, children: tally.children });
   }
 
-  // One research question run through a searcher and/or a locator, ranked and
-  // capped, then extracted. Resolves { files, sources, open }.
   function gatherSources(spec) {
     const source = spec.source || "web";
     const limit = spec.limit || 3;

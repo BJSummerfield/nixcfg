@@ -1,8 +1,3 @@
-/**
- * Runs one recipe graph to its end: sets up the task directory, keeps
- * status.json and the board current, writes the receipt, and turns a stop
- * request, a signal or the deadline into a clean `stopped`.
- */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -34,7 +29,6 @@ export function writeJsonAtomic(file, value) {
   fs.renameSync(tmp, file);
 }
 
-// Children that started and never settled when the run stopped.
 function interruptedKeys(runDir) {
   const records = readRecords(path.join(runDir, "children.jsonl"));
   const settled = new Set(records.filter((r) => r.type === "settle").map((r) => r.key));

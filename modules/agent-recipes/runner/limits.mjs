@@ -1,7 +1,3 @@
-/**
- * Concurrency limits for runner children: a per-run semaphore, a box-wide
- * lock for big nodes and an optional box-wide budget of in-flight tokens.
- */
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

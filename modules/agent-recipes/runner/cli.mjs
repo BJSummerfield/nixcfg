@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-/**
- * recipe-run: start, run, resume, wait, stop and dispatch.
- */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -90,8 +87,6 @@ async function foreground(inputs) {
   return result.state === "complete" ? 0 : 1;
 }
 
-// Starts a run process of its own session, with its output in runner.log, and
-// returns once that process has written its status (or died trying).
 async function detach(taskDir, argv, patienceMs) {
   const logFile = path.join(taskDir, "runner", "runner.log");
   fs.mkdirSync(path.dirname(logFile), { recursive: true });

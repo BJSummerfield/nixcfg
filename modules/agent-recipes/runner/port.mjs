@@ -1,7 +1,3 @@
-/**
- * The port a recipe graph talks to: turns items into children, gates and
- * Results, with limits, worktrees, a child log, replay and the child index.
- */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

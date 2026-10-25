@@ -167,7 +167,6 @@ export default async function plan(args, port) {
     );
   }
 
-  // Resolves to { verdict, file }, with verdict null when no review could be had.
   function review() {
     show("reviewing");
     return one(reviewItem()).then(function (result) {

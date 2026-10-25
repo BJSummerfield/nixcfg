@@ -592,8 +592,6 @@ export default async function implement(args, port) {
     });
   }
 
-  // Settles the result of a merge gate: a conflict goes to a resolver, whose own
-  // gate repeats the merge. Resolves to { ok, g, why }.
   function settle(m, result) {
     const g = result.structuredOutput;
     const failure = function (why) {

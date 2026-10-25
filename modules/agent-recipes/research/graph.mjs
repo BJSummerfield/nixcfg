@@ -164,7 +164,6 @@ export default async function research(args, port) {
     return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal, "Requested output: " + format, "Task directory: " + dir], STEPS[step], childMs);
   }
 
-  // Resolves to the deliverable's path, or null when a synthesizer failed.
   function synthesize(files, split, tag, out) {
     if (split === 1) {
       return launch([synthItem("synthesis" + tag, files.map(function (f) { return f.file; }), out, "synthesis")]).then(function (r) {

@@ -1,7 +1,3 @@
-/**
- * Test helpers: run a graph against scripted runs, either directly or through
- * the real port with an in-process harness.
- */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
