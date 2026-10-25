@@ -180,6 +180,34 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.equal(h.batches[1][0].task, h.batches[0][0].task.replaceAll("/t/w.md", "/t/w.retry.md"), "no flag: the retry brief is the moved brief");
 }
 
+// A gate result without an ok field is no rejection: a reviewer with a clean
+// verdict run from its reply runs once.
+{
+  const f = fake((item) =>
+    item.key === "rev" ? { ok: true, status: "done", runId: "run-rev", outputFromReply: true, structuredOutput: { asked: "yes", sound: "yes", clean: true, verdict: "clean" } } : ok(item.key),
+  );
+  const L = await load(f.runs);
+  const single = await L.one(L.node("rev", "reviewer", ["Review."], "/t/rev.md", { gate: "recipe-gate verdict '/t/rev.md'", big: true }));
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["rev"]], "a clean verdict without ok is not retried");
+  assert.equal(single.file, "/t/rev.md");
+  assert.equal(L.tally.children, 1);
+}
+
+// A gate reason on a rejected reply-filled result reaches the retry brief.
+{
+  const f = fake((item) => reply(item.key, item.key === "search-a" ? { ok: false, reason: "no urls" } : { ok: false }));
+  function reply(key, gate) {
+    return { ok: true, status: "done", runId: `run-${key}`, outputFromReply: true, structuredOutput: gate };
+  }
+  const L = await load(f.runs);
+  const results = await L.launch([L.searchItem("g", { id: "a", question: "Q?" }, "/t/w.md", 9)]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["search-a"], ["search-a-retry"]]);
+  assert.ok(f.batches[1][0].task.includes("/t/w.retry.md"), "the retry brief names the output path");
+  assert.ok(f.batches[1][0].task.includes("no urls"), "the retry brief carries the gate reason");
+  assert.equal(results[0].file, "/t/w.retry.md");
+  assert.equal(L.tally.children, 2);
+}
+
 // diagnose(): at most two diagnoses per subject, then a decision; the same
 // diagnosis twice is a decision; ids keep subjects apart.
 {

@@ -96,8 +96,16 @@ export function recipeLib(rawPort) {
       task: item.task.split(item.output).join(moved),
     });
     // The port filled the output from the child's reply, so the brief names
-    // the file the child must write itself this time.
-    if (failed.outputFromReply) copy.task += "\n" + "The previous attempt did not write the output file. Write it to " + moved + ".";
+    // the file the child must write itself this time; a gate reason tells the
+    // child why the previous output was rejected.
+    if (failed.outputFromReply) {
+      const reason = failed.structuredOutput && failed.structuredOutput.reason;
+      copy.task +=
+        "\n" +
+        (reason
+          ? "The previous attempt was rejected: " + reason + ". Write it to " + moved + "."
+          : "The previous attempt did not write the output file. Write it to " + moved + ".");
+    }
     if (item.resume) copy.resume = failed.runId || item.resume;
     if (item.gate) {
       copy.gate = Object.assign({}, item.gate, {
@@ -114,11 +122,12 @@ export function recipeLib(rawPort) {
   }
 
   // An over-cap extract must reach the graph's split; a handoff in the reply
-  // is the child's result, not a failed file write.
+  // is the child's result, not a failed file write. Only an explicit
+  // rejection is one: the reviewer's gate reports a verdict, not an ok field.
   function replyRejected(item, result) {
     const verdict = result.structuredOutput;
     return Boolean(
-      result.ok && result.outputFromReply && !result.handoff && item.gate && verdict && !verdict.ok && !verdict.over_cap,
+      result.ok && result.outputFromReply && !result.handoff && item.gate && verdict && verdict.ok === false && !verdict.over_cap,
     );
   }
 
