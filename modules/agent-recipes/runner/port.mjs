@@ -379,8 +379,9 @@ export function createPort(opts) {
         return aborted();
       }
 
-      // A looped child never reported its work, so a handoff it mentions would
-      // start a relay on nothing.
+      // A looped child's last text was sent alongside a tool call in the middle of
+      // the loop, never as a final reply: a handoff it mentions would start a relay
+      // on nothing, and only a file the child wrote itself counts as its deliverable.
       const looped = outcome.status === "looped";
       const finalText = String(outcome.finalText ?? "");
       let outputFromReply = false;
@@ -412,7 +413,8 @@ export function createPort(opts) {
       let error = outcome.error;
       const reported = handoff ? null : writerStop(role, outcome);
       if (looped) {
-        const delivered = noteWritten && DONE_LINE.test(finalText.trimStart().split("\n")[0]);
+        const delivered =
+          noteWritten && !outputFromReply && DONE_LINE.test(finalText.trimStart().split("\n")[0]);
         status = delivered ? "done" : "failed";
         if (delivered) error = undefined;
       } else if (handoff && status !== "timeout") {
