@@ -13,7 +13,7 @@ nothing by itself; each host picks the change up at its next upgrade.
 - `statix`'s `repeated_keys` lint is disabled repo-wide (`statix.toml`).
   `hosts/*/hardware-configuration.nix` is generated and excluded from deadnix.
 - Files that agents read (`AGENTS.md`, `ENVIRONMENT.md`, prompt fragments
-  under `modules/pi-coding-agent/agents/`) carry no dates or provenance
+  under `modules/agent-recipes/prompts/`) carry no dates or provenance
   notes; git history has those.
 
 ## Light checks (a helper may run these on its own)
