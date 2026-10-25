@@ -1,0 +1,10 @@
+{
+  "goal": "Which functions does tinycalc export, and what does each test check?",
+  "source": "repo",
+  "maxSources": 3,
+  "full": {
+    "goal": "Which functions does tinycalc export, and what does each test check?",
+    "source": "repo",
+    "maxSources": 6
+  }
+}
