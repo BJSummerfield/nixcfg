@@ -13,7 +13,8 @@
 //                                  stands in when there is no Range line) comes
 //                                  from a repository file: every quote must
 //                                  appear, whitespace-normalized, in that file
-//                                  (in those lines when a range is given), the
+//                                  (within RANGE_MARGIN_LINES of those lines
+//                                  when a range is given), the
 //                                  path is relative to --repo (default: the
 //                                  working directory), and the output gains
 //                                  file and missing:[quote]; ok also needs
@@ -200,6 +201,8 @@ import path from "node:path";
 import { abandon, merge, pin, record, where } from "./recipe-git.mjs";
 
 const EXTRACT_CAP_BYTES = 24 * 1024;
+// A locator's range is approximate, so a quote a little outside it is still legitimate.
+const RANGE_MARGIN_LINES = 10;
 const DEFAULT_WINDOW = 221184;
 const SYNTH_TOKENS = 70000;
 const PR_CHARS = 4000;
@@ -355,7 +358,7 @@ function extract(file, flags) {
   }
   const allLines = full.split("\n");
   const fileLines = ranges.length
-    ? ranges.flatMap(([start, end]) => allLines.slice(Math.max(0, start - 1), end))
+    ? ranges.flatMap(([start, end]) => allLines.slice(Math.max(0, start - 1 - RANGE_MARGIN_LINES), end + RANGE_MARGIN_LINES))
     : allLines;
   const haystack = fileLines.join(" ").replace(/\s+/g, " ");
   missing = missing.filter((q) => !haystack.includes(q));
