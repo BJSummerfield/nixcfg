@@ -185,6 +185,11 @@ export async function start(spec) {
       }
     }
     transcript.write(`${JSON.stringify(record)}\n`);
+    if (message.role === "user") {
+      prevTurnKey = null;
+      repeats = 0;
+      return;
+    }
     if (message.role !== "assistant") return;
     if (turn) completeTurn(turn);
     const u = message.usage ?? {};
@@ -204,6 +209,10 @@ export async function start(spec) {
     }
     usage.firstContext = writeContext ?? commitContext ?? usage.peakContext;
     if (calls.length > 0) turn = { calls: calls.map((b) => ({ name: b.name, arguments: b.arguments })), results: [] };
+    else {
+      prevTurnKey = null;
+      repeats = 0;
+    }
     usage.turns++;
     lastAssistant = {
       stopReason: message.stopReason ?? null,

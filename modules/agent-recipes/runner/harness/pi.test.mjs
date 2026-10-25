@@ -193,7 +193,7 @@ fs.writeFileSync(
 fs.writeFileSync(
   path.join(fakes, "loop-poll.mjs"),
   stubHead + `const lines = [
-  ...[0, 1, 2].map((i) => [
+  ...[0, 1, 2, 3, 4, 5].map((i) => [
     assistant([call("bash", { command: "poll" })], 100),
     { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "state " + i }], isError: false } },
   ]).flat(),
@@ -204,16 +204,66 @@ fs.writeFileSync(
 
 fs.writeFileSync(
   path.join(fakes, "loop-interleaved.mjs"),
-  stubHead + `const lines = [
+  stubHead + `const test = () => [
   assistant([call("bash", { command: "npm test" })], 100),
   { type: "message_end", message: { role: "toolResult", toolCallId: "t", toolName: "bash", content: [{ type: "text", text: "1 failing" }], isError: true } },
+];
+const edit = () => [
   assistant([call("edit", { path: "x.js" })], 100),
   { type: "message_end", message: { role: "toolResult", toolCallId: "e", toolName: "edit", content: [{ type: "text", text: "edited" }], isError: false } },
-  assistant([call("bash", { command: "npm test" })], 100),
-  { type: "message_end", message: { role: "toolResult", toolCallId: "t", toolName: "bash", content: [{ type: "text", text: "1 failing" }], isError: true } },
+];
+const lines = [
+  ...test(), ...edit(), ...test(), ...edit(), ...test(), ...edit(), ...test(),
   assistant([{ type: "text", text: "ok" }], 100, "stop"),
 ];
 ` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-reset.mjs"),
+  stubHead + `const turn = () => [
+  assistant([call("bash", { command: "ls" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "no change" }], isError: true } },
+];
+const lines = [
+  ...turn(),
+  assistant([{ type: "text", text: "working" }], 100, "length"),
+  ...turn(), ...turn(), ...turn(),
+  assistant([{ type: "text", text: "all done" }], 100, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "loop-reset-user.mjs"),
+  stubHead + `const turn = () => [
+  assistant([call("bash", { command: "ls" })], 100),
+  { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "no change" }], isError: true } },
+];
+const lines = [
+  ...turn(), ...turn(),
+  { type: "message_end", message: { role: "user", content: "again" } },
+  ...turn(), ...turn(), ...turn(),
+  assistant([{ type: "text", text: "all done" }], 100, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "looped-text.mjs"),
+  `import { spawn } from "node:child_process";
+import fs from "node:fs";
+const grandchild = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" });
+fs.writeFileSync(process.env.FAKE_RECORD, String(grandchild.pid));
+${stubHead}const lines = [
+  ...[0, 1, 2, 3].flatMap(() => [
+    assistant([{ type: "text", text: "done" }, call("bash", { command: "ls" })], 100),
+    { type: "message_end", message: { role: "toolResult", toolCallId: "c", toolName: "bash", content: [{ type: "text", text: "no change" }], isError: true } },
+  ]),
+];
+for (const line of lines) process.stdout.write(JSON.stringify(line) + "\\n");
+setTimeout(() => {}, 60000);
+`,
 );
 
 fs.writeFileSync(
@@ -494,6 +544,31 @@ const run = (spec) => {
   const outcome = await run(specFor("loop-interleaved", { bin: fake("loop-interleaved") }));
   assert.equal(outcome.status, "done");
   assert.equal(outcome.loop, undefined);
+}
+
+// a reply without tool calls breaks the run of identical turns
+{
+  const outcome = await run(specFor("loop-reset", { bin: fake("loop-reset") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+}
+
+// a user message breaks the run of identical turns
+{
+  const outcome = await run(specFor("loop-reset-user", { bin: fake("loop-reset-user") }));
+  assert.equal(outcome.status, "done");
+  assert.equal(outcome.loop, undefined);
+}
+
+// the same looping turn with text in every message ends looped, keeping the text
+{
+  const spec = specFor("looped-text", { bin: fake("looped-text") });
+  const outcome = await run(spec);
+  assert.equal(outcome.status, "looped");
+  assert.equal(outcome.error, "repeated bash 4 times with the same result");
+  assert.deepEqual(outcome.loop, { tool: "bash", repeats: 4 });
+  assert.equal(outcome.finalText, "done");
+  assert.ok(!alive(Number(fs.readFileSync(spec.record, "utf8"))), "looped child survived");
 }
 
 // identical turns after a valve handoff do not trip
