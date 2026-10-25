@@ -117,6 +117,31 @@ const stubTail = `for (const line of lines) process.stdout.write(JSON.stringify(
 `;
 
 fs.writeFileSync(
+  path.join(fakes, "valve.mjs"),
+  stubHead + `const entry = (data) => ({ type: "entry_appended", entry: { customType: "budget-valve", data } });
+const lines = [
+  assistant([call("read")], 9000),
+  assistant([call("write")], 31000),
+  assistant([call("write")], 40000),
+  { type: "entry_appended", entry: { customType: "other", data: { kind: "handoff" } } },
+  entry({ kind: "handoff", role: "worker", action: "commit and write a note", budget: 30000, reserve: 5000, tokens: 40000 }),
+  entry({ kind: "ended", role: "worker" }),
+  assistant([{ type: "text", text: "bye" }], 41000, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
+  path.join(fakes, "commit.mjs"),
+  stubHead + `const lines = [
+  assistant([call("bash", { command: "ls" })], 5000),
+  assistant([call("bash", { command: "git commit -m x" })], 12000),
+  assistant([{ type: "text", text: "bye" }], 20000, "stop"),
+];
+` + stubTail,
+);
+
+fs.writeFileSync(
   path.join(fakes, "deltas.mjs"),
   stubHead + `const lines = [{ type: "session", id: "x" }];
 for (let turn = 0; turn < 3; turn++) {
@@ -193,7 +218,8 @@ const run = (spec) => {
   assert.equal(outcome.exitCode, 0);
   assert.equal(outcome.stopReason, "stop");
   assert.equal(outcome.finalText, "Done\nline two");
-  assert.deepEqual(outcome.usage, { prompt: 375, cached: 250, output: 40, peakContext: 250, turns: 2, compactions: 1 });
+  assert.deepEqual(outcome.usage, { prompt: 375, cached: 250, output: 40, peakContext: 250, firstContext: 250, turns: 2, compactions: 1 });
+  assert.equal(outcome.valve, null);
   assert.equal(spawned.length, 1);
   assert.equal(spawned[0].pid, record.pid);
   assert.deepEqual(record.argv, piArgv(spec));
@@ -272,6 +298,24 @@ const run = (spec) => {
   assert.equal(lines[0].env.RECIPE_CHILD, "1");
   assert.ok(Object.keys(lines[0].env).every((name) => name.startsWith("RECIPE_")));
   assert.ok(!JSON.stringify(lines[0]).includes(spec.brief));
+}
+
+// the valve's entries, and the context at the first write
+{
+  const spec = specFor("valve", { bin: fake("valve") });
+  const outcome = await run(spec);
+  assert.equal(outcome.status, "done");
+  assert.deepEqual(outcome.valve, { fired: true, tokens: 40000, budget: 30000, action: "commit and write a note", ended: true });
+  assert.equal(outcome.usage.firstContext, 31000);
+  assert.equal(outcome.usage.peakContext, 41000);
+  const transcript = fs.readFileSync(spec.transcriptFile, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const valves = transcript.filter((r) => r.recordType === "valve");
+  assert.deepEqual(valves.map((r) => r.data.kind), ["handoff", "ended"]);
+  assert.equal(valves[0].data.tokens, 40000);
+
+  const committed = await run(specFor("commit", { bin: fake("commit") }));
+  assert.equal(committed.usage.firstContext, 12000);
+  assert.equal(committed.valve, null);
 }
 
 // a brief that starts with "@" or "-", or is far larger than one argument can be, arrives intact

@@ -187,6 +187,19 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(r1.status, "done");
 }
 
+// The harness's valve record reaches the result and the settle record; a child whose valve did not fire has none.
+{
+  const valve = { fired: true, tokens: 15568, budget: 12000, action: "commit", ended: true };
+  const harness = fakeHarness((spec) => (spec.item.key === "tripped" ? { valve } : {}));
+  const { port, runDir } = setup("valve", { harness });
+  const tripped = await port.runOne(item("tripped"));
+  assert.deepEqual(tripped.valve, valve);
+  const quiet = await port.runOne(item("quiet"));
+  assert.equal(quiet.valve, null);
+  const settled = readLog(runDir).filter((r) => r.type === "settle");
+  assert.deepEqual(settled.map((r) => r.result.valve), [valve, null]);
+}
+
 // A gate learns where the runner puts worktrees, so it can record the ones that are the run's.
 {
   const { port, gates } = setup("gate-env", { harness: fakeHarness(() => ({})), config: { worktreeDir: "/some/where" } });
@@ -424,6 +437,268 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   }
 }
 
+// The child's environment names its role and output, and its budget when the role has one.
+{
+  const budget = { tokens: 100000, reserve: 30000, action: "commit" };
+  const harness = fakeHarness(() => ({}));
+  const config = { roles: { writer: { ...roles.writer, budget }, reader: roles.reader } };
+  const { port, dir } = setup("env", { harness, config, env: { KEEP: "1" } });
+  const output = path.join(dir, "out.md");
+  await port.runMany([item("w", { output }), item("r", { agent: "reader" })]);
+  const [w, r] = harness.calls;
+  assert.deepEqual(w.env, {
+    KEEP: "1",
+    RECIPE_ROLE: "writer",
+    RECIPE_OUTPUT: output,
+    RECIPE_BUDGET_TOKENS: "100000",
+    RECIPE_BUDGET_RESERVE: "30000",
+    RECIPE_HANDOFF_ACTION: "commit",
+  });
+  assert.deepEqual(w.budget, budget);
+  assert.deepEqual(r.env, { KEEP: "1", RECIPE_ROLE: "reader" });
+  assert.equal(r.budget, null);
+}
+
+// A child that replies with a handoff line completed; the line, its unread inputs and its note ride on the Result.
+{
+  const reply = {
+    w: "handoff: half done; the parser is left",
+    r: "handoff: read two of four\nunread: a.md, b.md\n- unread: `c.md`",
+    p: "handoff: no file",
+  };
+  const harness = fakeHarness(async (spec) => {
+    if (spec.item.output) fs.writeFileSync(spec.item.output, reply[spec.item.key]);
+    return { finalText: reply[spec.item.key] };
+  });
+  const { port, dir } = setup("handoff", { harness });
+  const [w, r, p] = await port.runMany([
+    item("w", { output: path.join(dir, "w.md") }),
+    item("r", { agent: "reader", output: path.join(dir, "r.md") }),
+    item("p", { agent: "reader" }),
+  ]);
+  assert.equal(w.status, "done");
+  assert.equal(w.ok, true);
+  assert.equal(w.error, undefined);
+  assert.deepEqual(w.handoff, { line: reply.w, unread: [], note: path.join(dir, "w.md"), empty: false });
+  assert.deepEqual(r.handoff.unread, ["a.md", "b.md", "c.md"]);
+  assert.equal(r.handoff.note, path.join(dir, "r.md"));
+  assert.deepEqual(p.handoff, { line: reply.p, unread: [], note: null, empty: true });
+  const plain = await setup("plain", { harness: fakeHarness(() => ({})) }).port.runOne(item("x"));
+  assert.equal(plain.handoff, null);
+  assert.equal(plain.budget, null);
+  assert.deepEqual(readLog(path.join(dir, "runner")).map((l) => l.type).filter((t) => !["start", "end", "settle"].includes(t)), []);
+}
+
+// A valve-ended child whose note starts with handoff: is a handoff; one that wrote nothing is judged by its commits.
+{
+  const budget = { tokens: 100000, reserve: 30000, action: "commit" };
+  const valve = { fired: true, tokens: 100500, budget: 100000, action: "commit", ended: true };
+  const ended = { status: "failed", error: "ended by the valve", finalText: "", valve };
+  const harness = fakeHarness(async (spec) => {
+    if (spec.item.key === "noted") fs.writeFileSync(spec.item.output, "handoff: Done x, left y\n\nDone\n- x\n");
+    if (spec.item.key === "plainfile") fs.writeFileSync(spec.item.output, "partial findings only\n");
+    return ended;
+  });
+  const config = { roles: { writer: { ...roles.writer, budget }, reader: roles.reader } };
+  const committed = (commits) => ({ worktrees: { make: ({ item: i }) => ({ ok: true, worktree: `/wt/${i.key}`, branch: `recipe/${i.key}`, head: "base1" }), state: () => ({ exists: true, clean: false, commits }), remove: () => ({ ok: true }) } });
+
+  const first = setup("valve-note", { harness, config, deps: committed(0) });
+  const noted = await first.port.runOne(item("noted", { output: path.join(first.dir, "noted.md"), worktree: true }));
+  assert.equal(noted.status, "done");
+  assert.equal(noted.ok, true);
+  assert.equal(noted.error, undefined);
+  assert.equal(noted.handoff.line, "handoff: Done x, left y");
+  assert.equal(noted.handoff.note, path.join(first.dir, "noted.md"));
+  assert.equal(noted.handoff.empty, false);
+
+  const second = setup("valve-empty", { harness, config, deps: committed(2) });
+  const empty = await second.port.runOne(item("none", { worktree: true }));
+  assert.equal(empty.status, "done");
+  assert.equal(empty.ok, true);
+  assert.deepEqual(empty.handoff, { line: "handoff: ended by the context valve before its note", unread: [], note: null, empty: true });
+  const partial = await second.port.runOne(item("plainfile", { output: path.join(second.dir, "plain.md"), worktree: true }));
+  assert.equal(partial.status, "done");
+  assert.equal(partial.handoff.empty, true);
+  assert.equal(partial.handoff.note, null);
+
+  const third = setup("valve-none", { harness, config, deps: committed(0) });
+  const lost = await third.port.runOne(item("none", { worktree: true }));
+  assert.equal(lost.status, "failed");
+  assert.equal(lost.ok, false);
+  assert.equal(lost.error, "context budget reached and no handoff was written");
+  assert.equal(lost.handoff, null);
+  const bare = await third.port.runOne(item("nowt"));
+  assert.equal(bare.status, "failed");
+  assert.equal(bare.error, "context budget reached and no handoff was written");
+}
+
+// A reviewer ended by the valve after one write keeps every unread line, even past the first 4 KB of its note.
+{
+  const valve = { fired: true, tokens: 131000, budget: 130000, action: "unread", ended: true };
+  const harness = fakeHarness((spec) => {
+    const body = "- a finding with some detail about the code\n".repeat(150);
+    fs.writeFileSync(spec.item.output, `handoff: reviewed a.mjs; b.mjs and c.mjs left\n\n## Findings\n${body}\nunread: b.mjs\nunread: c.mjs\n`);
+    return { status: "failed", error: "aborted", finalText: "", valve };
+  });
+  const budget = { tokens: 130000, reserve: 40000, action: "unread" };
+  const config = { roles: { reviewer: { prompt: "p", tools: [], thinking: "low", acceptance: null, budget } } };
+  const { port, dir } = setup("valve-unread", { harness, config });
+  const output = path.join(dir, "review.md");
+  const r = await port.runOne(item("review", { agent: "reviewer", output }));
+  assert.ok(fs.statSync(output).size > 4096);
+  assert.equal(r.status, "done");
+  assert.deepEqual(r.handoff, { line: "handoff: reviewed a.mjs; b.mjs and c.mjs left", unread: ["b.mjs", "c.mjs"], note: output, empty: false });
+}
+
+// A valve-ended child without commits that wrote output but no handoff line: stop and unread roles keep the output as a handoff with no unread list; empty output, or a commit role, fails.
+{
+  const valve = (action) => ({ fired: true, tokens: 100500, budget: 100000, action, ended: true });
+  const harness = fakeHarness((spec) => {
+    const text = spec.item.key.startsWith("blank") ? "  \n" : "findings without a first line\n";
+    fs.writeFileSync(spec.item.output, text);
+    return { status: "failed", error: "aborted", finalText: "", valve: valve(spec.roleName === "builder" ? "commit" : "stop") };
+  });
+  const role = (action) => ({ prompt: "p", tools: [], thinking: "low", acceptance: null, budget: { tokens: 100000, reserve: 20000, action } });
+  const config = { roles: { scout: role("stop"), reviewer: role("unread"), builder: role("commit") } };
+  const { port, dir } = setup("valve-unmarked", { harness, config });
+  const out = (name) => path.join(dir, `${name}.md`);
+  for (const agent of ["scout", "reviewer"]) {
+    const r = await port.runOne(item(`kept-${agent}`, { agent, output: out(`kept-${agent}`) }));
+    assert.equal(r.status, "done");
+    assert.equal(r.handoff, null);
+  }
+  const blank = await port.runOne(item("blank", { agent: "scout", output: out("blank") }));
+  assert.equal(blank.status, "failed");
+  assert.equal(blank.error, "context budget reached and no handoff was written");
+  assert.equal(blank.handoff, null);
+  const commit = await port.runOne(item("kept-builder", { agent: "builder", output: out("kept-builder") }));
+  assert.equal(commit.status, "failed");
+  assert.equal(commit.handoff, null);
+}
+
+// A timeout stays a timeout even with a handoff line.
+{
+  const harness = fakeHarness(() => ({ status: "timeout", finalText: "handoff: ran out of time" }));
+  const { port } = setup("handoff-timeout", { harness });
+  const late = await port.runOne(item("late"));
+  assert.equal(late.status, "timeout");
+  assert.equal(late.ok, false);
+  assert.match(late.error, /timed out after/);
+  assert.equal(late.handoff.line, "handoff: ran out of time");
+}
+
+// The outcome record lands in the child's transcript; a successor's handoff-outcome lands in the predecessor's.
+{
+  const budget = { tokens: 100000, reserve: 30000, action: "commit" };
+  const config = { roles: { writer: { ...roles.writer, budget }, reader: roles.reader } };
+  const harness = fakeHarness((spec) => {
+    if (spec.item.key === "first") {
+      return { finalText: "handoff: more to do", usage: { ...usage, peakContext: 101000, firstContext: 60000 }, valve: { fired: true, tokens: 101000, budget: 100000, action: "commit", ended: false } };
+    }
+    return { usage: { ...usage, peakContext: 40000 } };
+  });
+  const { port, runDir, stateDir } = setup("outcome", { harness, config });
+  const first = await port.runOne(item("first"));
+  const second = await port.runOne(item("second", { handoffOf: first.runId, handoffAs: "relay" }));
+  const third = await port.runOne(item("third", { agent: "reader", handoffOf: "unknown-run", handoffAs: "split" }));
+  const records = (file) => fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  const transcriptOf = (result) => JSON.parse(fs.readFileSync(path.join(stateDir, "children", `${result.runId}.json`), "utf8")).transcriptFile;
+  const starts = readLog(runDir).filter((r) => r.type === "start");
+  assert.equal(starts[0].transcriptFile, transcriptOf(first));
+  assert.equal(starts[0].transcriptFile, harness.calls[0].transcriptFile);
+  assert.deepEqual(records(transcriptOf(first)), [
+    { recordType: "outcome", runId: first.runId, role: "writer", peakContext: 101000, firstContext: 60000, budget: 100000, valve: true, handoff: true },
+    { recordType: "handoff-outcome", runId: first.runId, as: "relay", by: second.runId },
+  ]);
+  assert.deepEqual(records(transcriptOf(second)), [
+    { recordType: "outcome", runId: second.runId, role: "writer", peakContext: 40000, firstContext: 40000, budget: 100000, valve: false, handoff: false },
+  ]);
+  assert.deepEqual(records(transcriptOf(third)).map((r) => r.budget), [null]);
+  const handoffs = readLog(runDir).filter((r) => r.type === "handoff");
+  assert.deepEqual(
+    handoffs.map(({ at: _at, ...rest }) => rest),
+    [
+      { type: "handoff", key: "second", runId: first.runId, as: "relay", by: second.runId },
+      { type: "handoff", key: "third", runId: "unknown-run", as: "split", by: third.runId },
+    ],
+  );
+  assert.equal(fingerprint(item("k")), fingerprint(item("k", { handoffOf: "x", handoffAs: "relay" })));
+}
+
+// A second onSpawn rewrites the index pid and leaves a respawn record; killUnfinished goes for the latest pid.
+{
+  const first = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  const second = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  let seen = null;
+  const spawning = {
+    async start(spec) {
+      spec.onSpawn({ pid: first.pid });
+      spec.onSpawn({ pid: second.pid });
+      seen = {
+        index: JSON.parse(fs.readFileSync(path.join(stateDirOf, "children", `${spec.runId}.json`), "utf8")),
+        log: readLog(runDirOf),
+      };
+      return { status: "done", exitCode: 0, signal: null, stopReason: "stop", finalText: "ok", usage, sessionFile: null, ms: 1 };
+    },
+  };
+  const dir = path.join(tmp, "respawn");
+  const runDirOf = path.join(dir, "runner");
+  const stateDirOf = path.join(dir, "state");
+  try {
+    const port = createPort({ runDir: runDirOf, cwd: dir, config: { stateDir: stateDirOf, roles }, harnessName: "fake", harness: spawning });
+    const result = await port.runOne(item("respawned"));
+    assert.equal(result.status, "done");
+    assert.equal(seen.index.pid, second.pid);
+    assert.equal(seen.index.pidStart, procStartTime(second.pid));
+    const respawns = seen.log.filter((r) => r.type === "respawn");
+    assert.equal(respawns.length, 1);
+    assert.deepEqual({ ...respawns[0], at: undefined }, { type: "respawn", key: "respawned", runId: result.runId, pid: second.pid, pidStart: procStartTime(second.pid), at: undefined });
+    assert.equal(readLog(runDirOf).filter((r) => r.type === "start").length, 1);
+    const final = JSON.parse(fs.readFileSync(path.join(stateDirOf, "children", `${result.runId}.json`), "utf8"));
+    assert.equal(final.pid, null);
+
+    const killDir = path.join(dir, "kill", "runner");
+    const spare = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+    const row = (type, runId, proc, pidStart) => ({ type, key: runId, runId, pid: proc.pid, pidStart, at: "t" });
+    const lines = [
+      row("start", "moved", first, procStartTime(first.pid)),
+      row("respawn", "moved", second, procStartTime(second.pid)),
+      row("start", "reused", spare, procStartTime(spare.pid)),
+      row("respawn", "reused", spare, "1"),
+    ];
+    try {
+      fs.mkdirSync(killDir, { recursive: true });
+      fs.writeFileSync(path.join(killDir, "children.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+      assert.deepEqual(await killUnfinished(killDir, { graceMs: 200 }), ["moved"]);
+      await sleep(100);
+      const alive = (proc) => spawnSync("kill", ["-0", String(proc.pid)]).status === 0 && !/^Z/.test(fs.readFileSync(`/proc/${proc.pid}/stat`, "utf8").split(") ")[1]);
+      assert.equal(alive(second), false);
+      assert.equal(alive(first), true);
+      assert.equal(alive(spare), true);
+    } finally {
+      process.kill(-spare.pid, "SIGKILL");
+    }
+  } finally {
+    for (const proc of [first, second]) {
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {}
+    }
+  }
+}
+
+// Replay ignores respawn and handoff records and still hands back the settled result.
+{
+  const harness = fakeHarness(() => ({ finalText: "handoff: later" }));
+  const original = setup("replay-handoff", { harness });
+  const result = await original.port.runOne(item("a"));
+  const records = readLog(original.runDir);
+  records.splice(1, 0, { type: "respawn", key: "a", runId: result.runId, pid: 1, pidStart: "1", at: "t" }, { type: "handoff", key: "a", runId: "p", as: "relay", by: result.runId, at: "t" });
+  const replayed = await setup("replay-handoff-2", { harness: fakeHarness(() => ({})), replay: records }).port.runOne(item("a"));
+  assert.equal(replayed.replayed, true);
+  assert.equal(replayed.handoff.line, "handoff: later");
+}
+
 // A worktree item gets a real worktree; a dispatched one is removed when untouched.
 {
   const repo = path.join(tmp, "repo");
@@ -510,6 +785,20 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(out.bad.error, "bad");
   assert.equal(out.fix.ok, true);
   assert.equal(out.fix.cwd, "/wt/run-good");
+
+  const peaks = {
+    all: async (items) =>
+      items.map(() => ({
+        ok: true,
+        finalText: "handoff: peaked",
+        usage: { ...usage, peakContext: 90000 },
+        valve: { fired: true, tokens: 90000, budget: 80000, action: "stop", ended: false },
+      })),
+  };
+  const scripted = await fakeDeps(peaks).harness.start({ item: { key: "p" }, runId: "p", roleName: "scout" });
+  assert.equal(scripted.usage.peakContext, 90000);
+  assert.equal(scripted.valve.fired, true);
+  assert.equal("valve" in (await fakeDeps(runs).harness.start({ item: { key: "x" }, runId: "x", roleName: "scout" })), false);
 }
 
 console.log("port tests passed");

@@ -14,6 +14,13 @@
 // roles that read files they were told about. The old role name `worker` is
 // the implementer.
 //
+// `handoffs` lists, per role with outcome records, how often runs handed off
+// (handoff_rate) and what became of the handoffs: the share relayed and the
+// share split (relay_rate, split_rate, counted by distinct predecessor run),
+// plus the last recorded budget. These come straight from the `outcome` and
+// `handoff-outcome` records, so Claude runs without message records count,
+// and a role below --min-samples is still listed, with low_samples true.
+//
 // Guards: a role with fewer than --min-samples runs keeps its entry from
 // --current (and is left out when there is none); a role whose current entry
 // is measured (samples > 0) moves at most x1.5 either way per field. Defaults
@@ -40,6 +47,49 @@ function transcripts(dir) {
     else if (/^[0-9a-f-]{36}_.+_transcript\.jsonl$/.test(entry.name)) found.push(full);
   }
   return found;
+}
+
+function roleOf(file) {
+  const name = path.basename(file).match(/^[0-9a-f-]{36}_(.+)_transcript\.jsonl$/)[1].replace(/_\d+$/, "");
+  return ROLE_ALIASES[name] ?? name;
+}
+
+function readHandoffs(file, into) {
+  const role = roleOf(file);
+  const entry = () => (into[role] ??= { runs: 0, handed: 0, relayed: new Set(), split: new Set(), budget: null });
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (r?.recordType === "outcome") {
+      const e = entry();
+      e.runs++;
+      if (r.handoff === true) e.handed++;
+      if (r.budget != null) e.budget = r.budget;
+    } else if (r?.recordType === "handoff-outcome" && (r.as === "relay" || r.as === "split")) {
+      (r.as === "relay" ? entry().relayed : entry().split).add(r.runId);
+    }
+  }
+}
+
+function summariseHandoffs(raw, minSamples) {
+  const out = {};
+  for (const [role, e] of Object.entries(raw)) {
+    if (e.runs === 0) continue;
+    const share = (n) => (e.handed === 0 ? 0 : round(n / e.handed, 2));
+    out[role] = {
+      runs: e.runs,
+      handoff_rate: round(e.handed / e.runs, 2),
+      relay_rate: share(e.relayed.size),
+      split_rate: share(e.split.size),
+      budget: e.budget,
+      low_samples: e.runs < minSamples,
+    };
+  }
+  return out;
 }
 
 function readRun(file) {
@@ -112,10 +162,11 @@ function clamp(measured, current) {
 function propose(sessionsDir, currentFile, minSamples, engineRev) {
   const current = currentFile ? JSON.parse(fs.readFileSync(currentFile, "utf8")) : { engine_rev: null, roles: {} };
   const byRole = {};
+  const rawHandoffs = {};
   for (const file of transcripts(sessionsDir)) {
-    const name = path.basename(file).match(/^[0-9a-f-]{36}_(.+)_transcript\.jsonl$/)[1].replace(/_\d+$/, "");
     const run = readRun(file);
-    if (run) (byRole[ROLE_ALIASES[name] ?? name] ??= []).push(run);
+    if (run) (byRole[roleOf(file)] ??= []).push(run);
+    readHandoffs(file, rawHandoffs);
   }
   const roles = { ...current.roles };
   for (const [role, runs] of Object.entries(byRole)) {
@@ -126,7 +177,7 @@ function propose(sessionsDir, currentFile, minSamples, engineRev) {
     const measured = measure(role, runs);
     roles[role] = { ...clamp({ ...current.roles[role], ...measured }, current.roles[role]) };
   }
-  return { engine_rev: engineRev ?? current.engine_rev ?? null, roles };
+  return { engine_rev: engineRev ?? current.engine_rev ?? null, roles, handoffs: summariseHandoffs(rawHandoffs, minSamples) };
 }
 
 function parseArgs(argv) {
