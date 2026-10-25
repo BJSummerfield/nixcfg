@@ -10,6 +10,10 @@ const STREAM_GRACE_MS = 1000;
 // Partial-message events repeat the whole message so far on every delta.
 const STREAMING_EVENTS = new Set(["message_update", "tool_execution_update"]);
 
+// The local model sometimes repeats the same turn with the same results
+// forever, and a pi child only ends on a turn without tool calls.
+export const LOOP_REPEATS = 4;
+
 const toolList = (tools) => (Array.isArray(tools) ? tools.join(",") : typeof tools === "string" ? tools : "");
 
 const textOf = (content) =>
@@ -134,6 +138,26 @@ export async function start(spec) {
 
   let lastAssistant = null;
   let stderrTail = "";
+  let turn = null;
+  let prevTurnKey = null;
+  let repeats = 0;
+  let loopInfo = null;
+  let handoffSeen = false;
+
+  const completeTurn = (pending) => {
+    turn = null;
+    if (handoffSeen || loopInfo) return;
+    const key = JSON.stringify([
+      ...pending.calls.map((call) => [call.name, call.arguments]),
+      ...pending.results.map((result) => [result.text, result.isError]),
+    ]);
+    repeats = prevTurnKey === key ? repeats + 1 : 1;
+    prevTurnKey = key;
+    if (repeats >= LOOP_REPEATS) {
+      loopInfo = { tool: pending.calls[0].name, repeats: LOOP_REPEATS };
+      kill("looped");
+    }
+  };
 
   const onEvent = (event) => {
     if (event?.type === "compaction_end" && event.result) usage.compactions++;
@@ -141,6 +165,8 @@ export async function start(spec) {
       const data = event.entry.data ?? {};
       transcript.write(`${JSON.stringify({ recordType: "valve", data })}\n`);
       if (data.kind === "handoff") {
+        // After a handoff the valve refuses tools, so repeated refusals are expected.
+        handoffSeen = true;
         valve = { ...valve, fired: true, tokens: data.tokens, budget: data.budget, action: data.action, ended: valve?.ended ?? false };
       } else if (data.kind === "ended") {
         valve = { fired: true, ...valve, ended: true };
@@ -153,9 +179,19 @@ export async function start(spec) {
     if (message.role === "toolResult") {
       record.toolName = message.toolName;
       record.text = textOf(message.content);
+      if (turn && turn.results.length < turn.calls.length) {
+        turn.results.push({ text: record.text, isError: message.isError === true });
+        if (turn.results.length === turn.calls.length) completeTurn(turn);
+      }
     }
     transcript.write(`${JSON.stringify(record)}\n`);
+    if (message.role === "user") {
+      prevTurnKey = null;
+      repeats = 0;
+      return;
+    }
     if (message.role !== "assistant") return;
+    if (turn) completeTurn(turn);
     const u = message.usage ?? {};
     const input = u.input ?? 0;
     const output = u.output ?? 0;
@@ -172,6 +208,11 @@ export async function start(spec) {
       commitContext = context;
     }
     usage.firstContext = writeContext ?? commitContext ?? usage.peakContext;
+    if (calls.length > 0) turn = { calls: calls.map((b) => ({ name: b.name, arguments: b.arguments })), results: [] };
+    else {
+      prevTurnKey = null;
+      repeats = 0;
+    }
     usage.turns++;
     lastAssistant = {
       stopReason: message.stopReason ?? null,
@@ -262,8 +303,10 @@ export async function start(spec) {
     finalText: lastAssistant?.finalText ?? "",
   };
   if (forced) {
-    const error = forced === "timeout" ? `timed out after ${spec.timeoutMs}ms` : undefined;
-    return outcome({ ...fields, status: forced, ...(error && { error }) });
+    let error;
+    if (forced === "timeout") error = `timed out after ${spec.timeoutMs}ms`;
+    if (forced === "looped") error = `repeated ${loopInfo.tool} ${LOOP_REPEATS} times with the same result`;
+    return outcome({ ...fields, status: forced, ...(error && { error }), ...(forced === "looped" && { loop: loopInfo }) });
   }
 
   const stopReason = lastAssistant?.stopReason;
