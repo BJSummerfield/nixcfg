@@ -128,7 +128,7 @@ let stdin = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) stdin += chunk;
 const resumed = argv.includes("--session");
-const lingers = !resumed || process.env.FAKE_MODE !== "loops";
+const lingers = !resumed || (process.env.FAKE_MODE !== "loops" && process.env.FAKE_MODE !== "empty");
 const grandchild = lingers
   ? spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { detached: true, stdio: "ignore" })
   : null;
@@ -157,16 +157,22 @@ if (!resumed) {
   );
   const r1 = result("c1", "bash");
   const t2 = assistant(
-    [{ type: "toolCall", id: "c2", name: "bash", arguments: { command: "pwd" } }],
+    [{ type: "text", text: "first process note" }, { type: "toolCall", id: "c2", name: "bash", arguments: { command: "pwd" } }],
     usage({ input: 5, output: 195, cacheRead: 5800, totalTokens: 6000 }),
   );
   const r2 = result("c2", "bash");
+  const late = [r2, turnEnd(t2.message, [r2])];
   lines.push(
     { type: "session", version: 3, id: "x", cwd: process.cwd() },
     { type: "message_end", message: { role: "user", content: "go" } },
     t1, r1, turnEnd(t1.message, [r1]),
-    t2, r2, turnEnd(t2.message, [r2]),
+    t2,
   );
+  // the last result and its turn_end land late, so a kill fired before them
+  // loses the result from the transcript
+  setTimeout(() => {
+    for (const line of late) process.stdout.write(JSON.stringify(line) + "\\n");
+  }, 500);
 } else if (process.env.FAKE_MODE === "") {
   const output = process.env.RECIPE_OUTPUT;
   fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -632,6 +638,56 @@ const gone = (record) => {
     assert.equal(second, null);
     gone(first);
   }
+}
+
+// a note written to a path relative to the child's directory ends the handoff turn
+{
+  const spec = budgetSpec("budget-relpath", "", { item: { output: path.join("budget-relpath", "notes", "note.md") } });
+  const outcome = await run(spec);
+  const [first, second] = records(spec);
+  assert.equal(outcome.status, "budget");
+  assert.deepEqual(outcome.valve, { fired: true, tokens: 6000, budget: 5000, action: "commit", ended: true });
+  assert.equal(second.stdin, handoffPrompt("commit", { output: spec.item.output, tokens: 6000 }));
+  assert.ok(fs.readFileSync(path.join(tmp, spec.item.output), "utf8").startsWith("handoff: "));
+  gone(first);
+  gone(second);
+}
+
+// a resumed pi that exits without an assistant message reports nothing of the first process
+{
+  const spec = budgetSpec("budget-empty", "empty");
+  const outcome = await run(spec);
+  const [first, second] = records(spec);
+  assert.equal(outcome.status, "failed");
+  assert.equal(outcome.error, "no assistant message");
+  assert.equal(outcome.finalText, "");
+  assert.equal(outcome.stopReason, null);
+  assert.equal(second.stdin, handoffPrompt("commit", { output: spec.item.output, tokens: 6000 }));
+  assert.equal(outcome.valve.ended, false);
+  gone(first);
+  gone(second);
+}
+
+// an abort that lands with the budget kill stops the run; no handoff starts
+{
+  const controller = new AbortController();
+  const spec = budgetSpec("budget-abort-at-kill", "", { signal: controller.signal });
+  let spawns = 0;
+  const outcome = await run({
+    ...spec,
+    onSpawn: () => {
+      spawns += 1;
+      // the tree-kill grace keeps the first process open long enough for the
+      // abort to land after its budget kill and before a handoff starts
+      if (spawns === 1) setTimeout(() => controller.abort(), 1500);
+    },
+  });
+  const [first, second] = records(spec);
+  assert.equal(spawns, 1);
+  assert.equal(outcome.status, "aborted");
+  assert.equal(outcome.valve, null);
+  assert.equal(second, null);
+  gone(first);
 }
 
 // the context at the first write
