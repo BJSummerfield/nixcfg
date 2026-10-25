@@ -1,8 +1,12 @@
-// Proposes sizing.json from the runner's transcripts (<task dir>/runner/transcripts/). Offline: file reads only.
+// Proposes sizing.json from the runner's records (<task dir>/runner). Offline: file reads only.
 //
 //   recipe-sizing <sessions-dir> [--current sizing.json] [--min-samples 20] [--engine-rev REV]
 //
 // Every `<run-id>_<role>_transcript.jsonl` under the sessions dir is one run.
+// A run the runner ended for repeating the same turn has `loop` in its settle
+// result (children.jsonl); its token counts reflect the loop, not the task,
+// so its transcript is left out of every estimate. `looped` counts the
+// children left out, per role.
 // A request's context is usage.input (uncached) + usage.cacheRead (cached).
 // Per role: base is the median first-request context, peak_p90 the 90th
 // percentile of the run's peak, growth_p90 the 90th percentile of peak minus
@@ -54,6 +58,31 @@ function roleOf(file) {
   return ROLE_ALIASES[name] ?? name;
 }
 
+function childrenLogs(dir) {
+  const found = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...childrenLogs(full));
+    else if (entry.name === "children.jsonl") found.push(full);
+  }
+  return found;
+}
+
+function loopedRunIds(dir) {
+  const ids = new Set();
+  for (const file of childrenLogs(dir))
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      let r;
+      try {
+        r = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (r?.type === "settle" && r.runId && r.result?.loop) ids.add(r.runId);
+    }
+  return ids;
+}
+
 function readHandoffs(file, into) {
   const role = roleOf(file);
   const entry = () => (into[role] ??= { runs: 0, handed: 0, relayed: new Set(), split: new Set(), budget: null });
@@ -96,6 +125,7 @@ function readRun(file) {
   const ctx = [];
   let cold = 0;
   let readChars = 0;
+  let runId = null;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     let r;
     try {
@@ -103,6 +133,7 @@ function readRun(file) {
     } catch {
       continue;
     }
+    if (r?.recordType === "outcome" && runId === null && r.runId) runId = r.runId;
     if (r?.recordType !== "message") continue;
     const role = r.message?.role;
     if (role === "assistant") {
@@ -113,9 +144,9 @@ function readRun(file) {
       readChars += (r.text ?? "").length;
     }
   }
-  if (ctx.length === 0) return null;
+  if (ctx.length === 0) return { runId, run: null };
   const compacted = ctx.slice(1).some((b, i) => ctx[i] > COMPACT_FROM && b < COMPACT_RATIO * ctx[i]);
-  return { base: ctx[0], peak: Math.max(...ctx), cold, compacted, readTokens: readChars / 4 };
+  return { runId, run: { base: ctx[0], peak: Math.max(...ctx), cold, compacted, readTokens: readChars / 4 } };
 }
 
 const percentile = (values, q) => {
@@ -163,9 +194,16 @@ function propose(sessionsDir, currentFile, minSamples, engineRev) {
   const current = currentFile ? JSON.parse(fs.readFileSync(currentFile, "utf8")) : { engine_rev: null, roles: {} };
   const byRole = {};
   const rawHandoffs = {};
+  const loopedOut = {};
+  const looped = loopedRunIds(sessionsDir);
   for (const file of transcripts(sessionsDir)) {
-    const run = readRun(file);
-    if (run) (byRole[roleOf(file)] ??= []).push(run);
+    const { runId, run } = readRun(file);
+    const role = roleOf(file);
+    if (runId !== null && looped.has(runId)) {
+      loopedOut[role] = (loopedOut[role] ?? 0) + 1;
+      continue;
+    }
+    if (run) (byRole[role] ??= []).push(run);
     readHandoffs(file, rawHandoffs);
   }
   const roles = { ...current.roles };
@@ -177,7 +215,12 @@ function propose(sessionsDir, currentFile, minSamples, engineRev) {
     const measured = measure(role, runs);
     roles[role] = { ...clamp({ ...current.roles[role], ...measured }, current.roles[role]) };
   }
-  return { engine_rev: engineRev ?? current.engine_rev ?? null, roles, handoffs: summariseHandoffs(rawHandoffs, minSamples) };
+  return {
+    engine_rev: engineRev ?? current.engine_rev ?? null,
+    roles,
+    handoffs: summariseHandoffs(rawHandoffs, minSamples),
+    looped: loopedOut,
+  };
 }
 
 function parseArgs(argv) {
