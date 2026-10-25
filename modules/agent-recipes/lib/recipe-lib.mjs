@@ -62,8 +62,10 @@ export function recipeLib(rawPort) {
     return "When the file is written, run `" + gate + "`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.";
   }
 
-  // `opts.selfGate` false is for a gate with side effects, such as one that
-  // tidies worktrees, which the child must not run itself.
+  // `opts.selfGate` false is for a child that cannot or must not run the gate
+  // itself: searchers and extractors have no shell, and some gates have side
+  // effects, such as one that tidies worktrees. The runner runs the gate after
+  // the child either way.
   function node(key, agent, lines, output, opts) {
     const o = opts || {};
     const text = lines.slice();
@@ -93,6 +95,10 @@ export function recipeLib(rawPort) {
       output: moved,
       task: item.task.split(item.output).join(moved),
     });
+    // The child answered in its reply but left the file unwritten, so the
+    // port filled it there; say so so the child writes the file itself this
+    // time.
+    if (failed.outputFromReply) copy.task += "\n" + "The previous attempt did not write the output file. Write it to " + moved + ".";
     if (item.resume) copy.resume = failed.runId || item.resume;
     if (item.gate) {
       copy.gate = Object.assign({}, item.gate, {
@@ -481,14 +487,14 @@ export function recipeLib(rawPort) {
       "searcher",
       ["Goal: " + goal, "Angle: " + angle.id, "Question: " + angle.question, "Output: " + file],
       file,
-      { gate: "recipe-gate urls " + quote(file), timeoutMs: childMs },
+      { gate: "recipe-gate urls " + quote(file), timeoutMs: childMs, selfGate: false },
     );
   }
 
   function extractItem(key, goal, url, angle, page, file, part, childMs) {
     const lines = ["Goal: " + goal, "URL: " + url, "Angle: " + angle, "Page: " + page, "Output: " + file];
     if (part) lines.push(part);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
   }
 
   function locateItem(goal, angle, repo, file, childMs) {
@@ -505,7 +511,7 @@ export function recipeLib(rawPort) {
     const lines = ["Goal: " + goal, "File: " + path];
     if (range) lines.push("Range: " + range.start + "-" + range.end);
     lines.push("Angle: " + angle, "Output: " + file);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
   }
 
   function rankAndCap(found, limit) {
