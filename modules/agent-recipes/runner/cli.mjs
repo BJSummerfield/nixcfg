@@ -170,7 +170,9 @@ async function wait(argv) {
     } else if (status.state !== "running" || !runIsAlive(status)) {
       const receipt =
         readJson(receiptPath(taskDir)) ??
-        { failed: status.state === "running" ? "stopped: process gone" : `${status.state}: no receipt`, board: status.board };
+        (status.state === "running"
+          ? { stopped: true, reason: "process gone", interrupted: [], board: status.board }
+          : { failed: `${status.state}: no receipt`, board: status.board });
       out(receipt);
       return status.state === "complete" ? 0 : 1;
     }
@@ -206,7 +208,7 @@ async function stop(argv) {
   if (latest.state === "running") {
     const why = "stop requested (process gone)";
     if (!fs.existsSync(receiptPath(taskDir))) {
-      writeJsonAtomic(receiptPath(taskDir), { failed: `stopped: ${why}`, board: latest.board });
+      writeJsonAtomic(receiptPath(taskDir), { stopped: true, reason: why, interrupted: [], board: latest.board });
     }
     writeJsonAtomic(statusPath(taskDir), { ...latest, state: "stopped", error: why, lastUpdate: new Date().toISOString() });
   }

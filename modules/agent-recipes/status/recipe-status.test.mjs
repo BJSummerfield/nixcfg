@@ -109,6 +109,16 @@ const research = fakeRun(
   assert.equal(JSON.parse(run(gone, "--json").out).state, "stopped (process gone)");
 }
 
+// A stopped run shows the stop reason the runner recorded.
+{
+  const dead = spawnSync(process.execPath, ["-e", ""]);
+  const d = fakeRun("stopped-reason", status(null, { state: "stopped", pid: dead.pid, error: "stop requested (process gone)" }));
+  assert.match(run(d).out, /^run \d+: stopped \(stop requested \(process gone\)\), started/m);
+  const j = JSON.parse(run(d, "--json").out);
+  assert.equal(j.state, "stopped");
+  assert.equal(j.reason, "stop requested (process gone)");
+}
+
 // After a stop, a child with an end and no settle is stopped; while the run still
 // goes it may be in its gate and counts as running; a restarted one runs again.
 {
