@@ -176,6 +176,30 @@ test("--keep keeps the workdir, and without it the workdir is removed", async ()
   assert.deepEqual(dirs, []);
 });
 
+test("a failing test's directory is kept next to the results, and the passing one is removed", async () => {
+  const dirTest = (name, pass) => ({
+    name,
+    run: async (ctx) => {
+      const dir = path.join(ctx.workdir, name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "transcript.jsonl"), `${JSON.stringify({ type: "settle", name })}\n`);
+      return { name, pass, ms: 100, children: 0, usage: { prompt: 0, cached: 0, output: 0 }, detail: pass ? "" : "the run failed" };
+    },
+  });
+  const out = fs.mkdtempSync(path.join(tmp, "failed-keep-"));
+  const { code, stdout } = await runCli(["--force", "--out", out], {
+    TESTS: [dirTest("p", true), dirTest("f", false)],
+    spawn: fakeSpawn(),
+  });
+  assert.equal(code, 1);
+  const failedDir = path.join(out, `recipe-smoke-${STAMP}-failed`);
+  assert.match(stdout, new RegExp(`^${failedDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"), "the kept path is printed");
+  assert.ok(fs.existsSync(path.join(failedDir, "f", "transcript.jsonl")), "the failing test's files survive");
+  assert.ok(!fs.existsSync(path.join(failedDir, "p")), "the passing test's directory is not kept");
+  const dirs = fs.readdirSync(out, { withFileTypes: true }).filter((e) => e.isDirectory());
+  assert.deepEqual(dirs.map((e) => e.name), [path.basename(failedDir)], "the workdir itself is removed");
+});
+
 test("an interrupt stops the tracked run, skips the rest and still writes the results", async () => {
   const out = fs.mkdtempSync(path.join(tmp, "signal-"));
   const runDir = path.join(out, "tracked-run");

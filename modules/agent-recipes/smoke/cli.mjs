@@ -17,6 +17,18 @@ const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0 };
 
 const skipResult = (name) => ({ name, pass: null, ms: 0, children: 0, usage: { ...EMPTY_USAGE }, detail: "skipped after interrupt" });
 
+// A failed test's transcript is the only evidence left to diagnose it
+function moveFailed(workdir, results, failedDir) {
+  const failures = results.filter((r) => r.pass === false);
+  if (failures.length === 0) return null;
+  for (const r of failures) {
+    const src = path.join(workdir, r.name);
+    if (!fs.existsSync(src)) continue;
+    fs.cpSync(src, path.join(failedDir, r.name), { recursive: true });
+  }
+  return failedDir;
+}
+
 function makeRunner(deps, livePids) {
   return (args, opts = {}) =>
     new Promise((resolve, reject) => {
@@ -189,6 +201,8 @@ export async function main(argv, deps = {}) {
   fs.copyFileSync(txtFile, txtDest);
   process.stdout.write(`${jsonDest}\n${txtDest}\n`);
 
+  const failedDir = moveFailed(workdir, results, path.join(destDir, `recipe-smoke-${stamp}-failed`));
+  if (failedDir) process.stdout.write(`${failedDir}\n`);
   core.removeWorkdir(workdir, opts.keep);
   return results.every((r) => r.pass === true) ? 0 : 1;
 }

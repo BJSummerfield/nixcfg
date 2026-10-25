@@ -15,6 +15,8 @@ const RESEARCH_TIMEOUT_MS = 5400000;
 const IMPLEMENT_TIMEOUT_MS = 14400000;
 const WAIT_TIMEOUT_MS = 7200000;
 const CHILD_START_TIMEOUT_MS = 300000;
+// A dispatch normally takes seconds; the cap exists to catch a runaway loop before it burns the 20-minute default.
+export const DISPATCH_TIMEOUT_MS = 300000;
 const PIDS_GONE_TIMEOUT_MS = 20000;
 
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -312,6 +314,8 @@ async function dispatchTest(name, ctx, harness) {
         runDir,
         "--cwd",
         repo,
+        "--timeout-ms",
+        String(DISPATCH_TIMEOUT_MS),
         ...(harness ? ["--harness", harness] : []),
       ],
       runnerOpts(env, repo, ctx.signal),

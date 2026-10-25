@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { FIXTURE_TAG } from "./fixtures/tinycalc/calc.js";
 import {
+  DISPATCH_TIMEOUT_MS,
   HANDOFF_RESERVE,
   HANDOFF_TOKENS,
   TESTS,
@@ -51,6 +52,10 @@ test("TESTS holds the six live tests in order, each with a run function", () => 
 test("the handoff budget constants are 8500 tokens and 6000 reserve", () => {
   assert.equal(HANDOFF_TOKENS, 8500);
   assert.equal(HANDOFF_RESERVE, 6000);
+});
+
+test("the dispatch timeout is 5 minutes", () => {
+  assert.equal(DISPATCH_TIMEOUT_MS, 300000);
 });
 
 test("the fixture carries a tag the child cannot guess", () => {
@@ -302,7 +307,13 @@ function fakeCtx(ok) {
 
 test("dispatch-pi passes against a fake runner that writes a plausible result", async () => {
   const t = TESTS.find((x) => x.name === "dispatch-pi");
-  const r = await t.run(fakeCtx(true));
+  const base = fakeCtx(true);
+  const runner = async (args, opts) => {
+    assert.equal(args[args.indexOf("--timeout-ms") + 1], String(DISPATCH_TIMEOUT_MS), "the dispatch is capped at the dispatch timeout");
+    return base.runner(args, opts);
+  };
+  const ctx = { ...base, runner };
+  const r = await t.run(ctx);
   assert.equal(r.name, "dispatch-pi");
   assert.equal(r.pass, true, r.detail);
   assert.equal(r.detail, "");
