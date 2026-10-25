@@ -274,6 +274,36 @@ fs.writeFileSync(
   assert.deepEqual(r.json.looped, { extractor: 1 });
 }
 
+// A single pair the exact fit covers but nearest rounding would drop: the
+// slope 2665 / 1001 is 2.6623, which rounds down to 2.66, leaving a 2.34
+// residual that rounds down to 2 (7000 + 2.66 * 1001 + 2 = 9664.66 < 9665,
+// not covered); rounding up to 2.67 leaves no residual (7000 + 2.67 * 1001
+// = 9672.67 >= 9665, covered), so upward rounding keeps the pair.
+{
+  const tree3 = path.join(tmp, "tree3");
+  fs.mkdirSync(tree3, { recursive: true });
+  transcriptIn(tree3, "implementer", [assistant(7000), assistant(1000, 8000)]);
+  const settle = (key, runId, result) => ({ type: "settle", key, runId, fingerprint: "f", at: "t", result });
+  fs.writeFileSync(
+    path.join(tree3, "children.jsonl"),
+    [
+      settle("intake", "intake-run", {
+        status: "done",
+        loop: null,
+        structuredOutput: { ok: true, tasks: [{ id: "drop-a", est: 9665, bytes: 4004 }] },
+      }),
+      settle("impl-drop-a", "impl-drop-run", { status: "done", loop: null, usage: { firstContext: 9665, peakContext: 9700 } }),
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n") + "\n",
+  );
+  const r = run([tree3, "--min-samples", "1"]);
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.plan_fit, { pairs: 1, k_read: 2.67, growth_p90: 0, covered: 1, coverage: 1 });
+  assert.equal(r.json.roles.implementer.k_read, 2.67);
+  assert.equal(r.json.roles.implementer.growth_p90, 0);
+}
+
 // A loop of links ends where the real directories run out; a root that is
 // only links resolves nowhere and is an error.
 {
