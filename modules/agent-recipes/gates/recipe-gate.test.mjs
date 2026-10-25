@@ -750,7 +750,7 @@ const gate = (...args) => {
   const ok = gateIn(wt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "a.txt");
   assert.equal(ok.status, 0);
   assert.equal(ok.json.ok, true, ok.json.reason);
-  assert.deepEqual(ok.json.identity, { expected: { name: "agent", email: "agent@example.com" }, mismatched: [] });
+  assert.deepEqual(ok.json.identity, { expected: { name: "agent", email: "agent@example.com" }, mismatched: [], unreadable: false });
 
   // A commit made with an overridden identity fails and is listed.
   fs.writeFileSync(path.join(wt, "a.txt"), "a3\n");
@@ -764,6 +764,58 @@ const gate = (...args) => {
   assert.match(bad.json.reason, /^commits not made with the configured git identity agent <agent@example\.com>: /);
   assert.deepEqual(bad.json.identity.mismatched, [`${badSha} agent <agent@localhost>`]);
   assert.match(bad.json.reason, new RegExp(`${badSha} agent <agent@localhost>`));
+
+  // A commit wrong only in user.name (the email is the configured one) fails.
+  const nmWt = path.join(dir(), "wtnm");
+  git(source, "worktree", "add", "-q", "-b", "pi/nm", nmWt, "main");
+  fs.writeFileSync(path.join(nmWt, "n.txt"), "n\n");
+  git(nmWt, "add", "-A");
+  const nmCommit = spawnSync("git", ["-c", "user.name=wrongname", "commit", "-q", "-m", "wrong name"], {
+    cwd: nmWt,
+    env: overrideEnv,
+    encoding: "utf8",
+  });
+  assert.equal(nmCommit.status, 0, nmCommit.stderr);
+  const nmSha = git(nmWt, "rev-parse", "--short", "HEAD");
+  const nm = gateIn(nmWt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "n.txt");
+  assert.equal(nm.status, 0);
+  assert.equal(nm.json.ok, false, nm.json.reason);
+  assert.match(nm.json.reason, new RegExp(`${nmSha} wrongname <agent@example\\.com>`));
+
+  // A commit wrong only in the committer email fails even though the author is right.
+  const ccWt = path.join(dir(), "wtcc");
+  git(source, "worktree", "add", "-q", "-b", "pi/cc", ccWt, "main");
+  fs.writeFileSync(path.join(ccWt, "cc.txt"), "cc\n");
+  git(ccWt, "add", "-A");
+  const ccCommit = spawnSync("git", ["commit", "-q", "-m", "wrong committer"], {
+    cwd: ccWt,
+    env: { ...env, GIT_COMMITTER_EMAIL: "agent@localhost" },
+    encoding: "utf8",
+  });
+  assert.equal(ccCommit.status, 0, ccCommit.stderr);
+  const ccSha = git(ccWt, "rev-parse", "--short", "HEAD");
+  const cc = gateIn(ccWt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "cc.txt");
+  assert.equal(cc.status, 0);
+  assert.equal(cc.json.ok, false, cc.json.reason);
+  assert.match(cc.json.reason, new RegExp(`${ccSha} agent <agent@example\\.com>`));
+
+  // A commit made with an empty email has a log line with no address; it must
+  // be a mismatch, not an unparseable line that passes.
+  const eeWt = path.join(dir(), "wtee");
+  git(source, "worktree", "add", "-q", "-b", "pi/ee", eeWt, "main");
+  fs.writeFileSync(path.join(eeWt, "ee.txt"), "ee\n");
+  git(eeWt, "add", "-A");
+  const eeCommit = spawnSync("git", ["-c", "user.email=", "commit", "-q", "-m", "empty email"], {
+    cwd: eeWt,
+    env: overrideEnv,
+    encoding: "utf8",
+  });
+  assert.equal(eeCommit.status, 0, eeCommit.stderr);
+  const eeSha = git(eeWt, "rev-parse", "--short", "HEAD");
+  const ee = gateIn(eeWt, "task", report("done"), "--repo", source, "--check", "true", "--owns", "ee.txt");
+  assert.equal(ee.status, 0);
+  assert.equal(ee.json.ok, false, ee.json.reason);
+  assert.deepEqual(ee.json.identity.mismatched, [`${eeSha} agent <>`]);
 
   // With no user.email configured the check is skipped.
   const unconfigured = dir();
@@ -779,7 +831,7 @@ const gate = (...args) => {
   const skipped = gateIn(wt2, "task", report("done"), "--repo", unconfigured, "--check", "true", "--owns", "a.txt");
   assert.equal(skipped.status, 0);
   assert.equal(skipped.json.ok, true, skipped.json.reason);
-  assert.deepEqual(skipped.json.identity, { expected: null, mismatched: [] });
+  assert.deepEqual(skipped.json.identity, { expected: null, mismatched: [], unreadable: false });
 
   // integrate: fails when the integration branch holds such a commit, passes otherwise.
   const badid = path.join(dir(), "badid");
@@ -808,6 +860,11 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(goodid, "c.txt"), "c\n");
   git(goodid, "add", "-A");
   git(goodid, "commit", "-q", "-m", "good identity");
+  // Main's own history is not the run's work: a commit on main by another
+  // identity, made before the pin, must not fail integrate.
+  fs.writeFileSync(path.join(source, "main.txt"), "main\n");
+  git(source, "add", "-A");
+  overrideCommit(source, "main history");
   const plan2 = dir();
   gateIn(source, "pin", plan2, "--repo", source);
   const iw2 = path.join(plan2, "integration");
@@ -819,6 +876,23 @@ const gate = (...args) => {
   assert.equal(passed.status, 0);
   assert.equal(passed.json.ok, true, passed.json.reasons.join("; "));
   assert.deepEqual(passed.json.reasons, []);
+
+  // A pinned base the repository no longer holds cannot be logged; integrate
+  // must say so instead of passing.
+  const plan3 = dir();
+  gateIn(source, "pin", plan3, "--repo", source);
+  const ledger = JSON.parse(fs.readFileSync(path.join(plan3, "run.json"), "utf8"));
+  ledger.base = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+  fs.writeFileSync(path.join(plan3, "run.json"), JSON.stringify(ledger, null, 2) + "\n");
+  const iw3 = path.join(plan3, "integration");
+  git(source, "worktree", "add", "-q", "-b", "implement/z", iw3, "main");
+  git(iw3, "merge", "-q", "--no-edit", "pi/goodid");
+  fs.writeFileSync(path.join(plan3, "pr.md"), "Title\n");
+  fs.writeFileSync(path.join(plan3, "heavy.md"), "none\n");
+  const unreadable = gateIn(source, "integrate", plan3, "--tasks", "good:pi/goodid", "--branch", "implement/z");
+  assert.equal(unreadable.status, 0);
+  assert.equal(unreadable.json.ok, false, unreadable.json.reasons.join("; "));
+  assert.ok(unreadable.json.reasons.some((s) => s.startsWith("commits could not be read: ")));
 }
 
 // integrate --tidy: after a passing check, merged tasks lose their worktree and

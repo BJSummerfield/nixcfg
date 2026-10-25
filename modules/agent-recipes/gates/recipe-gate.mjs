@@ -40,7 +40,7 @@
 //                 [--base SHA] [--run DIR --id ID]
 //                                  run in a task worktree -> {ok, reason, report:{status,
 //                                  why}, branch, worktree, head, base, clean, commits,
-//                                  identity:{expected, mismatched}, files, outside,
+//                                  identity:{expected, mismatched, unreadable}, files, outside,
 //                                  check:{command, exit, tail, signature},
 //                                  verify:{command, exit, tail, signature} | null, signature}
 //   repro <dir> --command CMD [--expect fail|pass] [--id ID] [--in DIR]
@@ -141,11 +141,13 @@
 // `sh -c` in the working directory (--in DIR replaces it for everything the
 // gate does); ok needs a passing report, at least one commit, a clean tree, no
 // outside files, every commit in base..HEAD made with the configured git
-// identity (author and committer; skipped when the worktree configures no
-// user.email), verify exit 0 and check exit 0, and reason names the first
-// failure. --check is optional when --verify is given. --verify is run before
-// the check under the same condition (a passing report and a HEAD); a command
-// that was not run has exit null. Each command may take 10 minutes.
+// identity (author and committer; a log that cannot be read is a failure and
+// a log line that cannot be parsed counts as a mismatch; skipped when the
+// worktree configures no user.email), verify exit 0 and check exit 0, and
+// reason names the first failure. --check is optional when --verify is
+// given. --verify is run before the check under the same condition (a passing
+// report and a HEAD); a command that was not run has exit null. Each command
+// may take 10 minutes.
 // signature is null when ok; otherwise a hash of the normalised output of the
 // command that failed (verify first), or of the normalised reason when no
 // command failed. The output is the command's stdout, a `--- stderr ---`
@@ -186,10 +188,11 @@
 // and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
 // merged lists the task ids whose branch is an ancestor of its HEAD. ok needs
 // every task merged, a clean tree, every commit since the run's pinned base
-// made with the configured git identity, a pull request text and heavy checks
-// that passed or were not needed. With --tidy yes and ok true it then removes the
-// worktree and deletes the branch of every merged task, and prunes stale
-// worktree entries; tidied lists those tasks and tidy_problems what it kept.
+// made with the configured git identity (a log that cannot be read fails the
+// check), a pull request text and heavy checks that passed or were not
+// needed. With --tidy yes and ok true it then removes the worktree and
+// deletes the branch of every merged task, and prunes stale worktree entries;
+// tidied lists those tasks and tidy_problems what it kept.
 // It then clears the review and dependency worktrees and the base ref the run
 // recorded, leaving the integration branch and any set-aside task worktrees.
 // The commit of each branch is written to <dir>/tidied.json before the branch
@@ -728,14 +731,27 @@ function runCommand(cwd, command) {
 function commitIdentities(cwd, range) {
   const email = git(cwd, ["config", "user.email"]);
   const name = git(cwd, ["config", "user.name"]);
-  if (!email) return { expected: null, mismatched: [] };
+  if (!email) return { expected: null, mismatched: [], unreadable: false };
+  const expected = { name: name ?? null, email };
+  const log = git(cwd, ["log", "--format=%h %an <%ae> %cn <%ce>", range]);
+  if (log === null) return { expected, mismatched: [], unreadable: true };
+  // An empty name or email is legal (`git -c user.email= commit` succeeds),
+  // so each field may be empty, and a line that still does not parse is a
+  // mismatch, since it cannot be judged.
   const matches = (n, e) => e === email && (!name || n === name);
   const mismatched = [];
-  for (const line of (git(cwd, ["log", "--format=%h %an <%ae> %cn <%ce>", range]) ?? "").split("\n")) {
-    const m = line.match(/^(\S+) (.+?) <(.+)> (.+?) <(.+)>$/);
-    if (m && (!matches(m[2], m[3]) || !matches(m[4], m[5]))) mismatched.push(`${m[1]} ${m[2]} <${m[3]}>`);
+  for (const line of log.split("\n")) {
+    if (!line) continue;
+    const m = line.match(/^(\S+) (.*?) <(.*?)> (.*?) <([^<>]*)>$/);
+    if (!m) {
+      mismatched.push(line);
+      continue;
+    }
+    const nameA = m[2].trim();
+    const nameC = m[4].trim();
+    if (!matches(nameA, m[3]) || !matches(nameC, m[5])) mismatched.push(`${m[1]} ${nameA} <${m[3]}>`);
   }
-  return { expected: { name: name ?? null, email }, mismatched };
+  return { expected, mismatched, unreadable: false };
 }
 
 const identityLabel = ({ name, email }) => (name ? `${name} <${email}>` : email);
@@ -763,7 +779,7 @@ function task(report, flags) {
   const changed = base && fromBase ? (git(cwd, ["diff", "--name-only", base, "HEAD"]) ?? "").split("\n").filter(Boolean) : [];
   const clean = git(cwd, ["status", "--porcelain"]) === "";
   const outside = owns.length ? changed.filter((f) => !owned(f, owns)) : [];
-  const identity = base && fromBase ? commitIdentities(cwd, `${base}..HEAD`) : { expected: null, mismatched: [] };
+  const identity = base && fromBase ? commitIdentities(cwd, `${base}..HEAD`) : { expected: null, mismatched: [], unreadable: false };
 
   const check = { command: flags.check ?? null, exit: null, tail: "", signature: null };
   const verify = flags.verify ? { command: flags.verify, exit: null, tail: "", signature: null } : null;
@@ -786,6 +802,7 @@ function task(report, flags) {
   else if (commits === 0) reason = "no commits on the branch";
   else if (!clean) reason = "uncommitted changes in the worktree";
   else if (outside.length) reason = `changed files outside owns: ${outside.slice(0, LIST_CAP).join(", ")}`;
+  else if (identity.unreadable) reason = `commits could not be read: git log ${base}..HEAD failed`;
   else if (identity.mismatched.length)
     reason = `commits not made with the configured git identity ${identityLabel(identity.expected)}: ${identity.mismatched.slice(0, LIST_CAP).join(", ")}`;
   else if (verify && verify.exit !== 0) reason = `verify failed (exit ${verify.exit}): ${verify.tail}`;
@@ -918,7 +935,8 @@ function integrate(dir, flags) {
   if (head && !clean) reasons.push("uncommitted changes in the integration worktree");
   if (head && pinned) {
     const identity = commitIdentities(worktree, `${pinned}..HEAD`);
-    if (identity.mismatched.length)
+    if (identity.unreadable) reasons.push(`commits could not be read: git log ${pinned}..HEAD failed`);
+    else if (identity.mismatched.length)
       reasons.push(`commits not made with the configured git identity ${identityLabel(identity.expected)}: ${identity.mismatched.slice(0, LIST_CAP).join(", ")}`);
   }
   if (!pr_text) reasons.push("pr.md missing or empty");
