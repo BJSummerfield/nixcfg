@@ -4,15 +4,17 @@ import { joinSpec, piecesStatus, reviewRange, splitItem, takePieces } from "./sp
 export default async function implement(args, port) {
   const lib = recipeLib(port);
   const {
-    afterHandoff,
     askDecision,
+    beginRelay,
     board,
+    clearRelay,
     decide,
     diagnose,
     diagnosisItem,
     exhausted,
     exhaustedQuestion,
     handedOff,
+    handoffCall,
     handoffTrack,
     launch,
     list,
@@ -21,9 +23,10 @@ export default async function implement(args, port) {
     quote,
     readDiagnosis,
     receipt,
-    relayLines,
-    remainderOf,
+    relayBriefLines,
+    reportHandoff,
     short,
+    stampRelay,
     stoppedItself,
     subjectOf,
     troubleOf,
@@ -311,7 +314,7 @@ export default async function implement(args, port) {
       if (t.earlierReview) lines.push("Earlier review: " + t.earlierReview);
     }
     if (t.relayRef) {
-      relayLines(t.relayNote, t.relayRef.replace(/^refs\/heads\//, "")).forEach(function (l) {
+      relayBriefLines(t).forEach(function (l) {
         lines.push(l);
       });
       if (t.relayFindings) lines.push(t.relayFindings);
@@ -334,13 +337,7 @@ export default async function implement(args, port) {
       timeoutMs: bigMs,
       worktree: true,
     });
-    item.baseRef = t.relayRef || t.baseRef;
-    if (t.relayRef && t.handoffFrom) {
-      item.handoffOf = t.handoffFrom;
-      item.handoffAs = "relay";
-      t.handoffFrom = null;
-    }
-    return item;
+    return stampRelay(item, t, t.baseRef);
   }
 
   function takeImplementation(t, result) {
@@ -374,32 +371,22 @@ export default async function implement(args, port) {
     needFix(t, "The task check reported: " + g.reason);
   }
 
-  // A child that wrote its note in the report but whose reply did not carry the
-  // handoff line is still a handoff, since the task gate read the report.
   function handoffOf(result, g) {
     const given = handedOff(result);
     if (given) return given;
-    if (g.report && g.report.status === "handoff") {
-      return { line: String(g.reason || "").replace(/^report handoff:\s*/i, ""), unread: [], note: result.file, empty: false };
-    }
-    return null;
+    return reportHandoff(g, result.file);
   }
 
   function takeHandoff(t, handoff, g, result, step) {
     t.head = g.head;
-    const next = afterHandoff(t.track, {
-      head: g.head,
-      commits: g.commits,
+    const next = handoffCall(t.track, handoff, g, {
       firstContext: result.usage && result.usage.firstContext,
       budgetTokens: result.budget && result.budget.tokens,
-      remainder: remainderOf(handoff, g.head),
     });
     t.relayNote = handoff.note || null;
     if (next.action === "relay") {
       noteMade(t.id, "relay", g.branch || t.branch, g.worktree || t.worktree);
-      t.track.relays++;
-      t.relayRef = "refs/heads/" + t.branch;
-      t.handoffFrom = t.runId;
+      beginRelay(t, t.track, { branch: t.branch, note: handoff.note, from: t.runId });
       t.relayFindings = step === "fix" ? t.findings : null;
       t.next = "implement";
       return;
@@ -572,8 +559,7 @@ export default async function implement(args, port) {
     t.extraFix = false;
     t.lastReview = null;
     t.runId = null;
-    t.relayRef = null;
-    t.relayNote = null;
+    clearRelay(t);
     t.relayFindings = null;
     t.track.heads = [];
     t.joined = false;
@@ -632,6 +618,7 @@ export default async function implement(args, port) {
         track: handoffTrack(),
         head: null,
         relayRef: null,
+        relayBranch: null,
         handoffFrom: null,
         relayNote: null,
         relayFindings: null,
@@ -719,8 +706,7 @@ export default async function implement(args, port) {
       if (t.next !== "fix" || !t.joined) return;
       t.fixes++;
       t.extraFix = false;
-      t.relayRef = "refs/heads/" + t.branch;
-      t.relayNote = null;
+      beginRelay(t, null, { branch: t.branch, note: null, from: null });
       t.relayFindings = t.findings;
       t.next = "implement";
     });
