@@ -1,5 +1,5 @@
-// Ends a recipe-runner child cleanly when it stops converging or outgrows its
-// context budget.
+// Ends a recipe-runner child cleanly when it stops converging, and confines
+// a resumed handoff turn to its lane.
 //
 // A cut-off reply gets one more turn to carry on in smaller pieces; a second
 // cut-off gets one final, tool-permitting notice to save partial work and
@@ -7,8 +7,12 @@
 // tool-blocking notice to stop and reply FAILED: right away, since more
 // tool calls are exactly what did not converge.
 //
-// A child at its budget (RECIPE_BUDGET_TOKENS) hands off before pi compacts it
-// and loses what it knew, and is ended soon after so it cannot keep growing.
+// The runner kills a child that hit its context budget and resumes the
+// session with a handoff brief. On that resumed turn it sets
+// RECIPE_HANDOFF_GUARD; while guarded the valve refuses every tool call but
+// a write of the output file and, for a commit action, whitelisted git
+// subcommands, and the truncation and thrash handling stays off. The runner
+// ends the turn, so a refusal the valve issues is never terminal.
 //
 // Install outside ~/.pi/agent/extensions. pi loads everything in that directory
 // into every session, the interactive one included; recipe-runner children
@@ -19,8 +23,6 @@ import path from "node:path";
 const PI_RESERVE_TOKENS = 4096;
 const MIN_RECOVERY_HEADROOM_TOKENS = 2000;
 const THRASH_COMPACTIONS = 3;
-const HANDOFF_TURNS = 4;
-const END_TURNS = 6;
 const HANDOFF_ACTIONS = ["commit", "unread", "stop"];
 const ALLOWED_GIT = new Set(["add", "commit", "status", "diff", "log", "show", "rev-parse"]);
 
@@ -45,38 +47,6 @@ const THRASH =
 
 const BLOCKED = "Blocked: this run is ending. Reply in text, first line starting `FAILED: compaction thrash`.";
 
-function handoffText(action, output, budget) {
-  const where = output ? `the file ${output}` : "your reply";
-  const first =
-    "The first line, in the note and in your reply, is `handoff: <what is done; what is left>`.";
-  const opening =
-    `Your context has reached its budget of ${budget} tokens. Stop new work now: read nothing more, ` +
-    "start nothing new. ";
-  if (action === "commit") {
-    return (
-      opening +
-      "Commit everything you changed with git first, then write the note to " +
-      `${where} with the sections Done, Left and Watch for. ${first} ` +
-      "Only git and writing that file are allowed from now on; anything else is refused."
-    );
-  }
-  if (action === "unread") {
-    return (
-      opening +
-      `Write the partial result you have so far to ${where}, in the format your task asks for, in one write. ` +
-      `${first} Directly under that first line, before the partial result, put one line ` +
-      "`unread: <path>` for each input you have not read in full. " +
-      "Repeat the unread lines in your reply. " +
-      "Only writing that file is allowed from now on; anything else is refused."
-    );
-  }
-  return (
-    opening +
-    `Write what you have found so far to ${where}, in the format your task asks for. ${first} ` +
-    "Only writing that file is allowed from now on; anything else is refused."
-  );
-}
-
 function blockedText(action, output) {
   const allowed =
     action === "commit"
@@ -99,10 +69,6 @@ function outputHeadroom(ctx, message) {
   const tokens = usage?.tokens ?? contextTokensOf(message?.usage);
   if (!window) return Infinity;
   return window - tokens - PI_RESERVE_TOKENS;
-}
-
-function contextTokens(ctx, message) {
-  return ctx?.getContextUsage?.()?.tokens ?? contextTokensOf(message?.usage);
 }
 
 // Splits a shell command on `&&`, `;` and newlines outside quotes into token
@@ -182,20 +148,9 @@ export default function budgetValve(pi, env = process.env) {
   let ending = false;
   let blockedTurns = 0;
 
-  const budget = Number(env.RECIPE_BUDGET_TOKENS);
-  const sizeTrigger = Number.isFinite(budget) && budget > 0;
-  const reserve = Number(env.RECIPE_BUDGET_RESERVE);
-  const hasReserve = Number.isFinite(reserve) && reserve > 0;
+  const guarded = env.RECIPE_HANDOFF_GUARD === "1";
   const action = HANDOFF_ACTIONS.includes(env.RECIPE_HANDOFF_ACTION) ? env.RECIPE_HANDOFF_ACTION : "stop";
   const output = env.RECIPE_OUTPUT ? path.resolve(env.RECIPE_OUTPUT) : null;
-  const role = env.RECIPE_ROLE ?? null;
-  let fired = false;
-  let firedTokens = 0;
-  let handoffEnded = false;
-  let turnsSinceFire = 0;
-  let noteDone = false;
-  let commitDone = false;
-  const handoffCalls = new Map();
 
   const send = (customType, text, deliverAs, display) =>
     pi.sendMessage(
@@ -205,24 +160,6 @@ export default function budgetValve(pi, env = process.env) {
 
   const hasToolCall = (message) => message.content?.some?.((b) => b?.type === "toolCall");
 
-  const handoffCheck = (event, ctx, message) => {
-    turnsSinceFire += 1;
-    if (handoffEnded) return;
-    for (const result of event?.toolResults ?? []) {
-      const kind = handoffCalls.get(result?.toolCallId);
-      if (!kind || result.isError) continue;
-      if (kind === "note") noteDone = true;
-      else commitDone = true;
-    }
-    if (!hasToolCall(message)) return;
-    const tokens = contextTokens(ctx, message);
-    const done = noteDone && (action !== "commit" || commitDone);
-    if (!done && !(hasReserve && tokens >= firedTokens + reserve) && turnsSinceFire < END_TURNS) return;
-    handoffEnded = true;
-    pi.appendEntry("budget-valve", { kind: "ended", tokens, turns: turnsSinceFire });
-    ctx.abort();
-  };
-
   pi.on("turn_end", async (event, ctx) => {
     const message = event?.message;
     if (!message || message.role !== "assistant") return;
@@ -230,21 +167,7 @@ export default function budgetValve(pi, env = process.env) {
       if (hasToolCall(message)) blockedTurns += 1;
       return;
     }
-    if (fired) {
-      handoffCheck(event, ctx, message);
-      return;
-    }
-    if (sizeTrigger && (message.stopReason === "toolUse" || hasToolCall(message))) {
-      const tokens = contextTokens(ctx, message);
-      if (tokens >= budget) {
-        fired = true;
-        firedTokens = tokens;
-        pi.appendEntry("budget-valve", { kind: "handoff", role, action, budget, reserve, tokens });
-        await send("budget-valve-handoff", handoffText(action, output, budget), "steer", "Budget valve: handing off at the context budget");
-        return;
-      }
-    }
-    if (message.stopReason !== "length") return;
+    if (guarded || message.stopReason !== "length") return;
     if (cutoffs === 0) {
       // A recovery turn this close to the window inherits the same dead ceiling.
       if (outputHeadroom(ctx, message) < MIN_RECOVERY_HEADROOM_TOKENS) return;
@@ -261,7 +184,7 @@ export default function budgetValve(pi, env = process.env) {
   });
 
   pi.on("session_compact", async () => {
-    if (ending || fired) return;
+    if (ending || guarded) return;
     compactionsSinceWrite += 1;
     if (compactionsSinceWrite < THRASH_COMPACTIONS) return;
     ending = true;
@@ -284,16 +207,8 @@ export default function budgetValve(pi, env = process.env) {
 
   pi.on("tool_call", (event, ctx) => {
     if (ending) return { block: true, reason: BLOCKED, terminate: blockedTurns >= 1 };
-    if (!fired) return undefined;
-    const kind = handoffKind(event, ctx);
-    if (kind) {
-      if (kind !== "git" && event?.toolCallId !== undefined) handoffCalls.set(event.toolCallId, kind);
-      return undefined;
-    }
-    return {
-      block: true,
-      reason: blockedText(action, output),
-      terminate: handoffEnded || turnsSinceFire >= HANDOFF_TURNS,
-    };
+    if (!guarded) return undefined;
+    if (handoffKind(event, ctx)) return undefined;
+    return { block: true, reason: blockedText(action, output) };
   });
 }
