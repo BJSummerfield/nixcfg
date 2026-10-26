@@ -397,6 +397,107 @@ test("--force skips the engine check", async () => {
   assert.equal(spawn.launches.length, 1);
 });
 
+const oneDefect = (name) => ({ name, base: "a", head: "b", task: "t", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] });
+
+test("scoring: a deeper heading inherits the section of its enclosing heading", async () => {
+  const names = ["nested", "smallsub", "reset", "sibling", "topsmall"];
+  const cases = writeCases(path.join(tmp, "cases-nested.json"), names.map(oneDefect));
+  const out = path.join(tmp, "out-nested");
+  const reviews = {
+    nested: "# Review\n\n## Blocking findings\n\n### B1. Some title\n\nan OVERFLOW\n",
+    smallsub: "## Blocking findings\n\nnothing here\n\n### S1 (small)\n\nan OVERFLOW\n",
+    reset: "## Blocking findings\n\nnothing\n\n## Notes\n\nan OVERFLOW\n",
+    sibling: "## Blocking findings\n\n### B1. x\n\nnothing\n\n### B2. y\n\nan OVERFLOW\n\n## Notes\n\n### N1\n\nstill fine\n",
+    topsmall: "## Small findings\n\n### S1. title\n\nan OVERFLOW\n\n## Blocking findings\n\n### B1. title\n\nnothing\n",
+  };
+  const resp = {};
+  for (const n of names) resp[path.join(out, n, "a", "1", "review.md")] = { review: reviews[n], result: result("needs-work", 60000) };
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn: makeSpawn(resp) });
+  assert.equal(r.code, 0);
+  const rows = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a.rows;
+  const byCase = Object.fromEntries(rows.map((x) => [x.case, x.defects[0].named_in]));
+  assert.deepEqual(byCase, { nested: "blocking", smallsub: "small", reset: "other", sibling: "blocking", topsmall: "small" });
+});
+
+test("resume: a repeat with a saved result is scored without dispatching; --rerun dispatches again", async () => {
+  const cases = writeCases(path.join(tmp, "cases-resume.json"), [oneDefect("c1"), oneDefect("c2")]);
+  const out = path.join(tmp, "out-resume");
+  const review = (n) => path.join(out, n, "a", "1", "review.md");
+  const first = makeSpawn({ [review("c1")]: { review: "an OVERFLOW", result: result("needs-work", 60000) } });
+  fs.mkdirSync(path.dirname(review("c2")), { recursive: true });
+  fs.writeFileSync(review("c2"), "nope");
+  fs.writeFileSync(path.join(path.dirname(review("c2")), "result.json"), JSON.stringify(result("clean", 60000)));
+  const r1 = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn: first });
+  assert.equal(r1.code, 0);
+  assert.equal(first.launches.length, 1, "only the repeat without a result is dispatched");
+  const rows = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a.rows;
+  assert.deepEqual(rows.map((x) => [x.case, x.verdict, x.ran]), [["c1", "needs-work", true], ["c2", "clean", true]]);
+
+  const r2 = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn: makeSpawn({}) });
+  assert.equal(r2.code, 0, "nothing to dispatch");
+
+  const again = makeSpawn({
+    [review("c1")]: { review: "an OVERFLOW", result: result("clean", 60000) },
+    [review("c2")]: { review: "an OVERFLOW", result: result("clean", 60000) },
+  });
+  const r3 = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--rerun"], { spawn: again });
+  assert.equal(r3.code, 0);
+  assert.equal(again.launches.length, 2);
+});
+
+test("--rescore dispatches nothing, skips the engine check and reports missing results as not run", async () => {
+  const cases = writeCases(path.join(tmp, "cases-rescore.json"), [oneDefect("c1"), oneDefect("c2"), oneDefect("c3")]);
+  const out = path.join(tmp, "out-rescore");
+  const dir = (n, rep) => path.join(out, n, "a", String(rep));
+  fs.mkdirSync(dir("c1", 1), { recursive: true });
+  fs.writeFileSync(path.join(dir("c1", 1), "review.md"), "## Blocking findings\n\n### B1. t\n\nan OVERFLOW\n");
+  fs.writeFileSync(path.join(dir("c1", 1), "result.json"), JSON.stringify(result("needs-work", 60000)));
+  fs.mkdirSync(dir("c2", 1), { recursive: true });
+  const spawn = makeSpawn({});
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--rescore"], { spawn, fetchThrows: true });
+  assert.equal(r.code, 0);
+  assert.equal(spawn.launches.length, 0);
+  assert.match(r.stdout, /c2 1: not run/);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  assert.equal(entry.summary.named_blocking, 1);
+  assert.equal(entry.rows.length, 1);
+  assert.deepEqual(entry.notRun, [{ case: "c2", repeat: 1 }]);
+  assert.ok(!fs.existsSync(dir("c3", 1)), "no directory is created for a repeat that never existed");
+});
+
+test("--timeout-ms replaces the dispatch timeout and must be a positive integer", async () => {
+  const cases = writeCases(path.join(tmp, "cases-timeout.json"), [oneDefect("c1")]);
+  const out = path.join(tmp, "out-timeout");
+  const spawn = makeSpawn({ [path.join(out, "c1", "a", "1", "review.md")]: { review: "x", result: result("clean", 1000) } });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--timeout-ms", "5000"], { spawn });
+  assert.equal(r.code, 0);
+  assert.equal(valueAt(spawn.launches[0].args, "--timeout-ms"), "5000");
+  const bad = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--timeout-ms", "0"], { spawn: makeSpawn({}) });
+  assert.equal(bad.code, 2);
+});
+
+test("--grades overrides the regex result and marks graded defects", async () => {
+  const cases = writeCases(path.join(tmp, "cases-grades.json"), [
+    { ...oneDefect("c1"), defects: [{ id: "d1", match: ["overflow"] }, { id: "d2", match: ["leak"] }] },
+  ]);
+  const out = path.join(tmp, "out-grades");
+  const gradesFile = path.join(tmp, "grades.json");
+  fs.writeFileSync(gradesFile, JSON.stringify({ "c1/a/1": { d1: "none", d2: "blocking" } }));
+  const spawn = makeSpawn({ [path.join(out, "c1", "a", "1", "review.md")]: { review: "an OVERFLOW", result: result("needs-work", 1000) } });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--grades", gradesFile], { spawn });
+  assert.equal(r.code, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  assert.deepEqual(entry.rows[0].defects, [
+    { id: "d1", found: false, named_in: "none", graded: true },
+    { id: "d2", found: true, named_in: "blocking", graded: true },
+  ]);
+  assert.equal(entry.summary.named_blocking, 1);
+  assert.match(r.stdout, /graded by hand/);
+  fs.writeFileSync(gradesFile, JSON.stringify({ "c1/a/1": { d1: "maybe" } }));
+  const bad = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--grades", gradesFile], { spawn: makeSpawn({}) });
+  assert.equal(bad.code, 2);
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

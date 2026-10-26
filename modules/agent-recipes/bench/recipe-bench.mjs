@@ -11,7 +11,7 @@ const RUNNER_CLI = fileURLToPath(new URL("../runner/cli.mjs", import.meta.url));
 const DISPATCH_TIMEOUT_MS = 20 * 60 * 1000;
 const ERROR_TAIL = 500;
 
-const USAGE = "usage: recipe-bench <cases.json> --config <name>=<file>[@<harness>] [--config ...] [--repeat N] [--out DIR] [--force]";
+const USAGE = "usage: recipe-bench <cases.json> --config <name>=<file>[@<harness>] [--config ...] [--repeat N] [--out DIR] [--force] [--rerun] [--rescore] [--timeout-ms N] [--grades FILE]";
 
 class UsageError extends Error {}
 
@@ -32,21 +32,30 @@ function parseConfigSpec(spec) {
 }
 
 function parseArgs(argv) {
-  const opts = { cases: null, configs: [], repeat: 1, out: null, force: false };
+  const opts = { cases: null, configs: [], repeat: 1, out: null, force: false, rerun: false, rescore: false, timeoutMs: DISPATCH_TIMEOUT_MS, grades: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--config" || arg === "--out" || arg === "--repeat") {
+    if (arg === "--config" || arg === "--out" || arg === "--repeat" || arg === "--timeout-ms" || arg === "--grades") {
       const value = argv[++i];
       if (value === undefined) throw new UsageError(`flag ${arg} needs a value`);
       if (arg === "--config") opts.configs.push(parseConfigSpec(value));
       else if (arg === "--out") opts.out = value;
-      else {
+      else if (arg === "--grades") opts.grades = value;
+      else if (arg === "--timeout-ms") {
+        const n = Number(value);
+        if (!Number.isInteger(n) || n < 1) throw new UsageError(`--timeout-ms must be a positive integer: ${value}`);
+        opts.timeoutMs = n;
+      } else {
         const n = Number(value);
         if (!Number.isInteger(n) || n < 1) throw new UsageError(`--repeat must be a positive integer: ${value}`);
         opts.repeat = n;
       }
     } else if (arg === "--force") {
       opts.force = true;
+    } else if (arg === "--rerun") {
+      opts.rerun = true;
+    } else if (arg === "--rescore") {
+      opts.rescore = true;
     } else if (arg.startsWith("-") && arg !== "-") {
       throw new UsageError(`unknown flag ${arg}`);
     } else if (opts.cases !== null) {
@@ -63,7 +72,31 @@ function parseArgs(argv) {
     names.add(config.name);
     if (!fs.existsSync(config.file)) throw new UsageError(`the runner config ${config.file} does not exist`);
   }
+  if (opts.grades !== null) opts.grades = loadGrades(opts.grades);
   return opts;
+}
+
+const GRADES = new Set(["blocking", "small", "other", "none"]);
+
+function loadGrades(file) {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    throw new UsageError(`cannot read the grades file ${file}: ${error.message}`);
+  }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new UsageError(`the grades file ${file} must be an object keyed by <case>/<config>/<repeat>`);
+  }
+  for (const [key, defects] of Object.entries(data)) {
+    if (defects === null || typeof defects !== "object" || Array.isArray(defects)) {
+      throw new UsageError(`grades for ${key} must be an object of defect id to grade`);
+    }
+    for (const [id, grade] of Object.entries(defects)) {
+      if (!GRADES.has(grade)) throw new UsageError(`grade for ${key} ${id} must be blocking, small, other or none: ${grade}`);
+    }
+  }
+  return data;
 }
 
 function loadCases(file) {
@@ -181,6 +214,17 @@ function makeRunner(deps) {
     });
 }
 
+function repeatsFor(opts, dir) {
+  if (!opts.rescore) return Array.from({ length: opts.repeat }, (_, i) => i + 1);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return names.filter((n) => /^[1-9][0-9]*$/.test(n)).map(Number).sort((a, b) => a - b);
+}
+
 function renderBrief(c, reviewFile) {
   return [
     "Review variant: Diff on a branch",
@@ -203,17 +247,23 @@ function readJson(file) {
   }
 }
 
-const HEADING = /^#{1,6}\s/;
+const HEADING = /^(#{1,6})\s/;
 
-// Section text is split on markdown headings so a defect named only under
-// "## Small findings" is not scored the same as one named under blocking.
+// A heading that names blocking or small sets the section; any other heading
+// inherits the section of the nearest enclosing higher-level heading, so
+// "### B1. title" under "## Blocking findings" stays blocking.
 function namedIn(reviewText, match) {
   const texts = { blocking: [], small: [], other: [] };
+  const stack = [];
   let section = "other";
   for (const line of reviewText.split("\n")) {
-    if (HEADING.test(line)) {
+    const heading = HEADING.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
       const h = line.toLowerCase();
-      section = h.includes("blocking") ? "blocking" : h.includes("small") ? "small" : "other";
+      section = h.includes("blocking") ? "blocking" : h.includes("small") ? "small" : (stack.at(-1)?.section ?? "other");
+      stack.push({ level, section });
     }
     texts[section].push(line);
   }
@@ -224,7 +274,7 @@ function namedIn(reviewText, match) {
   return "none";
 }
 
-function scoreCase({ reviewText, c, result }) {
+function scoreCase({ reviewText, c, result, grades }) {
   const structured = result?.structuredOutput;
   const verdict =
     structured !== null && typeof structured === "object" && typeof structured.verdict === "string"
@@ -232,6 +282,8 @@ function scoreCase({ reviewText, c, result }) {
       : "invalid";
   const defects = c.defects.map((d) => {
     const found = d.match.some((re) => re.test(reviewText));
+    const graded = grades?.[d.id];
+    if (graded !== undefined) return { id: d.id, found: graded !== "none", named_in: graded, graded: true };
     return { id: d.id, found, named_in: found ? namedIn(reviewText, d.match) : "none" };
   });
   const found = defects.filter((d) => d.found).length;
@@ -331,6 +383,8 @@ function formatConfig(name, entry) {
     `  invalid reviews      ${s.invalidReviews}`,
     `  median minutes       ${s.medianMinutes.toFixed(1)}`,
     `  tokens               prompt ${s.tokens.prompt} cached ${s.tokens.cached} output ${s.tokens.output}`,
+    ...(entry.rows.some((r) => r.defects.some((d) => d.graded)) ? ["  (* graded by hand)"] : []),
+    ...(entry.notRun?.length ? [`  not run              ${entry.notRun.map((n) => `${n.case}/${n.repeat}`).join(", ")}`] : []),
     "",
     renderTable(
       ["case", "repeat", "verdict", "defects", "named", "caught", "false-alarm", "minutes", "prompt", "cached", "output"],
@@ -339,7 +393,7 @@ function formatConfig(name, entry) {
         String(r.repeat),
         r.verdict,
         r.defects.length ? `${r.defects.filter((d) => d.found).length}/${r.defects.length}` : "-",
-        r.defects.length ? r.defects.map((d) => d.named_in).join("+") : "-",
+        r.defects.length ? r.defects.map((d) => (d.graded ? `${d.named_in}*` : d.named_in)).join("+") : "-",
         r.caught ? "yes" : "no",
         r.falseAlarm ? "yes" : "no",
         r.minutes.toFixed(1),
@@ -385,7 +439,7 @@ export async function main(argv, deps = {}) {
     return error instanceof UsageError ? 2 : 1;
   }
 
-  if (!opts.force) {
+  if (!opts.force && !opts.rescore) {
     const guard = await engineGuard(d).catch((error) => ({ code: 1, message: error.message }));
     if (guard) {
       process.stderr.write(`recipe-bench: ${guard.message}\n`);
@@ -401,37 +455,46 @@ export async function main(argv, deps = {}) {
 
   for (const config of opts.configs) {
     const rows = [];
+    const notRun = [];
     for (const c of loaded.cases) {
-      for (let rep = 1; rep <= opts.repeat; rep++) {
+      for (const rep of repeatsFor(opts, path.join(out, c.name, config.name))) {
         const runDir = path.join(out, c.name, config.name, String(rep));
         const reviewFile = path.join(runDir, "review.md");
         const briefFile = path.join(runDir, "brief.md");
         const resultFile = path.join(runDir, "result.json");
-        fs.mkdirSync(runDir, { recursive: true });
-        fs.writeFileSync(briefFile, renderBrief(c, reviewFile));
-        const args = [
-          "dispatch",
-          "--role", "reviewer",
-          "--worktree",
-          "--base", c.head,
-          "--cwd", loaded.repo,
-          "--brief-file", briefFile,
-          "--output", reviewFile,
-          "--gate", `recipe-gate verdict ${reviewFile}`,
-          "--gate-json",
-          "--result-file", resultFile,
-          "--dir", runDir,
-          "--timeout-ms", String(DISPATCH_TIMEOUT_MS),
-        ];
-        if (config.harness !== "pi") args.push("--harness", config.harness);
-        let ran = false;
+        const saved = fs.existsSync(resultFile);
+        if (opts.rescore && !saved) {
+          notRun.push({ case: c.name, repeat: rep });
+          continue;
+        }
+        const dispatch = !opts.rescore && (opts.rerun || !saved);
+        let ran = !dispatch;
         let error = null;
-        try {
-          const r = await runner(args, { env: { ...process.env, RECIPE_RUNNER_CONFIG: config.file } });
-          ran = r.code === 0;
-          if (!ran) error = r.stderr.trim().slice(-ERROR_TAIL) || r.stdout.trim().slice(-ERROR_TAIL) || `exit ${r.code}`;
-        } catch (spawnError) {
-          error = spawnError.message;
+        if (dispatch) {
+          fs.mkdirSync(runDir, { recursive: true });
+          fs.writeFileSync(briefFile, renderBrief(c, reviewFile));
+          const args = [
+            "dispatch",
+            "--role", "reviewer",
+            "--worktree",
+            "--base", c.head,
+            "--cwd", loaded.repo,
+            "--brief-file", briefFile,
+            "--output", reviewFile,
+            "--gate", `recipe-gate verdict ${reviewFile}`,
+            "--gate-json",
+            "--result-file", resultFile,
+            "--dir", runDir,
+            "--timeout-ms", String(opts.timeoutMs),
+          ];
+          if (config.harness !== "pi") args.push("--harness", config.harness);
+          try {
+            const r = await runner(args, { env: { ...process.env, RECIPE_RUNNER_CONFIG: config.file } });
+            ran = r.code === 0;
+            if (!ran) error = r.stderr.trim().slice(-ERROR_TAIL) || r.stdout.trim().slice(-ERROR_TAIL) || `exit ${r.code}`;
+          } catch (spawnError) {
+            error = spawnError.message;
+          }
         }
         if (!ran) anyFailed = true;
         const result = readJson(resultFile);
@@ -442,7 +505,7 @@ export async function main(argv, deps = {}) {
           reviewText = "";
         }
         const usage = result?.usage ?? {};
-        const scored = scoreCase({ reviewText, c, result });
+        const scored = scoreCase({ reviewText, c, result, grades: opts.grades?.[`${c.name}/${config.name}/${rep}`] });
         const row = {
           case: c.name,
           repeat: rep,
@@ -462,7 +525,9 @@ export async function main(argv, deps = {}) {
         process.stdout.write(`recipe-bench: ${config.name} ${c.name} ${rep}: verdict ${scored.verdict}${ran ? "" : ` (dispatch failed: ${error})`}\n`);
       }
     }
-    configs[config.name] = { harness: config.harness, summary: summarize(rows, { repeats: opts.repeat }), rows };
+    const repeats = opts.rescore ? Math.max(1, ...rows.map((r) => r.repeat)) : opts.repeat;
+    configs[config.name] = { harness: config.harness, summary: summarize(rows, { repeats }), rows, notRun };
+    for (const n of notRun) process.stdout.write(`recipe-bench: ${config.name} ${n.case} ${n.repeat}: not run\n`);
   }
 
   const finishedAt = d.clock();
