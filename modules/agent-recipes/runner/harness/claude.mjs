@@ -57,7 +57,6 @@ export function claudeArgv(spec, grant = null) {
   const role = spec.role ?? {};
   const claude = role.claude ?? {};
   const argv = ["-p", "--output-format", "stream-json", "--verbose"];
-  // --agent resolves the name from the --agents file, so the file comes first.
   if (claude.agentsFile) argv.push("--agents", claude.agentsFile);
   const agent = claude.agent ?? spec.roleName;
   if (agent) argv.push("--agent", agent);
