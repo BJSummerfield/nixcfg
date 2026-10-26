@@ -275,11 +275,11 @@ export default async function implement(args, port) {
 
   function mutationFindings(t, m) {
     const lines = [
-      "The task check still passes with each mutation below applied: " +
-        t.spec.check +
-        " Make the check fail on each one, either by strengthening the check or by fixing the code the mutation exposes.",
+      "The task check still passes with each mutation below applied. " +
+        "Make the check fail on each one, either by strengthening the check or by fixing the code the mutation exposes.",
     ];
     list(m.survivors).forEach(function (s) {
+      lines.push("With this mutation applied, the check still passes: " + t.spec.check);
       lines.push(s.diff);
     });
     return lines.join("\n");
@@ -405,7 +405,7 @@ export default async function implement(args, port) {
         t.next = null;
         return;
       }
-      if (mutations) {
+      if (mutations && t.fixes === 0) {
         return one(mutationItem(t)).then(function (r) {
           if (!r.ok || !r.structuredOutput) {
             open.push("task " + t.id + ": the mutation gate did not run" + (r.error ? ": " + r.error : ""));
