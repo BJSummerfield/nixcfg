@@ -190,10 +190,10 @@ test("scoring: caught, missed, clean on a defect case, false alarm and invalid",
   const rows = Object.fromEntries(
     JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a.rows.map((x) => [x.case, x]),
   );
-  assert.deepEqual(rows.caught.defects, [{ id: "d1", found: true }]);
+  assert.deepEqual(rows.caught.defects, [{ id: "d1", found: true, named_in: "other" }]);
   assert.equal(rows.caught.caught, true);
   assert.equal(rows.caught.verdict, "needs-work");
-  assert.deepEqual(rows.missed.defects, [{ id: "d1", found: false }]);
+  assert.deepEqual(rows.missed.defects, [{ id: "d1", found: false, named_in: "none" }]);
   assert.equal(rows.missed.caught, false, "needs-work naming no defect is not caught");
   assert.equal(rows.cleandefect.verdict, "clean");
   assert.equal(rows.cleandefect.caught, false);
@@ -217,7 +217,7 @@ test("scoring: a named defect on a clean verdict is not caught", async () => {
   const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
   assert.equal(r.code, 0);
   const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
-  assert.deepEqual(entry.rows[0].defects, [{ id: "d1", found: true }]);
+  assert.deepEqual(entry.rows[0].defects, [{ id: "d1", found: true, named_in: "other" }]);
   assert.equal(entry.rows[0].verdict, "clean");
   assert.equal(entry.rows[0].caught, false, "a named defect on a clean verdict is not caught");
   assert.deepEqual(entry.summary.defectCasesCaught, { caught: 0, total: 1, share: 0 });
@@ -290,6 +290,74 @@ test("repeats: one row per repeat in numbered run directories", async () => {
   assert.deepEqual(record.configs.a.rows.map((x) => x.caught), [true, true]);
   assert.equal(record.configs.a.summary.casesRun, 2);
   assert.deepEqual(record.configs.a.summary.defectCasesCaught, { caught: 2, total: 2, share: 1 });
+});
+
+test("scoring: named_in follows the section that names the defect", async () => {
+  const cases = writeCases(path.join(tmp, "cases-named.json"), [
+    { name: "inblocking", base: "a", head: "b", task: "t1", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+    { name: "insmall", base: "a", head: "b", task: "t2", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+    { name: "inother", base: "a", head: "b", task: "t3", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+    { name: "namednowhere", base: "a", head: "b", task: "t4", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+    { name: "both", base: "a", head: "b", task: "t5", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+  ]);
+  const out = path.join(tmp, "out-named");
+  const resp = {};
+  const reviews = {
+    inblocking: "## Blocking findings\n\nan integer OVERFLOW in parse\n",
+    insmall: "## Small findings\n\nan integer OVERFLOW in parse\n",
+    inother: "## Notes\n\nan integer OVERFLOW in parse\n",
+    namednowhere: "looks fine\n",
+    both: "## Blocking findings\n\nan OVERFLOW in parse\n\n## Small findings\n\nalso an OVERFLOW\n",
+  };
+  for (const [name, review] of Object.entries(reviews)) {
+    resp[path.join(out, name, "a", "1", "review.md")] = { review, result: result("needs-work", 120000) };
+  }
+  const spawn = makeSpawn(resp);
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  const byCase = Object.fromEntries(entry.rows.map((x) => [x.case, x.defects[0]]));
+  assert.equal(byCase.inblocking.named_in, "blocking");
+  assert.equal(byCase.insmall.named_in, "small");
+  assert.equal(byCase.inother.named_in, "other");
+  assert.equal(byCase.namednowhere.named_in, "none");
+  assert.equal(byCase.both.named_in, "blocking", "a defect named in both sections is blocking");
+  assert.equal(byCase.inblocking.found, true);
+  assert.equal(byCase.namednowhere.found, false);
+  assert.equal(entry.summary.named_blocking, 2);
+  assert.equal(entry.summary.named_small_only, 1);
+  assert.equal(entry.summary.not_named, 1);
+});
+
+test("repeats: per-case and per-config caught counts with min/max defects found", async () => {
+  const cases = writeCases(path.join(tmp, "cases-rep2.json"), [
+    { name: "c1", base: "a", head: "b", task: "t", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+    { name: "c2", base: "a", head: "b", task: "t", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+  ]);
+  const out = path.join(tmp, "out-rep2");
+  const resp = {
+    [path.join(out, "c1", "a", "1", "review.md")]: { review: "an OVERFLOW here", result: result("needs-work", 180000) },
+    [path.join(out, "c1", "a", "2", "review.md")]: { review: "nothing here", result: result("needs-work", 60000) },
+    [path.join(out, "c2", "a", "1", "review.md")]: { review: "an OVERFLOW here", result: result("needs-work", 180000) },
+    [path.join(out, "c2", "a", "2", "review.md")]: { review: "an OVERFLOW here", result: result("clean", 60000) },
+  };
+  const spawn = makeSpawn(resp);
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--repeat", "2", "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  assert.deepEqual(entry.summary.repeats, {
+    caught: 2,
+    total: 4,
+    defectsFound: { min: 0, max: 1 },
+    perCase: {
+      c1: { caught: 1, total: 2, defectsFound: { min: 0, max: 1 } },
+      c2: { caught: 1, total: 2, defectsFound: { min: 1, max: 1 } },
+    },
+  });
+  assert.match(r.stdout, /repeats caught\s+2 of 4/);
+  assert.match(r.stdout, /defects found range\s+0-1/);
+  assert.match(r.stdout, /c1\s+1 of 2\s+0-1/);
+  assert.match(r.stdout, /c2\s+1 of 2\s+1-1/);
 });
 
 test("a dispatch that failed to run is reported and fails the exit code", async () => {
