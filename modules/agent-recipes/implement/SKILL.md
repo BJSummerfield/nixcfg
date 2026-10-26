@@ -18,6 +18,9 @@ Parameters, from the request:
 - optional: `branch` (name of the integration branch, default
   `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
   plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
+- freshFixes (boolean, default false): when true, every review fix round is
+  a fresh implementer on the task's branch, handed the findings. The default
+  resumes the implementer's own session.
 - resume (boolean): continue a run that stopped, from the branches and
   reviews it left in the plan directory. `answers` (optional, task id to
   text) gives the user's decision for a task that was set aside.
@@ -213,7 +216,7 @@ after a pi restart `recipe-run wait <plan dir>` waits for the end. A stopped
 run continues with the same call plus `resume: true`.
 
 ```
-{ base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
+{ base, fresh_fixes, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
   resumed: {done: [ids], continued: [ids], answered: [ids]},
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   handoffs: [{id, relays, splits, pieces: [ids]}],
@@ -221,7 +224,8 @@ run continues with the same call plus `resume: true`.
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
-`handoffs` is present only when a task was relayed or split. The pieces of a
+`handoffs` is present only when a task was relayed or split. `fresh_fixes`
+is present only when the run used fresh fix rounds. The pieces of a
 split task are listed under it in `report`, indented, and are not in `merged`;
 the branches of the implementers that were relayed are in `left` with kind
 `relay`.
