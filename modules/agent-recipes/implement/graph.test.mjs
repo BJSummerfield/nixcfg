@@ -1488,6 +1488,38 @@ function assertUniqueOutputs(f) {
   assert.match(receipt.report[0], /^a: merged/);
 }
 
+// With freshFixes a needs-work verdict goes to a fresh implementer on the task
+// branch with the findings, not to the implementer's own session.
+{
+  const f = fake({ review: { "review-a-1": needsWork } });
+  const receipt = await run(f.runs, { ...base, freshFixes: true });
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["impl-a-2"], ["review-a-2"], ["merge"], ["integrate"]]);
+  const k = byKey(f);
+  assert.equal(k["impl-a-2"].baseRef, "refs/heads/pi/a");
+  assert.equal(k["impl-a-2"].resume, undefined);
+  assert.equal(k["impl-a-2"].handoffOf, undefined);
+  assert.match(k["impl-a-2"].task, /^Continue this task; the branch pi\/a holds the committed work, so build on it and do not redo it\.$/m);
+  assert.match(k["impl-a-2"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
+  assert.equal(f.items().filter((i) => i.resume).length, 0);
+  assert.equal(receipt.fresh_fixes, true);
+  assert.deepEqual(receipt.merged, ["a"]);
+  assert.equal(receipt.children, 8);
+}
+
+// Without freshFixes the needs-work verdict resumes the implementer's session,
+// and the receipt carries no fresh-fixes marker.
+{
+  const f = fake({ review: { "review-a-1": needsWork } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["fix-a-1"], ["review-a-2"], ["merge"], ["integrate"]]);
+  const k = byKey(f);
+  assert.equal(k["fix-a-1"].resume, "run-impl-a");
+  assert.match(k["fix-a-1"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
+  assert.equal(receipt.fresh_fixes, undefined);
+  assert.deepEqual(receipt.merged, ["a"]);
+  assert.equal(receipt.children, 8);
+}
+
 // A joined diff that stays needs-work goes to a decision once the fixes are used up.
 {
   const f = fake({

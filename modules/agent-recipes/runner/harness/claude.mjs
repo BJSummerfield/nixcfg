@@ -57,6 +57,7 @@ export function claudeArgv(spec, grant = null) {
   const role = spec.role ?? {};
   const claude = role.claude ?? {};
   const argv = ["-p", "--output-format", "stream-json", "--verbose"];
+  if (claude.agentsFile) argv.push("--agents", claude.agentsFile);
   const agent = claude.agent ?? spec.roleName;
   if (agent) argv.push("--agent", agent);
   if (claude.model) argv.push("--model", claude.model);

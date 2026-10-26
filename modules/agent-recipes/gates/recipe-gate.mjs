@@ -515,7 +515,9 @@ function verdictOf(file) {
     }
     return null;
   };
-  const asked = pick(/^Does what was asked:\s*(yes|no|partly)\b/i);
+  // Reviews spell this line "partial" or "partially" as often as "partly".
+  const askedRaw = pick(/^Does what was asked:\s*(yes|no|partly|partial|partially)\b/i);
+  const asked = askedRaw === "partial" || askedRaw === "partially" ? "partly" : askedRaw;
   const sound = pick(/^Sound:\s*(yes|no)\b/i);
   if (!asked || !sound) return { asked, sound, clean: false, verdict: "invalid" };
   const clean = asked === "yes" && sound === "yes";

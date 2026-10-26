@@ -42,6 +42,7 @@ let
       agent = name;
     };
     acceptance = role.acceptance or null;
+    harness = role.harness or null;
   }) mergedRoles;
 
   runnerConfig = {
