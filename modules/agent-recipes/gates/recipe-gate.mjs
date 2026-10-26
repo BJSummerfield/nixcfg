@@ -76,6 +76,21 @@
 //                                  null for a deleted branch, review is the verdict of
 //                                  the highest <dir>/review-<id>-<n>.md or null, merged
 //                                  is whether the tip is in --branch
+//   mutate <worktree> --check CMD --base SHA [--max N] [--ms MS]
+//                                  run in a task worktree -> {ok, reason, files, tried,
+//                                  caught, discarded, survivors:[{file, line, from, to, diff}],
+//                                  stopped, ms, restored}. Small mutations are applied one at a
+//                                  time to the lines the task changed (the .js/.mjs files in
+//                                  base..HEAD), the task check is re-run on each, and a mutation
+//                                  the check does not catch is reported as a survivor with the
+//                                  exact mutation as a unified-diff hunk. --max (default 24)
+//                                  bounds the number tried and --ms (default 120000) the total
+//                                  time budget; the check runs under a per-check timeout so a
+//                                  hanging check is stopped. caught is a mutation the check
+//                                  failed on (a timeout is not a clean pass), discarded is one
+//                                  that does not parse or that the check fails to load, and
+//                                  stopped is exhausted, max or time. The worktree is restored
+//                                  to clean afterwards (restored).
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
 // source, `- <url> | primary|secondary | <one-line why>`. Anything else is
@@ -212,6 +227,26 @@
 // is deleted, and a later run checks a missing branch by that commit, so
 // running the check again after a tidy gives the same answer. The integrating
 // child is shown this command and may well run it before the workflow does.
+//
+// mutate: runs small mutations against a task's changed lines. The changed
+// .js/.mjs files are the ones in `git diff --name-only <base>..HEAD`, and each
+// file's candidate lines are the new-side lines of its `git diff -U0` hunks
+// (lines deleted from the old side have no new-side line and are skipped).
+// Candidates are tried in a fixed order: files in `git diff` order, lines
+// ascending, operators in order. Blank and comment-only lines yield no
+// candidate. Each candidate is written to the file, run through `node --check`
+// (a failure is a discarded mutation), and, if it parses, the task check is run
+// in the worktree under `timeout -k 5 <s> sh -c <check>` where <s> is the whole
+// seconds left in the --ms budget (at least 1); a check that exits 0 is a
+// survivor, a check that fails to load (SyntaxError, Cannot find module, is not
+// defined, ...) is discarded, and any other failure -- including the timeout
+// 124/137 exit -- is caught. The original text is restored after every
+// candidate. --max (default 24) and the deadline checked before each candidate
+// bound the run; stopped is max, time or exhausted (every candidate tried). The
+// survivors carry the exact mutation as a unified-diff hunk with no context.
+// ok is false only for an operational failure: the path is not a git worktree,
+// --base is absent or not an ancestor of HEAD, or a scanned file is left dirty
+// and cannot be restored from HEAD.
 
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -1164,11 +1199,233 @@ function diagnosis(file, flags) {
   return problem ? { ...out, ok: false, problem } : out;
 }
 
+// mutate: apply small line mutations to a task's changed .js/.mjs lines one at
+// a time and re-run the task check on each; a mutation the check does not catch
+// is reported as a survivor with the exact mutation as a unified-diff hunk.
+const PARSE_CHECK_MS = 30 * 1000;
+const DISCARD_MARKERS = [
+  "SyntaxError",
+  "Unexpected token",
+  "Cannot find module",
+  "Cannot find package",
+  "ERR_MODULE_NOT_FOUND",
+  "Unknown file extension",
+  "is not defined",
+];
+
+function gitRaw(cwd, args) {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return { status: r.status ?? -1, out: (r.stdout ?? "").trim() };
+}
+
+function firstReplace(line, regex, replacement) {
+  const m = regex.exec(line);
+  if (!m) return null;
+  return line.slice(0, m.index) + replacement + line.slice(m.index + m[0].length);
+}
+
+function firstInt(line) {
+  const m = /(?<![\w.])(\d+)(?![\w.])/.exec(line);
+  return m ? { index: m.index, digits: m[1], value: Number(m[1]) } : null;
+}
+
+function intOp(line, delta, positiveOnly) {
+  const it = firstInt(line);
+  if (!it) return null;
+  if (positiveOnly && it.value <= 0) return null;
+  return line.slice(0, it.index) + String(it.value + delta) + line.slice(it.index + it.digits.length);
+}
+
+function removeNegation(line) {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] !== "!") continue;
+    if (line[i + 1] === "=") continue; // != is a comparison, not a negation
+    let j = i - 1;
+    while (j >= 0 && (line[j] === " " || line[j] === "\t")) j--;
+    if (j < 0) return line.slice(0, i) + line.slice(i + 1);
+    const c = line[j];
+    if (c === "(" || c === "," || c === "=" || c === "&" || c === "|") return line.slice(0, i) + line.slice(i + 1);
+  }
+  return null;
+}
+
+const MUTATE_OPS = [
+  (l) => firstReplace(l, /(?<![=!])==(?!=)/, "!="),
+  (l) => firstReplace(l, /(?<![=])===/, "!=="),
+  (l) => firstReplace(l, /!==/, "==="),
+  (l) => firstReplace(l, /&&/, "||"),
+  (l) => firstReplace(l, /\|\|/, "&&"),
+  (l) => firstReplace(l, /(?<!=)>(?!=)/, "<"),
+  (l) => firstReplace(l, /<(?!=)/, ">"),
+  (l) => firstReplace(l, /<=/, ">="),
+  (l) => firstReplace(l, />=/, "<="),
+  (l) => firstReplace(l, /\btrue\b/, "false"),
+  (l) => firstReplace(l, /\bfalse\b/, "true"),
+  (l) => removeNegation(l),
+  (l) => intOp(l, 1, false),
+  (l) => intOp(l, -1, true),
+  (l) => firstReplace(l, /\+\+/, "--"),
+  (l) => firstReplace(l, /--/, "++"),
+];
+
+function commentOrBlank(line) {
+  const t = line.trim();
+  if (t === "") return true;
+  return /^\/\//.test(t) || /^\/\*/.test(t) || /^\*/.test(t);
+}
+
+// The candidate mutations for one line, in operator order; a blank or comment
+// line yields none. Each is the whole mutated line ("" deletes the line).
+function candidateLines(line) {
+  if (commentOrBlank(line)) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (to) => {
+    if (to === null || to === line || seen.has(to)) return;
+    seen.add(to);
+    out.push(to);
+  };
+  for (const op of MUTATE_OPS) push(op(line));
+  push("");
+  return out;
+}
+
+// The new-side (post-change) lines of a file's `git diff -U0` hunks: 1-based
+// line numbers and the line text. Deleted lines have no new-side line and are
+// skipped.
+function changedNewLines(worktree, base, file) {
+  const out = gitRaw(worktree, ["diff", "-U0", base, "HEAD", "--", file]).out;
+  const res = [];
+  let pos = null;
+  for (const l of out.split("\n")) {
+    const m = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+    if (m) {
+      pos = { next: Number(m[1]) };
+      continue;
+    }
+    if (!pos) continue;
+    if (l.startsWith("+")) {
+      res.push({ line: pos.next, text: l.slice(1) });
+      pos.next++;
+    } else if (l.startsWith(" ")) pos.next++;
+  }
+  return res.sort((a, b) => a.line - b.line);
+}
+
+function diffHunk(file, line, from, to) {
+  const h = [`--- a/${file}`, `+++ b/${file}`];
+  if (to === "") h.push(`@@ -${line} +${line - 1},0 @@`, `-${from}`);
+  else h.push(`@@ -${line} +${line} @@`, `-${from}`, `+${to}`);
+  return h.join("\n") + "\n";
+}
+
+function mutate(worktree, flags) {
+  if (!flags.check) throw new Usage("mutate needs --check");
+  const max = intFlag(flags, "max", 24);
+  const budgetMs = intFlag(flags, "ms", 120000);
+  const start = Date.now();
+  const remaining = () => budgetMs - (Date.now() - start);
+
+  const result = { ok: true, reason: "", files: [], tried: 0, caught: 0, discarded: 0, survivors: [], stopped: "exhausted", ms: 0, restored: true };
+  const finish = (reason = "") => {
+    if (reason) {
+      result.ok = false;
+      result.reason = reason;
+    }
+    result.ms = Date.now() - start;
+    return result;
+  };
+
+  const inside = spawnSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: worktree, encoding: "utf8" });
+  if (inside.status !== 0 || inside.stdout.trim() !== "true" || gitRaw(worktree, ["rev-parse", "HEAD"]).status !== 0)
+    return finish("not a git worktree");
+  if (!flags.base) return finish("no --base");
+  const baseRef = gitRaw(worktree, ["rev-parse", "--verify", "-q", `${flags.base}^{commit}`]);
+  if (baseRef.status !== 0) return finish(`no --base commit ${flags.base}`);
+  if (spawnSync("git", ["merge-base", "--is-ancestor", baseRef.out, "HEAD"], { cwd: worktree }).status !== 0)
+    return finish(`base ${baseRef.out} is not an ancestor of HEAD`);
+
+  // --diff-filter=d: a deleted file has no new-side lines to mutate.
+  const changed = gitRaw(worktree, ["diff", "--diff-filter=d", "--name-only", baseRef.out, "HEAD"]).out.split("\n").filter(Boolean);
+  const files = changed.filter((f) => /\.m?js$/.test(f));
+  result.files = files;
+
+  // The tree is clean at entry, so each file's text is read once and restored
+  // to that exact text after every candidate.
+  const original = new Map();
+  const readOriginal = (file) => {
+    if (!original.has(file)) original.set(file, fs.readFileSync(path.join(worktree, file), "utf8"));
+    return original.get(file);
+  };
+  const restore = (file) => fs.writeFileSync(path.join(worktree, file), original.get(file));
+  const runCheck = () => {
+    const secs = Math.max(1, Math.floor(remaining() / 1000));
+    const r = spawnSync("timeout", ["-k", "5", String(secs), "sh", "-c", flags.check], {
+      cwd: worktree,
+      encoding: "utf8",
+      maxBuffer: RUN_BUFFER,
+    });
+    return { status: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  };
+
+  let stopReason = "exhausted";
+  outer: for (const file of files) {
+    const text = readOriginal(file);
+    const origLines = text.split("\n");
+    for (const { line } of changedNewLines(worktree, baseRef.out, file)) {
+      const from = origLines[line - 1];
+      if (from === undefined) continue;
+      for (const to of candidateLines(from)) {
+        if (remaining() <= 0) {
+          stopReason = "time";
+          break outer;
+        }
+        if (result.tried >= max) {
+          stopReason = "max";
+          break outer;
+        }
+        result.tried++;
+        try {
+          const newLines = [...origLines];
+          if (to === "") newLines.splice(line - 1, 1);
+          else newLines[line - 1] = to;
+          fs.writeFileSync(path.join(worktree, file), newLines.join("\n"));
+          const parse = spawnSync("node", ["--check", file], { cwd: worktree, encoding: "utf8", timeout: PARSE_CHECK_MS });
+          if (parse.status !== 0) result.discarded++;
+          else {
+            const cr = runCheck();
+            if (cr.status === 0) result.survivors.push({ file, line, from, to, diff: diffHunk(file, line, from, to) });
+            else if (cr.status !== 124 && cr.status !== 137 && DISCARD_MARKERS.some((m) => cr.out.includes(m))) result.discarded++;
+            else result.caught++;
+          }
+        } finally {
+          restore(file);
+        }
+      }
+    }
+  }
+  result.stopped = stopReason;
+
+  // Only the scanned files matter here: the check may leave untracked files
+  // or edit files the task did not touch.
+  const scannedDirty = () => gitRaw(worktree, ["status", "--porcelain", ...(files.length ? ["--", ...files] : [])]).out;
+  let dirty = scannedDirty();
+  if (dirty !== "") {
+    for (const file of files) spawnSync("git", ["checkout", "--", file], { cwd: worktree });
+    dirty = scannedDirty();
+  }
+  if (dirty !== "") {
+    result.restored = false;
+    return finish("the worktree was left dirty");
+  }
+  return finish();
+}
+
 function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume|mutate <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -1206,6 +1463,8 @@ function run(argv) {
       return integrate(target, flags);
     case "resume":
       return resume(target, flags);
+    case "mutate":
+      return mutate(target, flags);
     default:
       throw new Usage(`unknown subcommand ${cmd}`);
   }
