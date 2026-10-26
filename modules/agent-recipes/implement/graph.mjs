@@ -43,6 +43,9 @@ export default async function implement(args, port) {
   const slug = String(dir).replace(/\/+$/, "").split("/").pop().replace(/[^A-Za-z0-9._-]/g, "-") || "plan";
   const integrationBranch = args.branch || "implement/" + slug;
   const freshFixes = !!args.freshFixes;
+  const mutations = args.mutations === true;
+  const mutationMax = Number(args.mutationMax) > 0 ? Number(args.mutationMax) : 24;
+  const mutationMs = Number(args.mutationMs) > 0 ? Number(args.mutationMs) : 120000;
 
   const STEPS = {
     implement: "the implementer's run (its report and the task check run in its worktree)",
@@ -183,8 +186,16 @@ export default async function implement(args, port) {
   function finish() {
     const left = leftBehind();
     const handoffs = handoffsOf();
+    const mutations = tasks
+      .filter(function (t) {
+        return !t.parent && t.mutations;
+      })
+      .map(function (t) {
+        return { id: t.id, tried: t.mutations.tried, caught: t.mutations.caught, discarded: t.mutations.discarded, survived: t.mutations.survived };
+      });
     return receipt({
       ...(handoffs.length ? { handoffs: handoffs } : {}),
+      ...(mutations.length ? { mutations: mutations } : {}),
       ...(freshFixes ? { fresh_fixes: true } : {}),
       base: pinned ? pinned.base : null,
       branch: branch,
@@ -241,10 +252,37 @@ export default async function implement(args, port) {
     ].join(" ");
   }
 
+  function mutationGateCommand(t) {
+    return [
+      "recipe-gate mutate",
+      quote(t.worktree),
+      "--check",
+      quote(t.spec.check),
+      "--base",
+      quote(t.base),
+      "--max",
+      String(mutationMax),
+      "--ms",
+      String(mutationMs),
+    ].join(" ");
+  }
+
   function giveUp(t, reason) {
     t.state = "set_aside";
     t.next = null;
     setAside.push({ id: t.id, reason: short(reason) });
+  }
+
+  function mutationFindings(t, m) {
+    const lines = [
+      "The task check still passes with each mutation below applied: " +
+        t.spec.check +
+        " Make the check fail on each one, either by strengthening the check or by fixing the code the mutation exposes.",
+    ];
+    list(m.survivors).forEach(function (s) {
+      lines.push(s.diff);
+    });
+    return lines.join("\n");
   }
 
   function askPerson(t, step, question, file) {
@@ -366,6 +404,28 @@ export default async function implement(args, port) {
         t.state = "done";
         t.next = null;
         return;
+      }
+      if (mutations) {
+        return one(mutationItem(t)).then(function (r) {
+          if (!r.ok || !r.structuredOutput) {
+            open.push("task " + t.id + ": the mutation gate did not run" + (r.error ? ": " + r.error : ""));
+            t.next = "review";
+            return;
+          }
+          const m = r.structuredOutput;
+          if (m.ok === false) {
+            open.push("task " + t.id + ": the mutation gate failed: " + m.reason);
+            if (m.restored === false) return giveUp(t, "the mutation gate left the worktree dirty: " + m.reason);
+            t.next = "review";
+            return;
+          }
+          t.mutations = { tried: m.tried, caught: m.caught, discarded: m.discarded, survived: list(m.survivors).length };
+          if (t.mutations.survived > 0) {
+            needFix(t, mutationFindings(t, m));
+            return;
+          }
+          t.next = "review";
+        });
       }
       t.next = "review";
       return;
@@ -631,6 +691,8 @@ export default async function implement(args, port) {
         joined: false,
         parent: null,
         splitN: 0,
+        mutations: null,
+        mutateN: 0,
       },
       extra,
     );
@@ -763,6 +825,18 @@ export default async function implement(args, port) {
 
   function gateOnlyItem(key, command, file) {
     return node(key, "scout", ["Write the single word done to " + file + "."], file, { gate: command, selfGate: false, timeoutMs: childMs });
+  }
+
+  function mutationItem(t) {
+    t.mutateN++;
+    const key = "mutate-" + t.id + "-" + t.mutateN;
+    const file = dir + "/" + key + ".md";
+    return node(key, "scout", ["Write the single word done to " + file], file, {
+      gate: mutationGateCommand(t),
+      selfGate: false,
+      timeoutMs: childMs,
+      gateTimeoutMs: mutationMs + 60000,
+    });
   }
 
   function mergeCommand(m) {
