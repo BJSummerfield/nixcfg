@@ -14,6 +14,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-report-"));
 
 const start = (runId, role, key) => ({ type: "start", key, runId, role, harness: "pi" });
 const settle = (key, runId, result) => ({ type: "settle", key, runId, at: "2026-01-01T00:00:00.000Z", result });
+// prompt counts the cached tokens, as the runner records it.
 const usage = (prompt, cached, output, peak, compactions = 0) => ({
   prompt,
   cached,
@@ -35,18 +36,18 @@ fs.writeFileSync(
 );
 const a = [
   start("a1", "scout", "intake"),
-  settle("intake", "a1", { status: "done", usage: usage(1000, 300, 50, 5000) }),
+  settle("intake", "a1", { status: "done", usage: usage(1300, 300, 50, 5000) }),
   start("a2", "implementer", "impl-x"),
-  settle("impl-x", "a2", { status: "done", usage: usage(9000, 1000, 200, 60000, 1), loop: true }),
+  settle("impl-x", "a2", { status: "done", usage: usage(10000, 1000, 200, 60000, 1), loop: true }),
   start("a3", "reviewer", "review-gate-quotes-1"),
-  settle("review-gate-quotes-1", "a3", { status: "done", usage: usage(2000, 500, 80, 30000), structuredOutput: { verdict: "needs-work" } }),
+  settle("review-gate-quotes-1", "a3", { status: "done", usage: usage(2500, 500, 80, 30000), structuredOutput: { verdict: "needs-work" } }),
   start("a4", "reviewer", "review-gate-quotes-2"),
-  settle("review-gate-quotes-2", "a4", { status: "done", usage: usage(3000, 800, 90, 40000), structuredOutput: { verdict: "clean" } }),
+  settle("review-gate-quotes-2", "a4", { status: "done", usage: usage(3800, 800, 90, 40000), structuredOutput: { verdict: "clean" } }),
   start("a5", "implementer", "impl-y"),
-  settle("impl-y", "a5", { status: "done", usage: usage(4000, 1200, 110, 20000), handoff: { line: "h" } }),
+  settle("impl-y", "a5", { status: "done", usage: usage(5200, 1200, 110, 20000), handoff: { line: "h" } }),
   { type: "handoff", key: "impl-y-2", runId: "a5", as: "relay", by: "a6" },
   start("a7", "scout", "diagnose-x"),
-  settle("diagnose-x", "a7", { status: "done", usage: usage(600, 100, 20, 10000) }),
+  settle("diagnose-x", "a7", { status: "done", usage: usage(700, 100, 20, 10000) }),
   start("a8", "implementer", "impl-x.retry"),
   settle("impl-x.retry", "a8", { status: "failed", usage: usage(500, 0, 10, 8000) }),
 ];
@@ -63,15 +64,49 @@ fs.writeFileSync(
 );
 const b = [
   start("b1", "reviewer", "review-task-a-1"),
-  settle("review-task-a-1", "b1", { status: "done", usage: usage(700, 200, 30, 12000), structuredOutput: { verdict: "clean" } }),
+  settle("review-task-a-1", "b1", { status: "done", usage: usage(900, 200, 30, 12000), structuredOutput: { verdict: "clean" } }),
   start("b2", "reviewer", "review-task-b-1"),
   settle("review-task-b-1", "b2", { status: "done", usage: usage(800, 0, 40, 15000), structuredOutput: { verdict: "invalid" } }),
   start("b3", "scout", "pin"),
-  settle("pin", "b3", { status: "failed", usage: usage(900, 400, 60, 9000) }),
+  settle("pin", "b3", { status: "failed", usage: usage(1300, 400, 60, 9000) }),
 ];
 fs.writeFileSync(path.join(runB, "runner", "children.jsonl"), b.map((r) => JSON.stringify(r)).join("\n") + "\n");
 fs.writeFileSync(path.join(runB, "receipt.json"), JSON.stringify({ merged: ["m1"], open: [] }));
 fs.symlinkSync(fs.realpathSync(runB), path.join(tmp, "link"));
+
+// Run C: real-run numbers. prompt already counts the cached tokens, so the
+// share is cached / prompt.
+const tmpC = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-report-"));
+const runC = path.join(tmpC, "runs", "c");
+fs.mkdirSync(path.join(runC, "runner"), { recursive: true });
+fs.writeFileSync(
+  path.join(runC, "runner", "status.json"),
+  JSON.stringify({ recipe: "impl", harness: "pi", state: "done", startedAt: "2026-01-01T02:00:00.000Z", lastUpdate: "2026-01-01T02:01:00.000Z" }),
+);
+const c = [
+  start("c1", "implementer", "impl-z"),
+  settle("impl-z", "c1", { status: "done", usage: usage(23485417, 22795332, 1, 5000) }),
+];
+fs.writeFileSync(path.join(runC, "runner", "children.jsonl"), c.map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+// Run D: its runner directory is a symlink to a differently named directory
+// elsewhere, so it must still be found and reported by its real path.
+const tmpD = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-report-"));
+const elsewhereD = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-report-"));
+const realRunnerD = path.join(elsewhereD, "realrunner");
+fs.mkdirSync(realRunnerD, { recursive: true });
+fs.writeFileSync(
+  path.join(realRunnerD, "status.json"),
+  JSON.stringify({ recipe: "impl", harness: "pi", state: "done", startedAt: "2026-01-01T03:00:00.000Z", lastUpdate: "2026-01-01T03:02:00.000Z" }),
+);
+const d = [
+  start("d1", "scout", "intake"),
+  settle("intake", "d1", { status: "done", usage: usage(1000, 300, 50, 5000) }),
+];
+fs.writeFileSync(path.join(realRunnerD, "children.jsonl"), d.map((r) => JSON.stringify(r)).join("\n") + "\n");
+const runD = path.join(tmpD, "runs", "d");
+fs.mkdirSync(runD, { recursive: true });
+fs.symlinkSync(realRunnerD, path.join(runD, "runner"));
 
 const run = (args) => {
   const r = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
@@ -91,10 +126,10 @@ const line = (out, prefix) => out.split("\n").find((l) => l.startsWith(prefix));
       state: "done",
       minutes: 10.5,
       children: 7,
-      prompt: 20100,
+      prompt: 24000,
       cached: 3900,
       output: 560,
-      cache_share: 0.16,
+      cached_share_of_prompt: 0.16,
       receipt: { merged: 2, set_aside: 1, open: 1 },
     },
     {
@@ -104,10 +139,10 @@ const line = (out, prefix) => out.split("\n").find((l) => l.startsWith(prefix));
       state: "running",
       minutes: 5,
       children: 3,
-      prompt: 2400,
+      prompt: 3000,
       cached: 600,
       output: 130,
-      cache_share: 0.2,
+      cached_share_of_prompt: 0.2,
       receipt: { merged: 1, open: 0 },
     },
   ]);
@@ -135,13 +170,13 @@ const line = (out, prefix) => out.split("\n").find((l) => l.startsWith(prefix));
   assert.equal(r.status, 0);
   const aLine = line(r.stdout, fs.realpathSync(runA));
   assert.ok(aLine.includes("impl") && aLine.includes("pi") && aLine.includes("done") && aLine.includes("10.5") && aLine.includes("7"));
-  assert.ok(aLine.includes("20100") && aLine.includes("3900") && aLine.includes("560") && aLine.includes("0.16"));
+  assert.ok(aLine.includes("24000") && aLine.includes("3900") && aLine.includes("560") && aLine.includes("0.16"));
   assert.ok(aLine.includes("merged=2,open=1,set_aside=1"));
   const bLine = line(r.stdout, fs.realpathSync(runB));
   assert.ok(bLine.includes("research") && bLine.includes("claude") && bLine.includes("running"));
-  assert.ok(bLine.includes("2400") && bLine.includes("600") && bLine.includes("130") && bLine.includes("0.2"));
+  assert.ok(bLine.includes("3000") && bLine.includes("600") && bLine.includes("130") && bLine.includes("0.2"));
   assert.ok(bLine.includes("merged=1,open=0"));
-  assert.equal(r.stdout.split("\n").filter((l) => l.includes("20100") || l.includes("2400")).length, 2);
+  assert.equal(r.stdout.split("\n").filter((l) => l.includes("24000") || l.includes("3000")).length, 2);
   const impl = line(r.stdout, "implementer");
   assert.ok(impl.includes("done=2,failed=1") && impl.includes("1") && impl.includes("20000") && impl.includes("60000"));
   const rev = line(r.stdout, "reviewer");
@@ -180,5 +215,34 @@ const line = (out, prefix) => out.split("\n").find((l) => l.startsWith(prefix));
   assert.ok(t.stdout.includes("diagnoses: 0, retries: 0"));
 }
 
+// A run with real-run numbers: prompt already counts the cached tokens, so
+// the share is cached / prompt.
+{
+  const r = run([tmpC, "--json"]);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.runs.length, 1);
+  assert.equal(r.json.runs[0].prompt, 23485417);
+  assert.equal(r.json.runs[0].cached, 22795332);
+  assert.equal(r.json.runs[0].cached_share_of_prompt, 0.97);
+}
+
+// A run whose runner directory is a symlink to a differently named directory
+// elsewhere is still found and reported by its real path.
+{
+  const r = run([tmpD, "--json"]);
+  assert.equal(r.status, 0);
+  assert.equal(r.json.runs.length, 1);
+  assert.equal(r.json.runs[0].path, fs.realpathSync(runD));
+  assert.equal(r.json.runs[0].recipe, "impl");
+  assert.equal(r.json.runs[0].children, 1);
+  const t = run([tmpD]);
+  assert.equal(t.status, 0);
+  const dLine = line(t.stdout, fs.realpathSync(runD));
+  assert.ok(dLine.includes("impl") && dLine.includes("1"));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
+fs.rmSync(tmpC, { recursive: true, force: true });
+fs.rmSync(tmpD, { recursive: true, force: true });
+fs.rmSync(elsewhereD, { recursive: true, force: true });
 console.log("recipe-report: all assertions passed");

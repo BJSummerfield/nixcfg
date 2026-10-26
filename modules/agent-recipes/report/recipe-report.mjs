@@ -8,13 +8,13 @@
 // paths reach it. children.jsonl is one JSON object per line; lines that do
 // not parse are skipped. receipt.json next to runner/ is counted when
 // present: the merged, set_aside, decide and open arrays.
-// Wall minutes are lastUpdate minus startedAt. Cache share is cached over
-// prompt plus cached. The role of a settle comes from the start record of
-// its runId, pooled over all runs; a handoff is a settle whose handoff is
-// set, followed by the relay or split handoff records whose runId is that
-// child's, counted by distinct child. Medians and p90 are nearest rank.
-// The task of a review settle is the key with its trailing -<n> round
-// removed; its first round is the -1 one.
+// Wall minutes are lastUpdate minus startedAt. cached_share_of_prompt is
+// cached over prompt, which already includes the cached tokens. The role of
+// a settle comes from the start record of its runId, pooled over all runs;
+// a handoff is a settle whose handoff is set, followed by the relay or split
+// handoff records whose runId is that child's, counted by distinct child.
+// Medians and p90 are nearest rank. The task of a review settle is the key
+// with its trailing -<n> round removed; its first round is the -1 one.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -42,7 +42,7 @@ function walk(dirs, visitFile) {
         const file = fs.realpathSync(full);
         if (!seen.has(file)) {
           seen.add(file);
-          visitFile(file);
+          visitFile(full);
         }
       }
     }
@@ -87,10 +87,12 @@ const sortedKeys = (o) => Object.fromEntries(Object.entries(o).sort((a, b) => (a
 
 function findRuns(dirs) {
   const runs = new Set();
+  // The runner subdirectory may be a symlink to a differently named directory,
+  // so match on the name it has as walked but record the real path.
   walk(dirs, (file) => {
     const runner = path.dirname(file);
     if (path.basename(file) !== "children.jsonl" || path.basename(runner) !== "runner") return;
-    if (fs.existsSync(path.join(runner, "status.json"))) runs.add(path.dirname(runner));
+    if (fs.existsSync(path.join(runner, "status.json"))) runs.add(fs.realpathSync(path.dirname(runner)));
   });
   return [...runs].sort();
 }
@@ -131,7 +133,7 @@ function readRun(runDir) {
     prompt,
     cached,
     output,
-    cache_share: prompt + cached > 0 ? round(cached / (prompt + cached), 2) : 0,
+    cached_share_of_prompt: prompt > 0 ? round(cached / prompt, 2) : 0,
     receipt: receiptCounts,
   };
   return { entry, settles, starts, handoffs };
@@ -240,7 +242,7 @@ function render(r) {
   if (r.runs.length > 0)
     lines.push(
       table([
-        ["path", "recipe", "harness", "state", "minutes", "children", "prompt", "cached", "output", "cache_share", "receipt"],
+        ["path", "recipe", "harness", "state", "minutes", "children", "prompt", "cached", "output", "cached_share_of_prompt", "receipt"],
         ...r.runs.map((run) => [
           run.path,
           str(run.recipe),
@@ -251,7 +253,7 @@ function render(r) {
           run.prompt,
           run.cached,
           run.output,
-          str(run.cache_share),
+          str(run.cached_share_of_prompt),
           run.receipt ? kv(run.receipt) : "-",
         ]),
       ]),
