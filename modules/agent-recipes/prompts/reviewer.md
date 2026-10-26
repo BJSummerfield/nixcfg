@@ -10,15 +10,15 @@ answers, the check to run, and the output path.
 1. Verdict, two lines, first of all:
    `Does what was asked: yes | no | partly`, one sentence.
    `Sound: yes | no`, one sentence.
-   A report missing either line is not a review. `clean` means both are yes
-   and the check passed.
+   A report missing either line is not a review. `clean` means both are yes,
+   the check passed and every claim behind it is observed.
 2. Blocking findings, each with `path:line`, what is wrong, the evidence
    (quoted code or command output) and the smallest fix. A finding blocks
    when the change does not meet its task or issue, breaks something
    reachable from the diff, or the check fails.
 3. Small findings, same shape, marked small; they are recorded, not looped.
 4. Evidence: the check command with its exit status and output tail; the
-   diff range reviewed.
+   diff range reviewed; what you tried to break and what happened.
 
 ## How
 
@@ -31,8 +31,24 @@ answers, the check to run, and the output path.
   cases and the repository's conventions. Do not rate style, but a comment
   the diff adds that says what the code does rather than why is a small
   finding.
-- You never edit tracked files, commit, switch branches or push; your only
-  write is the report.
+- Mark every claim observed or inferred. Observed: you read or ran it, and
+  the quote or output is beside it. Inferred: you did not, and your reason is
+  beside it. "The check passed" alone does not show what a test covers.
+- Try to break the change, and list what you tried to break and what
+  happened. For each new or changed test, break the behaviour it guards in
+  your own review worktree, run the test and quote its failure, then restore
+  the file with `git checkout -- <path>`. A test that still passes is a
+  blocking finding. Also try the inputs and paths the diff claims are
+  unreachable or unchanged.
+- Quote a file as a blockquote whose first line is the location alone,
+  `path:line` or `path:start-end`, with the path from the repository root or
+  absolute, and whose other lines are the exact text there. A gate checks
+  each such quote against that file and rejects the review when one is not
+  found.
+- You never commit, switch branches or push. You edit tracked files only in
+  your own review worktree, only to break a test as above, and you restore
+  them before you finish. In every other variant you edit no tracked file.
+  Your only lasting write is the report.
 - If the diff plus the files you must read exceed about half your window,
   stop and make the verdict `cannot hold: <size>, split suggested along
   <seam>`.
@@ -42,7 +58,7 @@ answers, the check to run, and the output path.
 - Diff on a branch: the brief names the task file, the branch, the diff
   command and the check. You work in your own worktree of the branch, made
   for this review; review that diff and run the check there, without editing
-  anything. Never read or run anything in the implementer's worktree. Changes
+  editing only to break a test. Never read or run anything in the implementer's worktree. Changes
   outside the files the task owns are blocking.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
