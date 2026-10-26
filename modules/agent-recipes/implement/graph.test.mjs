@@ -644,6 +644,33 @@ function assertUniqueOutputs(f) {
   ]);
 }
 
+// A review rejected for its quotes is diagnosed without continue.
+{
+  const f = fake({
+    review: {
+      "review-a-1": {
+        ok: false,
+        asked: "yes",
+        sound: "yes",
+        clean: false,
+        verdict: "invalid",
+        reason: "quote not found in its file: a.nix:3",
+        missing: [{ location: "a.nix:3", quote: "x = 1;" }],
+      },
+    },
+    diagnose: { "diagnose-a-1": { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false, problem: "no action line" } },
+  });
+  const receipt = await run(f.runs, base);
+  assert.equal(
+    byKey(f)["diagnose-a-1"].gate.command,
+    "recipe-gate diagnosis '/t/p/diagnosis-a-1.md' --allow 'retry,decide'",
+  );
+  assert.match(byKey(f)["diagnose-a-1"].task, /What went wrong: the review quotes text not found in the cited files: a\.nix:3/);
+  assert.deepEqual(receipt.decide, [
+    { id: "a", step: "review", question: "the review quotes text not found in the cited files: a.nix:3; the diagnosis could not be read: no action line", diagnosis: "/t/p/diagnosis-a-1.md" },
+  ]);
+}
+
 // An integration the gate does not accept is diagnosed and run once more.
 {
   const f = fake({

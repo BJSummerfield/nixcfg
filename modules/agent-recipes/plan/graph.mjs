@@ -163,7 +163,7 @@ export default async function plan(args, port) {
         "Write the report to " + file,
       ],
       file,
-      { gate: "recipe-gate verdict " + quote(file), timeoutMs: bigMs, big: true },
+      { gate: "recipe-gate verdict " + quote(file) + " --repo " + quote(repo), timeoutMs: bigMs, big: true },
     );
   }
 
@@ -177,7 +177,10 @@ export default async function plan(args, port) {
       }
       const verdict = result.structuredOutput.verdict;
       if (verdict !== "invalid") return { verdict: verdict, file: result.file };
-      return heal("review", "the review's verdict could not be read", [result.file], ["continue", "retry", "decide"]).then(function (d) {
+      const missing = list(result.structuredOutput.missing);
+      const bad = missing.length > 0;
+      const why = bad ? "the review quotes text not found in the cited files: " + missing.map((m) => m.location).join(", ") : "the review's verdict could not be read";
+      return heal("review", why, [result.file], bad ? ["retry", "decide"] : ["continue", "retry", "decide"]).then(function (d) {
         if (!d) return { verdict: null, file: result.file };
         if (d.action === "retry") return review();
         return { verdict: d.verdict, file: result.file };
@@ -266,11 +269,12 @@ export default async function plan(args, port) {
         "Output: " + scoutFile,
       ],
       scoutFile,
-      { timeoutMs: childMs },
+      { gate: "recipe-gate quotes " + quote(scoutFile) + " --repo " + quote(repo), timeoutMs: childMs },
     ),
   );
   let scoutNotes = "none: the scout failed, so look up the facts yourself";
-  if (scouted.ok) scoutNotes = scouted.file;
+  if (passed(scouted)) scoutNotes = scouted.file;
+  else if (scouted.ok) open.push("scout notes rejected: " + ((scouted.structuredOutput && scouted.structuredOutput.reason) || "the quote gate did not run") + "; the planner worked without notes");
   else open.push("scout failed: " + (scouted.error || "failed") + "; the planner worked without notes");
 
   show("planning");

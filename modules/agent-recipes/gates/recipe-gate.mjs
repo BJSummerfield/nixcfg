@@ -19,16 +19,21 @@
 //                                  working directory), and the output gains
 //                                  file and missing:[quote]; ok also needs
 //                                  missing to be empty
-//   size <dir> [--window N]        {bytes, est_tokens, split}; N defaults to 221184
-//   verdict <review.md> [--run DIR --id ID]
-//                                  {asked, sound, clean, verdict}; read from the
+//   quotes <file> [--repo DIR]     {ok, quotes, missing:[{location, quote}]}; every
+//                                  located quote must appear in its cited file;
+//                                  the output adds reason when not ok
+//   size <dir> [--window N]       {bytes, est_tokens, split}; N defaults to 221184
+//   verdict <review.md> [--repo DIR] [--run DIR --id ID]
+//                                  {asked, sound, clean, verdict}; a located quote
+//                                  not found in its file makes the verdict
+//                                  invalid and adds reason and missing; read from the
 //                                  first verdict line and the few lines after
 //                                  it, up to the next heading. With --run the
 //                                  working directory's linked worktree is
 //                                  recorded in <DIR>/run.json as kind review
 //                                  and the output gains branch and worktree
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
-//   gaps <review.md>               {ok, angles:[{id, question}], asked, sound, clean, verdict}
+//   gaps <review.md> [--repo DIR]  {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //   diagnosis <file> [--allow a,b] [--verdict yes]
 //                                  {ok, action, reason, verdict, owns:[], brief, question, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
@@ -84,6 +89,12 @@
 //
 // Extract format: every quote is a markdown blockquote (`> ...`); adjacent
 // `>` lines are one quote, a blank line ends it.
+//
+// Located quote format: a blockquote whose first line is `path:N` or
+// `path:N-M` (optionally in backticks) and whose remaining lines are text
+// from that file. It is found when the whitespace-normalized text occurs in
+// lines N-M widened by RANGE_MARGIN_LINES; the path is relative to --repo
+// (default: the working directory). Other blockquotes are not counted.
 //
 // Angles format: one bullet per angle, `- <id> | <question>`, where the id is
 // letters, digits, `-` or `_`; a repeated id is dropped and anything else is
@@ -344,7 +355,7 @@ function quoteBody(lines) {
   return body;
 }
 
-function quoteTexts(text) {
+function quoteBlocks(text) {
   const out = [];
   let current = null;
   for (const line of text.split("\n")) {
@@ -354,7 +365,68 @@ function quoteTexts(text) {
       current.push(body[1]);
     } else if (!body) current = null;
   }
-  return out.map((q) => quoteBody(q).join(" ").replace(/\s+/g, " ").trim());
+  return out;
+}
+
+const collapse = (lines) => lines.join(" ").replace(/\s+/g, " ").trim();
+
+function quoteTexts(text) {
+  return quoteBlocks(text).map((q) => collapse(quoteBody(q)));
+}
+
+// A located quote cites its own file and lines; the notes it sits in are
+// only trustworthy when its text really is there.
+function missingLocated(text, repo) {
+  const out = { quotes: 0, missing: [] };
+  for (const block of quoteBlocks(text)) {
+    const first = block[0].trim();
+    if (!QUOTE_LOCATION.test(first)) continue;
+    const body = collapse(quoteBody(block));
+    if (!body) continue;
+    const location = first.replace(/`/g, "");
+    const cited = location.match(/^(.*):(\d+)(?:-(\d+))?$/);
+    const start = Number(cited[2]);
+    const end = cited[3] === undefined ? start : Number(cited[3]);
+    out.quotes++;
+    let full = null;
+    try {
+      full = fs.readFileSync(path.resolve(repo, cited[1]), "utf8");
+    } catch {
+      // any read failure counts as not found
+    }
+    const haystack =
+      full === null
+        ? null
+        : full
+            .split("\n")
+            .slice(Math.max(0, start - 1 - RANGE_MARGIN_LINES), end + RANGE_MARGIN_LINES)
+            .join(" ")
+            .replace(/\s+/g, " ");
+    if (haystack === null || !haystack.includes(body)) out.missing.push({ location, quote: body });
+  }
+  return out;
+}
+
+function quotesReason(missing) {
+  return `quote not found in its file: ${missing.map((m) => m.location).join(", ")}`;
+}
+
+function quotes(file, flags) {
+  const text = readIfExists(file);
+  if (text === null) return { ok: false, quotes: 0, missing: [], reason: "file missing" };
+  const found = missingLocated(text, flags.repo ?? ".");
+  const ok = found.missing.length === 0;
+  return ok ? { ok, ...found } : { ok, ...found, reason: quotesReason(found.missing) };
+}
+
+// An unreadable verdict is left as verdictOf reports it.
+function checkQuotes(file, out, flags) {
+  if (out.verdict === "invalid") return out;
+  const text = readIfExists(file);
+  if (text === null) return out;
+  const { missing } = missingLocated(text, flags.repo ?? ".");
+  if (missing.length === 0) return out;
+  return { ...out, clean: false, verdict: "invalid", reason: quotesReason(missing), missing };
 }
 
 function extract(file, flags) {
@@ -474,7 +546,7 @@ function recordable(dir, here) {
 }
 
 function verdict(file, flags) {
-  const out = verdictOf(file);
+  const out = checkQuotes(file, verdictOf(file), flags);
   if (!flags.run) return out;
   const here = where(process.cwd());
   const recorded = recordable(flags.run, here);
@@ -503,7 +575,7 @@ function angles(file) {
   return { ok: list.length > 0, angles: list };
 }
 
-function gaps(file) {
+function gaps(file, flags) {
   const text = readIfExists(file);
   if (text === null) return { ok: false, angles: [], clean: false, verdict: "invalid", reason: "file missing" };
   const lines = text.split("\n");
@@ -515,7 +587,7 @@ function gaps(file) {
       section.push(line);
     }
   }
-  const v = verdictOf(file);
+  const v = checkQuotes(file, verdictOf(file), flags);
   return { ok: v.verdict !== "invalid", angles: angleBullets(section.join("\n")), ...v };
 }
 
@@ -1094,7 +1166,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -1102,6 +1174,8 @@ function run(argv) {
       return paths(target);
     case "extract":
       return extract(target, flags);
+    case "quotes":
+      return quotes(target, flags);
     case "size":
       return size(target, flags);
     case "verdict":
@@ -1109,7 +1183,7 @@ function run(argv) {
     case "angles":
       return angles(target);
     case "gaps":
-      return gaps(target);
+      return gaps(target, flags);
     case "diagnosis":
       return diagnosis(target, flags);
     case "plan":

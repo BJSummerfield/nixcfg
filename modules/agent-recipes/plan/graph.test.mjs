@@ -73,7 +73,7 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher
         return items.map((item) => {
           switch (item.agent) {
             case "scout":
-              return answer(scout, item.key, undefined);
+              return answer(scout, item.key, { ok: true, quotes: 0, missing: [] });
             case "planner":
               return answer(planner, item.key, good);
             case "searcher":
@@ -172,13 +172,13 @@ function assertUniqueOutputs(f) {
   assert.match(k.plan.task, /^Job: implementation plan\.$/m);
   assert.match(k.plan.task, /Input: \/t\/in\.md\nRepository: \/r\nScout notes: \/t\/d\/scout\.md\nPlan directory: \/t\/d/);
   assert.match(k.plan.task, /When the file is written, run `recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000 --sizing '\/s\.json'`; if it reports a problem/);
-  assert.doesNotMatch(k.scout.task, /When the file is written/);
-  assert.match(k.review.task, /When the file is written, run `recipe-gate verdict '\/t\/d\/review\.md'`/);
+  assert.match(k.scout.task, /When the file is written, run `recipe-gate quotes '\/t\/d\/scout\.md' --repo '\/r'`; if it reports a problem/);
+  assert.match(k.review.task, /When the file is written, run `recipe-gate verdict '\/t\/d\/review\.md' --repo '\/r'`/);
   assert.match(k.plan.task, /Write \/t\/d\/plan\.md and one \/t\/d\/tasks\/<id>\.md per task/);
 
   assert.equal(k.review.agent, "reviewer");
   assert.equal(k.review.output, "/t/d/review.md");
-  assert.equal(k.review.gate.command, "recipe-gate verdict '/t/d/review.md'");
+  assert.equal(k.review.gate.command, "recipe-gate verdict '/t/d/review.md' --repo '/r'");
   assert.match(k.review.task, /Review an implementation plan \(the plan variant\)\./);
   assert.match(k.review.task, /Plan: \/t\/d\/plan\.md and \/t\/d\/tasks\//);
   assert.match(k.review.task, /Plan check to run: recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000/);
@@ -276,7 +276,7 @@ function assertUniqueOutputs(f) {
   assert.match(k["revise-1"].task, /^Job: implementation plan \(revision 1 after review\)\.$/m);
   assert.match(k["revise-1"].task, /review at \/t\/d\/review\.md/);
   assert.equal(k["review-2"].output, "/t/d/review.2.md");
-  assert.equal(k["review-2"].gate.command, "recipe-gate verdict '/t/d/review.2.md'");
+  assert.equal(k["review-2"].gate.command, "recipe-gate verdict '/t/d/review.2.md' --repo '/r'");
   assertUniqueOutputs(f);
   assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", research: {}, healed: [], decide: [], open: [], children: 5 });
 }
@@ -357,6 +357,31 @@ function assertUniqueOutputs(f) {
   assert.equal(receipt.children, 4);
 }
 
+// The scout is gated on its quotes.
+{
+  const f = fake();
+  await run(f.runs, base);
+  assert.equal(byKey(f).scout.gate.command, "recipe-gate quotes '/t/d/scout.md' --repo '/r'");
+  assert.match(byKey(f).scout.task, /When the file is written, run `recipe-gate quotes '\/t\/d\/scout\.md' --repo '\/r'`; if it reports a problem/);
+}
+
+// Notes whose quotes are not found are not passed to the planner.
+{
+  const f = fake({ scout: { scout: { ok: false, quotes: 1, missing: [{ location: "a.nix:3", quote: "x" }], reason: "1 quote not found: a.nix:3" } } });
+  const receipt = await run(f.runs, base);
+  assert.match(byKey(f).plan.task, /Scout notes: none: the scout failed, so look up the facts yourself/);
+  assert.ok(receipt.open.includes("scout notes rejected: 1 quote not found: a.nix:3; the planner worked without notes"));
+}
+
+// A review whose quotes are not found cannot be accepted through continue.
+{
+  const f = fake({ reviewer: { review: { ok: false, verdict: "invalid", missing: [{ location: "a.nix:3", quote: "x" }, { location: "b.nix:9", quote: "y" }], reason: "quotes" } } });
+  await run(f.runs, base);
+  const d = byKey(f)["diagnose-1"];
+  assert.equal(d.gate.command, "recipe-gate diagnosis '/t/d/diagnosis-1.md' --allow 'retry,decide'");
+  assert.match(d.task, /What went wrong: the review quotes text not found in the cited files: a\.nix:3, b\.nix:9/);
+}
+
 // A scout that fails once is retried and its retry file is the notes.
 {
   const f = fake({ scout: { scout: "503" } });
@@ -416,7 +441,7 @@ function assertUniqueOutputs(f) {
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"], ["review-retry"], ["diagnose-1"], ["review-2"]]);
   assert.equal(f.batches[3][0].output, "/t/d/review.retry.md");
-  assert.equal(f.batches[3][0].gate.command, "recipe-gate verdict '/t/d/review.retry.md'");
+  assert.equal(f.batches[3][0].gate.command, "recipe-gate verdict '/t/d/review.retry.md' --repo '/r'");
   assert.equal(receipt.review, "clean");
 }
 
@@ -571,7 +596,7 @@ function assertUniqueOutputs(f) {
   const f = fake();
   await run(f.runs, { ...base, dir: "/tmp/it's", repo: "/r o" });
   assert.equal(byKey(f).plan.gate.command, "recipe-gate plan '/tmp/it'\\''s' --repo '/r o'");
-  assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md'");
+  assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md' --repo '/r o'");
 }
 
 // A batch job: the planner and its revisions carry the rule and the change; no input line without an input.
@@ -627,7 +652,7 @@ function assertUniqueOutputs(f) {
   assert.match(k["review-part-1"].task, /Read only these inputs, which it did not reach: \/t\/d\/tasks\/t2\.md, \/t\/d\/tasks\/t3\.md$/);
   assert.match(k["review-part-2"].task, /Read only these inputs, which it did not reach: \/t\/d\/tasks\/t4\.md$/);
   assert.equal(k["review-part-1"].output, "/t/d/review.part-1.md");
-  assert.equal(k["review-part-1"].gate.command, "recipe-gate verdict '/t/d/review.part-1.md'");
+  assert.equal(k["review-part-1"].gate.command, "recipe-gate verdict '/t/d/review.part-1.md' --repo '/r'");
   assert.match(k["review-merge"].task, /these part files: \/t\/d\/review\.part-1\.md, \/t\/d\/review\.part-2\.md; do not open the original inputs/);
   assert.equal(k["review-merge"].output, "/t/d/review.merged.md");
   assert.match(k["revise-1"].task, /review at \/t\/d\/review\.merged\.md/);

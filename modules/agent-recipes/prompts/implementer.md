@@ -41,6 +41,10 @@ Then: what changed, by file; each light check command with its output at
 baseline and after; rulings (what, why, what it costs if wrong); what the
 reviewer should look at first.
 
+Mark every claim observed or inferred. Observed: you read or ran it, and
+the quote or output is beside it. Inferred: you did not, and your reason is
+beside it.
+
 ## With a brief
 
 You work where the brief says; the worktree check does not apply.
