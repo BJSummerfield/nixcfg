@@ -388,7 +388,12 @@ function missingLocated(text, repo) {
     const start = Number(cited[2]);
     const end = cited[3] === undefined ? start : Number(cited[3]);
     out.quotes++;
-    const full = readIfExists(path.resolve(repo, cited[1]));
+    let full = null;
+    try {
+      full = fs.readFileSync(path.resolve(repo, cited[1]), "utf8");
+    } catch {
+      // any read failure counts as not found
+    }
     const haystack =
       full === null
         ? null

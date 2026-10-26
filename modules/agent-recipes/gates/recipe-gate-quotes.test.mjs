@@ -72,6 +72,17 @@ const notes = (...blocks) => blocks.map((b) => b.map((l) => `> ${l}`).join("\n")
   assert.equal(m.reason, "quote not found in its file: gone.txt:1, src.txt:30");
 }
 
+// an unreadable cited file counts as not found (root can read anything)
+if (process.getuid?.() !== 0) {
+  const locked = path.join(repo, "locked.txt");
+  fs.writeFileSync(locked, "hello world\n");
+  fs.chmodSync(locked, 0);
+  const l = write("l.md", notes(["locked.txt:1", "hello world"]));
+  const r = gate(["quotes", l, "--repo", repo]);
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.missing, [{ location: "locked.txt:1", quote: "hello world" }]);
+}
+
 // quotes: what is not a located quote, and file-level answers
 {
   const u = write("u.md", notes(["just some words"], ["src.txt:30"]));
