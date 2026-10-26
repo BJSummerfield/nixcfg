@@ -453,6 +453,10 @@ export default async function implement(args, port) {
       return;
     }
     if (t.lastVerdict === "invalid") {
+      const missing = list(result.structuredOutput.missing);
+      if (missing.length > 0) {
+        return heal(t, "review", "the review quotes text not found in the cited files: " + missing.map((m) => m.location).join(", "), [result.file], ["retry", "decide"]);
+      }
       return heal(t, "review", "the review's verdict could not be read", [result.file], ["continue", "retry", "decide"]);
     }
     needFix(t, "The review at " + result.file + " found blocking problems.");
