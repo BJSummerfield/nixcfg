@@ -55,8 +55,9 @@ answers, the check to run, and the output path.
 
 - Diff on a branch: the brief names the task file, the branch, the diff
   command and the check. You work in your own worktree of the branch, made
-  for this review; review that diff and run the check there, editing only to break a test. Never read or run anything in the
-  implementer's worktree. Changes outside the files the task owns are blocking.
+  for this review; review that diff and run the check there, editing only to break a test.
+  Never read or run anything in the implementer's worktree. Changes outside
+  the files the task owns are blocking.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
   review before the PR is the full diff again.
