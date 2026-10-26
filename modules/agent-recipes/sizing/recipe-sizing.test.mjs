@@ -416,8 +416,9 @@ const implDone = (id, firstContext) => settleRec(`impl-${id}`, `impl-${id}-run`,
   const dir = newTree("twice");
   const sub = path.join(dir, "sub");
   fs.mkdirSync(sub);
-  transcriptIn(sub, "locator", [assistant(7000), assistant(1000, 7000)]);
-  for (const roots of [[dir, sub], [sub, dir], [dir, dir]]) {
+  const real = transcriptIn(sub, "locator", [assistant(7000), assistant(1000, 7000)]);
+  fs.symlinkSync(real, path.join(dir, "alias.jsonl"));
+  for (const roots of [[dir], [dir, sub], [sub, dir], [dir, dir]]) {
     const r = run([...roots, "--min-samples", "1"]);
     assert.equal(r.json.roles.locator.samples, 1);
   }
