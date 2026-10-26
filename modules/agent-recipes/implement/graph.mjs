@@ -705,9 +705,8 @@ export default async function implement(args, port) {
     });
   }
 
-  // A fix round with no session to resume is a fresh implementer on the
-  // task's branch, built as a relay is; the extra rounds a diagnosis grants
-  // keep resuming the implementer.
+  // A joined task has no session to resume, and with freshFixes a fresh context
+  // keeps the implementer's earlier mistakes out of the fix; diagnosis-granted extra rounds still resume.
   function relayFixes(active) {
     active.forEach(function (t) {
       if (t.next !== "fix" || !(t.joined || (freshFixes && !t.extraFix))) return;
