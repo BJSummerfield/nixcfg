@@ -287,6 +287,12 @@ const gate = (...args) => {
   assert.equal(v("Sound: yes\nDoes what was asked: yes\n").verdict, "clean");
   assert.equal(v("Looks fine.\nDoes what was asked: yes\nSound: yes\n").verdict, "clean");
   assert.equal(v("Does what was asked: maybe\nSound: yes\n").verdict, "invalid");
+  assert.equal(v("Does what was asked: partially\nSound: yes\n").verdict, "needs-work");
+  assert.equal(v("Does what was asked: partially\nSound: yes\n").asked, "partly");
+  assert.equal(v("Does what was asked: Partial.\nSound: yes\n").asked, "partly");
+  assert.equal(v("**Does what was asked:** Yes.\n**Sound:** yes\n").verdict, "clean");
+  assert.equal(v("Does what was asked: yes\nSound: No -\n").sound, "no");
+  assert.equal(v("Does what was asked: mostly\nSound: yes\n").verdict, "invalid");
   assert.equal(v("").verdict, "invalid");
   assert.equal(
     v("# Review: t1\n\nDoes what was asked: yes. The diff adds the\nline the task names.\nSound: yes. The check passes.\n\n## Blocking findings\n").verdict,
