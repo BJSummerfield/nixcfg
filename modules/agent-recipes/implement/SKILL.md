@@ -22,8 +22,8 @@ Parameters, from the request:
   `mutationMs` (number, default 120000: the time budget in ms the mutation
   step spends per task).
 - mutations (boolean, default false): the mutation gate is off by default and
-  runs when a run passes `mutations: true`; it is the step after a task's
-  check passes, described in "What runs".
+  runs when a run passes `mutations: true`; it is the one-time step after a
+  task's first check passes, described in "What runs".
 - freshFixes (boolean, default false): when true, every review fix round is
   a fresh implementer on the task's branch, handed the findings. The default
   resumes the implementer's own session.
@@ -114,16 +114,18 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    task's base, the files changed outside `owns`, whether anything is
    uncommitted and the result of the task's check run once more. A report
    that says `blocked` or `failed` goes to a diagnosis (step 7).
-   When the check passes and the run passed `mutations: true`, the script
-   runs `recipe-gate mutate` in the same worktree: a gate with side effects,
-   carried by one cheap scout child and run by the script only, as the merge
-   and integration gates are. It applies small mutations one at a time to
-   the task's changed `.js`/`.mjs` lines, re-runs the task check on each and
-   restores the line after each. A mutation whose result does not parse or
-   load is discarded, not reported; a mutation the check does not catch is a
-   blocking finding sent to the fix round, each with the exact mutation as a
-   diff and the check command. The step is bounded by `mutationMax` and
-   `mutationMs`.
+   When the implementer's own first check passes and the run passed
+   `mutations: true`, the script runs `recipe-gate mutate` in the same
+   worktree once: a gate with side effects, carried by one cheap scout child
+   and run by the script only, as the merge and integration gates are. It
+   applies small mutations one at a time to the task's changed `.js`/`.mjs`
+   lines, skipping test files (`*.test.js`, `*.test.mjs`), re-runs the task
+   check on each and restores the line after each. A mutation whose result
+   does not parse or load is discarded, not reported; a mutation the check
+   does not catch is a blocking finding sent to the fix round, each with the
+   exact mutation as a diff and the check command. The step is bounded by
+   `mutationMax` and `mutationMs`. A task that passes its check only after a
+   fix round, and the pieces of a split task, are not mutation-gated.
    An implementer that reaches its context budget stops with a note whose
    first line is `handoff:`, after committing what it did. The script
    relays it: a fresh implementer starts on the first one's branch and is
