@@ -229,24 +229,26 @@
 // child is shown this command and may well run it before the workflow does.
 //
 // mutate: runs small mutations against a task's changed lines. The changed
-// .js/.mjs files are the ones in `git diff --name-only <base>..HEAD`, and each
-// file's candidate lines are the new-side lines of its `git diff -U0` hunks
-// (lines deleted from the old side have no new-side line and are skipped).
-// Candidates are tried in a fixed order: files in `git diff` order, lines
-// ascending, operators in order. Blank and comment-only lines yield no
-// candidate. Each candidate is written to the file, run through `node --check`
-// (a failure is a discarded mutation), and, if it parses, the task check is run
-// in the worktree under `timeout -k 5 <s> sh -c <check>` where <s> is the whole
-// seconds left in the --ms budget (at least 1); a check that exits 0 is a
-// survivor, a check that fails to load (SyntaxError, Cannot find module, is not
-// defined, ...) is discarded, and any other failure -- including the timeout
-// 124/137 exit -- is caught. The original text is restored after every
-// candidate. --max (default 24) and the deadline checked before each candidate
-// bound the run; stopped is max, time or exhausted (every candidate tried). The
-// survivors carry the exact mutation as a unified-diff hunk with no context.
-// ok is false only for an operational failure: the path is not a git worktree,
-// --base is absent or not an ancestor of HEAD, or a scanned file is left dirty
-// and cannot be restored from HEAD.
+// .js/.mjs files are the ones in `git diff --name-only <base>..HEAD`, minus
+// files named `*.test.js` or `*.test.mjs`, and each file's candidate lines are
+// the new-side lines of its `git diff -U0` hunks (lines deleted from the old
+// side have no new-side line and are skipped). Candidates are taken in turn
+// across the files, each file's lines ascending, operators in order, so that no
+// single file can spend the whole --max cap. Blank and comment-only lines yield
+// no candidate. Each candidate is written to the file, run through
+// `node --check` (a failure is a discarded mutation), and, if it parses, the
+// task check is run in the worktree under `timeout -k 5 <s> sh -c <check>`
+// where <s> is the whole seconds left in the --ms budget (at least 1); a check
+// that exits 0 is a survivor, a check that fails to load (SyntaxError, Cannot
+// find module, is not defined, ...) is discarded, and any other failure --
+// including the timeout 124/137 exit -- is caught. The original text is
+// restored after every candidate. --max (default 24) and the deadline checked
+// before each candidate bound the run; stopped is max, time or exhausted
+// (every candidate tried). The survivors carry the exact mutation as a
+// unified-diff hunk with no context. ok is false only for an operational
+// failure: the path is not a git worktree, --base is absent or not an ancestor
+// of HEAD, a scanned file is left dirty and cannot be restored from HEAD, or
+// `node --check` or `timeout` cannot be started.
 
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
