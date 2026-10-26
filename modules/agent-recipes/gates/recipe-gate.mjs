@@ -1199,9 +1199,6 @@ function diagnosis(file, flags) {
   return problem ? { ...out, ok: false, problem } : out;
 }
 
-// mutate: apply small line mutations to a task's changed .js/.mjs lines one at
-// a time and re-run the task check on each; a mutation the check does not catch
-// is reported as a survivor with the exact mutation as a unified-diff hunk.
 const PARSE_CHECK_MS = 30 * 1000;
 const DISCARD_MARKERS = [
   "SyntaxError",
@@ -1274,8 +1271,6 @@ function commentOrBlank(line) {
   return /^\/\//.test(t) || /^\/\*/.test(t) || /^\*/.test(t);
 }
 
-// The candidate mutations for one line, in operator order; a blank or comment
-// line yields none. Each is the whole mutated line ("" deletes the line).
 function candidateLines(line) {
   if (commentOrBlank(line)) return [];
   const out = [];
@@ -1290,9 +1285,6 @@ function candidateLines(line) {
   return out;
 }
 
-// The new-side (post-change) lines of a file's `git diff -U0` hunks: 1-based
-// line numbers and the line text. Deleted lines have no new-side line and are
-// skipped.
 function changedNewLines(worktree, base, file) {
   const out = gitRaw(worktree, ["diff", "-U0", base, "HEAD", "--", file]).out;
   const res = [];
@@ -1347,7 +1339,7 @@ function mutate(worktree, flags) {
 
   // --diff-filter=d: a deleted file has no new-side lines to mutate.
   const changed = gitRaw(worktree, ["diff", "--diff-filter=d", "--name-only", baseRef.out, "HEAD"]).out.split("\n").filter(Boolean);
-  const files = changed.filter((f) => /\.m?js$/.test(f));
+  const files = changed.filter((f) => /\.m?js$/.test(f) && !/\.test\.m?js$/.test(f));
   result.files = files;
 
   // The tree is clean at entry, so each file's text is read once and restored
@@ -1365,43 +1357,63 @@ function mutate(worktree, flags) {
       encoding: "utf8",
       maxBuffer: RUN_BUFFER,
     });
-    return { status: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+    return { error: r.error ?? null, status: r.status ?? -1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
   };
 
-  let stopReason = "exhausted";
-  outer: for (const file of files) {
-    const text = readOriginal(file);
-    const origLines = text.split("\n");
+  // A single file must not be able to spend the whole --max cap.
+  const perFile = [];
+  const lines = new Map();
+  for (const file of files) {
+    const origLines = readOriginal(file).split("\n");
+    lines.set(file, origLines);
+    const list = [];
     for (const { line } of changedNewLines(worktree, baseRef.out, file)) {
       const from = origLines[line - 1];
       if (from === undefined) continue;
-      for (const to of candidateLines(from)) {
-        if (remaining() <= 0) {
-          stopReason = "time";
-          break outer;
-        }
-        if (result.tried >= max) {
-          stopReason = "max";
-          break outer;
-        }
-        result.tried++;
-        try {
-          const newLines = [...origLines];
-          if (to === "") newLines.splice(line - 1, 1);
-          else newLines[line - 1] = to;
-          fs.writeFileSync(path.join(worktree, file), newLines.join("\n"));
-          const parse = spawnSync("node", ["--check", file], { cwd: worktree, encoding: "utf8", timeout: PARSE_CHECK_MS });
-          if (parse.status !== 0) result.discarded++;
-          else {
-            const cr = runCheck();
-            if (cr.status === 0) result.survivors.push({ file, line, from, to, diff: diffHunk(file, line, from, to) });
-            else if (cr.status !== 124 && cr.status !== 137 && DISCARD_MARKERS.some((m) => cr.out.includes(m))) result.discarded++;
-            else result.caught++;
-          }
-        } finally {
-          restore(file);
-        }
+      for (const to of candidateLines(from)) list.push({ file, line, from, to });
+    }
+    perFile.push(list);
+  }
+  const order = [];
+  for (let i = 0; ; i++) {
+    let more = false;
+    for (const list of perFile) {
+      const cand = list[i];
+      if (!cand) continue;
+      more = true;
+      order.push(cand);
+    }
+    if (!more) break;
+  }
+
+  let stopReason = "exhausted";
+  for (const { file, line, from, to } of order) {
+    if (remaining() <= 0) {
+      stopReason = "time";
+      break;
+    }
+    if (result.tried >= max) {
+      stopReason = "max";
+      break;
+    }
+    result.tried++;
+    try {
+      const newLines = [...lines.get(file)];
+      if (to === "") newLines.splice(line - 1, 1);
+      else newLines[line - 1] = to;
+      fs.writeFileSync(path.join(worktree, file), newLines.join("\n"));
+      const parse = spawnSync(process.execPath, ["--check", file], { cwd: worktree, encoding: "utf8", timeout: PARSE_CHECK_MS });
+      if (parse.error) return finish(`node --check could not run: ${parse.error.code}`);
+      if (parse.status !== 0) result.discarded++;
+      else {
+        const cr = runCheck();
+        if (cr.error) return finish(`timeout could not run: ${cr.error.code}`);
+        if (cr.status === 0) result.survivors.push({ file, line, from, to, diff: diffHunk(file, line, from, to) });
+        else if (cr.status !== 124 && cr.status !== 137 && DISCARD_MARKERS.some((m) => cr.out.includes(m))) result.discarded++;
+        else result.caught++;
       }
+    } finally {
+      restore(file);
     }
   }
   result.stopped = stopReason;
