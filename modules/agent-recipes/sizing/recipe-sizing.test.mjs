@@ -321,5 +321,139 @@ fs.writeFileSync(
   assert.equal(run([path.join(cycleX, "a")]).status, 1);
 }
 
+const settleRec = (key, runId, result) => ({ type: "settle", key, runId, fingerprint: "f", at: "t", result });
+const writeChildren = (dir, records) => fs.writeFileSync(path.join(dir, "children.jsonl"), records.map((r) => JSON.stringify(r)).join("\n") + "\n");
+const newTree = (name) => {
+  const dir = path.join(tmp, name);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+const intakeOf = (tasks, extra = {}) => settleRec("intake", "intake-run", { status: "done", loop: null, structuredOutput: { ok: true, tasks, ...extra } });
+const implDone = (id, firstContext) => settleRec(`impl-${id}`, `impl-${id}-run`, { status: "done", loop: null, usage: { firstContext, peakContext: firstContext } });
+
+// When the x1.5 limit bounds the implementer's k_read, growth_p90 and the
+// coverage are recomputed with the bounded value, so plan_fit describes the
+// committed pair. Unbounded, k is 5 and both pairs would be covered.
+{
+  const dir = newTree("clamp-fit");
+  for (let i = 0; i < 2; i++) transcriptIn(dir, "implementer", [assistant(7000), assistant(500, 6500)]);
+  writeChildren(dir, [
+    intakeOf([
+      { id: "a", est: 1, bytes: 4000 },
+      { id: "b", est: 1, bytes: 8000 },
+    ]),
+    implDone("a", 12000),
+    implDone("b", 17000),
+  ]);
+  const cur = path.join(tmp, "clamp-fit.json");
+  fs.writeFileSync(cur, JSON.stringify({ engine_rev: "x", roles: { implementer: { samples: 5, base: 7000, k_read: 1, growth_p90: 1000, peak_p90: 7000 } } }));
+  const r = run([dir, "--current", cur, "--min-samples", "2"]);
+  assert.equal(r.status, 0);
+  const impl = r.json.roles.implementer;
+  assert.equal(impl.k_read, 1.5);
+  assert.equal(impl.growth_p90, 1500);
+  assert.deepEqual(r.json.plan_fit, { pairs: 2, k_read: 1.5, growth_p90: 1500, covered: 0, coverage: 0 });
+}
+
+// Re-running on the tool's own output with no new samples changes nothing, and
+// 1.1 and 0.07 do not creep upward on the clamp's rounding.
+{
+  const dir = newTree("creep");
+  for (let i = 0; i < 2; i++) transcriptIn(dir, "implementer", [assistant(7000), assistant(500, 6500)]);
+  for (let i = 0; i < 2; i++) transcriptIn(dir, "reviewer", [assistant(7000), readResult(1000), assistant(70, 7000)]);
+  writeChildren(dir, [
+    intakeOf([
+      { id: "a", est: 1, bytes: 4000 },
+      { id: "b", est: 1, bytes: 8000 },
+    ]),
+    implDone("a", 8100),
+    implDone("b", 9200),
+  ]);
+  const first = run([dir, "--min-samples", "2"]);
+  assert.equal(first.status, 0);
+  assert.equal(first.json.roles.implementer.k_read, 1.1);
+  assert.equal(first.json.roles.reviewer.k_read, 0.07);
+  const cur = path.join(tmp, "creep.json");
+  fs.writeFileSync(cur, JSON.stringify({ engine_rev: "x", roles: first.json.roles }));
+  const second = run([dir, "--current", cur, "--min-samples", "2"]);
+  assert.deepEqual(second.json.roles, first.json.roles);
+  assert.deepEqual(second.json.plan_fit, first.json.plan_fit);
+}
+
+// The pairing reads the gate's top-level sizing when a task has no bytes:
+// (22000 - 6000 - 12000) x 4 / 2 = 8000 bytes, not the 20000 the defaults give.
+{
+  const dir = newTree("top-sizing");
+  transcriptIn(dir, "implementer", [assistant(7000), assistant(500, 6500)]);
+  writeChildren(dir, [
+    intakeOf([{ id: "a", est: 22000 }], { sizing: { base: 6000, k_read: 2, growth_p90: 12000 } }),
+    implDone("a", 12000),
+  ]);
+  const r = run([dir, "--min-samples", "1"]);
+  assert.deepEqual(r.json.plan_fit, { pairs: 1, k_read: 2.5, growth_p90: 0, covered: 1, coverage: 1 });
+}
+
+// Graph-step children run under the role scout; only real scouts are sampled.
+{
+  const dir = newTree("scout-steps");
+  const stepKeys = ["pin", "merge", "intake", "resume", "join-a-1", "deps-a", "handoff-a-1", "verify-a", "reproduce", "verify-base"];
+  const records = [];
+  stepKeys.forEach((key, i) => {
+    transcriptIn(dir, "scout", [assistant(4000), assistant(500, 4000), outcome(`step-${i}`, false, null)]);
+    records.push(settleRec(key, `step-${i}`, { status: "done", loop: null }));
+  });
+  transcriptIn(dir, "scout", [assistant(4000), assistant(500, 59500), outcome("real-scout", false, null)]);
+  records.push(settleRec("scout", "real-scout", { status: "done", loop: null }));
+  writeChildren(dir, records);
+  const r = run([dir, "--min-samples", "1"]);
+  assert.equal(r.json.roles.scout.samples, 1);
+  assert.equal(r.json.roles.scout.peak_p90, 60000);
+  assert.deepEqual(r.json.excluded, { scout: stepKeys.length });
+}
+
+// A real file reachable by two paths in a plain tree is one sample.
+{
+  const dir = newTree("twice");
+  const sub = path.join(dir, "sub");
+  fs.mkdirSync(sub);
+  const real = transcriptIn(sub, "locator", [assistant(7000), assistant(1000, 7000)]);
+  fs.symlinkSync(real, path.join(dir, "alias.jsonl"));
+  for (const roots of [[dir], [dir, sub], [sub, dir], [dir, dir]]) {
+    const r = run([...roots, "--min-samples", "1"]);
+    assert.equal(r.json.roles.locator.samples, 1);
+  }
+}
+
+// Several links back to the parent would multiply the walk at every level
+// without the directory guard; the guard also keeps each file to one sample.
+{
+  const dir = newTree("fan");
+  transcriptIn(dir, "locator", [assistant(7000), assistant(1000, 7000)]);
+  for (const name of ["l1", "l2", "l3"]) fs.symlinkSync(dir, path.join(dir, name));
+  const r = spawnSync(process.execPath, [script, dir, "--min-samples", "1"], { encoding: "utf8", timeout: 20000 });
+  assert.equal(r.status, 0);
+  assert.equal(JSON.parse(r.stdout).roles.locator.samples, 1);
+}
+
+// The first settle of an impl key is the first attempt; a repeat of the same
+// key does not replace it.
+{
+  const dir = newTree("first-settle");
+  transcriptIn(dir, "implementer", [assistant(7000), assistant(500, 6500)]);
+  writeChildren(dir, [intakeOf([{ id: "a", est: 1, bytes: 4000 }]), implDone("a", 12000), implDone("a", 50000)]);
+  const r = run([dir, "--min-samples", "1"]);
+  assert.equal(r.json.plan_fit.k_read, 5);
+}
+
+// The 90th percentile of ten values is the tenth: floor(0.9 x 10) is 9, not the 8
+// that ceil(0.9 x 10) - 1 would give.
+{
+  const dir = newTree("p90");
+  for (let g = 1; g <= 10; g++) transcriptIn(dir, "locator", [assistant(7000), assistant(1000, 6000 + g * 1000)]);
+  const r = run([dir, "--min-samples", "1"]);
+  assert.equal(r.json.roles.locator.peak_p90, 17000);
+  assert.equal(r.json.roles.locator.growth_p90, 10000);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-sizing: all assertions passed");
