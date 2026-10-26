@@ -1345,7 +1345,8 @@ function mutate(worktree, flags) {
   if (spawnSync("git", ["merge-base", "--is-ancestor", baseRef.out, "HEAD"], { cwd: worktree }).status !== 0)
     return finish(`base ${baseRef.out} is not an ancestor of HEAD`);
 
-  const changed = gitRaw(worktree, ["diff", "--name-only", baseRef.out, "HEAD"]).out.split("\n").filter(Boolean);
+  // --diff-filter=d: a deleted file has no new-side lines to mutate.
+  const changed = gitRaw(worktree, ["diff", "--diff-filter=d", "--name-only", baseRef.out, "HEAD"]).out.split("\n").filter(Boolean);
   const files = changed.filter((f) => /\.m?js$/.test(f));
   result.files = files;
 
@@ -1405,10 +1406,13 @@ function mutate(worktree, flags) {
   }
   result.stopped = stopReason;
 
-  let dirty = gitRaw(worktree, ["status", "--porcelain"]).out;
+  // Only the scanned files matter here: the check may leave untracked files
+  // or edit files the task did not touch.
+  const scannedDirty = () => gitRaw(worktree, ["status", "--porcelain", ...(files.length ? ["--", ...files] : [])]).out;
+  let dirty = scannedDirty();
   if (dirty !== "") {
     for (const file of files) spawnSync("git", ["checkout", "--", file], { cwd: worktree });
-    dirty = gitRaw(worktree, ["status", "--porcelain"]).out;
+    dirty = scannedDirty();
   }
   if (dirty !== "") {
     result.restored = false;

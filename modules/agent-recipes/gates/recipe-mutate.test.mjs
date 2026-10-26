@@ -70,6 +70,7 @@ test("base", () => {
   assert.equal(base(), 10);
 });
 `;
+const calcGone = "export function gone() {\n  return 7;\n}\n";
 
 // A temp git repo at the base commit; returns the repo dir and the base sha.
 function calcRepo() {
@@ -82,6 +83,7 @@ function calcRepo() {
   fs.writeFileSync(path.join(d, "README.md"), "# mutcalc\n");
   fs.writeFileSync(path.join(d, "calc.js"), calcBase);
   fs.writeFileSync(path.join(d, "calc.test.js"), calcTest);
+  fs.writeFileSync(path.join(d, "gone.js"), calcGone);
   git(d, "add", ".");
   git(d, "commit", "-m", "base");
   return { d, base: git(d, "rev-parse", "HEAD") };
@@ -212,6 +214,40 @@ const changeCommit = (d) => {
   assert.deepEqual(j.survivors, []);
   assert.equal(j.stopped, "exhausted");
   assert.equal(j.restored, true);
+}
+
+// A change that deletes a .js file: the deleted file is not scanned and the
+// run still reports the survivors in the other changed file.
+{
+  const { d, base } = calcRepo();
+  fs.unlinkSync(path.join(d, "gone.js"));
+  changeCommit(d);
+  const r = gate(d, "--check", "node --test", "--base", base);
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.deepEqual(j.files, ["calc.js"]);
+  assert.equal(j.tried, 10);
+  assert.equal(j.stopped, "exhausted");
+  assert.equal(j.restored, true);
+  assert.equal(j.tried, j.caught + j.discarded + j.survivors.length);
+}
+
+// A check that leaves an untracked file behind does not fail the run: only
+// the scanned files are checked for dirt.
+{
+  const { d, base } = calcRepo();
+  changeCommit(d);
+  const r = gate(d, "--check", "node --test && echo x > out.log", "--base", base);
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.equal(j.restored, true);
+  assert.equal(j.stopped, "exhausted");
+  assert.equal(j.survivors.length, 3);
+  assert.equal(j.tried, j.caught + j.discarded + j.survivors.length);
+  assert.ok(fs.existsSync(path.join(d, "out.log")));
+  assert.equal(git(d, "status", "--porcelain", "--", "calc.js"), "");
 }
 
 // Usage errors exit 2 with no JSON.
