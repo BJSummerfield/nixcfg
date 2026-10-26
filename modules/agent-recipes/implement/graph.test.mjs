@@ -116,7 +116,9 @@ const handedOff = (id, over = {}) => ({
 const piece = (id, over = {}) => ({ id, owns: [`lib/a/${id}`], reads: [], check: `nixfmt --check ${id}.nix`, depends: [], est: 400, file: `/t/p/split/tasks/${id}.md`, ...over });
 const splitPlan = (ids) => planOf(ids.map((id) => piece(id)));
 
-function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {}, planner = {} } = {}) {
+// The default answer for a mutate- child: the gate ran cleanly and left no survivors.
+const mutationGate = { ok: true, reason: "", files: [], tried: 3, caught: 2, discarded: 1, survivors: [], stopped: "exhausted", ms: 50, restored: true };
+function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {}, planner = {}, mutate = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
@@ -153,6 +155,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
               if (item.key.startsWith("resume")) return answer({}, item.key, back);
               if (/^(deps-|merge|join-)/.test(item.key)) return answer(merge, item.key, mergeGate(item));
               if (item.key.startsWith("handoff-")) return answer(intake, item.key, handoffGate(item.key.replace(/^handoff-/, "").replace(/-\d+$/, "")));
+              if (item.key.startsWith("mutate-")) return answer(mutate, item.key, mutationGate);
               return answer(intake, item.key, plan);
             case "planner": {
               const parent = item.key.replace(/^split-/, "").replace(/-\d+$/, "");
@@ -326,6 +329,8 @@ function assertUniqueOutputs(f) {
   assert.match(k["diagnose-c-1"].task, /Allowed actions: fix, replan, decide/);
   assert.match(k["impl-a"].task, /write `blocked: <why>` as the first line of the report; do not ask/);
   assertUniqueOutputs(f);
+  assert.equal(f.items().filter((i) => i.key.startsWith("mutate-")).length, 0);
+  assert.equal(receipt.mutations, undefined);
 
   assert.deepEqual(receipt, {
     base: "base0",
@@ -1333,6 +1338,8 @@ function assertUniqueOutputs(f) {
   ]);
   assert.deepEqual(emits.find((e) => e.stage === "wave 1, round 2").tasks.find((t) => t.id === "a"), { id: "a", state: "split", next: "pieces", fixes: 0, heals: 0, relays: 1, splits: 1 });
   assertUniqueOutputs(f);
+  assert.equal(f.items().filter((i) => i.key.startsWith("mutate-")).length, 0);
+  assert.equal(receipt.mutations, undefined);
 }
 
 // Two relays, then the third handoff is a split.
@@ -1578,6 +1585,201 @@ function assertUniqueOutputs(f) {
   const f = fake({ impl: { "impl-a": { result: { ok: false, status: "aborted", error: "run stopped" } } } });
   await assert.rejects(run(f.runs, base), { name: "RunStopped" });
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"]]);
+}
+
+// The mutation gate: the gate is on only when the run's args pass `mutations: true`.
+// A surviving mutation is a blocking finding for the fix round, and its counts are in the receipt.
+{
+  const survivor = { file: "a.nix", line: 3, from: "let a = 1", to: "let a = 2", diff: "-let a = 1\n+let a = 2" };
+  const f = fake({
+    mutate: { "mutate-a-1": { ...mutationGate, tried: 5, caught: 2, discarded: 2, survivors: [survivor] } },
+  });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["mutate-a-1"],
+    ["fix-a-1"],
+    ["review-a-1"],
+    ["merge"],
+    ["integrate"],
+  ]);
+  const k = byKey(f);
+  const m = k["mutate-a-1"];
+  assert.equal(m.agent, "scout");
+  assert.equal(m.output, "/t/p/mutate-a-1.md");
+  assert.equal(m.gate.output, "json");
+  assert.equal(m.gate.timeoutMs, 180000);
+  assert.equal(m.maxRuntimeMs, 1200000);
+  assert.doesNotMatch(m.task, /if it reports a problem/);
+  assert.match(m.task, /^Write the single word done to \/t\/p\/mutate-a-1\.md$/);
+  assert.equal(
+    m.gate.command,
+    "recipe-gate mutate '/wt/a' --check 'nixfmt --check a.nix' --base 'base0' --max 24 --ms 120000",
+  );
+  assert.equal(k["fix-a-1"].resume, "run-impl-a");
+  const findings = k["fix-a-1"].task;
+  assert.match(findings, /The task check still passes with each mutation below applied\. Make the check fail on each one, either by strengthening the check or by fixing the code the mutation exposes\./);
+  assert.match(findings, /check still passes: nixfmt --check a\.nix\n-let a = 1\n\+let a = 2/);
+  assert.match(findings, /Fix the blocking findings only/);
+  assert.deepEqual(receipt.mutations, [{ id: "a", tried: 5, caught: 2, discarded: 2, survived: 1 }]);
+  assert.deepEqual(receipt.merged, ["a"]);
+}
+
+// The mutation gate runs once per task: the survivor sends the task to a fix round, the fix round's
+// check passes and the relayed implementer reports the work done, and the run continues to review.
+{
+  const survivor = { file: "a.nix", line: 3, from: "let a = 1", to: "let a = 2", diff: "-let a = 1\n+let a = 2" };
+  const f = fake({
+    mutate: { "mutate-a-1": { ...mutationGate, tried: 5, caught: 2, discarded: 2, survivors: [survivor] } },
+    fix: {
+      "fix-a-1": {
+        result: {
+          ok: true,
+          handoff: { line: "handoff: half the fix", unread: [], note: "/t/p/fix-a-1.md", empty: false },
+          usage: { firstContext: 1000 },
+          budget: { tokens: 100000 },
+        },
+      },
+    },
+  });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["mutate-a-1"],
+    ["fix-a-1"],
+    ["handoff-a-1"],
+    ["impl-a-2"],
+    ["review-a-1"],
+    ["merge"],
+    ["integrate"],
+  ]);
+  const k = byKey(f);
+  assert.equal(f.items().filter((i) => i.key.startsWith("mutate-")).length, 1, "exactly one mutate item per task");
+  assert.equal(k["mutate-a-2"], undefined);
+  assert.equal(k["fix-a-1"].resume, "run-impl-a");
+  assert.equal(k["handoff-a-1"].agent, "scout");
+  assert.equal(
+    k["handoff-a-1"].gate.command,
+    "recipe-gate task '/t/p/fix-a-1.md' --check 'nixfmt --check a.nix' --owns 'a.nix,lib/a' --repo '/r' --base 'base0' --run '/t/p' --id 'a'",
+  );
+  assert.equal(k["impl-a-2"].handoffOf, "run-fix-a-1");
+  assert.equal(k["impl-a-2"].handoffAs, "relay");
+  assert.match(k["impl-a-2"].task, /^Continue this task from the handoff note at \/t\/p\/fix-a-1\.md; the branch pi\/a holds/m);
+  assert.match(k["impl-a-2"].task, /check still passes: nixfmt --check a\.nix\n-let a = 1\n\+let a = 2/);
+  assert.deepEqual(receipt.mutations, [{ id: "a", tried: 5, caught: 2, discarded: 2, survived: 1 }]);
+  assert.equal(receipt.handoffs[0].relays, 1);
+  assert.deepEqual(receipt.merged, ["a"]);
+}
+
+// With `mutations: false` no gate runs and the receipt has no mutations field; the rest is as today.
+{
+  const f = fake();
+  const receipt = await run(f.runs, { ...base, mutations: false });
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["review-a-1"],
+    ["merge"],
+    ["integrate"],
+  ]);
+  assert.equal(f.items().filter((i) => i.key.startsWith("mutate-")).length, 0);
+  assert.equal(receipt.mutations, undefined);
+  assert.deepEqual(receipt.merged, ["a"]);
+}
+
+// A mutate child that fails twice leaves an open line and the task still goes to review.
+{
+  const f = fake({ mutate: { "mutate-a-1": "boom", "mutate-a-1-retry": "boom" } });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  const k = byKey(f);
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["mutate-a-1"],
+    ["mutate-a-1-retry"],
+    ["review-a-1"],
+    ["merge"],
+    ["integrate"],
+  ]);
+  assert.equal(k["mutate-a-1-retry"].output, "/t/p/mutate-a-1.retry.md");
+  assert.deepEqual(receipt.open, ["task a: the mutation gate did not run: boom"]);
+  assert.equal(receipt.mutations, undefined);
+  assert.deepEqual(receipt.merged, ["a"]);
+}
+
+// A gate that fails without a retry: the open line carries the reason and the
+// receipt has no entry for the task; review comes next.
+{
+  const f = fake({ mutate: { "mutate-a-1": { ok: false, reason: "could not apply the mutations" } } });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  const k = byKey(f);
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["mutate-a-1"],
+    ["review-a-1"],
+    ["merge"],
+    ["integrate"],
+  ]);
+  assert.equal(k["mutate-a-1-retry"], undefined);
+  assert.deepEqual(receipt.open, ["task a: the mutation gate failed: could not apply the mutations"]);
+  assert.equal(receipt.mutations, undefined);
+  assert.deepEqual(receipt.merged, ["a"]);
+}
+
+// A gate that fails and could not restore the worktree sets the task aside.
+{
+  const f = fake({ mutate: { "mutate-a-1": { ok: false, reason: "restore failed", restored: false } } });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  assert.deepEqual(keys(f), [
+    ["intake"],
+    ["pin"],
+    ["impl-a"],
+    ["mutate-a-1"],
+  ]);
+  assert.equal(f.items().filter((i) => /^review-/.test(i.key) || /^fix-/.test(i.key)).length, 0);
+  assert.deepEqual(receipt.set_aside, [{ id: "a", reason: "the mutation gate left the worktree dirty: restore failed" }]);
+  assert.deepEqual(receipt.merged, []);
+  assert.deepEqual(receipt.open, ["task a: the mutation gate failed: restore failed", "no task finished, so there is nothing to integrate"]);
+  assert.equal(receipt.mutations, undefined);
+  assertUniqueOutputs(f);
+}
+
+// A piece of a split task never gets a mutate item; only the top-level task is gated.
+{
+  const f = fake({
+    plan: planOf([spec("a"), spec("b")]),
+    impl: {
+      "impl-a": handedOff("a", { line: "one", gate: { head: "h1" } }),
+      "impl-a-2": handedOff("a-2", { line: "two", gate: { head: "h1" } }),
+    },
+  });
+  const receipt = await run(f.runs, { ...base, mutations: true });
+  const mutateKeys = f.items().filter((i) => i.key.startsWith("mutate-")).map((i) => i.key);
+  assert.deepEqual(mutateKeys, ["mutate-b-1"]);
+  assert.equal(byKey(f)["mutate-b-1"].output, "/t/p/mutate-b-1.md");
+  assert.doesNotMatch(byKey(f)["mutate-b-1"].task, /if it reports a problem/);
+  assert.ok(byKey(f)["review-a-1"], "the joined task is reviewed once");
+  assert.ok(byKey(f)["review-b-1"], "the top-level task is reviewed");
+  assert.deepEqual(receipt.mutations, [{ id: "b", tried: 3, caught: 2, discarded: 1, survived: 0 }]);
+  assert.deepEqual(receipt.merged, ["a", "b"]);
+  assert.deepEqual(receipt.handoffs, [{ id: "a", relays: 1, splits: 1, pieces: ["a-1", "a-2"] }]);
+}
+
+// The default run: the shared args pass no `mutations` entry, so no mutate item
+// is dispatched and the receipt has no mutations field.
+{
+  const f = fake();
+  const receipt = await run(f.runs, base);
+  assert.equal(f.items().filter((i) => i.key.startsWith("mutate-")).length, 0);
+  assert.equal(receipt.mutations, undefined);
 }
 
 console.log("implement graph: ok");

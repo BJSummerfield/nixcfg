@@ -4,6 +4,7 @@
   nodejs,
   git,
   bash,
+  coreutils,
 }:
 let
   tree = builtins.path {
@@ -18,6 +19,7 @@ let
         nodejs
         git
         bash
+        coreutils
       ];
       text = ''
         exec node ${tree}/${script} "$@"
