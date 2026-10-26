@@ -17,7 +17,13 @@ Parameters, from the request:
   worktrees from a dirty source checkout.
 - optional: `branch` (name of the integration branch, default
   `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
-  plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
+  plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`,
+  `mutationMax` (number, default 24: at most this many mutations per task),
+  `mutationMs` (number, default 120000: the time budget in ms the mutation
+  step spends per task).
+- mutations (boolean, default false): the mutation gate is off by default and
+  runs when a run passes `mutations: true`; it is the step after a task's
+  check passes, described in "What runs".
 - freshFixes (boolean, default false): when true, every review fix round is
   a fresh implementer on the task's branch, handed the findings. The default
   resumes the implementer's own session.
@@ -108,6 +114,16 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    task's base, the files changed outside `owns`, whether anything is
    uncommitted and the result of the task's check run once more. A report
    that says `blocked` or `failed` goes to a diagnosis (step 7).
+   When the check passes and the run passed `mutations: true`, the script
+   runs `recipe-gate mutate` in the same worktree: a gate with side effects,
+   carried by one cheap scout child and run by the script only, as the merge
+   and integration gates are. It applies small mutations one at a time to
+   the task's changed `.js`/`.mjs` lines, re-runs the task check on each and
+   restores the line after each. A mutation whose result does not parse or
+   load is discarded, not reported; a mutation the check does not catch is a
+   blocking finding sent to the fix round, each with the exact mutation as a
+   diff and the check command. The step is bounded by `mutationMax` and
+   `mutationMs`.
    An implementer that reaches its context budget stops with a note whose
    first line is `handoff:`, after committing what it did. The script
    relays it: a fresh implementer starts on the first one's branch and is
@@ -182,11 +198,11 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    `recipe-status <plan dir>` prints it with the children still running,
    from any shell.
 
-A gate with side effects (the merges and the integration tidy) is run by the
-script only: the child it follows is not told to run it first, because the
-child's own run would change what the script's run sees. Gates without side
-effects (plan, task, verdict, diagnosis) are run by the child before it
-reports, and again by the script.
+A gate with side effects (the merges, the integration tidy and the mutation
+gate) is run by the script only: the child it follows is not told to run it
+first, because the child's own run would change what the script's run sees.
+Gates without side effects (plan, task, verdict, diagnosis) are run by the
+child before it reports, and again by the script.
 
 The pi mechanism behind the implementer and reviewer runs is the runner: each
 node gets a fresh worktree on its own branch from its base, under
@@ -220,11 +236,13 @@ run continues with the same call plus `resume: true`.
   resumed: {done: [ids], continued: [ids], answered: [ids]},
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   handoffs: [{id, relays, splits, pieces: [ids]}],
+  mutations: [{id, tried, caught, discarded, survived}],
   heavy_check, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
-`handoffs` is present only when a task was relayed or split. `fresh_fixes`
+`handoffs` is present only when a task was relayed or split. `mutations` is
+present only when the mutation gate ran on at least one task. `fresh_fixes`
 is present only when the run used fresh fix rounds. The pieces of a
 split task are listed under it in `report`, indented, and are not in `merged`;
 the branches of the implementers that were relayed are in `left` with kind
