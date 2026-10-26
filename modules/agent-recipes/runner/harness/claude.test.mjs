@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { handoffPrompt } from "../handoff.mjs";
-import { claudeArgv, claudeSessionFile, claudeSessionId, start, usesEngine } from "./claude.mjs";
+import { claudeArgv, claudeSessionFile, claudeSessionId, handoffGrant, start, usesEngine } from "./claude.mjs";
 
 const alive = (pid) => {
   try {
@@ -316,6 +316,17 @@ assert.equal(usesEngine, false);
   assert.ok(!bare.some((a) => ["--model", "--effort", "--tools", "--allowedTools"].includes(a)));
   const listed = claudeArgv({ ...spec, role: { claude: { tools: ["Read", "Write"] } } });
   assert.equal(listed[listed.indexOf("--tools") + 1], "Read,Write");
+  const file = "/etc/claude/agents.json";
+  const withAgentsSpec = { ...spec, role: { ...spec.role, claude: { ...spec.role.claude, agentsFile: file } } };
+  const withAgents = claudeArgv(withAgentsSpec);
+  assert.ok(!claudeArgv(spec).includes("--agents"));
+  assert.deepEqual(withAgents.slice(withAgents.indexOf("--agent") - 2, withAgents.indexOf("--agent")), ["--agents", file]);
+  for (const argv of [
+    claudeArgv({ ...withAgentsSpec, runId: "r2-argv", resume: true }),
+    claudeArgv({ ...withAgentsSpec, resume: true }, handoffGrant(withAgentsSpec)),
+  ]) {
+    assert.deepEqual(argv.slice(argv.indexOf("--agent") - 2, argv.indexOf("--agent")), ["--agents", file]);
+  }
 }
 
 // a normal run, then a resumed one on the same session
