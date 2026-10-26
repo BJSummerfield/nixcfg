@@ -203,13 +203,37 @@ function readJson(file) {
   }
 }
 
+const HEADING = /^#{1,6}\s/;
+
+// Section text is split on markdown headings so a defect named only under
+// "## Small findings" is not scored the same as one named under blocking.
+function namedIn(reviewText, match) {
+  const texts = { blocking: [], small: [], other: [] };
+  let section = "other";
+  for (const line of reviewText.split("\n")) {
+    if (HEADING.test(line)) {
+      const h = line.toLowerCase();
+      section = h.includes("blocking") ? "blocking" : h.includes("small") ? "small" : "other";
+    }
+    texts[section].push(line);
+  }
+  for (const name of ["blocking", "small", "other"]) {
+    const text = texts[name].join("\n");
+    if (match.some((re) => re.test(text))) return name;
+  }
+  return "none";
+}
+
 function scoreCase({ reviewText, c, result }) {
   const structured = result?.structuredOutput;
   const verdict =
     structured !== null && typeof structured === "object" && typeof structured.verdict === "string"
       ? structured.verdict
       : "invalid";
-  const defects = c.defects.map((d) => ({ id: d.id, found: d.match.some((re) => re.test(reviewText)) }));
+  const defects = c.defects.map((d) => {
+    const found = d.match.some((re) => re.test(reviewText));
+    return { id: d.id, found, named_in: found ? namedIn(reviewText, d.match) : "none" };
+  });
   const found = defects.filter((d) => d.found).length;
   const control = defects.length === 0;
   return {
@@ -226,7 +250,7 @@ function median(sorted) {
   return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function summarize(rows) {
+function summarize(rows, opts = {}) {
   const defectRows = rows.filter((r) => r.defects.length > 0);
   const caught = defectRows.filter((r) => r.caught).length;
   const verdicts = {};
@@ -235,7 +259,8 @@ function summarize(rows) {
     verdicts[r.verdict] = (verdicts[r.verdict] ?? 0) + 1;
     for (const key of Object.keys(tokens)) tokens[key] += r.tokens[key];
   }
-  return {
+  const foundCount = (r) => r.defects.filter((d) => d.found).length;
+  const summary = {
     casesRun: rows.length,
     defectCasesCaught: {
       caught,
@@ -243,15 +268,39 @@ function summarize(rows) {
       share: defectRows.length ? caught / defectRows.length : 0,
     },
     defectsFound: {
-      found: rows.reduce((a, r) => a + r.defects.filter((d) => d.found).length, 0),
+      found: rows.reduce((a, r) => a + foundCount(r), 0),
       total: rows.reduce((a, r) => a + r.defects.length, 0),
     },
+    named_blocking: rows.reduce((a, r) => a + r.defects.filter((d) => d.named_in === "blocking").length, 0),
+    named_small_only: rows.reduce((a, r) => a + r.defects.filter((d) => d.named_in === "small").length, 0),
+    not_named: rows.reduce((a, r) => a + r.defects.filter((d) => d.named_in === "none").length, 0),
     verdicts,
     falseAlarms: rows.filter((r) => r.falseAlarm).length,
     invalidReviews: rows.filter((r) => r.verdict === "invalid").length,
     medianMinutes: median([...rows.map((r) => r.minutes)].sort((a, b) => a - b)),
     tokens,
   };
+  if (opts.repeats > 1) {
+    const perCase = {};
+    for (const r of rows) {
+      const p = (perCase[r.case] ??= { caught: 0, total: 0, found: [] });
+      p.total += 1;
+      if (r.caught) p.caught += 1;
+      p.found.push(foundCount(r));
+    }
+    summary.repeats = {
+      caught: rows.filter((r) => r.caught).length,
+      total: rows.length,
+      defectsFound: { min: Math.min(...rows.map(foundCount)), max: Math.max(...rows.map(foundCount)) },
+      perCase: Object.fromEntries(
+        Object.entries(perCase).map(([name, p]) => [
+          name,
+          { caught: p.caught, total: p.total, defectsFound: { min: Math.min(...p.found), max: Math.max(...p.found) } },
+        ]),
+      ),
+    };
+  }
+  return summary;
 }
 
 function renderTable(headers, rows) {
@@ -269,6 +318,14 @@ function formatConfig(name, entry) {
     `  cases run            ${s.casesRun}`,
     `  defect cases caught  ${s.defectCasesCaught.caught} of ${s.defectCasesCaught.total} (${(s.defectCasesCaught.share * 100).toFixed(1)}%)`,
     `  defects found        ${s.defectsFound.found} of ${s.defectsFound.total}`,
+  ];
+  if (s.repeats) {
+    lines.push(
+      `  repeats caught       ${s.repeats.caught} of ${s.repeats.total}`,
+      `  defects found range  ${s.repeats.defectsFound.min}-${s.repeats.defectsFound.max}`,
+    );
+  }
+  lines.push(
     `  verdicts             ${verdicts}`,
     `  false alarms         ${s.falseAlarms}`,
     `  invalid reviews      ${s.invalidReviews}`,
@@ -276,12 +333,13 @@ function formatConfig(name, entry) {
     `  tokens               prompt ${s.tokens.prompt} cached ${s.tokens.cached} output ${s.tokens.output}`,
     "",
     renderTable(
-      ["case", "repeat", "verdict", "defects", "caught", "false-alarm", "minutes", "prompt", "cached", "output"],
+      ["case", "repeat", "verdict", "defects", "named", "caught", "false-alarm", "minutes", "prompt", "cached", "output"],
       entry.rows.map((r) => [
         r.case,
         String(r.repeat),
         r.verdict,
         r.defects.length ? `${r.defects.filter((d) => d.found).length}/${r.defects.length}` : "-",
+        r.defects.length ? r.defects.map((d) => d.named_in).join("+") : "-",
         r.caught ? "yes" : "no",
         r.falseAlarm ? "yes" : "no",
         r.minutes.toFixed(1),
@@ -290,7 +348,21 @@ function formatConfig(name, entry) {
         String(r.tokens.output),
       ]),
     ),
-  ];
+  );
+  if (s.repeats) {
+    lines.push(
+      "",
+      "per case",
+      renderTable(
+        ["case", "repeats caught", "defects found"],
+        Object.entries(s.repeats.perCase).map(([name, p]) => [
+          name,
+          `${p.caught} of ${p.total}`,
+          `${p.defectsFound.min}-${p.defectsFound.max}`,
+        ]),
+      ),
+    );
+  }
   return lines.join("\n");
 }
 
@@ -390,7 +462,7 @@ export async function main(argv, deps = {}) {
         process.stdout.write(`recipe-bench: ${config.name} ${c.name} ${rep}: verdict ${scored.verdict}${ran ? "" : ` (dispatch failed: ${error})`}\n`);
       }
     }
-    configs[config.name] = { harness: config.harness, summary: summarize(rows), rows };
+    configs[config.name] = { harness: config.harness, summary: summarize(rows, { repeats: opts.repeat }), rows };
   }
 
   const finishedAt = d.clock();
