@@ -26,6 +26,17 @@ const git = (cwd, ...args) => {
 
 const sleep = (ms) => spawnSync("sleep", [String(ms / 1000)]);
 
+const findBin = (name) => {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    const p = path.join(dir, name);
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
+    } catch {}
+  }
+  throw new Error(`${name} not found on PATH`);
+};
+
 function markerAlive(marker) {
   for (const pid of fs.readdirSync("/proc")) {
     if (!/^\d+$/.test(pid)) continue;
@@ -256,4 +267,104 @@ const changeCommit = (d) => {
   changeCommit(d);
   assert.equal(gate(d, "--base", base).status, 2);
   assert.equal(gate(d, "--check", "node --test", "--base", base, "--max", "abc").status, 2);
+}
+
+// The check runner cannot be started: with no timeout on PATH the run fails
+// with a reason naming timeout instead of counting its candidates as caught.
+{
+  const { d, base } = calcRepo();
+  changeCommit(d);
+  const binDir = path.join(tmp, "bin-no-timeout");
+  fs.mkdirSync(binDir);
+  for (const name of ["git", "sh", "node"]) fs.symlinkSync(findBin(name), path.join(binDir, name));
+  const r = spawnSync(process.execPath, [script, "mutate", d, "--check", "node --test", "--base", base], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: binDir },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const j = JSON.parse(r.stdout);
+  assert.equal(j.ok, false);
+  assert.ok(j.reason.includes("timeout"), j.reason);
+  assert.equal(git(d, "status", "--porcelain"), "");
+}
+
+// Test files are excluded from the scan: the changed a.test.mjs is not in
+// files and never yields a candidate, a.mjs alone is tried.
+{
+  const { d, base } = calcRepo();
+  const testSrc = 'import { value } from "./a.mjs";\nimport assert from "node:assert/strict";\nassert.equal(value, 7);\n';
+  fs.writeFileSync(path.join(d, "a.mjs"), "export const value = 7;\n");
+  fs.writeFileSync(path.join(d, "a.test.mjs"), testSrc);
+  git(d, "add", ".");
+  git(d, "commit", "-m", "add a");
+  const r = gate(d, "--check", "node a.test.mjs", "--base", base);
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.deepEqual(j.files, ["a.mjs"]);
+  assert.equal(j.tried, 3);
+  assert.equal(j.caught, 2);
+  assert.equal(j.discarded, 1);
+  assert.deepEqual(j.survivors, []);
+  assert.equal(j.restored, true);
+  assert.equal(git(d, "status", "--porcelain"), "");
+  assert.equal(fs.readFileSync(path.join(d, "a.test.mjs"), "utf8"), testSrc);
+}
+
+// The --max cap is spread across the changed files: with two changed files,
+// each holding several candidates, --max 2 tries one candidate per file.
+{
+  const { d, base } = calcRepo();
+  fs.writeFileSync(path.join(d, "a.mjs"), "export const value = 7;\n");
+  fs.writeFileSync(path.join(d, "z.mjs"), "export const limit = 30;\n");
+  git(d, "add", ".");
+  git(d, "commit", "-m", "add a z");
+  const r = gate(d, "--check", 'node -e "process.exit(0)"', "--base", base, "--max", "2");
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.equal(j.stopped, "max");
+  assert.equal(j.tried, 2);
+  assert.deepEqual(j.survivors.map((s) => s.file), ["a.mjs", "z.mjs"]);
+  assert.ok(j.survivors.every((s) => s.line === 1));
+  assert.equal(j.survivors[0].to, "export const value = 8;");
+  assert.equal(j.survivors[1].to, "export const limit = 31;");
+  assert.equal(j.restored, true);
+  assert.equal(git(d, "status", "--porcelain"), "");
+}
+
+// The parse filter alone decides the discards: the check fails on every
+// candidate but prints no load-failure marker, so only the mutations that do
+// not parse are discarded.
+{
+  const { d, base } = calcRepo();
+  changeCommit(d);
+  const r = gate(d, "--check", 'node -e "process.exit(1)"', "--base", base);
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.equal(j.tried, 10);
+  assert.equal(j.caught, 6);
+  assert.equal(j.discarded, 4);
+  assert.deepEqual(j.survivors, []);
+  assert.equal(j.stopped, "exhausted");
+  assert.equal(j.restored, true);
+}
+
+// The load-failure marker alone decides the discards: every candidate parses,
+// the check fails and prints a marker, so nothing is caught and every
+// parseable mutation is discarded.
+{
+  const { d, base } = calcRepo();
+  changeCommit(d);
+  const r = gate(d, "--check", 'echo "Cannot find module ./fake" 1>&2; exit 1', "--base", base);
+  assert.equal(r.status, 0, r.stderr);
+  const j = r.json;
+  assert.equal(j.ok, true);
+  assert.equal(j.tried, 10);
+  assert.equal(j.caught, 0);
+  assert.equal(j.discarded, 10);
+  assert.deepEqual(j.survivors, []);
+  assert.equal(j.stopped, "exhausted");
+  assert.equal(j.restored, true);
 }
