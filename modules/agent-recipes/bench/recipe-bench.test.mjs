@@ -203,6 +203,26 @@ test("scoring: caught, missed, clean on a defect case, false alarm and invalid",
   assert.equal(rows.invalid.defects[0].found, false);
 });
 
+test("scoring: a named defect on a clean verdict is not caught", async () => {
+  const cases = writeCases(path.join(tmp, "cases-cleanfound.json"), [
+    { name: "cleanfound", base: "a", head: "b", task: "t1", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
+  ]);
+  const out = path.join(tmp, "out-cleanfound");
+  const spawn = makeSpawn({
+    [path.join(out, "cleanfound", "a", "1", "review.md")]: {
+      review: "the diff has an integer OVERFLOW in parse",
+      result: result("clean", 240000),
+    },
+  });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  assert.deepEqual(entry.rows[0].defects, [{ id: "d1", found: true }]);
+  assert.equal(entry.rows[0].verdict, "clean");
+  assert.equal(entry.rows[0].caught, false, "a named defect on a clean verdict is not caught");
+  assert.deepEqual(entry.summary.defectCasesCaught, { caught: 0, total: 1, share: 0 });
+});
+
 test("the per-config aggregates and bench.json", async () => {
   const cases = writeCases(path.join(tmp, "cases-agg.json"), [
     { name: "caught", base: "a", head: "b", task: "t1", check: "c", expect: "needs-work", defects: [{ id: "d1", match: ["overflow"] }] },
