@@ -224,8 +224,8 @@ function fitPlan(pairs, base) {
     sxy += p.tokens * (p.firstContext - base);
     sx2 += p.tokens ** 2;
   }
-  const k = round(sx2 === 0 ? 0 : sxy / sx2, 2);
-  const growth = round(percentile(pairs.map((p) => Math.max(0, p.firstContext - base - k * p.tokens)), 0.9));
+  const k = Math.ceil((sx2 === 0 ? 0 : sxy / sx2) * 100) / 100;
+  const growth = Math.ceil(percentile(pairs.map((p) => Math.max(0, p.firstContext - base - k * p.tokens)), 0.9));
   const covered = pairs.filter((p) => base + k * p.tokens + growth >= p.firstContext).length;
   return { pairs: pairs.length, k_read: k, growth_p90: growth, covered, coverage: round(covered / pairs.length, 2) };
 }
@@ -258,7 +258,11 @@ function clamp(measured, current) {
     const was = current[field];
     if (out[field] === undefined || !(was > 0)) continue;
     out[field] = Math.min(was * MAX_CHANGE, Math.max(was / MAX_CHANGE, out[field]));
-    out[field] = round(out[field], field === "compact_rate" || field === "cold_per_run" || field === "k_read" ? 2 : 0);
+    if (field === "k_read") {
+      out[field] = Math.ceil(out[field] * 100) / 100;
+    } else {
+      out[field] = round(out[field], field === "compact_rate" || field === "cold_per_run" ? 2 : 0);
+    }
   }
   return out;
 }
