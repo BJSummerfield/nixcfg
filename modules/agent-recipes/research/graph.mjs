@@ -345,7 +345,13 @@ export default async function research(args, port) {
           break;
         }
         if (rg.verdict !== "invalid") break;
-        const d = await heal("review", "the review's verdict could not be read", [review.file], ["continue", "retry", "decide"]);
+        const quotes = list(rg.missing).length > 0;
+        const d = await heal(
+          "review",
+          quotes ? "the review quotes text not found in the cited files: " + rg.missing.map((m) => m.location).join(", ") : "the review's verdict could not be read",
+          [review.file],
+          quotes ? ["retry", "decide"] : ["continue", "retry", "decide"],
+        );
         if (!d) break;
         if (d.action === "retry") continue;
         rg = Object.assign({}, rg, { verdict: d.verdict, clean: d.verdict === "clean" });

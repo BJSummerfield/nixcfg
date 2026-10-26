@@ -337,6 +337,21 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.deepEqual(receipt.open.filter((o) => /review/.test(o)), []);
 }
 
+// A review rejected for a quote missing from its file cannot be continued.
+{
+  const f = small({
+    review: (key) =>
+      key === "review"
+        ? { ok: false, verdict: "invalid", clean: false, angles: [], missing: [{ location: "/t/h/findings/a.md:4", quote: "q" }] }
+        : { ok: true, verdict: "clean", clean: true, angles: [] },
+    diagnose: () => diagnosis("retry", "the quote was wrong"),
+  });
+  await run(f.runs, { dir: "/t/h", goal: "G", output: "/t/h/out.md" });
+  const d = f.batches[keys(f.batches).findIndex((k) => k[0] === "diagnose-1")][0];
+  assert.equal(d.gate.command, "recipe-gate diagnosis '/t/h/diagnosis-1.md' --allow 'retry,decide'");
+  assert.match(d.task, /What went wrong: the review quotes text not found in the cited files: \/t\/h\/findings\/a\.md:4/);
+}
+
 // A reviewer that fails twice goes to a diagnosis; retry reviews again into a
 // new file, and the board follows the stages.
 {
