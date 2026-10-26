@@ -10,7 +10,8 @@
 // so its transcript is left out of every estimate. `looped` counts the
 // children left out, per role. A child the graph ran for something other than
 // a task (settled under `integrate` or `resolve-*`) is left out the same way
-// and counted in `excluded`, per role.
+// and counted in `excluded`, per role; so are scout-role graph steps (pin,
+// merge, intake, resume, join-*, deps-*, handoff-*, verify-*, reproduce).
 // A request's context is usage.input (uncached) + usage.cacheRead (cached).
 // Per role: base is the median first-request context, peak_p90 the 90th
 // percentile of the run's peak, growth_p90 the 90th percentile of peak minus
@@ -25,12 +26,14 @@
 // plan gate spends them: the gate sizes a task from the declared bytes of its
 // owns and reads files, so each task of the intake settle's
 // structuredOutput.tasks pairs its declared bytes (its bytes when recorded,
-// else recovered from its est and the sizing the gate used) with the context
+// else recovered from its est and the sizing the gate used: the intake
+// output's top-level sizing, else the task's own) with the context
 // at the first write of the first attempt (usage.firstContext of the
 // impl-<id> settle). With at least --min-samples pairs, k_read is the
 // least-squares slope through the origin of (firstContext - base) on
 // declared bytes / 4 and growth_p90 the 90th percentile of the leftover;
-// `plan_fit` reports the pairs, the values and how often the new estimate
+// `plan_fit` reports the pairs, the committed values (recomputed when the
+// x1.5 bound changes k_read) and how often the new estimate
 // would cover the firstContext (covered, coverage).
 //
 // `handoffs` lists, per role with outcome records, how often runs handed off
@@ -56,6 +59,8 @@ const K_READ_ROLES = new Set(["implementer", "reviewer"]);
 const ROLE_ALIASES = { worker: "implementer" };
 const CLAMPED = ["base", "k_read", "growth_p90", "peak_p90", "compact_rate", "cold_per_run"];
 const DEFAULT_SIZING = { base: 7000, k_read: 1, growth_p90: 10000 };
+const GRAPH_STEP_KEYS = new Set(["pin", "merge", "intake", "resume", "reproduce", "verify-base"]);
+const GRAPH_STEP_PREFIXES = ["join-", "deps-", "handoff-", "verify-"];
 const TRANS_NAME = /^[0-9a-f-]{36}_.+_transcript\.jsonl$/;
 
 class Usage extends Error {}
@@ -196,6 +201,8 @@ const percentile = (values, q) => {
 const median = (values) => percentile(values, 0.5);
 const mean = (values) => values.reduce((a, b) => a + b, 0) / values.length;
 const round = (n, places = 0) => Math.round(n * 10 ** places) / 10 ** places;
+// Rounding the float noise away first keeps 1.1 and 0.07 from creeping up on every re-run.
+const roundUp2 = (x) => Math.ceil(Math.round(x * 1e6) / 1e4) / 100;
 
 function planPairs(files) {
   const pairs = [];
@@ -207,7 +214,7 @@ function planPairs(files) {
       if (r.key !== "intake" || !Array.isArray(r.result?.structuredOutput?.tasks)) continue;
       for (const t of r.result.structuredOutput.tasks) {
         const first = byKey.get(`impl-${t.id}`)?.result?.usage?.firstContext;
-        const sizing = { ...DEFAULT_SIZING, ...(t.sizing ?? {}) };
+        const sizing = { ...DEFAULT_SIZING, ...(r.result.structuredOutput.sizing ?? t.sizing ?? {}) };
         const bytes = typeof t.bytes === "number" ? t.bytes : (t.est - sizing.base - sizing.growth_p90) * 4 / sizing.k_read;
         if (!Number.isFinite(bytes) || !Number.isFinite(first)) continue;
         pairs.push({ tokens: bytes / 4, firstContext: first });
@@ -224,10 +231,18 @@ function fitPlan(pairs, base) {
     sxy += p.tokens * (p.firstContext - base);
     sx2 += p.tokens ** 2;
   }
-  const k = Math.ceil((sx2 === 0 ? 0 : sxy / sx2) * 100) / 100;
-  const growth = Math.ceil(percentile(pairs.map((p) => Math.max(0, p.firstContext - base - k * p.tokens)), 0.9));
+  const k = roundUp2(sx2 === 0 ? 0 : sxy / sx2);
+  const growth = residualP90(pairs, base, k);
+  return { pairs: pairs.length, k_read: k, growth_p90: growth, ...coverage(pairs, base, k, growth) };
+}
+
+function residualP90(pairs, base, k) {
+  return Math.ceil(percentile(pairs.map((p) => Math.max(0, p.firstContext - base - k * p.tokens)), 0.9));
+}
+
+function coverage(pairs, base, k, growth) {
   const covered = pairs.filter((p) => base + k * p.tokens + growth >= p.firstContext).length;
-  return { pairs: pairs.length, k_read: k, growth_p90: growth, covered, coverage: round(covered / pairs.length, 2) };
+  return { covered, coverage: round(covered / pairs.length, 2) };
 }
 
 function measure(role, runs) {
@@ -251,20 +266,25 @@ function measure(role, runs) {
   return out;
 }
 
-function clamp(measured, current) {
+function clampField(field, value, was, role) {
+  const bounded = Math.min(was * MAX_CHANGE, Math.max(was / MAX_CHANGE, value));
+  if (field === "k_read") return role === "implementer" ? roundUp2(bounded) : round(bounded, 2);
+  return round(bounded, field === "compact_rate" || field === "cold_per_run" ? 2 : 0);
+}
+
+function clamp(measured, current, role) {
   if (!current || !(current.samples > 0)) return measured;
   const out = { ...measured };
   for (const field of CLAMPED) {
     const was = current[field];
     if (out[field] === undefined || !(was > 0)) continue;
-    out[field] = Math.min(was * MAX_CHANGE, Math.max(was / MAX_CHANGE, out[field]));
-    if (field === "k_read") {
-      out[field] = Math.ceil(out[field] * 100) / 100;
-    } else {
-      out[field] = round(out[field], field === "compact_rate" || field === "cold_per_run" ? 2 : 0);
-    }
+    out[field] = clampField(field, out[field], was, role);
   }
   return out;
+}
+
+function isGraphStep(key) {
+  return typeof key === "string" && (GRAPH_STEP_KEYS.has(key) || GRAPH_STEP_PREFIXES.some((p) => key.startsWith(p)));
 }
 
 function propose(sessionsDirs, currentFile, minSamples, engineRev) {
@@ -289,7 +309,7 @@ function propose(sessionsDirs, currentFile, minSamples, engineRev) {
       continue;
     }
     const key = runId === null ? undefined : keys.get(runId);
-    if (key === "integrate" || (typeof key === "string" && key.startsWith("resolve-"))) {
+    if (key === "integrate" || (typeof key === "string" && key.startsWith("resolve-")) || (role === "scout" && isGraphStep(key))) {
       excludedOut[role] = (excludedOut[role] ?? 0) + 1;
       continue;
     }
@@ -298,7 +318,8 @@ function propose(sessionsDirs, currentFile, minSamples, engineRev) {
   }
   const pairs = planPairs(children);
   const implementerRuns = byRole.implementer;
-  const planFit = implementerRuns?.length > 0 && pairs.length >= minSamples ? fitPlan(pairs, round(median(implementerRuns.map((r) => r.base)))) : null;
+  const fitBase = implementerRuns?.length > 0 ? round(median(implementerRuns.map((r) => r.base))) : null;
+  const planFit = fitBase !== null && pairs.length >= minSamples ? fitPlan(pairs, fitBase) : null;
   const roles = { ...current.roles };
   for (const [role, runs] of Object.entries(byRole)) {
     if (runs.length < minSamples) {
@@ -310,7 +331,17 @@ function propose(sessionsDirs, currentFile, minSamples, engineRev) {
       measured.k_read = planFit.k_read;
       measured.growth_p90 = planFit.growth_p90;
     }
-    roles[role] = { ...clamp({ ...current.roles[role], ...measured }, current.roles[role]) };
+    roles[role] = { ...clamp({ ...current.roles[role], ...measured }, current.roles[role], role) };
+    if (role === "implementer" && planFit) {
+      const was = current.roles[role];
+      if (roles[role].k_read !== planFit.k_read) {
+        let growth = residualP90(pairs, fitBase, roles[role].k_read);
+        if (was?.samples > 0 && was.growth_p90 > 0) growth = clampField("growth_p90", growth, was.growth_p90, role);
+        roles[role].growth_p90 = growth;
+      }
+      Object.assign(planFit, { k_read: roles[role].k_read, growth_p90: roles[role].growth_p90 });
+      Object.assign(planFit, coverage(pairs, fitBase, planFit.k_read, planFit.growth_p90));
+    }
   }
   return {
     engine_rev: engineRev ?? current.engine_rev ?? null,
