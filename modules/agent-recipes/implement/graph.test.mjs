@@ -116,8 +116,7 @@ const handedOff = (id, over = {}) => ({
 const piece = (id, over = {}) => ({ id, owns: [`lib/a/${id}`], reads: [], check: `nixfmt --check ${id}.nix`, depends: [], est: 400, file: `/t/p/split/tasks/${id}.md`, ...over });
 const splitPlan = (ids) => planOf(ids.map((id) => piece(id)));
 
-// The mutation gate's answer for a mutate- child; a clean gate with one tried
-// mutation caught and one discarded, no survivors.
+// The default answer for a mutate- child: the gate ran cleanly and left no survivors.
 const mutationGate = { ok: true, reason: "", files: [], tried: 3, caught: 2, discarded: 1, survivors: [], stopped: "exhausted", ms: 50, restored: true };
 function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {}, planner = {}, mutate = {} } = {}) {
   const batches = [];
