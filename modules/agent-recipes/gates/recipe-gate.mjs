@@ -32,8 +32,9 @@
 //   diagnosis <file> [--allow a,b] [--verdict yes]
 //                                  {ok, action, reason, verdict, owns:[], brief, question, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
-//                                  plan directory -> {ok, tasks:[{id, owns, reads,
-//                                  check, depends, research, est}], oversize:[id],
+//                                  plan directory -> {ok, sizing:{base, k_read,
+//                                  growth_p90}, tasks:[{id, owns, reads, check,
+//                                  depends, research, bytes, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
 //                                  cycles:[[id, ...]]}
 //   task <report> [--check CMD] [--verify CMD] [--in DIR] [--owns a,b] [--repo DIR]
@@ -119,9 +120,10 @@
 // base + k_read * (bytes of owns and reads) / 4 + growth_p90. A file that does
 // not exist counts 0, because the task creates it. --sizing defaults to
 // $HOME/.pi/agent/recipes/sizing.json, and to base 7000, k_read 1 and
-// growth_p90 10000 when that file is absent. --limit defaults to 100000
-// tokens, under half of the 221184-token window. `oversize` lists the ids
-// whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
+// growth_p90 10000 when that file is absent. Each task carries the bytes its
+// estimate used as `bytes`, and the output carries the values as `sizing`.
+// --limit defaults to 100000 tokens, under half of the 221184-token window.
+// `oversize` lists the ids whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
 // owning the same file, or a directory and a path inside it. `missing` has
 // one line per problem: plan.md absent, no tasks, a task whose id is not its
 // file name, owns empty, check empty, a depends id with no
@@ -649,13 +651,14 @@ function plan(dir, flags) {
       if (!owned.some((o) => within(o, file)) && !fs.existsSync(path.resolve(repo, file))) missing.push(`${t.id}: reads ${file}, which does not exist`);
     }
     const bytes = [...new Set([...t.owns, ...t.reads])].reduce((sum, f) => sum + pathBytes(repo, f), 0);
+    t.bytes = bytes;
     t.est = Math.ceil(cost.base + (cost.k_read * bytes) / 4 + cost.growth_p90);
     if (t.est > limit) oversize.push(t.id);
   }
 
   const cycles = findCycles(tasks);
   const ok = oversize.length === 0 && overlaps.length === 0 && cycles.length === 0 && missing.length === 0;
-  return { ok, tasks, oversize, overlaps, missing, cycles };
+  return { ok, tasks, sizing: cost, oversize, overlaps, missing, cycles };
 }
 
 const CHECK_TIMEOUT_MS = 10 * 60 * 1000;

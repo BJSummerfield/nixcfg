@@ -31,11 +31,14 @@ const bashResult = (tokens) => ({
   text: "x".repeat(tokens * 4),
   message: { role: "toolResult" },
 });
-const transcript = (role, records, extra = "") => {
+const transcriptIn = (dir, role, records, extra = "") => {
   const id = `00000000-0000-0000-0000-${String(counter++).padStart(12, "0")}`;
+  const file = path.join(dir, `${id}_${role}_transcript.jsonl`);
   const body = records.map((r) => JSON.stringify(r)).join("\n") + "\n" + extra;
-  fs.writeFileSync(path.join(sessions, `${id}_${role}_transcript.jsonl`), body);
+  fs.writeFileSync(file, body);
+  return file;
 };
+const transcript = (role, records, extra) => transcriptIn(sessions, role, records, extra);
 
 // 25 runs under the old role name: peak = 7000 + 2 x read tokens, exactly.
 for (let i = 0; i < 25; i++) {
@@ -65,10 +68,11 @@ transcript("planner", [outcome("p3", false, null)]);
 transcript("planner", [assistant(7000), outcome("p4", false, 7000)]);
 for (let i = 0; i < 3; i++) transcript("coder", [outcome(`c${i}`, i === 0, 9000)]);
 
-const sizing = (...args) => {
-  const r = spawnSync(process.execPath, [script, path.join(tmp, "sessions"), ...args], { encoding: "utf8" });
+const run = (args) => {
+  const r = spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
   return { status: r.status, stderr: r.stderr, json: r.stdout ? JSON.parse(r.stdout) : null };
 };
+const sizing = (...args) => run([path.join(tmp, "sessions"), ...args]);
 
 // Without a current file: measured roles only, thin roles left out.
 {
@@ -153,7 +157,9 @@ fs.writeFileSync(
 
 // Usage and IO errors.
 {
-  assert.equal(spawnSync(process.execPath, [script], { encoding: "utf8" }).status, 2);
+  const r = run([]);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /usage: recipe-sizing <sessions-dir>\.\.\. \[--current file\] \[--min-samples N\] \[--engine-rev REV\]/);
   assert.equal(sizing("--min-samples", "0").status, 2);
   assert.equal(sizing("--current").status, 2);
   assert.equal(sizing("--current", path.join(tmp, "absent.json")).status, 1);
@@ -193,6 +199,126 @@ fs.writeFileSync(
     growth_p90: 1000,
   });
   assert.deepEqual(r.json.looped, { extractor: 1 });
+}
+
+// Two sources pooled, one reached through a symlink; a symlinked directory and
+// a symlinked file count once; integrate and resolve children are excluded
+// and counted; and the implementer is fitted the way the plan gate spends it.
+// Pairs (declared tokens, firstContext - base, base 7000): fit-a 1000, 6000
+// (bytes recorded); fit-b 2000, 4000 (est 19000 with the default sizing);
+// fit-c 2000, 5000 (est 22000 with the gate's sizing); fit-d has no
+// impl-fit-d settle and is skipped. k = 24e6 / 9e6 = 2.67, growth is the p90
+// of [3330, 0, 0] = 3330, and every pair is covered (fit-a exactly).
+{
+  const tree2 = path.join(tmp, "tree2");
+  const innerDir = path.join(tmp, "inner");
+  const realDir = path.join(tmp, "real");
+  for (const dir of [tree2, innerDir, realDir]) fs.mkdirSync(dir, { recursive: true });
+  transcriptIn(tree2, "implementer", [assistant(7000), assistant(1000, 7000), outcome("integrate-run", false, null)]);
+  transcriptIn(tree2, "implementer", [assistant(7000), assistant(1000, 7000), outcome("resolve-run", false, null)]);
+  transcriptIn(tree2, "locator", [assistant(7000), assistant(1000, 19000)]);
+  transcriptIn(innerDir, "locator", [assistant(7000), assistant(1000, 19000)]);
+  const pfit = path.join(sessions, "pfit");
+  fs.mkdirSync(pfit, { recursive: true });
+  fs.symlinkSync(innerDir, path.join(pfit, "inner-link"));
+  const linkedReal = transcriptIn(realDir, "locator", [assistant(7000), assistant(1000, 19000)]);
+  fs.symlinkSync(linkedReal, path.join(pfit, path.basename(linkedReal)));
+  fs.symlinkSync(tree2, path.join(tmp, "tree2-link"));
+  const settle = (key, runId, result) => ({ type: "settle", key, runId, fingerprint: "f", at: "t", result });
+  fs.writeFileSync(
+    path.join(pfit, "children.jsonl"),
+    [
+      settle("intake", "intake-run", {
+        status: "done",
+        loop: null,
+        structuredOutput: {
+          ok: true,
+          tasks: [
+            { id: "fit-a", est: 10000, bytes: 4000 },
+            { id: "fit-b", est: 19000 },
+            { id: "fit-c", est: 22000, sizing: { base: 6000, k_read: 2, growth_p90: 12000 } },
+            { id: "fit-d", est: 12345 },
+          ],
+        },
+      }),
+      settle("impl-fit-a", "impl-a-run", { status: "done", loop: null, usage: { firstContext: 13000, peakContext: 14000 } }),
+      settle("impl-fit-b", "impl-b-run", { status: "done", loop: null, usage: { firstContext: 11000, peakContext: 11500 } }),
+      settle("impl-fit-c", "impl-c-run", { status: "done", loop: null, usage: { firstContext: 12000, peakContext: 12500 } }),
+      settle("integrate", "integrate-run", { status: "done", loop: null, usage: { firstContext: 8000, peakContext: 8000 } }),
+      settle("resolve-x", "resolve-run", { status: "done", loop: null, usage: { firstContext: 8000, peakContext: 8000 } }),
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n") + "\n",
+  );
+  const r = run([path.join(tmp, "sessions"), path.join(tmp, "tree2-link"), "--min-samples", "2"]);
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.roles.locator, {
+    samples: 3,
+    base: 7000,
+    peak_p90: 20000,
+    compact_rate: 0,
+    cold_per_run: 0,
+    growth_p90: 13000,
+  });
+  assert.deepEqual(r.json.roles.implementer, {
+    samples: 25,
+    base: 7000,
+    peak_p90: 17000,
+    compact_rate: 0,
+    cold_per_run: 0,
+    k_read: 2.67,
+    growth_p90: 3330,
+  });
+  assert.deepEqual(r.json.plan_fit, { pairs: 3, k_read: 2.67, growth_p90: 3330, covered: 3, coverage: 1 });
+  assert.deepEqual(r.json.excluded, { implementer: 2 });
+  assert.deepEqual(r.json.looped, { extractor: 1 });
+}
+
+// A single pair the exact fit covers but nearest rounding would drop: the
+// slope 2665 / 1001 is 2.6623, which rounds down to 2.66, leaving a 2.34
+// residual that rounds down to 2 (7000 + 2.66 * 1001 + 2 = 9664.66 < 9665,
+// not covered); rounding up to 2.67 leaves no residual (7000 + 2.67 * 1001
+// = 9672.67 >= 9665, covered), so upward rounding keeps the pair.
+{
+  const tree3 = path.join(tmp, "tree3");
+  fs.mkdirSync(tree3, { recursive: true });
+  transcriptIn(tree3, "implementer", [assistant(7000), assistant(1000, 8000)]);
+  const settle = (key, runId, result) => ({ type: "settle", key, runId, fingerprint: "f", at: "t", result });
+  fs.writeFileSync(
+    path.join(tree3, "children.jsonl"),
+    [
+      settle("intake", "intake-run", {
+        status: "done",
+        loop: null,
+        structuredOutput: { ok: true, tasks: [{ id: "drop-a", est: 9665, bytes: 4004 }] },
+      }),
+      settle("impl-drop-a", "impl-drop-run", { status: "done", loop: null, usage: { firstContext: 9665, peakContext: 9700 } }),
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n") + "\n",
+  );
+  const r = run([tree3, "--min-samples", "1"]);
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.plan_fit, { pairs: 1, k_read: 2.67, growth_p90: 0, covered: 1, coverage: 1 });
+  assert.equal(r.json.roles.implementer.k_read, 2.67);
+  assert.equal(r.json.roles.implementer.growth_p90, 0);
+}
+
+// A loop of links ends where the real directories run out; a root that is
+// only links resolves nowhere and is an error.
+{
+  const loopA = path.join(tmp, "loop-a");
+  fs.mkdirSync(loopA, { recursive: true });
+  fs.symlinkSync(loopA, path.join(loopA, "self"));
+  const r = run([loopA]);
+  assert.equal(r.status, 0);
+  assert.deepEqual(r.json.roles, {});
+  assert.deepEqual(r.json.plan_fit, { pairs: 0 });
+  const cycleX = path.join(tmp, "cycle-x");
+  fs.mkdirSync(cycleX, { recursive: true });
+  fs.symlinkSync(path.join(cycleX, "b"), path.join(cycleX, "a"));
+  fs.symlinkSync(path.join(cycleX, "a"), path.join(cycleX, "b"));
+  assert.equal(run([path.join(cycleX, "a")]).status, 1);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
