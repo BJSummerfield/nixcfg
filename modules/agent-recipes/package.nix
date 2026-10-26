@@ -29,6 +29,7 @@ symlinkJoin {
   paths = [
     (tool "recipe-gate" "gates/recipe-gate.mjs")
     (tool "recipe-report" "report/recipe-report.mjs")
+    (tool "recipe-bench" "bench/recipe-bench.mjs")
     (tool "recipe-smoke" "smoke/cli.mjs")
     (tool "recipe-sizing" "sizing/recipe-sizing.mjs")
     (tool "recipe-status" "status/recipe-status.mjs")
