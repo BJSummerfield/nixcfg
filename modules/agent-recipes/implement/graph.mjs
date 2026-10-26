@@ -42,6 +42,7 @@ export default async function implement(args, port) {
   const bigMs = args.bigTimeoutMs || 3600000;
   const slug = String(dir).replace(/\/+$/, "").split("/").pop().replace(/[^A-Za-z0-9._-]/g, "-") || "plan";
   const integrationBranch = args.branch || "implement/" + slug;
+  const freshFixes = !!args.freshFixes;
 
   const STEPS = {
     implement: "the implementer's run (its report and the task check run in its worktree)",
@@ -184,6 +185,7 @@ export default async function implement(args, port) {
     const handoffs = handoffsOf();
     return receipt({
       ...(handoffs.length ? { handoffs: handoffs } : {}),
+      ...(freshFixes ? { fresh_fixes: true } : {}),
       base: pinned ? pinned.base : null,
       branch: branch,
       merged: merged,
@@ -703,11 +705,12 @@ export default async function implement(args, port) {
     });
   }
 
-  // A joined task has no implementer session to resume, so its fix round is a
-  // fresh implementer on the joined branch, built as a relay is.
+  // A fix round with no session to resume is a fresh implementer on the
+  // task's branch, built as a relay is; the extra rounds a diagnosis grants
+  // keep resuming the implementer.
   function relayFixes(active) {
     active.forEach(function (t) {
-      if (t.next !== "fix" || !t.joined) return;
+      if (t.next !== "fix" || !(t.joined || (freshFixes && !t.extraFix))) return;
       t.fixes++;
       t.extraFix = false;
       beginRelay(t, null, { branch: t.branch, note: null, from: null });
@@ -734,7 +737,8 @@ export default async function implement(args, port) {
       .then(function () {
         checkPieces(active);
         active.forEach(function (t) {
-          if (t.next === "fix" && !t.runId && !t.joined) heal(t, "fix", "the implementer cannot be resumed for a fix round", [t.report], ["replan", "decide"]);
+          if (t.next === "fix" && !t.runId && !t.joined && !(freshFixes && !t.extraFix))
+            heal(t, "fix", "the implementer cannot be resumed for a fix round", [t.report], ["replan", "decide"]);
         });
         relayFixes(active);
         return phase(active, "fix", fixItem, takeFix);
