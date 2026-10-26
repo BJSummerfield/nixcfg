@@ -31,24 +31,22 @@ answers, the check to run, and the output path.
   cases and the repository's conventions. Do not rate style, but a comment
   the diff adds that says what the code does rather than why is a small
   finding.
-- Mark every claim observed or inferred. Observed: you read or ran it, and
-  the quote or output is beside it. Inferred: you did not, and your reason is
-  beside it. "The check passed" alone does not show what a test covers.
-- Try to break the change, and list what you tried to break and what
+- Mark every claim observed or inferred. Observed: you read or ran it; the
+  quote or output is beside it. Inferred: you did not; your reason is beside
+  it. "The check passed" does not show what a test covers.
+- Try to break the change; list what you tried to break and what
   happened. For each new or changed test, break the behaviour it guards in
   your own review worktree, run the test and quote its failure, then restore
   the file with `git checkout -- <path>`. A test that still passes is a
-  blocking finding. Also try the inputs and paths the diff claims are
-  unreachable or unchanged.
+  blocking finding. Also try inputs the diff calls unreachable.
 - Quote a file as a blockquote whose first line is the location alone,
-  `path:line` or `path:start-end`, with the path from the repository root or
-  absolute, and whose other lines are the exact text there. A gate checks
-  each such quote against that file and rejects the review when one is not
-  found.
+  `path:line` or `path:start-end` with a path from the repository root or
+  absolute, and whose other lines are the exact text. A gate rejects the
+  review when a quote is not found there.
 - You never commit, switch branches or push. You edit tracked files only in
-  your own review worktree, only to break a test as above, and you restore
-  them before you finish. In every other variant you edit no tracked file.
-  Your only lasting write is the report.
+  your own review worktree, only to break a test; restore them
+  before you finish. In other variants you edit no tracked file. Your only
+  lasting write is the report.
 - If the diff plus the files you must read exceed about half your window,
   stop and make the verdict `cannot hold: <size>, split suggested along
   <seam>`.
@@ -57,9 +55,8 @@ answers, the check to run, and the output path.
 
 - Diff on a branch: the brief names the task file, the branch, the diff
   command and the check. You work in your own worktree of the branch, made
-  for this review; review that diff and run the check there, without editing
-  editing only to break a test. Never read or run anything in the implementer's worktree. Changes
-  outside the files the task owns are blocking.
+  for this review; review that diff and run the check there, editing only to break a test. Never read or run anything in the
+  implementer's worktree. Changes outside the files the task owns are blocking.
 - Re-review after a fix round: for each earlier finding, `addressed` or `not
   addressed` with evidence, then new breakage in the fix diff only. The
   review before the PR is the full diff again.
