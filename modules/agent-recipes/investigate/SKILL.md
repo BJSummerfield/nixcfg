@@ -21,10 +21,6 @@ Parameters, from the request:
   base, or the run ends with an open line.
 - optional `check`: a light check run after the verify command on every
   attempt.
-- optional `source`: `web` (default), `repo` or `both`, where a research
-  question looks (`repo` is the same repository).
-- optional `rounds`: change, fix, relay and piece runs allowed in all
-  (default 6, at most 10); `childTimeoutMs`, `bigTimeoutMs`.
 
 The task directory `dir` is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up
 at any time. It must sit outside the repository.
@@ -45,11 +41,9 @@ each must be safe to repeat and must not hold a secret.
 
 ```
 <dir>/run.json                     the ledger: base commit and ref, every worktree and branch made
-<dir>/pin.md                       the pin step's marker
-<dir>/reproduce.md, reproduce.log  the reproduction (verify-base.* when verify differs)
+<dir>/reproduce.md, reproduce.log  the reproduction (verify-base.log when verify differs)
 <dir>/hypotheses.md                the ranked hypotheses (hypotheses-<n>.md when a diagnosis ran it again)
 <dir>/change-<rank>.md             implementer report for a hypothesis (change-<rank>-<n>.md for a fix round or a relay)
-<dir>/verify-<rank>s<k>.md         marker of the gate-only step after the last piece of split k
 <dir>/split/h<rank>-<n>/           a split: planner.md, plan.md and the tasks of its pieces
 <dir>/piece-<piece id>.md          report of one piece (piece-<piece id>-<n>.md when it was relayed or retried)
 <dir>/review-<rank>-<n>.md         review n of the change
@@ -119,9 +113,8 @@ each must be safe to repeat and must not hold a secret.
      before handing off, or would need a second split, is a `decide`. After
      the last piece the hypothesis takes that branch, goes to `verify` (the
      verify command and the light check on the whole result) and then to one
-   review of the whole diff from the pinned base. `verify-<rank>s<k>` is a
-   gate-only step the runner runs without a child, the only one after a change.
-   - Every change, fix, relay and piece run counts against `rounds`. Reaching
+   review of the whole diff from the pinned base.
+   - Every change, fix, relay and piece run counts toward the limit of 6 in all. Reaching
      it ends the run with the outcome `out of rounds` and an open line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
@@ -141,7 +134,7 @@ each must be safe to repeat and must not hold a secret.
    Each hypothesis gets at most two diagnoses, and the same diagnosis twice
    counts as `decide`. A hypothesis whose diagnoses are used up while a later
    one exists is dropped (`dropped: out of recoveries`) and the next starts.
-6. Research: searchers (or locators, by `source`) list at most three sources
+6. Research: searchers list at most three sources
    for the question, extractors copy out the passages
    (`<dir>/research/h<rank>-r<n>/`), and the next fix round is told to read those extracts
    before editing.
@@ -162,15 +155,14 @@ recipe_run({
   recipe: "investigate",
   args: {
     dir: "<dir>", goal: "<goal>", repo: "<repo path>",
-    reproduce: "<command>", verify: "<command>", check: "<command>", source: "web"
+    reproduce: "<command>", verify: "<command>", check: "<command>"
   },
   cwd: "<repo path>",
-  timeoutMs: 14400000,
-  maxChildren: 60
+  timeoutMs: 14400000
 })
 ```
 
-`verify`, `check` and `source` are optional. All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
+`verify` and `check` are optional. All paths are absolute. The call returns at once and this session is woken once when the run ends, so do
 not poll, sleep or check on it. Then read `<dir>/receipt.json`, the whole
 receipt. `recipe-status <dir>` shows progress from any shell, and
 after a pi restart `recipe-run wait <dir>` waits for the end. A stopped
@@ -198,15 +190,14 @@ The same graph runs with Claude Code children; this session only starts it and
 reads the result.
 
 ```
-recipe-run start investigate --harness claude --cwd <repo path> --args '{"dir":"<dir>","goal":"<goal>","repo":"<repo path>","reproduce":"<command>","verify":"<command>","check":"<command>","source":"web"}' --timeout-ms 14400000 --max-children 60
+recipe-run start investigate --harness claude --cwd <repo path> --args '{"dir":"<dir>","goal":"<goal>","repo":"<repo path>","reproduce":"<command>","verify":"<command>","check":"<command>"}' --timeout-ms 14400000
 ```
 
 All paths are absolute. It returns at once. Then run `recipe-run wait <dir> --timeout-ms 7000000`
 with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
 wait timed out while the run is still going: run the same wait again. On exit 0
 or 1 read `<dir>/receipt.json`, the
-whole receipt, and report as in the pi binding. `verify`, `check` and `source` are
-optional. `recipe-status <dir>`
+whole receipt, and report as in the pi binding. `verify` and `check` are optional. `recipe-status <dir>`
 shows progress from any shell. A stopped run continues with `recipe-run resume
 <dir> --detach`.
 
