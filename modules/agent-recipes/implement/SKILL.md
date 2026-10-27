@@ -148,9 +148,9 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    the new head with `--claims <fix report>`: caught patches are fixed, claimed
    ones equivalent, any other is an `open` line. Then one fresh review, whose
    clean verdict ends the task. With no survivor the task is done. The mutator
-   runs once per task and never on a piece; it is skipped when the fix rounds
-   are already used up (an `open` line) and for a task resumed with a clean
-   review. A mutator that fails or whose gate gives no verdict is an `open`
+   runs once per task and never on a piece, and not for a task resumed with a
+   clean review. When the fix rounds are already used up, confirmed survivors
+   get no fix round and become an `open` line. A mutator that fails or whose gate gives no verdict is an `open`
    line, not a diagnosis.
 6. The finished branches that no other finished task builds on are merged by
    `recipe-gate merge` into the integration worktree `<dir>/integration`,
