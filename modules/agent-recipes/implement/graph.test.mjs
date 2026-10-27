@@ -169,6 +169,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
     runs: {
       all: async (items) => {
         batches.push(items);
+        for (const i of items) assert.equal(i.maxRuntimeMs, undefined, i.key);
         return items.map((item) => {
           switch (item.agent) {
             case null:
@@ -306,7 +307,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(k["review-b-1"].gate, {
     command: "recipe-gate findings '/t/p/review-b-1.md' --check 'nixfmt --check b.nix' --run '/t/p' --id 'b'",
     output: "json",
-    timeoutMs: 3600000,
+    timeoutMs: 6600000,
   });
   assert.match(k["review-b-1"].task, /^Review a diff on a branch \(the diff variant\)\.$/m);
   assert.match(k["review-b-1"].task, /Branch: pi\/b/);
@@ -413,13 +414,6 @@ function assertUniqueOutputs(f) {
     children: 0,
     pr_text: "",
   });
-}
-
-// The plan gate carries the limit and the sizing file when given.
-{
-  const f = fake();
-  await run(f.runs, { ...base, limit: 80000, sizing: "/s.json" });
-  assert.equal(byKey(f).intake.gate.command, "recipe-gate plan '/t/p' --repo '/r' --limit 80000 --sizing '/s.json'");
 }
 
 // A plan gate that does not run ends the run; gate-only steps are not retried.
@@ -543,7 +537,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(f.batches[4][0].gate, {
     command: "recipe-gate findings '/t/p/review-a-1.retry.md' --check 'nixfmt --check a.nix' --run '/t/p' --id 'a'",
     output: "json",
-    timeoutMs: 3600000,
+    timeoutMs: 6600000,
   });
   assert.match(byKey(f)["diagnose-a-1"].gate.command, / --allow 'retry,decide'$/);
   assert.deepEqual(receipt.set_aside, [{ id: "a", reason: "needs a decision: a person has to choose" }]);
@@ -551,7 +545,7 @@ function assertUniqueOutputs(f) {
 
 // A review with no verdict goes to a diagnosis that may only retry or decide.
 {
-  const f = fake({ review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "handoff" } } });
+  const f = fake({ review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "worktree not clean" } } });
   await run(f.runs, base);
   assert.equal(byKey(f)["diagnose-a-1"].gate.command, "recipe-gate diagnosis '/t/p/diagnosis-a-1.md' --allow 'retry,decide'");
   assert.doesNotMatch(byKey(f)["diagnose-a-1"].task, /With continue/);
@@ -560,7 +554,7 @@ function assertUniqueOutputs(f) {
 // A diagnosis cannot answer continue for a review: the gate rejects it and the task goes to a person.
 {
   const f = fake({
-    review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "handoff" } },
+    review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "worktree not clean" } },
     diagnose: { "diagnose-a-1": { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false, problem: "action continue is not allowed" } },
   });
   const receipt = await run(f.runs, base);
@@ -675,12 +669,12 @@ function assertUniqueOutputs(f) {
 // A diagnosis the gate cannot read goes to a person.
 {
   const f = fake({
-    review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "handoff" } },
+    review: { "review-a-1": { ...clean, ok: false, verdict: null, reason: "worktree not clean" } },
     diagnose: { "diagnose-a-1": { ok: false, action: null, reason: "", verdict: null, owns: [], brief: false, problem: "no action line" } },
   });
   const receipt = await run(f.runs, base);
   assert.deepEqual(receipt.decide, [
-    { id: "a", step: "review", question: "the review gave no verdict: handoff; the diagnosis could not be read: no action line", diagnosis: "/t/p/diagnosis-a-1.md" },
+    { id: "a", step: "review", question: "the review gave no verdict: worktree not clean; the diagnosis could not be read: no action line", diagnosis: "/t/p/diagnosis-a-1.md" },
   ]);
 }
 
@@ -1614,7 +1608,7 @@ function assertUniqueOutputs(f) {
   assert.equal(m.big, undefined);
   assert.equal(m.output, "/t/p/mutations-a.md");
   assert.equal(m.gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --run '/t/p' --id 'a'");
-  assert.equal(m.gate.timeoutMs, 3600000);
+  assert.equal(m.gate.timeoutMs, 6600000);
   assert.match(m.task, /^Diff range: base0\.\.pi\/a \(run git diff base0\.\.pi\/a\)$/m);
   assert.match(m.task, /^Owned files: a\.nix, lib\/a$/m);
   assert.match(m.task, /^Check: nixfmt --check a\.nix$/m);
@@ -1649,7 +1643,7 @@ const mutationFixed = {
   assert.equal(k["recheck-a"].worktree, true);
   assert.equal(k["recheck-a"].baseRef, "refs/heads/pi/a");
   assert.equal(k["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md'");
-  assert.equal(k["recheck-a"].gate.timeoutMs, 3600000);
+  assert.equal(k["recheck-a"].gate.timeoutMs, 6600000);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.deepEqual(receipt.mutations, { a: { tried: 5, survived: 2, confirmed: 2, fixed: 1, equivalent: 1, claims: [{ n: 2, reason: "dead constant" }] } });
   assert.deepEqual(receipt.open, []);
@@ -1716,6 +1710,48 @@ const mutationFixed = {
   assert.ok(names.includes("review-a-2"));
   assert.deepEqual(receipt.merged, ["a"]);
   assert.deepEqual(receipt.open, ["task a: the mutation re-check did not run: gate timed out"]);
+}
+
+// The re-check claims every fix report of the round, in order, when the fix was relayed.
+{
+  const f = fake({ ...mutationFixed, impl: { "impl-a-2": handedOff("a", { line: "half the fix", key: "a-2" }) } });
+  await run(f.runs, base);
+  assert.equal(byKey(f)["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md' --claims '/t/p/impl-a-3.md'");
+}
+
+// A replan during a mutation fix round sends the new implementation to a review, not to the re-check.
+{
+  const f = fake({
+    mutate: { "mutate-a": survivors },
+    impl: { "impl-a-2": { ...taskGate("a"), ok: false, reason: "report blocked: needs more", report: { status: "blocked", why: "needs more" } } },
+    diagnose: { "diagnose-a-1": diagnosis("replan", "the fix needs a different approach") },
+  });
+  await run(f.runs, base);
+  const names = f.items().map((i) => i.key);
+  assert.ok(names.indexOf("review-a-2") < names.indexOf("recheck-a") || names.indexOf("recheck-a") < 0);
+  assert.deepEqual(names.slice(names.indexOf("diagnose-a-1")).slice(0, 3), ["diagnose-a-1", "impl-a-3", "review-a-2"]);
+}
+
+// Reviews and gates that could not run something say so in the open lines.
+{
+  const f = fake({ review: { "review-a-1": { ...clean, handoff: "handoff: read all, budget hit" } } });
+  const receipt = await run(f.runs, base);
+  assert.ok(receipt.open.includes("task a: review 1 hit the reviewer's budget: handoff: read all, budget hit"));
+}
+{
+  const f = fake({ review: { "review-a-1": { ...clean, unrunnable: [{ n: 2, reason: "timed out after 600000 ms" }] } } });
+  const receipt = await run(f.runs, base);
+  assert.ok(receipt.open.includes("task a: review 1 could not run 1 reproduction(s): 2: timed out after 600000 ms"));
+}
+{
+  const f = fake({ mutate: { "mutate-a": { ...clean, unrunnable: [{ n: 3, reason: "timed out after 600000 ms" }] } } });
+  const receipt = await run(f.runs, base);
+  assert.ok(receipt.open.includes("task a: the mutation step could not run 1 reproduction(s): 3: timed out after 600000 ms"));
+}
+{
+  const f = fake({ ...mutationFixed, recheck: { "recheck-a": { ...clean, unrunnable: [{ n: 1, reason: "timed out after 600000 ms" }] } } });
+  const receipt = await run(f.runs, base);
+  assert.ok(receipt.open.includes("task a: the mutation re-check could not run 1 reproduction(s): 1: timed out after 600000 ms"));
 }
 
 // A stop while an implementer runs ends the graph without a set-aside task or a receipt.
