@@ -394,7 +394,7 @@ export default async function implement(args, port) {
       t.next = "split";
       return;
     }
-    askPerson(t, step, "the " + step + " step handed off and the task cannot go on: " + next.reason, result.file);
+    askPerson(t, "implement", "the implement step handed off and the task cannot go on: " + next.reason, result.file);
   }
 
   function needFix(t, findings) {
