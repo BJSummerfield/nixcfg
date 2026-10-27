@@ -420,7 +420,8 @@ export default async function implement(args, port) {
     const file = dir + "/review-" + t.id + "-" + t.reviews + ".md";
     const lines = reviewBriefLines({ taskFile: taskFile(t), repo, branch: t.branch, implementerWorktree: t.worktree, diffRange: reviewRange(t, t.branch), owns: ownsOf(t), check: t.spec.check, output: file, revisedTask: t.replanBrief });
     const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
-      gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote(t.id),
+      gate: "recipe-gate findings " + quote(file) + " --check " + quote(t.spec.check) + " --run " + quote(dir) + " --id " + quote(t.id),
+      gateTimeoutMs: 3600000,
       timeoutMs: bigMs,
       worktree: true,
     });
@@ -440,20 +441,43 @@ export default async function implement(args, port) {
       return giveUp(t, why);
     }
     t.lastReview = result.file;
-    t.lastVerdict = result.structuredOutput.verdict;
-    if (t.lastVerdict === "clean") {
+    const g = result.structuredOutput;
+    t.lastVerdict = g.verdict;
+    if (g.verdict === "clean") {
       t.state = "done";
       t.next = null;
       return;
     }
-    if (t.lastVerdict === "invalid") {
-      const missing = list(result.structuredOutput.missing);
-      if (missing.length > 0) {
-        return heal(t, "review", "the review quotes text not found in the cited files: " + missing.map((m) => m.location).join(", "), [result.file], ["retry", "decide"]);
-      }
-      return heal(t, "review", "the review's verdict could not be read", [result.file], ["continue", "retry", "decide"]);
+    if (g.verdict !== "needs-work") {
+      return heal(t, "review", "the review gave no verdict: " + g.reason, [result.file], ["retry", "decide"]);
     }
-    needFix(t, "The review at " + result.file + " found blocking problems.");
+    needFix(t, fixFindings(result.file, g));
+  }
+
+  function fixFindings(file, g) {
+    const lines = [
+      "The review at " + file + " showed these defects at the branch head. Each is a command run from the repository root with its exit status and output, or a patch after which the task's check still passed (the tests cannot see that behaviour); make every command exit 0 and every patch fail the check, without breaking the check.",
+    ];
+    let n = 0;
+    if (g.check && g.check.exit !== 0) {
+      lines.push(++n + ". The task's check failed at head -> exit " + g.check.exit);
+      lines.push(g.check.tail);
+    }
+    list(g.reproduced).forEach(function (f) {
+      lines.push(++n + ". [" + f.title + "] " + f.summary + " -> exit " + f.exit);
+      lines.push(f.tail);
+    });
+    const advice = list(g.unreproduced)
+      .map(function (f) {
+        return f.title + ": " + f.summary;
+      })
+      .concat(
+        list(g.unrunnable).map(function (f) {
+          return f.title + ": " + f.summary + " (" + f.reason + ")";
+        }),
+      );
+    if (advice.length) lines.push("Advice from the review, not required: " + advice.join("; "));
+    return lines.join("\n");
   }
 
   function diagnosisContext(t) {
@@ -476,15 +500,6 @@ export default async function implement(args, port) {
     }
     const step = trouble.step;
     t.trouble = null;
-    if (d.action === "continue") {
-      if (d.verdict === "clean") {
-        t.state = "done";
-        t.next = null;
-        return;
-      }
-      t.lastVerdict = "needs-work";
-      return needFix(t, "The review at " + t.lastReview + " found blocking problems.");
-    }
     if (d.action === "retry") {
       t.next = step;
       return;
