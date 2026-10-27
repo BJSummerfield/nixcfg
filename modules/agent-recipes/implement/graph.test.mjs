@@ -140,7 +140,7 @@ const handedOff = (id, over = {}) => ({
 const piece = (id, over = {}) => ({ id, owns: [`lib/a/${id}`], reads: [], check: `nixfmt --check ${id}.nix`, depends: [], est: 400, file: `/t/p/split/tasks/${id}.md`, ...over });
 const splitPlan = (ids) => planOf(ids.map((id) => piece(id)));
 
-function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, mutate = {}, recheck = {}, integrate = {}, diagnose = {}, merge = {}, planner = {} } = {}) {
+function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, mutate = {}, recheck = {}, final = {}, integrate = {}, diagnose = {}, merge = {}, planner = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
@@ -159,7 +159,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
       merged: pairs.map((p) => p.split(":")[0]),
       unmerged: [],
       clean: true,
-      heavy_check: "pass",
+      final_check: (item.gate.command.match(/ --final '([^']*)'$/) || [])[1] ?? "pass",
       pr_text: "PR text",
     };
   };
@@ -175,6 +175,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
             case null:
               if (item.key.startsWith("pin")) return answer({}, item.key, pin);
               if (item.key.startsWith("resume")) return answer({}, item.key, back);
+              if (item.key.startsWith("final-")) return answer(final, item.key, { ok: true });
               if (item.key.startsWith("recheck-")) return answer(recheck, item.key, clean);
               if (/^(deps-|merge|join-)/.test(item.key)) return answer(merge, item.key, mergeGate(item));
               return answer(intake, item.key, plan);
@@ -315,7 +316,7 @@ function assertUniqueOutputs(f) {
   assert.equal(k["review-b-1"].worktree, true);
   assert.equal(k["review-b-1"].baseRef, "refs/heads/pi/b");
   assert.equal(k["review-b-1"].big, true);
-  assert.equal(k.integrate.big, true);
+  assert.equal(k.integrate.big, undefined);
   assert.match(k["review-b-1"].task, /Diff to review: git diff base0..pi\/b/);
   assert.match(k["review-b-1"].task, /Check to run: nixfmt --check b\.nix/);
   assert.doesNotMatch(k["review-b-1"].task, /Implementer report/);
@@ -341,14 +342,14 @@ function assertUniqueOutputs(f) {
   assert.equal(k.integrate.worktree, false);
   assert.equal(k.integrate.output, "/t/p/integration.md");
   assert.deepEqual(k.integrate.gate, {
-    command: "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,d:pi/d' --branch 'implement/p' --tidy yes",
+    command: "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,d:pi/d' --branch 'implement/p' --tidy yes --final 'none'",
     output: "json",
   });
   assert.match(k.integrate.task, /Finished tasks, as id:branch: a:pi\/a,b:pi\/b,d:pi\/d/);
   assert.match(k.integrate.task, /Integration worktree: \/t\/p\/integration \(already made/);
   assert.match(k.integrate.task, /Create no worktree and merge nothing/);
   for (const item of f.items().filter((i) => i.task !== undefined)) assert.doesNotMatch(item.task, /git merge|git worktree add/);
-  assert.match(k.integrate.task, /Write \/t\/p\/heavy\.md/);
+  assert.doesNotMatch(k.integrate.task, /Write \/t\/p\/(?!pr\.md)/);
   assert.match(k.integrate.task, /Write the pull request title and body to \/t\/p\/pr\.md/);
   assert.match(k.integrate.task, /Never merge into main and never push/);
   assert.equal(k["diagnose-c-1"].agent, "reviewer");
@@ -373,7 +374,7 @@ function assertUniqueOutputs(f) {
     skipped: ["e"],
     report: ["a: merged", "b: merged", "c: set aside (needs a decision: a person has to choose)", "d: merged", "e: skipped (c not done)"],
     mutations: { a: noMutation, b: noMutation, d: noMutation },
-    heavy_check: "pass",
+    final_check: "none",
     healed: [],
     decide: [{ id: "c", step: "review", question: "a person has to choose", diagnosis: "/t/p/diagnosis-c-1.md" }],
     resumed: { done: [], continued: [], answered: [] },
@@ -384,6 +385,29 @@ function assertUniqueOutputs(f) {
     pr_text: "PR text",
   });
 }
+
+// The plan's final checks run in the integration worktree before the integrator, and their verdict rides on the integrate gate.
+{
+  const finals = { ...planOf([spec("a")]), final_checks: ["nix flake check", "make test"] };
+  const passing = fake({ plan: finals });
+  await run(passing.runs, base);
+  assert.deepEqual(keys(passing).slice(-3), [["final-1"], ["final-2"], ["integrate"]]);
+  assert.equal(byKey(passing)["final-1"].big, true);
+  assert.equal(byKey(passing)["final-1"].agent, null);
+  assert.match(byKey(passing)["final-1"].gate.command, /--command 'nix flake check' /);
+  assert.match(byKey(passing)["final-2"].gate.command, /--command 'make test' /);
+  assert.match(byKey(passing).integrate.gate.command, / --final 'pass'$/);
+
+  const failing = fake({ plan: finals, final: { "final-2": { ok: false, reason: "exit 2" } } });
+  await run(failing.runs, base);
+  assert.match(byKey(failing).integrate.gate.command, / --final 'fail: make test: exit 2'$/);
+
+  const none = fake();
+  await run(none.runs, base);
+  assert.equal(none.items().some((i) => i.key.startsWith("final-")), false);
+  assert.match(byKey(none).integrate.gate.command, / --final 'none'$/);
+}
+
 
 // A plan that is not ready is refused after the one child that runs the gate.
 {
@@ -400,7 +424,7 @@ function assertUniqueOutputs(f) {
     skipped: [],
     report: [],
     mutations: {},
-    heavy_check: null,
+    final_check: null,
     healed: [],
     decide: [],
     resumed: { done: [], continued: [], answered: [] },
@@ -454,7 +478,7 @@ function assertUniqueOutputs(f) {
     skipped: ["b"],
     report: ["a: set aside (needs a decision: a person has to choose)", "b: skipped (a not done)"],
     mutations: {},
-    heavy_check: null,
+    final_check: null,
     healed: [],
     decide: [{ id: "a", step: "implement", question: "a person has to choose", diagnosis: "/t/p/diagnosis-a-1.md" }],
     resumed: { done: [], continued: [], answered: [] },
@@ -681,7 +705,7 @@ function assertUniqueOutputs(f) {
 // An integration the gate does not accept is diagnosed and run once more.
 {
   const f = fake({
-    integrate: { integrate: { ok: false, reasons: ["not merged: a"], branch: "implement/p", head: "h", merged: [], unmerged: ["a"], clean: true, heavy_check: "none", pr_text: "" } },
+    integrate: { integrate: { ok: false, reasons: ["not merged: a"], branch: "implement/p", head: "h", merged: [], unmerged: ["a"], clean: true, final_check: "none", pr_text: "" } },
     diagnose: { "diagnose-integration-1": diagnosis("retry", "the merge stopped on a conflict it can resolve") },
   });
   const receipt = await run(f.runs, base);
@@ -756,7 +780,7 @@ function assertUniqueOutputs(f) {
   ]);
   assert.match(byKey(f)["impl-b"].task, /: a \(branch pi\/a\)\. Do not merge anything\./);
   assert.match(byKey(f)["impl-c"].task, /: b \(branch pi\/b\)\. Do not merge anything\./);
-  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,c:pi/c' --branch 'implement/p' --tidy yes");
+  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a,b:pi/b,c:pi/c' --branch 'implement/p' --tidy yes --final 'none'");
   assert.match(byKey(f).merge.gate.command, / --tips 'c:pi\/c' /);
   assert.deepEqual(receipt.merged, ["a", "b", "c"]);
 }
@@ -768,7 +792,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["mutate-a"], ["merge"], ["integrate"], ["integrate-retry"], ["diagnose-integration-1"]]);
   assert.equal(f.batches[7][0].output, "/t/p/integration.retry.md");
   assert.match(byKey(f)["diagnose-integration-1"].gate.command, / --allow 'retry,decide'$/);
-  assert.match(byKey(f)["diagnose-integration-1"].task, /Evidence: \/t\/p\/integration\.retry\.md, \/t\/p\/heavy\.md/);
+  assert.match(byKey(f)["diagnose-integration-1"].task, /Evidence: \/t\/p\/integration\.retry\.md/);
   assert.equal(f.batches[7][0].gate.command, f.batches[6][0].gate.command);
   assertUniqueOutputs(f);
   assert.deepEqual(receipt, {
@@ -786,7 +810,7 @@ function assertUniqueOutputs(f) {
     skipped: [],
     report: ["a: not merged"],
     mutations: { a: noMutation },
-    heavy_check: null,
+    final_check: "none",
     healed: [],
     decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
     resumed: { done: [], continued: [], answered: [] },
@@ -803,13 +827,13 @@ function assertUniqueOutputs(f) {
     integrate: {
       integrate: {
         ok: false,
-        reasons: ["not merged: b", "heavy checks: fail: red"],
+        reasons: ["not merged: b", "final checks: fail: red"],
         branch: "implement/p",
         head: "h",
         merged: ["a"],
         unmerged: ["b"],
         clean: true,
-        heavy_check: "fail: red",
+        final_check: "fail: red",
         pr_text: "PR",
       },
     },
@@ -833,11 +857,11 @@ function assertUniqueOutputs(f) {
     skipped: [],
     report: ["a: merged", "b: not merged"],
     mutations: { a: noMutation, b: noMutation },
-    heavy_check: "fail: red",
+    final_check: "fail: red",
     healed: [],
     decide: [{ id: "integration", step: "integrate", question: "a person has to choose", diagnosis: "/t/p/diagnosis-integration-1.md" }],
     resumed: { done: [], continued: [], answered: [] },
-    open: ["integration: not merged: b", "integration: heavy checks: fail: red"],
+    open: ["integration: not merged: b", "integration: final checks: fail: red"],
     children: 8,
     pr_text: "PR",
   });
@@ -849,12 +873,12 @@ function assertUniqueOutputs(f) {
     integrate: {
       integrate: {
         ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true,
-        heavy_check: "none", pr_text: "PR", tidied: [], tidy_problems: ["a: worktree /wt/a kept: contains untracked files"],
+        final_check: "none", pr_text: "PR", tidied: [], tidy_problems: ["a: worktree /wt/a kept: contains untracked files"],
       },
     },
   });
   const receipt = await run(f.runs, base);
-  assert.match(byKey(f).integrate.gate.command, / --tidy yes$/);
+  assert.match(byKey(f).integrate.gate.command, / --tidy yes --final 'none'$/);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.deepEqual(receipt.open, ["cleanup: a: worktree /wt/a kept: contains untracked files"]);
 }
@@ -891,7 +915,7 @@ function assertUniqueOutputs(f) {
 {
   const f = fake();
   const receipt = await run(f.runs, { ...base, branch: "feature/x" });
-  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a' --branch 'feature/x' --tidy yes");
+  assert.equal(byKey(f).integrate.gate.command, "recipe-gate integrate '/t/p' --tasks 'a:pi/a' --branch 'feature/x' --tidy yes --final 'none'");
   assert.match(byKey(f).integrate.task, /Integration branch: feature\/x/);
   assert.equal(receipt.branch, "feature/x");
 }
@@ -903,7 +927,7 @@ function assertUniqueOutputs(f) {
   const k = byKey(f);
   assert.equal(k.intake.gate.command, "recipe-gate plan '/tmp/it'\\''s' --repo '/r o'");
   assert.equal(k["impl-a"].gate.command.split(" --check ")[0], "recipe-gate task '/tmp/it'\\''s/impl-a.md'");
-  assert.match(k.integrate.gate.command, / --branch 'implement\/it-s' --tidy yes$/);
+  assert.match(k.integrate.gate.command, / --branch 'implement\/it-s' --tidy yes --final 'none'$/);
 }
 
 // A pin the gate refuses ends the run before any implementer.
@@ -1165,7 +1189,7 @@ function assertUniqueOutputs(f) {
 // `left` after a passing integration, with a cleanup command that removes it.
 {
   const left_over = [{ kind: "review", id: "a", branch: "pi/a", worktree: "/rw/review-a-1" }];
-  const gateOut = { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, heavy_check: "pass", pr_text: "PR", left_over };
+  const gateOut = { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over };
   const stuck = fake({ integrate: { integrate: gateOut } });
   const receipt = await run(stuck.runs, base);
   assert.deepEqual(receipt.left, [
