@@ -850,6 +850,8 @@ function assertUniqueOutputs(f) {
   const f = fake({ impl: { "impl-a": undefined } });
   const receipt = await run(f.runs, base);
   assert.ok(receipt.open.includes("task a: the task check did not run"));
+  assert.deepEqual(receipt.set_aside, [{ id: "a", reason: "task a: the task check did not run" }]);
+  assert.deepEqual(receipt.merged, []);
   assert.ok(!f.items().some((i) => i.key.startsWith("diagnose-")), "no diagnosis for an unrun gate");
 }
 
@@ -858,6 +860,8 @@ function assertUniqueOutputs(f) {
   const f = fake({ review: { "review-a-1": undefined } });
   const receipt = await run(f.runs, base);
   assert.ok(receipt.open.includes("task a: the review's verdict gate did not run"));
+  assert.deepEqual(receipt.set_aside, [{ id: "a", reason: "task a: the review's verdict gate did not run" }]);
+  assert.deepEqual(receipt.merged, []);
   assert.ok(!f.items().some((i) => i.key.startsWith("diagnose-")), "no diagnosis for an unrun gate");
 }
 
