@@ -115,8 +115,8 @@ export default async function plan(args, port) {
   }
 
   function gateProblem(result, what) {
-    if (!result.ok) return what + " failed: " + (result.error || "failed");
-    if (!result.structuredOutput) return what + ": the plan check did not run";
+    if (!result.ok) return { text: what + " failed: " + (result.error || "failed"), diagnose: true };
+    if (!result.structuredOutput) return { text: what + ": the plan check did not run", diagnose: false };
     last = result.structuredOutput;
     return null;
   }
@@ -164,8 +164,12 @@ export default async function plan(args, port) {
   function review() {
     show("reviewing");
     return one(reviewItem()).then(function (result) {
-      if (!result.ok || !result.structuredOutput) {
-        return heal("review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]).then(function (d) {
+      if (result.ok && !result.structuredOutput) {
+        open.push("the review's verdict gate did not run");
+        return { verdict: null, file: result.file };
+      }
+      if (!result.ok) {
+        return heal("review", "the reviewer failed: " + (result.error || "failed"), [result.file], ["retry", "decide"]).then(function (d) {
           return d ? review() : { verdict: null, file: result.file };
         });
       }
@@ -264,14 +268,14 @@ export default async function plan(args, port) {
   let planned = await one(plannerItem("plan", dir + "/planner.md", brief("", [closing])));
   let problem = gateProblem(planned, "the planner");
   if (problem) {
-    const d = await heal("plan", problem, [planned.file, scoutFile], ["retry", "decide"]);
+    const d = problem.diagnose ? await heal("plan", problem.text, [planned.file, scoutFile], ["retry", "decide"]) : null;
     if (d) {
       show("planning");
       planned = await one(plannerItem("plan-2", dir + "/planner-2.md", brief("", [closing, "An earlier attempt did not finish. " + fromDiagnosis(d)])));
       problem = gateProblem(planned, "the planner");
     }
     if (problem) {
-      open.push(problem);
+      open.push(problem.text);
       return finish();
     }
   }
@@ -281,7 +285,7 @@ export default async function plan(args, port) {
     const revised = await revise("", findingLines(last));
     problem = gateProblem(revised, "revision " + revisions);
     if (problem) {
-      open.push(problem);
+      open.push(problem.text);
       break;
     }
     lastPlanFile = revised.file;
@@ -297,7 +301,7 @@ export default async function plan(args, port) {
     if (d) {
       const revised = await revise(", from a diagnosis", [fromDiagnosis(d)].concat(findingLines(last)));
       problem = gateProblem(revised, "revision " + revisions);
-      if (problem) open.push(problem);
+      if (problem) open.push(problem.text);
     }
   }
 
@@ -309,7 +313,7 @@ export default async function plan(args, port) {
   if (reviewVerdict === "needs-work") {
     const fixed = await revise(" after review", ["Address the blocking findings of the review at " + verdict.file + "; leave small findings."]);
     problem = gateProblem(fixed, "the revision after review");
-    if (problem) open.push(problem);
+    if (problem) open.push(problem.text);
     else if (last.ok) {
       verdict = await review();
       reviewVerdict = verdict.verdict;
@@ -318,7 +322,7 @@ export default async function plan(args, port) {
         if (d) {
           const again = await revise(", from a diagnosis", [fromDiagnosis(d), "The latest review is " + verdict.file + "."]);
           problem = gateProblem(again, "revision " + revisions);
-          if (problem) open.push(problem);
+          if (problem) open.push(problem.text);
           else if (last.ok) {
             verdict = await review();
             reviewVerdict = verdict.verdict;

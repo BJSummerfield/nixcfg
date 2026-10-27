@@ -647,4 +647,25 @@ function assertUniqueOutputs(f) {
   fs.rmSync(dir, { recursive: true });
 }
 
+// A gate that did not run is an open line; no diagnosis is launched for it.
+{
+  const f = fake({ planner: { plan: undefined } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"]]);
+  assert.deepEqual(receipt.open, ["the planner: the plan check did not run"]);
+}
+{
+  const f = fake({ planner: { plan: bad, "revise-1": undefined } });
+  const receipt = await run(f.runs, base);
+  assert.ok(!f.items().some((i) => i.key.startsWith("diagnose-")));
+  assert.ok(receipt.open.includes("revision 1: the plan check did not run"));
+}
+{
+  const f = fake({ reviewer: { review: undefined } });
+  const receipt = await run(f.runs, base);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
+  assert.equal(receipt.review, null);
+  assert.ok(receipt.open.includes("the review's verdict gate did not run"));
+}
+
 console.log("plan graph: ok");
