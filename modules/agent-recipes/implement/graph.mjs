@@ -14,6 +14,7 @@ export default async function implement(args, port) {
     diagnosisItem,
     exhausted,
     exhaustedQuestion,
+    gateOnly,
     handedOff,
     handoffCall,
     handoffTrack,
@@ -343,7 +344,11 @@ export default async function implement(args, port) {
     if (!result.ok && !(g && g.report)) {
       return heal(t, "implement", "the implementer failed twice: " + (result.error || "failed"), [result.file], ["replan", "decide"]);
     }
-    if (!g) return heal(t, "implement", "the task check did not run", [result.file], ["retry", "decide"]);
+    if (!g) {
+      const why = "task " + t.id + ": the task check did not run";
+      open.push(why);
+      return giveUp(t, why);
+    }
     const handoff = handoffOf(result, g);
     t.report = result.file;
     t.runId = result.runId || t.runId;
@@ -426,8 +431,13 @@ export default async function implement(args, port) {
 
   function takeReview(t, result) {
     if (result.structuredOutput) noteMade(t.id, "review", result.structuredOutput.branch, result.structuredOutput.worktree, result.structuredOutput.recorded);
-    if (!result.ok || !result.structuredOutput) {
-      return heal(t, "review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]);
+    if (!result.ok) {
+      return heal(t, "review", "the reviewer failed: " + (result.error || "failed"), [result.file], ["retry", "decide"]);
+    }
+    if (!result.structuredOutput) {
+      const why = "task " + t.id + ": the review's verdict gate did not run";
+      open.push(why);
+      return giveUp(t, why);
     }
     t.lastReview = result.file;
     t.lastVerdict = result.structuredOutput.verdict;
@@ -618,7 +628,7 @@ export default async function implement(args, port) {
     });
     return launch(
       due.map(function (t, i) {
-        return gateOnlyItem("join-" + t.id + "-" + t.splitN, mergeCommand(states[i]), dir + "/join-" + t.id + "-" + t.splitN + ".md");
+        return gateOnly("join-" + t.id + "-" + t.splitN, mergeCommand(states[i]), { gateTimeoutMs: childMs });
       }),
     ).then(function (results) {
       return due.reduce(function (chain, t, i) {
@@ -690,10 +700,6 @@ export default async function implement(args, port) {
   }
 
   const MAX_RESOLVERS = 3;
-
-  function gateOnlyItem(key, command, file) {
-    return node(key, "scout", ["Write the single word done to " + file + "."], file, { gate: command, selfGate: false, timeoutMs: childMs });
-  }
 
   function mergeCommand(m) {
     return [
@@ -792,7 +798,7 @@ export default async function implement(args, port) {
   }
 
   function depsItem(t, m) {
-    return gateOnlyItem("deps-" + t.id, mergeCommand(m), dir + "/deps-" + t.id + ".md");
+    return gateOnly("deps-" + t.id, mergeCommand(m), { gateTimeoutMs: childMs });
   }
 
   function prepare(active) {
@@ -849,13 +855,7 @@ export default async function implement(args, port) {
   }
 
   const intake = await one(
-    node(
-      "intake",
-      "scout",
-      ["Check that " + dir + "/plan.md can be read, then write the single word done to " + dir + "/intake.md."],
-      dir + "/intake.md",
-      { gate: planGateCommand(), selfGate: false, timeoutMs: childMs },
-    ),
+    gateOnly("intake", planGateCommand(), { gateTimeoutMs: childMs }),
   );
 
   if (!intake.ok || !intake.structuredOutput) {
@@ -872,7 +872,7 @@ export default async function implement(args, port) {
     return finish();
   }
 
-  const pin = await one(gateOnlyItem("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), dir + "/pin.md"));
+  const pin = await one(gateOnly("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), { gateTimeoutMs: childMs }));
   if (!pin.ok || !pin.structuredOutput) {
     open.push("the base could not be pinned: " + (pin.error || "the pin did not run"));
     return finish();
@@ -891,11 +891,9 @@ export default async function implement(args, port) {
 
   if (args.resume) {
     const back = await one(
-      gateOnlyItem(
-        "resume",
-        "recipe-gate resume " + quote(dir) + " --repo " + quote(repo) + " --branch " + quote(integrationBranch),
-        dir + "/resume.md",
-      ),
+      gateOnly("resume", "recipe-gate resume " + quote(dir) + " --repo " + quote(repo) + " --branch " + quote(integrationBranch), {
+        gateTimeoutMs: childMs,
+      }),
     );
     if (!back.ok || !back.structuredOutput || !back.structuredOutput.ok) {
       open.push(
@@ -1040,14 +1038,14 @@ export default async function implement(args, port) {
 
   function integrationTrouble(result) {
     if (!result.ok) return "the integration failed twice: " + (result.error || "failed");
-    if (!result.structuredOutput) return "the integration check did not run";
+    if (!result.structuredOutput) return null;
     if (!result.structuredOutput.ok) return "the integration check found: " + list(result.structuredOutput.reasons).join("; ");
     return null;
   }
 
   board("integrating", view());
   const joining = mergeState("integration", "integration", dir + "/integration", integrationBranch, tipTasks);
-  const joined = await one(gateOnlyItem("merge", mergeCommand(joining), dir + "/merge.md"));
+  const joined = await one(gateOnly("merge", mergeCommand(joining), { gateTimeoutMs: childMs }));
   const joinedOut = await settle(joining, joined);
   if (!joinedOut.ok) {
     askDecision(subjectOf("integration"), "integrate", "the finished branches could not be merged: " + joinedOut.why, null);

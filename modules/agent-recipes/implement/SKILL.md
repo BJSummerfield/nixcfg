@@ -62,15 +62,14 @@ branch>` removes them on request (`--keep a,b` keeps branches).
 
 ## What runs
 
-1. One scout child exists only to carry the plan gate: `recipe-gate plan`
-   checks sizes, file ownership, dependencies and that every task has a
-   check. A gate runs only after a child, and this child is the cheapest one;
-   the plan check, not the child, decides. A plan that is not ok is refused
+1. The plan gate `recipe-gate plan` is a gate-only step: the runner runs it
+   without a child. It checks sizes, file ownership, dependencies and that
+   every task has a check. A plan that is not ok is refused
    with the check's findings in the receipt, before any worktree exists.
    Then `recipe-gate pin` fixes the run's base: the repository's HEAD commit
    and a ref to it, written to `<dir>/run.json`. Every task starts from that
    base, so the checkout may move while the run goes on.
-   With `resume`, one more scout child then carries `recipe-gate resume`,
+   Pin and resume are gate-only steps too. With `resume`, `recipe-gate resume`,
    which reads the ledger and the review files: a task whose branch has a
    clean review (or is already merged into the integration branch, or was
    tidied after it merged) is done and never launched again; a task whose
@@ -146,7 +145,8 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    branch, nothing is uncommitted, `pr.md` is not empty and the heavy checks
    passed or were not needed, and with that it tidies (above); a worktree or
    branch it could not remove is an `open` line. Nothing here merges into
-   the main branch or pushes.
+   the main branch or pushes. A gate that did not run (no verdict came back)
+   becomes an `open` line and is retried once by the runner, not diagnosed.
 6. A merge that conflicts stops with the conflict named; a resolver (an
    implementer with a brief, no task file) is sent into that worktree, where
    the merge is already started. It edits only the conflicted files, runs
