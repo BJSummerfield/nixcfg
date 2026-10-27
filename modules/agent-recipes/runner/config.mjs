@@ -6,7 +6,7 @@ const DEFAULTS = {
   worktreeDir: "/var/tmp/pi-worktrees",
   stateDir: "/var/tmp/recipe-runner",
   concurrency: 3,
-  inFlightTokens: null,
+  window: 221184,
 };
 
 export function loadConfig(env = process.env) {

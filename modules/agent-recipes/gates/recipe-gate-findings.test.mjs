@@ -151,13 +151,22 @@ for (const [name, cmd] of [["commit", "echo x > moved.txt && git add moved.txt &
   assert.equal(missing.status, 0);
   assert.equal(missing.json.ok, false);
   assert.equal(missing.json.verdict, null);
-  for (const head of ["handoff: x", "blocked: y"]) {
-    const f = review(`${head}\n\n\`\`\`sh\nexit 1\n\`\`\`\n`);
+  {
+    const f = review("blocked: y\n\n```sh\nexit 1\n```\n");
     const r = gate(["findings", f, "--check", check, "--worktree", worktree]);
     assert.equal(r.status, 0);
     assert.equal(r.json.ok, false);
     assert.equal(r.json.verdict, null);
-    assert.equal(r.json.reason, head === "blocked: y" ? "review is blocked: y" : "review is a handoff");
+    assert.equal(r.json.reason, "review is blocked: y");
+    assert.equal(r.json.handoff, null);
+  }
+
+  // a handoff review is judged like any other
+  {
+    const r = runFindings("handoff: stopped part way\n\n```sh\nexit 1\n```\n");
+    assert.equal(r.json.verdict, "needs-work");
+    assert.equal(r.json.handoff, "handoff: stopped part way");
+    assert.equal(r.json.reproduced.length, 1);
   }
   const noCheck = gate(["findings", review("x\n"), "--worktree", worktree]);
   assert.equal(noCheck.status, 2);
@@ -226,4 +235,19 @@ for (const [name, cmd] of [["commit", "echo x > moved.txt && git add moved.txt &
   const missing = gate(["findings", path.join(dir(), "none.md"), "--check", check, "--worktree", worktree]).json;
   assert.equal(missing.tried, null);
   assert.deepEqual(missing.claimed, []);
+}
+
+// several claims files merge, and a fence line is not a reason
+{
+  const one = review("done\n\n## Equivalent 1\nFirst.\n");
+  const two = review("done\n\n## Equivalent 2\n```\nSecond.\n```\n");
+  const r = runFindings("# Review\n\nLooks fine.\n", ["--claims", one, "--claims", two]).json;
+  assert.deepEqual(r.claimed, [{ n: 1, reason: "First." }, { n: 2, reason: "Second." }]);
+}
+
+// the timeout flag caps each reproduction
+{
+  const r = runFindings("# Review\n\n```sh\nsleep 5\n```\n", ["--timeout-ms", "1500"]).json;
+  assert.equal(r.unrunnable.length, 1);
+  assert.equal(r.unrunnable[0].reason, "timed out after 1500 ms");
 }
