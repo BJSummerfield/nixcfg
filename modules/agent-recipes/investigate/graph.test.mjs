@@ -104,13 +104,14 @@ function assertSound(f) {
   assert.deepEqual(keys(f), ["pin", "reproduce", "hypothesize", "change-1", "review-1-1"]);
   const k = byKey(f);
   assert.equal(k.pin.gate.command, "recipe-gate pin '/t/d' --repo '/r'");
-  assert.equal(k.reproduce.agent, "scout");
+  assert.equal(k.pin.agent, null);
+  assert.equal(k.reproduce.agent, null);
   assert.equal(k.reproduce.worktree, true);
   assert.equal(k.reproduce.baseRef, "refs/recipes/d/base");
   assert.equal(k.reproduce.gate.command, "recipe-gate repro '/t/d' --command 'make repro' --expect fail --id 'reproduce'");
   assert.equal(k.reproduce.gate.timeoutMs, 660000);
-  assert.equal(k.reproduce.task, "Write the single word done to /t/d/reproduce.md.");
-  assert.doesNotMatch(k.reproduce.task, /run `recipe-gate/);
+  assert.equal(k.reproduce.task, undefined);
+  assert.equal(k.reproduce.output, undefined);
   assert.equal(k.hypothesize.agent, "reviewer");
   assert.equal(k.hypothesize.worktree, true);
   assert.equal(k.hypothesize.baseRef, "refs/recipes/d/base");
@@ -141,6 +142,24 @@ function assertSound(f) {
   assert.ok(r.left.some((l) => l.branch === "pi/h1"));
   assert.ok(r.left.some((l) => l.worktree === "/wt/hypothesize" && l.kind === "hypothesize"));
   assertSound(f);
+}
+
+// A gate that answers without a result ends the step with an open line.
+{
+  for (const [key, line] of [
+    ["change-1", "hypothesis 1: the task gate did not run"],
+    ["review-1-1", "hypothesis 1: the review's verdict gate did not run"],
+  ]) {
+    const f = fake({ [key]: { structuredOutput: undefined } });
+    const r = await run(f.runs, args);
+    assert.equal(r.hypotheses[0].outcome, "gate did not run");
+    assert.ok(r.open.includes(line), line);
+    assert.ok(!keys(f).some((x) => x.startsWith("diagnose-")));
+  }
+  const f = fake({ hypothesize: { structuredOutput: undefined } });
+  const r = await run(f.runs, args);
+  assert.ok(r.open.includes("the hypotheses gate did not run"));
+  assert.ok(!keys(f).some((x) => x.startsWith("diagnose-")));
 }
 
 // Verify, check and bad arguments.
@@ -481,7 +500,8 @@ const reviewClean = (branch) => ({ ok: true, verdict: "clean", branch, worktree:
     k["verify-1s1"].gate.command,
     "recipe-gate task '/t/d/piece-h1-b.md' --verify 'make repro' --repo '/r' --base 'base0' --run '/t/d' --id 'h1' --in '/wt/pb'",
   );
-  assert.equal(k["verify-1s1"].worktree, false);
+  assert.ok(!k["verify-1s1"].worktree);
+  assert.equal(k["verify-1s1"].agent, null);
   assert.equal(k["review-1-1"].baseRef, "refs/heads/pi/pb");
   assert.match(k["review-1-1"].task, /Diff to review: git diff base0\.\.pi\/pb/);
   assert.equal(f.items().filter((i) => i.key.startsWith("review-")).length, 1);

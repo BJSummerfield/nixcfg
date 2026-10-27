@@ -1,7 +1,7 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
 
 export default async function investigate(args, port) {
-const { quote, list, short, node, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, handoffTrack, beginRelay, clearRelay, relayBriefLines, stampRelay, reportHandoff, handoffCall, acceptSplit, splitPlanItem } = recipeLib(port);
+const { quote, list, short, node, gateOnly, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, handoffTrack, beginRelay, clearRelay, relayBriefLines, stampRelay, reportHandoff, handoffCall, acceptSplit, splitPlanItem } = recipeLib(port);
 
 const MAX_RESEARCH = 2;
 const MAX_REVIEWS = 2;
@@ -84,25 +84,12 @@ function finish() {
   });
 }
 
-function gateOnlyItem(key, command, file, opts) {
-  return node(
-    key,
-    "scout",
-    ["Write the single word done to " + file + "."],
-    file,
-    Object.assign({ gate: command, selfGate: false, timeoutMs: childMs }, opts || {}),
-  );
-}
-
 function reproItem(key, command) {
-  const item = gateOnlyItem(
-    key,
-    "recipe-gate repro " + quote(dir) + " --command " + quote(command) + " --expect fail --id " + quote(key),
-    dir + "/" + key + ".md",
-    { worktree: true, gateTimeoutMs: REPRO_GATE_MS },
-  );
-  item.baseRef = pinned.base_ref;
-  return item;
+  return gateOnly(key, "recipe-gate repro " + quote(dir) + " --command " + quote(command) + " --expect fail --id " + quote(key), {
+    worktree: true,
+    baseRef: pinned.base_ref,
+    gateTimeoutMs: REPRO_GATE_MS,
+  });
 }
 
 function reproLine() {
@@ -205,7 +192,7 @@ function queueFix(h, finding) {
 function verifyItem(h) {
   h.verifyTries++;
   const key = "verify-" + h.rank + (h.splitsDone ? "s" + h.splitsDone : "") + (h.verifyTries === 1 ? "" : "-" + h.verifyTries);
-  return gateOnlyItem(key, taskGate(h, h.report, h.worktree), dir + "/" + key + ".md", { worktree: false, gateTimeoutMs: TASK_GATE_MS });
+  return gateOnly(key, taskGate(h, h.report, h.worktree), { gateTimeoutMs: TASK_GATE_MS });
 }
 
 function reviewItem(h) {
@@ -276,7 +263,10 @@ function takeGate(h, result, step) {
   if (step === "change" && !result.ok && !(g && g.report)) {
     return heal(h, step, "the implementer failed twice: " + (result.error || "failed"), [h.report], ["retry", "decide"]);
   }
-  if (!g) return heal(h, step, "the task gate did not run", [h.report], ["retry", "decide"]);
+  if (!g) {
+    open.push("hypothesis " + h.rank + ": the task gate did not run");
+    return stopHere(h, "gate did not run");
+  }
   const status = g.report ? g.report.status : "invalid";
   const info = handoffInfo(pendingOf(result), g, h.report);
   const handing = Boolean(info) && (info.handoff.empty || status === "handoff");
@@ -307,8 +297,12 @@ function takeGate(h, result, step) {
 function takeReview(h, result) {
   const g = result.structuredOutput;
   if (g) noteMade("h" + h.rank, "review", g.branch, g.worktree);
-  if (!result.ok || !g) {
-    return heal(h, "review", "the reviewer failed: " + (result.error || "its verdict gate did not run"), [result.file], ["retry", "decide"]);
+  if (!result.ok) {
+    return heal(h, "review", "the reviewer failed: " + (result.error || "failed"), [result.file], ["retry", "decide"]);
+  }
+  if (!g) {
+    open.push("hypothesis " + h.rank + ": the review's verdict gate did not run");
+    return stopHere(h, "gate did not run");
   }
   h.lastReview = result.file;
   if (g.verdict === "clean") {
@@ -356,7 +350,11 @@ function splitItem(h) {
 
 function takeSplit(h, result) {
   const g = result.structuredOutput;
-  if (!result.ok || !g) return askPerson(h, "split", "the split plan failed: " + (result.error || "its plan gate did not run"), result.file);
+  if (!result.ok) return askPerson(h, "split", "the split plan failed: " + (result.error || "failed"), result.file);
+  if (!g) {
+    open.push("hypothesis " + h.rank + ": the split plan gate did not run");
+    return stopHere(h, "gate did not run");
+  }
   const budget = h.handoffInfo.budget;
   const found = acceptSplit(h.track, g, { parentId: "h" + h.rank, parentEst: budget ? budget.tokens : null, parentOwns: null, taken: pieceIds });
   if (!found.ok) return askPerson(h, "split", found.problem, result.file);
@@ -421,7 +419,10 @@ function takePiece(h, result) {
   const p = h.piece;
   const g = result.structuredOutput;
   if (!result.ok && !(g && g.report)) return heal(h, "piece", "piece " + p.spec.id + " failed twice: " + (result.error || "failed"), [p.report], ["retry", "decide"]);
-  if (!g) return heal(h, "piece", "the task gate did not run for piece " + p.spec.id, [p.report], ["retry", "decide"]);
+  if (!g) {
+    open.push("hypothesis " + h.rank + ": the task gate did not run for piece " + p.spec.id);
+    return stopHere(h, "gate did not run");
+  }
   const status = g.report ? g.report.status : "invalid";
   const info = handoffInfo(pendingOf(result), g, p.report);
   const handing = Boolean(info) && (info.handoff.empty || status === "handoff");
@@ -559,7 +560,7 @@ if (problems.length) {
   return finish();
 }
 
-const pin = await one(gateOnlyItem("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), dir + "/pin.md"));
+const pin = await one(gateOnly("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo)));
 if (!pin.ok || !pin.structuredOutput) {
   open.push("the base could not be pinned: " + (pin.error || "the pin did not run"));
   return finish();
@@ -623,8 +624,11 @@ for (let attempt = 1; !found; attempt++) {
   if (r.ok && g && g.ok && list(g.hypotheses).length >= 2) {
     found = list(g.hypotheses).slice(0, 2);
     hypothesesFile = r.file || file;
+  } else if (r.ok && !g) {
+    open.push("the hypotheses gate did not run");
+    return finish();
   } else {
-    const signal = !r.ok ? "the reviewer failed: " + (r.error || "failed") : g ? "no usable hypotheses: " + g.problem : "the hypotheses gate did not run";
+    const signal = !r.ok ? "the reviewer failed: " + (r.error || "failed") : "no usable hypotheses: " + g.problem;
     const d = await diagnose(wholeRun, troubleOf("hypothesize", signal, [r.file], ["retry", "decide"]), dir, diagnosisContext({}), STEPS.hypothesize, childMs);
     if (!d) {
       open.push("no hypotheses: " + short(signal));
