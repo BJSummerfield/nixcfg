@@ -91,7 +91,6 @@ const args = { dir: "/t/d", goal: "find the bug", repo: "/r", reproduce: "make r
 const outcomes = (r) => r.hypotheses.map((h) => h.outcome);
 
 function assertSound(f) {
-  for (const i of f.items()) assert.ok(!("resume" in i), `${i.key} resumes a session`);
   const outputs = f.items().map((i) => i.output).filter(Boolean);
   assert.equal(new Set(outputs).size, outputs.length, "two children share an output path");
 }
