@@ -390,7 +390,7 @@ const gate = (...args) => {
   const task = (h, body = "Change it.\n") => `${header(h)}\n\n# Body\n${body}`;
   const mkPlan = (files, withPlan = true) => {
     const d = dir();
-    if (withPlan) fs.writeFileSync(path.join(d, "plan.md"), "# Plan\n");
+    if (withPlan) fs.writeFileSync(path.join(d, "plan.md"), "# Plan\n\n## Final checks\nnone\n");
     fs.mkdirSync(path.join(d, "tasks"));
     for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(d, "tasks", `${name}.md`), text);
     return d;
@@ -412,6 +412,7 @@ const gate = (...args) => {
     overlaps: [],
     missing: [],
     cycles: [],
+    final_checks: [],
   });
   for (const t of clean.json.tasks) {
     const s = clean.json.sizing;
@@ -660,7 +661,7 @@ const gate = (...args) => {
   assert.equal(noRepo.json.ok, false);
   assert.equal(noRepo.json.reason, "no base commit: pass --repo of the source checkout");
 
-  // integrate: branches merged in order, pull request text and heavy result.
+  // integrate: branches merged in order, pull request text and final check result.
   const integ = (d, branch = "implement/x") => {
     git(source, "worktree", "add", "-q", "-b", branch, path.join(d, "integration"), "main");
     return path.join(d, "integration");
@@ -673,7 +674,7 @@ const gate = (...args) => {
   assert.equal(partial.json.ok, false);
   assert.equal(partial.json.branch, "implement/x");
   assert.deepEqual(partial.json.merged, ["t2", "dep"]);
-  assert.deepEqual(partial.json.reasons, ["pr.md missing or empty", "heavy checks: not recorded"]);
+  assert.deepEqual(partial.json.reasons, ["pr.md missing or empty", "final checks: not recorded"]);
 
   commit(wt1, "a.txt", "a4\n");
   git(wt1, "branch", "-q", "pi/t3");
@@ -683,11 +684,10 @@ const gate = (...args) => {
   assert.equal(three.json.reasons[0], "not merged: t3");
 
   fs.writeFileSync(path.join(d1, "pr.md"), "Title line\n\nWhat and why.\n");
-  fs.writeFileSync(path.join(d1, "heavy.md"), "pass\nflake check output\n");
-  const whole = gate("integrate", d1, "--tasks", "t2:pi/t2,dep:pi/dep", "--branch", "implement/x");
+  const whole = gate("integrate", d1, "--tasks", "t2:pi/t2,dep:pi/dep", "--branch", "implement/x", "--final", "pass");
   assert.equal(whole.json.ok, true);
   assert.deepEqual(whole.json.reasons, []);
-  assert.equal(whole.json.heavy_check, "pass");
+  assert.equal(whole.json.final_check, "pass");
   assert.equal(whole.json.pr_text, "Title line\n\nWhat and why.");
   assert.equal(whole.json.head, git(iw, "rev-parse", "HEAD"));
 
@@ -695,11 +695,11 @@ const gate = (...args) => {
   assert.equal(wrongBranch.json.ok, false);
   assert.match(wrongBranch.json.reasons[0], /^integration worktree is on implement\/x, not implement\/other$/);
 
-  fs.writeFileSync(path.join(d1, "heavy.md"), "**fail**: flake check red\n");
-  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.heavy_check, "fail: flake check red");
-  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.ok, false);
-  fs.writeFileSync(path.join(d1, "heavy.md"), "none\nthe plan names no heavy check\n");
-  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2").json.ok, true);
+  const failFinal = gate("integrate", d1, "--tasks", "t2:pi/t2", "--final", "fail: flake check red");
+  assert.equal(failFinal.json.final_check, "fail: flake check red");
+  assert.equal(failFinal.json.ok, false);
+  assert.ok(failFinal.json.reasons.includes("final checks: fail: flake check red"));
+  assert.equal(gate("integrate", d1, "--tasks", "t2:pi/t2", "--final", "none").json.ok, true);
 
   const absent = gate("integrate", dir(), "--tasks", "t2:pi/t2");
   assert.equal(absent.status, 0);
@@ -858,8 +858,7 @@ const gate = (...args) => {
   git(source, "worktree", "add", "-q", "-b", "implement/x", iw, "main");
   git(iw, "merge", "-q", "--no-edit", "pi/badid");
   fs.writeFileSync(path.join(plan, "pr.md"), "Title\n");
-  fs.writeFileSync(path.join(plan, "heavy.md"), "none\n");
-  const failed = gateIn(source, "integrate", plan, "--tasks", "bad:pi/badid", "--branch", "implement/x");
+  const failed = gateIn(source, "integrate", plan, "--tasks", "bad:pi/badid", "--branch", "implement/x", "--final", "none");
   assert.equal(failed.status, 0);
   assert.equal(failed.json.ok, false);
   const identityReason = failed.json.reasons.find((s) => s.startsWith("commits not made with the configured git identity"));
@@ -881,8 +880,7 @@ const gate = (...args) => {
   git(source, "worktree", "add", "-q", "-b", "implement/y", iw2, "main");
   git(iw2, "merge", "-q", "--no-edit", "pi/goodid");
   fs.writeFileSync(path.join(plan2, "pr.md"), "Title\n");
-  fs.writeFileSync(path.join(plan2, "heavy.md"), "none\n");
-  const passed = gateIn(source, "integrate", plan2, "--tasks", "good:pi/goodid", "--branch", "implement/y");
+  const passed = gateIn(source, "integrate", plan2, "--tasks", "good:pi/goodid", "--branch", "implement/y", "--final", "none");
   assert.equal(passed.status, 0);
   assert.equal(passed.json.ok, true, passed.json.reasons.join("; "));
   assert.deepEqual(passed.json.reasons, []);
@@ -898,8 +896,7 @@ const gate = (...args) => {
   git(source, "worktree", "add", "-q", "-b", "implement/z", iw3, "main");
   git(iw3, "merge", "-q", "--no-edit", "pi/goodid");
   fs.writeFileSync(path.join(plan3, "pr.md"), "Title\n");
-  fs.writeFileSync(path.join(plan3, "heavy.md"), "none\n");
-  const unreadable = gateIn(source, "integrate", plan3, "--tasks", "good:pi/goodid", "--branch", "implement/z");
+  const unreadable = gateIn(source, "integrate", plan3, "--tasks", "good:pi/goodid", "--branch", "implement/z", "--final", "none");
   assert.equal(unreadable.status, 0);
   assert.equal(unreadable.json.ok, false, unreadable.json.reasons.join("; "));
   assert.ok(unreadable.json.reasons.some((s) => s.startsWith("commits could not be read: ")));
@@ -940,15 +937,14 @@ const gate = (...args) => {
   git(repo, "worktree", "add", "-q", "-b", "implement/p", iw, "main");
   git(iw, "merge", "-q", "--no-edit", "pi/a");
   git(iw, "merge", "-q", "--no-edit", "pi/c");
-  fs.writeFileSync(path.join(plan, "heavy.md"), "none\n");
 
-  const notOk = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  const notOk = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes", "--final", "none");
   assert.equal(notOk.ok, false);
   assert.equal(notOk.tidied, undefined);
   assert.ok(fs.existsSync(wa));
 
   fs.writeFileSync(path.join(plan, "pr.md"), "Title\n");
-  const r = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  const r = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes", "--final", "none");
   assert.equal(r.ok, true);
   assert.deepEqual(r.tidied, ["a"]);
   assert.equal(r.tidy_problems.length, 1);
@@ -959,12 +955,12 @@ const gate = (...args) => {
   assert.deepEqual(branches, ["implement/p", "main", "pi/b", "pi/c"]);
   assert.ok(!git(repo, "worktree", "list").includes(wa));
 
-  const plain = gateEnv("integrate", plan, "--tasks", "c:pi/c", "--branch", "implement/p");
+  const plain = gateEnv("integrate", plan, "--tasks", "c:pi/c", "--branch", "implement/p", "--final", "none");
   assert.equal(plain.tidied, undefined);
 
   // The same command again, as when the integrating child ran it first: the
   // tidied branch counts as merged by its recorded commit.
-  const again = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes");
+  const again = gateEnv("integrate", plan, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/p", "--tidy", "yes", "--final", "none");
   assert.equal(again.ok, true, again.reasons.join("; "));
   assert.deepEqual(again.merged, ["a", "c"]);
   assert.deepEqual(again.tidied, ["a"]);
@@ -974,7 +970,7 @@ const gate = (...args) => {
   git(iw, "merge", "-q", "--no-edit", "pi/b");
   git(repo, "worktree", "remove", wb);
   git(repo, "branch", "-D", "pi/b");
-  const gone = gateEnv("integrate", plan, "--tasks", "a:pi/a,b:pi/b", "--branch", "implement/p");
+  const gone = gateEnv("integrate", plan, "--tasks", "a:pi/a,b:pi/b", "--branch", "implement/p", "--final", "none");
   assert.deepEqual(gone.unmerged, ["b"]);
 }
 
@@ -1110,8 +1106,7 @@ const gate = (...args) => {
   git(repo, "worktree", "add", "-q", "-b", "implement/x", integration, p1.json.base_ref);
   git(integration, "merge", "-q", "--no-edit", "pi/good");
   fs.writeFileSync(path.join(run, "pr.md"), "Title\n");
-  fs.writeFileSync(path.join(run, "heavy.md"), "none\n");
-  const tidy = gateIn(repo, "integrate", run, "--tasks", "good:pi/good", "--branch", "implement/x", "--tidy", "yes");
+  const tidy = gateIn(repo, "integrate", run, "--tasks", "good:pi/good", "--branch", "implement/x", "--tidy", "yes", "--final", "none");
   assert.equal(tidy.json.ok, true, tidy.json.reasons.join("; "));
   assert.deepEqual(tidy.json.tidy_problems, []);
   assert.deepEqual(tidy.json.left_over, []);

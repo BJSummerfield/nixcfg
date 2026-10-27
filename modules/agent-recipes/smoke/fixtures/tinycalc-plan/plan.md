@@ -10,8 +10,8 @@ Add `multiply` to calc.js with a test, then add `power` in a new module that use
 1. multiply: add `multiply(a, b)` to calc.js and test it.
 2. power: add power.js exporting `power(base, exp)` for non-negative integer exp using `multiply`, with power.test.js.
 
-## Heavy checks
-None.
+## Final checks
+none
 
 ## Changes avoided
 No dependencies, no build step.
