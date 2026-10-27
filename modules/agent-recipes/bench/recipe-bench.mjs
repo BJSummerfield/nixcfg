@@ -1,9 +1,10 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { reviewBriefLines } from "../lib/review-brief.mjs";
 import { loadConfig } from "../runner/config.mjs";
 
 const here = fileURLToPath(import.meta.url);
@@ -131,6 +132,12 @@ function loadCases(file) {
       throw new UsageError(`${label} expect must be needs-work or clean`);
     }
     if (!Array.isArray(raw.defects)) throw new UsageError(`${label} needs a defects list`);
+    if (
+      raw.owns !== undefined &&
+      (!Array.isArray(raw.owns) || raw.owns.length === 0 || !raw.owns.every((o) => typeof o === "string" && o !== ""))
+    ) {
+      throw new UsageError(`${label} owns must be a non-empty list of non-empty strings`);
+    }
     const ids = new Set();
     const defects = raw.defects.map((d) => {
       if (typeof d?.id !== "string" || d.id === "") throw new UsageError(`${label} defects need a non-empty id`);
@@ -148,7 +155,7 @@ function loadCases(file) {
       });
       return { id: d.id, match };
     });
-    return { name: raw.name, base: raw.base, head: raw.head, task: raw.task, check: raw.check, expect: raw.expect, defects };
+    return { name: raw.name, base: raw.base, head: raw.head, task: raw.task, check: raw.check, expect: raw.expect, owns: raw.owns, defects };
   });
   return { repo: data.repo, cases };
 }
@@ -223,20 +230,6 @@ function repeatsFor(opts, dir) {
     return [];
   }
   return names.filter((n) => /^[1-9][0-9]*$/.test(n)).map(Number).sort((a, b) => a - b);
-}
-
-function renderBrief(c, reviewFile) {
-  return [
-    "Review variant: Diff on a branch",
-    "",
-    "Task:",
-    c.task,
-    "",
-    `Diff command: git diff ${c.base}..${c.head}`,
-    `Check: ${c.check}`,
-    `Write the review to: ${reviewFile}`,
-    "",
-  ].join("\n");
 }
 
 function readJson(file) {
@@ -472,28 +465,53 @@ export async function main(argv, deps = {}) {
         let error = null;
         if (dispatch) {
           fs.mkdirSync(runDir, { recursive: true });
-          fs.writeFileSync(briefFile, renderBrief(c, reviewFile));
-          const args = [
-            "dispatch",
-            "--role", "reviewer",
-            "--worktree",
-            "--base", c.head,
-            "--cwd", loaded.repo,
-            "--brief-file", briefFile,
-            "--output", reviewFile,
-            "--gate", `recipe-gate verdict ${reviewFile}`,
-            "--gate-json",
-            "--result-file", resultFile,
-            "--dir", runDir,
-            "--timeout-ms", String(opts.timeoutMs),
-          ];
-          if (config.harness !== "pi") args.push("--harness", config.harness);
-          try {
-            const r = await runner(args, { env: { ...process.env, RECIPE_RUNNER_CONFIG: config.file } });
-            ran = r.code === 0;
-            if (!ran) error = r.stderr.trim().slice(-ERROR_TAIL) || r.stdout.trim().slice(-ERROR_TAIL) || `exit ${r.code}`;
-          } catch (spawnError) {
-            error = spawnError.message;
+          const taskFile = path.join(runDir, "task.md");
+          fs.writeFileSync(taskFile, c.task);
+          let owns = c.owns;
+          if (owns === undefined) {
+            try {
+              owns = execFileSync("git", ["diff", "--name-only", `${c.base}..${c.head}`], { cwd: loaded.repo, encoding: "utf8" })
+                .split("\n")
+                .filter((line) => line !== "");
+            } catch (gitError) {
+              error = `cannot list the changed files: ${gitError.message}`.slice(0, ERROR_TAIL);
+            }
+          }
+          if (error === null) {
+            fs.writeFileSync(
+              briefFile,
+              reviewBriefLines({
+                taskFile,
+                repo: loaded.repo,
+                branch: c.head,
+                diffRange: `${c.base}..${c.head}`,
+                owns,
+                check: c.check,
+                output: reviewFile,
+              }).join("\n") + "\n",
+            );
+            const args = [
+              "dispatch",
+              "--role", "reviewer",
+              "--worktree",
+              "--base", c.head,
+              "--cwd", loaded.repo,
+              "--brief-file", briefFile,
+              "--output", reviewFile,
+              "--gate", `recipe-gate verdict ${reviewFile}`,
+              "--gate-json",
+              "--result-file", resultFile,
+              "--dir", runDir,
+              "--timeout-ms", String(opts.timeoutMs),
+            ];
+            if (config.harness !== "pi") args.push("--harness", config.harness);
+            try {
+              const r = await runner(args, { env: { ...process.env, RECIPE_RUNNER_CONFIG: config.file } });
+              ran = r.code === 0;
+              if (!ran) error = r.stderr.trim().slice(-ERROR_TAIL) || r.stdout.trim().slice(-ERROR_TAIL) || `exit ${r.code}`;
+            } catch (spawnError) {
+              error = spawnError.message;
+            }
           }
         }
         if (!ran) anyFailed = true;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { main } from "./recipe-bench.mjs";
@@ -93,8 +94,9 @@ function result(verdict, ms, usage = { prompt: 1000, cached: 500, output: 200 })
   return r;
 }
 
-function writeCases(file, cases) {
-  fs.writeFileSync(file, JSON.stringify({ repo, cases }, null, 2));
+function writeCases(file, cases, repoDir = repo) {
+  const withOwns = repoDir === repo ? cases.map((c) => ({ owns: ["x"], ...c })) : cases;
+  fs.writeFileSync(file, JSON.stringify({ repo: repoDir, cases: withOwns }, null, 2));
   return file;
 }
 
@@ -144,7 +146,7 @@ test("argument parsing: a missing cases file exits 2 without dispatching", async
   assert.equal(spawn.launches.length, 0);
 });
 
-test("the brief holds the task, the diff command, the check and the output path", async () => {
+test("the brief is the shared review brief with the task in its own file", async () => {
   const cases = writeCases(path.join(tmp, "cases-brief.json"), [
     { name: "c1", base: "v1", head: "v2", task: "make tinycalc parse negative numbers", check: "node test.mjs", expect: "needs-work", defects: [] },
   ]);
@@ -154,11 +156,50 @@ test("the brief holds the task, the diff command, the check and the output path"
   const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
   assert.equal(r.code, 0);
   const brief = fs.readFileSync(path.join(runDir, "brief.md"), "utf8");
-  assert.match(brief, /Diff on a branch/);
-  assert.match(brief, /make tinycalc parse negative numbers/);
-  assert.match(brief, /git diff v1\.\.v2/);
-  assert.match(brief, /node test\.mjs/);
-  assert.match(brief, new RegExp(path.join(runDir, "review.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.ok(brief.includes("Review a diff on a branch (the diff variant)."));
+  assert.ok(brief.includes(`Task file: ${path.join(runDir, "task.md")}`));
+  assert.equal(fs.readFileSync(path.join(runDir, "task.md"), "utf8"), "make tinycalc parse negative numbers");
+  assert.ok(brief.includes("Diff to review: git diff v1..v2"));
+  assert.ok(brief.includes("Owned files: x"));
+  assert.ok(brief.includes("Check to run: node test.mjs"));
+  assert.ok(brief.includes(`Write the report to ${path.join(runDir, "review.md")}`));
+});
+
+test("a case without owns takes them from the diff", async () => {
+  const gitRepo = path.join(tmp, "git-repo");
+  fs.mkdirSync(gitRepo);
+  const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: gitRepo });
+  git("init", "-q");
+  fs.writeFileSync(path.join(gitRepo, "kept.txt"), "1");
+  fs.writeFileSync(path.join(gitRepo, "changed.txt"), "1");
+  git("add", ".");
+  git("commit", "-q", "-m", "one");
+  git("tag", "v1");
+  fs.writeFileSync(path.join(gitRepo, "changed.txt"), "2");
+  git("commit", "-q", "-am", "two");
+  git("tag", "v2");
+  const cases = writeCases(
+    path.join(tmp, "cases-diffowns.json"),
+    [{ name: "c1", base: "v1", head: "v2", task: "t", check: "c", expect: "clean", defects: [] }],
+    gitRepo,
+  );
+  const out = path.join(tmp, "out-diffowns");
+  const runDir = path.join(out, "c1", "a", "1");
+  const spawn = makeSpawn({ [path.join(runDir, "review.md")]: { review: "r", result: result("clean", 60000) } });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  const brief = fs.readFileSync(path.join(runDir, "brief.md"), "utf8");
+  assert.ok(brief.includes("Owned files: changed.txt\n"));
+});
+
+test("a case with an empty owns list exits 2 without dispatching", async () => {
+  const cases = writeCases(path.join(tmp, "cases-emptyowns.json"), [
+    { name: "c1", base: "a", head: "b", task: "t", check: "c", expect: "clean", defects: [], owns: [] },
+  ]);
+  const spawn = makeSpawn({});
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", path.join(tmp, "out-emptyowns")], { spawn });
+  assert.equal(r.code, 2);
+  assert.equal(spawn.launches.length, 0);
 });
 
 test("scoring: caught, missed, clean on a defect case, false alarm and invalid", async () => {
