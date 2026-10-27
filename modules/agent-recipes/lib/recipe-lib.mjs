@@ -514,7 +514,6 @@ export function recipeLib(rawPort) {
     lines.push("Step: " + stepText);
     lines.push("What went wrong: " + trouble.signal);
     if (trouble.evidence.length) lines.push("Evidence: " + trouble.evidence.join(", "));
-    if (subject.lastDiagnosis) lines.push("Earlier diagnosis: " + subject.lastDiagnosis);
     if (verdictWanted) lines.push("With continue, give the verdict the review states.");
     lines.push("Allowed actions: " + trouble.allowed.join(", "));
     lines.push("Write the diagnosis to " + file);
