@@ -37,16 +37,16 @@ leave an edit in place, never run the check with two mutations applied.
 
 For every mutation the check did not catch (exit status 0), write a section
 `## Survivor <n>: <file>:<line>`, one sentence on what behaviour is now wrong
-and why nothing noticed, then exactly one diff block holding the patch as
+and why nothing noticed, then exactly one fenced block opening with ```diff holding the patch as
 `git diff` printed it while the edit was in place.
 
 After the survivors write one line:
 `Tried: <t>, survived: <s>, caught: <c>, did not build: <b>`. With no survivor
 that line is the whole body.
 
-The gate applies every diff block and runs every sh block in the report, so
-write no sh block at all, and fence quoted output or code with a plain fence
-or a text fence. The first line is the report's first heading or line, never
+The gate applies every ```diff block and runs every ```sh block in the
+report, so write no ```sh block at all, and fence quoted output or code with
+a plain fence or ```text. The first line is the report's first heading or line, never
 `handoff:` or `blocked:` unless it is one of those.
 
 Finish only when `git status --porcelain` prints nothing. When the brief names
