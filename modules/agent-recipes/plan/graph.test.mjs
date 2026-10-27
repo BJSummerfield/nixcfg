@@ -101,47 +101,7 @@ function assertUniqueOutputs(f) {
   assert.equal(new Set(outputs).size, outputs.length, "two children share an output path");
 }
 
-// A located question runs before the scout and its file reaches both briefs.
-{
-  const f = fake();
-  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
-  assert.deepEqual(keys(f), [["locate-plan"], ["scout"], ["plan"], ["review"]]);
-  const k = byKey(f);
-  assert.equal(k["locate-plan"].agent, "locator");
-  assert.equal(k["locate-plan"].output, "/t/d/locate.md");
-  assert.match(k["locate-plan"].task, /Question: Where is X\?/);
-  assert.match(k["locate-plan"].gate.command, /^recipe-gate paths '\/t\/d\/locate\.md'/);
-  assert.match(k.scout.task, /Repository: \/r\nCandidates already located: \/t\/d\/locate\.md \(read it first\)\nFind what/);
-  assert.match(k.plan.task, /Scout notes: \/t\/d\/scout\.md\nCandidates located: \/t\/d\/locate\.md\nPlan directory: \/t\/d/);
-  assert.doesNotMatch(k.review.task, /located/);
-  assert.deepEqual(receipt.open, []);
-  assertUniqueOutputs(f);
-  assert.deepEqual(await runThroughRunner(graph, fake().runs, { ...base, locate: "Where is X?" }), JSON.parse(JSON.stringify(receipt)));
-}
-
-// A locator that fails leaves one open line and the scout runs as before.
-{
-  const f = fake({ locator: { "locate-plan": "503", "locate-plan-retry": "503" } });
-  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
-  const k = byKey(f);
-  assert.doesNotMatch(k.scout.task, /located/);
-  assert.doesNotMatch(k.plan.task, /located/);
-  assert.equal(receipt.open.length, 1);
-  assert.match(receipt.open[0], /^locate failed: /);
-}
-
-// A locator that passes only on its retry points the briefs at the retry's file.
-{
-  const f = fake({ locator: { "locate-plan": "503" } });
-  const receipt = await run(f.runs, { ...base, locate: "Where is X?" });
-  const k = byKey(f);
-  assert.ok(k["locate-plan-retry"]);
-  assert.match(k.scout.task, /Candidates already located: \/t\/d\/locate\.retry\.md \(read it first\)/);
-  assert.match(k.plan.task, /Candidates located: \/t\/d\/locate\.retry\.md\n/);
-  assert.deepEqual(receipt.open, []);
-}
-
-// Without args.locate no locator runs and no brief mentions candidates.
+// No locator runs and no brief mentions candidates.
 {
   const f = fake();
   await run(f.runs, base);
@@ -172,6 +132,7 @@ function assertUniqueOutputs(f) {
   assert.match(k.plan.task, /^Job: implementation plan\.$/m);
   assert.match(k.plan.task, /Input: \/t\/in\.md\nRepository: \/r\nScout notes: \/t\/d\/scout\.md\nPlan directory: \/t\/d/);
   assert.match(k.plan.task, /When the file is written, run `recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000 --sizing '\/s\.json'`; if it reports a problem/);
+  assert.doesNotMatch(k.review.task, /Scout notes/);
   assert.match(k.scout.task, /When the file is written, run `recipe-gate quotes '\/t\/d\/scout\.md' --repo '\/r'`; if it reports a problem/);
   assert.match(k.review.task, /When the file is written, run `recipe-gate verdict '\/t\/d\/review\.md' --repo '\/r'`/);
   assert.match(k.plan.task, /Write \/t\/d\/plan\.md and one \/t\/d\/tasks\/<id>\.md per task/);
@@ -351,7 +312,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(keys(f), [["scout"], ["scout-retry"], ["plan"], ["review"]]);
   assert.equal(f.batches[1][0].output, "/t/d/scout.retry.md");
   assert.match(byKey(f).plan.task, /Scout notes: none: the scout failed, so look up the facts yourself/);
-  assert.match(byKey(f).review.task, /Scout notes: none: the scout failed/);
+  assert.doesNotMatch(byKey(f).review.task, /Scout notes/);
   assertUniqueOutputs(f);
   assert.deepEqual(receipt.open, ["scout failed: 503; the planner worked without notes"]);
   assert.equal(receipt.children, 4);

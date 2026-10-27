@@ -1,7 +1,7 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
 
 export default async function plan(args, port) {
-  const { quote, sibling, list, passed, node, launch, one, subjectOf, troubleOf, diagnose, searchItem, extractItem, locateItem, rankAndCap, sourcesFound, board, receipt } = recipeLib(port);
+  const { quote, sibling, list, passed, node, launch, one, subjectOf, troubleOf, diagnose, searchItem, extractItem, rankAndCap, sourcesFound, board, receipt } = recipeLib(port);
 
   const MAX_REVISIONS = 2;
   const MAX_RESEARCH_SOURCES = 3;
@@ -59,10 +59,6 @@ export default async function plan(args, port) {
     return command;
   }
 
-  function locatedLine(label) {
-    return located ? [label + located] : [];
-  }
-
   function inputLine(suffix) {
     return input ? ["Input: " + input + suffix] : [];
   }
@@ -76,7 +72,6 @@ export default async function plan(args, port) {
       .concat(batchLines())
       .concat(inputLine(""))
       .concat(["Repository: " + repo, "Scout notes: " + scoutNotes])
-      .concat(locatedLine("Candidates located: "))
       .concat([
       "Plan directory: " + dir,
       "Write " + dir + "/plan.md and one " + dir + "/tasks/<id>.md per task in the task header format; delete any file in " + dir + "/tasks/ that no longer belongs.",
@@ -157,7 +152,6 @@ export default async function plan(args, port) {
         ...batchLines(),
         ...inputLine(""),
         "Repository: " + repo,
-        "Scout notes: " + scoutNotes,
         "Plan: " + dir + "/plan.md and " + dir + "/tasks/",
         "Plan check to run: " + planGateCommand(),
         "Write the report to " + file,
@@ -243,15 +237,6 @@ export default async function plan(args, port) {
     });
   }
 
-  const locateFile = dir + "/locate.md";
-  let located = null;
-  if (args.locate) {
-    show("locating");
-    const found = await one(locateItem(goal, { id: "plan", question: args.locate }, repo, locateFile, childMs));
-    if (passed(found)) located = found.file;
-    else open.push("locate failed: " + (found.error || "no usable candidates") + "; the scout worked without them");
-  }
-
   const scoutFile = dir + "/scout.md";
   const scouted = await one(
     node(
@@ -262,9 +247,6 @@ export default async function plan(args, port) {
         ...batchLines(),
         ...inputLine(" (read it first)"),
         "Repository: " + repo,
-        ...locatedLine("Candidates already located: ").map(function (l) {
-          return l + " (read it first)";
-        }),
         "Find what a planner needs to split this work into tasks: the files involved and their sizes, how they relate, the repository's AGENTS.md light checks, heavy checks and forbidden changes, and the exact command for a light check on each kind of file involved.",
         "Output: " + scoutFile,
       ],
