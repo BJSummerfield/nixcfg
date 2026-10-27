@@ -545,6 +545,7 @@ function assertUniqueOutputs(f) {
   });
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["diagnose-a-1"]]);
+  assert.equal(byKey(f)["diagnose-a-1"].gate.command, "recipe-gate diagnosis '/t/p/diagnosis-a-1.md' --allow 'retry,decide'");
   assert.equal(receipt.decide.length, 1);
   assert.equal(receipt.decide[0].step, "review");
   assert.deepEqual(receipt.merged, []);
