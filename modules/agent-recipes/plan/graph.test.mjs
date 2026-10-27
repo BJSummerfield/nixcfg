@@ -48,7 +48,7 @@ const extractOk = { ok: true, bytes: 5000, quotes: 3, over_cap: false };
 const extractOver = { ok: false, bytes: 30000, quotes: 5, over_cap: true };
 const extractRejected = { ok: false, bytes: 10, quotes: 0, over_cap: false };
 // A reply that starts with `handoff:`; the gate's value rides along.
-const handedOff = (reply, structuredOutput = invalid) => ({ reply, structuredOutput });
+const handedOff = (reply, structuredOutput = invalid, empty = true) => ({ reply, structuredOutput, empty });
 const decided = diagnosis("decide", "a person has to choose");
 
 // `planner`, `reviewer` and `diagnose` map a child key to its result; an
@@ -59,7 +59,7 @@ function fake({ planner = {}, reviewer = {}, scout = {}, diagnose = {}, searcher
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
     if (given && given.reply) {
-      const handoff = { ...parseHandoff(given.reply), note: null, empty: true };
+      const handoff = { ...parseHandoff(given.reply), note: null, empty: given.empty };
       return { ...ok(key, given.structuredOutput), finalText: given.reply, handoff };
     }
     return typeof given === "string" ? failed(key, given) : ok(key, given);
@@ -565,9 +565,9 @@ function assertUniqueOutputs(f) {
   assert.equal(receipt.decide.length, 1);
 }
 
-// A reviewer that hands off with nothing left unread is taken as it stands: its review is the verdict and nothing is healed or continued.
+// A reviewer that hands off with nothing left unread is passed through by the library as it stands; the gate reads the review, and nothing is healed or continued.
 {
-  const f = fake({ reviewer: { review: handedOff("handoff: read all five tasks, out of room for notes", clean) } });
+  const f = fake({ reviewer: { review: handedOff("handoff: read all five tasks, out of room for notes", clean, false) } });
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
   assert.equal(receipt.review, "clean");

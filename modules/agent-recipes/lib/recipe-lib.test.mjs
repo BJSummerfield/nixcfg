@@ -805,6 +805,19 @@ console.log("recipe library: ok");
   assert.ok(!("gate" in f.batches[2][0]), "an item without a gate stays without one");
 }
 
+// A handoff that wrote no output at all is a failed step, not a deliverable.
+{
+  const handoff = { line: "handoff: x", unread: [], note: null, empty: true };
+  const f = fake((item) => Object.assign(ok(item.key), { handoff }));
+  const L = await load(f.runs);
+  for (const agent of ["reviewer", "synthesizer"]) {
+    const r = await L.one(L.node(agent, agent, ["x"], "/t/" + agent + ".md"));
+    assert.equal(r.ok, false);
+    assert.equal(r.error, "handed off without writing its output");
+  }
+  assert.equal(f.batches.length, 2, "nothing was continued");
+}
+
 // A handoff without an unread list passes through unchanged.
 {
   const handoff = { line: "handoff: x", unread: [], note: "/t/r.md", empty: false };

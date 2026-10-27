@@ -543,7 +543,7 @@ export default async function implement(args, port) {
   }
 
   function recheckItem(t) {
-    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + "" + t.mutationReports.map((f) => " --claims " + quote(f)).join(""), {
+    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + t.mutationReports.map((f) => " --claims " + quote(f)).join(""), {
       gateTimeoutMs: FINDINGS_GATE_MS,
       worktree: true,
       baseRef: "refs/heads/" + t.branch,

@@ -412,7 +412,7 @@ export function recipeLib(rawPort) {
     if (!result.ok || !result.handoff || UNREAD_ROLES.indexOf(item.agent) < 0) return Promise.resolve(result);
     if (item.merging) return Promise.resolve(failedStep(item, result, "the merge handed off"));
     const unread = list(result.handoff.unread);
-    if (unread.length === 0) return Promise.resolve(result);
+    if (unread.length === 0) return Promise.resolve(result.handoff.empty ? failedStep(item, result, "handed off without writing its output") : result);
     if (item.splitDepth) {
       if (item.splitDepth >= HANDOFF_LIMITS.MAX_SPLITS) return Promise.resolve(failedStep(item, result, "a part handed off at the split limit"));
       if (unread.length >= item.unreadGiven) return Promise.resolve(failedStep(item, result, "a part handed off again without reading any of its input"));
