@@ -119,7 +119,7 @@ async function loadModule(file, what) {
 export async function runRecipe(opts) {
   const { harnessName: givenHarness, resume = false, signal } = opts;
   const config = opts.config ?? loadConfig();
-  let { recipe, graphPath, args, cwd, timeoutMs, maxChildren, concurrency } = opts;
+  let { recipe, graphPath, args, cwd, timeoutMs } = opts;
   let harnessName = givenHarness ?? "pi";
 
   const taskDir = opts.taskDir ? path.resolve(opts.taskDir) : taskDirOf(args);
@@ -136,8 +136,6 @@ export async function runRecipe(opts) {
     harnessName = previous.harness ?? harnessName;
     graphPath ??= previous.graph ?? undefined;
     timeoutMs ??= previous.timeoutMs ?? undefined;
-    maxChildren ??= previous.maxChildren ?? undefined;
-    concurrency ??= previous.concurrency ?? undefined;
   }
   if (!NAME.test(String(recipe ?? ""))) throw new Error(`bad recipe name: ${recipe}`);
   if (!NAME.test(harnessName)) throw new Error(`bad harness name: ${harnessName}`);
@@ -179,8 +177,6 @@ export async function runRecipe(opts) {
     args,
     cwd,
     timeoutMs: timeoutMs ?? null,
-    maxChildren: maxChildren ?? null,
-    concurrency: concurrency ?? null,
     board: null,
     error: null,
   };
@@ -214,10 +210,7 @@ export async function runRecipe(opts) {
     harnessName,
     harness,
     replay,
-    maxChildren,
-    concurrency,
     signal: controller.signal,
-    keepWorktrees: true,
     onBoard: (view) => {
       status.board = view;
       flush();

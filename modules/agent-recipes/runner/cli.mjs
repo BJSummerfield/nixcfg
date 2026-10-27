@@ -27,8 +27,6 @@ const RUN_OPTIONS = {
   cwd: { type: "string" },
   harness: { type: "string" },
   "timeout-ms": { type: "string" },
-  "max-children": { type: "string" },
-  concurrency: { type: "string" },
   graph: { type: "string" },
 };
 
@@ -69,8 +67,6 @@ function runInputs(values, recipe) {
     harnessName: values.harness ?? "pi",
     graphPath: values.graph,
     timeoutMs: number(values["timeout-ms"], "--timeout-ms"),
-    maxChildren: number(values["max-children"], "--max-children"),
-    concurrency: number(values.concurrency, "--concurrency"),
   };
 }
 
@@ -130,8 +126,6 @@ async function start(argv) {
   const forwarded = ["run", inputs.recipe, "--args", JSON.stringify(inputs.args), "--cwd", inputs.cwd, "--harness", inputs.harnessName];
   for (const [flag, value] of [
     ["--timeout-ms", inputs.timeoutMs],
-    ["--max-children", inputs.maxChildren],
-    ["--concurrency", inputs.concurrency],
     ["--graph", inputs.graphPath && path.resolve(inputs.graphPath)],
   ]) {
     if (value !== undefined) forwarded.push(flag, String(value));
@@ -222,15 +216,12 @@ async function dispatch(argv) {
     argv,
     {
       role: { type: "string" },
-      brief: { type: "string" },
       "brief-file": { type: "string" },
       output: { type: "string" },
       gate: { type: "string" },
-      "gate-json": { type: "boolean" },
       "gate-timeout-ms": { type: "string" },
       worktree: { type: "boolean" },
       base: { type: "string" },
-      "keep-worktree": { type: "boolean" },
       "timeout-ms": { type: "string" },
       cwd: { type: "string" },
       dir: { type: "string" },
@@ -240,10 +231,8 @@ async function dispatch(argv) {
     0,
   );
   if (!values.role) throw new UsageError("--role is required");
-  if ((values.brief === undefined) === (values["brief-file"] === undefined)) {
-    throw new UsageError("give exactly one of --brief and --brief-file");
-  }
-  const brief = values.brief ?? fs.readFileSync(values["brief-file"], "utf8");
+  if (values["brief-file"] === undefined) throw new UsageError("--brief-file is required");
+  const brief = fs.readFileSync(values["brief-file"], "utf8");
   const harnessName = values.harness ?? "pi";
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(harnessName)) throw new UsageError(`bad harness name: ${harnessName}`);
   const config = loadConfig();
@@ -266,7 +255,7 @@ async function dispatch(argv) {
     gate: values.gate
       ? {
           command: values.gate,
-          ...(values["gate-json"] && { output: "json" }),
+          output: "json",
           ...(gateTimeoutMs !== undefined && { timeoutMs: gateTimeoutMs }),
         }
       : undefined,
@@ -281,7 +270,6 @@ async function dispatch(argv) {
     harnessName,
     harness,
     signal: controller.signal,
-    keepWorktrees: Boolean(values["keep-worktree"]),
   });
   const result = await port.runOne(item);
   if (values["result-file"]) writeJsonAtomic(path.resolve(values["result-file"]), result);
