@@ -1,7 +1,7 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
 
 export default async function investigate(args, port) {
-const { quote, list, short, node, stoppedItself, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, handoffTrack, beginRelay, clearRelay, relayBriefLines, stampRelay, reportHandoff, handoffCall, acceptSplit, splitPlanItem } = recipeLib(port);
+const { quote, list, short, node, one, subjectOf, troubleOf, exhausted, askDecision, diagnose, board, receipt, gatherSources, handoffLimits, handedOff, handoffTrack, beginRelay, clearRelay, relayBriefLines, stampRelay, reportHandoff, handoffCall, acceptSplit, splitPlanItem } = recipeLib(port);
 
 const MAX_RESEARCH = 2;
 const MAX_REVIEWS = 2;
@@ -26,8 +26,7 @@ const maxRounds = (function () {
 const STEPS = {
   hypothesize: "the ranking of hypotheses for the failure",
   change: "the implementer's test of one hypothesis (its report and the verify command run in its worktree)",
-  fix: "a fix round, resumed in the implementer's worktree",
-  verify: "the task gate, run on the worktree after a fix round or after the last piece of a split",
+  verify: "the task gate, run on the worktree after the last piece of a split",
   piece: "one piece of a task that was split after its implementer handed off",
   review: "the review of the change's diff",
 };
@@ -122,7 +121,7 @@ function hasLater(h) {
 
 function allowedFor(h, withFix) {
   const allowed = [];
-  if (withFix && h.runId) allowed.push("fix");
+  if (withFix) allowed.push("fix");
   if (hasLater(h)) allowed.push("next");
   if (researchRounds < MAX_RESEARCH) allowed.push("research");
   allowed.push("decide");
@@ -152,7 +151,7 @@ function heal(h, step, signal, evidence, allowed) {
 }
 
 function outOfRounds(h) {
-  open.push("out of rounds: " + maxRounds + " change and fix runs used");
+  open.push("out of rounds: " + maxRounds + " change runs used");
   stopHere(h, "out of rounds");
   ended = true;
 }
@@ -178,7 +177,6 @@ function changeItem(h) {
   const tag = h.rank + (h.attempts === 1 ? "" : "-" + h.attempts);
   const report = dir + "/change-" + tag + ".md";
   h.report = report;
-  h.runId = null;
   const lines = ["Job: test one hypothesis (the investigate variant).", "Goal: " + goal, "Hypothesis " + h.rank + ": " + h.claim, "Check first: " + h.check, reproLine()]
     .concat(commandLines())
     .concat(["Repository: " + repo + " (you are in your own worktree of " + (h.relayRef ? "the branch " + h.relayBranch : "the base") + ", on your own branch)"])
@@ -197,29 +195,15 @@ function changeItem(h) {
   return item;
 }
 
-function fixItem(h) {
-  h.fixes++;
-  h.rounds++;
-  roundsUsed++;
-  const file = dir + "/fix-" + h.rank + "-" + h.fixes + ".md";
-  h.report = file;
-  const lines = [
-    "Fix round " + h.fixes + " for hypothesis " + h.rank + ".",
-    "Continue in your worktree " + h.worktree + " on branch " + h.branch + ".",
-    h.findings,
-  ]
-    .concat(takeNotes(h))
-    .concat([
-      "Verify command: " + verifyCommand,
-      "Commit on the same branch, leave nothing uncommitted, run the verify command" + (lightCheck ? " and the light check (" + lightCheck + ")" : "") + " and quote their output.",
-      "Write the report to " + file,
-    ]);
-  return node("fix-" + h.rank + "-" + h.fixes, undefined, lines, file, { timeoutMs: bigMs, resume: h.runId });
+function queueFix(h, finding) {
+  h.notes.push(finding);
+  if (h.branch) beginRelay(h, null, { branch: h.branch, note: null, from: null });
+  h.next = "change";
 }
 
 function verifyItem(h) {
   h.verifyTries++;
-  const key = "verify-" + h.rank + "-" + h.fixes + (h.splitsDone ? "s" + h.splitsDone : "") + (h.verifyTries === 1 ? "" : "-" + h.verifyTries);
+  const key = "verify-" + h.rank + (h.splitsDone ? "s" + h.splitsDone : "") + (h.verifyTries === 1 ? "" : "-" + h.verifyTries);
   return gateOnlyItem(key, taskGate(h, h.report, h.worktree), dir + "/" + key + ".md", { worktree: false, gateTimeoutMs: TASK_GATE_MS });
 }
 
@@ -271,20 +255,18 @@ function handoffInfo(source, g, report) {
 function takeHandoff(h, g, info, step) {
   const given = info.handoff;
   if (!g.branch || !g.worktree) return heal(h, step, "the child handed off but the task has no branch", [h.report], ["retry", "decide"]);
-  h.runId = null;
   h.head = g.head || null;
   h.handoffFrom = info.runId;
   h.handoffInfo = { note: given.note || null, budget: info.budget };
   const call = handoffCall(h.track, given, g, { firstContext: info.firstContext, budgetTokens: info.budget ? info.budget.tokens : undefined });
   if (call.action === "decide") {
-    return askPerson(h, step, "the " + (step === "change" ? "change" : "fix round") + " handed off and " + call.reason + "; the work is on " + h.branch, given.note);
+    return askPerson(h, step, "the " + step + " handed off and " + call.reason + "; the work is on " + h.branch, given.note);
   }
   if (call.action === "split") {
     h.next = "split";
     return;
   }
   beginRelay(h, h.track, { branch: h.branch, note: given.note, from: h.handoffFrom });
-  if (step === "verify" && h.findings) h.notes.push(h.findings);
   h.next = "change";
 }
 
@@ -295,10 +277,8 @@ function takeGate(h, result, step) {
   }
   if (!g) return heal(h, step, "the task gate did not run", [h.report], ["retry", "decide"]);
   const status = g.report ? g.report.status : "invalid";
-  const info = handoffInfo(step === "change" ? pendingOf(result) : h.pending, g, h.report);
-  if (step === "verify") h.pending = null;
+  const info = handoffInfo(pendingOf(result), g, h.report);
   const handing = Boolean(info) && (info.handoff.empty || status === "handoff");
-  if (step === "change" && !handing) h.runId = result.runId || h.runId;
   if (g.branch) h.branch = g.branch;
   if (g.worktree) h.worktree = g.worktree;
   noteMade("h" + h.rank, handing ? "relay" : "task", g.branch, g.worktree);
@@ -320,21 +300,7 @@ function takeGate(h, result, step) {
     return heal(h, step, "the same failure came back: " + g.reason, [h.report], allowedFor(h, true));
   }
   if (g.signature) h.seen.push(g.signature);
-  if (!h.runId) return heal(h, step, g.reason, [h.report], allowedFor(h, false));
-  h.findings = "The task gate reported: " + g.reason;
-  h.next = "fix";
-}
-
-function takeFix(h, result) {
-  if (!result.ok) {
-    const stopped = stoppedItself(result);
-    const signal = stopped ? "fix round " + h.fixes + " reported that it cannot finish" : "fix round " + h.fixes + " failed twice: " + (result.error || "failed");
-    return heal(h, "fix", signal, [h.report], stopped ? allowedFor(h, true) : ["retry", "decide"]);
-  }
-  h.runId = result.runId || h.runId;
-  if (handedOff(result)) h.pending = pendingOf(result);
-  h.verifyTries = 0;
-  h.next = "verify";
+  queueFix(h, "The task gate reported: " + g.reason);
 }
 
 function takeReview(h, result) {
@@ -357,9 +323,7 @@ function takeReview(h, result) {
   if (h.reviews >= MAX_REVIEWS) {
     return askPerson(h, "review", "still not clean after " + MAX_REVIEWS + " reviews; see " + result.file, result.file);
   }
-  if (!h.runId) return heal(h, "review", "the review found blocking problems and the implementer cannot be resumed", [result.file], allowedFor(h, false));
-  h.findings = "The review at " + result.file + " found blocking problems. Fix the blocking findings only; small findings are recorded, not fixed.";
-  h.next = "fix";
+  queueFix(h, "The review at " + result.file + " found blocking problems. Fix the blocking findings only; small findings are recorded, not fixed.");
 }
 
 function taskLines(h) {
@@ -487,7 +451,6 @@ function takePiece(h, result) {
   h.worktree = g.worktree;
   h.head = g.head || null;
   h.report = p.report;
-  h.runId = null;
   h.pieces = null;
   h.splitsDone++;
   h.verifyTries = 0;
@@ -520,9 +483,7 @@ function takeDiagnosis(h, d, trouble) {
   }
   const followUp = "The diagnosis at " + d.file + " found: " + d.reason + " Follow its ## Brief section.";
   if (d.action === "fix") {
-    if (!h.runId) return Promise.resolve(askPerson(h, step, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, d.file));
-    h.findings = followUp;
-    h.next = "fix";
+    queueFix(h, followUp);
     return Promise.resolve();
   }
   if (d.action === "research") {
@@ -534,13 +495,7 @@ function takeDiagnosis(h, d, trouble) {
         open.push("research " + id + ": " + line);
       });
       if (found.files.length) h.notes.push(researchLine(d.question, found.files));
-      if (h.runId) {
-        h.findings = followUp;
-        h.next = "fix";
-      } else {
-        h.notes.push(followUp);
-        h.next = "change";
-      }
+      queueFix(h, followUp);
     });
   }
   return Promise.resolve(askPerson(h, step, "the diagnosis chose " + d.action + ", which this recipe does not use: " + d.reason, d.file));
@@ -583,11 +538,6 @@ function step(h) {
   if (h.next === "piece") {
     return one(pieceItem(h)).then(function (r) {
       takePiece(h, r);
-    });
-  }
-  if (h.next === "fix") {
-    return one(fixItem(h)).then(function (r) {
-      takeFix(h, r);
     });
   }
   return one(changeItem(h)).then(function (r) {
@@ -691,17 +641,14 @@ found.forEach(function (spec) {
     next: null,
     finished: false,
     attempts: 0,
-    fixes: 0,
     verifyTries: 0,
     reviews: 0,
     rounds: 0,
-    runId: null,
     report: null,
     branch: null,
     worktree: null,
     lastReview: null,
     cleanReview: null,
-    findings: "",
     notes: [],
     trouble: null,
     track: handoffTrack(),
@@ -710,7 +657,6 @@ found.forEach(function (spec) {
     relayNote: null,
     handoffFrom: null,
     handoffInfo: null,
-    pending: null,
     head: null,
     splits: 0,
     splitsDone: 0,
