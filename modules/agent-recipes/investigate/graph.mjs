@@ -183,6 +183,22 @@ function changeItem(h) {
   return item;
 }
 
+function fixFindings(file, g) {
+  const lines = ["The review at " + file + " showed these defects at the branch head. Each is a command run from the repository root with its exit status and output, or a patch after which the task's check still passed (the tests cannot see that behaviour); make every command exit 0 and every patch fail the check, without breaking the check."];
+  let n = 0;
+  if (g.check && g.check.exit !== 0) {
+    lines.push(++n + ". The task's check failed at head -> exit " + g.check.exit);
+    lines.push(g.check.tail);
+  }
+  for (const f of g.reproduced || []) {
+    lines.push(++n + ". [" + f.title + "] " + f.summary + " -> exit " + f.exit);
+    lines.push(f.tail);
+  }
+  const advice = (g.unreproduced || []).map((f) => f.title + ": " + f.summary).concat((g.unrunnable || []).map((f) => f.title + ": " + f.summary + " (" + f.reason + ")"));
+  if (advice.length) lines.push("Advice from the review, not required: " + advice.join("; "));
+  return lines.join("\n");
+}
+
 function queueFix(h, finding) {
   h.notes.push(finding);
   if (h.branch) beginRelay(h, null, { branch: h.branch, note: null, from: null });
@@ -210,7 +226,8 @@ function reviewItem(h) {
   ].concat(commandLines());
   lines.push("Write the report to " + file);
   const item = node("review-" + h.rank + "-" + h.reviews, "reviewer", lines, file, {
-    gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote("h" + h.rank),
+    gate: "recipe-gate findings " + quote(file) + " --check " + quote(lightCheck ? verifyCommand + " && " + lightCheck : verifyCommand) + " --run " + quote(dir) + " --id " + quote("h" + h.rank),
+    gateTimeoutMs: 3600000,
     timeoutMs: bigMs,
     worktree: true,
     big: true,
@@ -312,13 +329,13 @@ function takeReview(h, result) {
     ended = true;
     return;
   }
-  if (g.verdict === "invalid") {
-    return heal(h, "review", "the review's verdict could not be read", [result.file], ["retry", "decide"]);
+  if (g.verdict === null) {
+    return heal(h, "review", "the review gave no verdict: " + g.reason, [result.file], ["retry", "decide"]);
   }
   if (h.reviews >= MAX_REVIEWS) {
     return askPerson(h, "review", "still not clean after " + MAX_REVIEWS + " reviews; see " + result.file, result.file);
   }
-  queueFix(h, "The review at " + result.file + " found blocking problems. Fix the blocking findings only; small findings are recorded, not fixed.");
+  queueFix(h, fixFindings(result.file, g));
 }
 
 function taskLines(h) {
