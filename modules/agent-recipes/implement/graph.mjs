@@ -28,7 +28,6 @@ export default async function implement(args, port) {
     reportHandoff,
     short,
     stampRelay,
-    stoppedItself,
     subjectOf,
     troubleOf,
   } = lib;
@@ -43,12 +42,10 @@ export default async function implement(args, port) {
   const bigMs = args.bigTimeoutMs || 3600000;
   const slug = String(dir).replace(/\/+$/, "").split("/").pop().replace(/[^A-Za-z0-9._-]/g, "-") || "plan";
   const integrationBranch = args.branch || "implement/" + slug;
-  const freshFixes = !!args.freshFixes;
 
   const STEPS = {
     implement: "the implementer's run (its report and the task check run in its worktree)",
     review: "the review of the task's diff",
-    fix: "a fix round, resumed in the implementer's worktree",
     integrate: "the integration of the finished branches, the heavy checks and the pull request text",
   };
 
@@ -186,7 +183,6 @@ export default async function implement(args, port) {
     const handoffs = handoffsOf();
     return receipt({
       ...(handoffs.length ? { handoffs: handoffs } : {}),
-      ...(freshFixes ? { fresh_fixes: true } : {}),
       base: pinned ? pinned.base : null,
       branch: branch,
       merged: merged,
@@ -360,7 +356,7 @@ export default async function implement(args, port) {
       return heal(t, "implement", "the implementer reported " + status + ": " + g.reason, [result.file], ["replan", "decide"]);
     }
     if (!g.branch || !g.worktree) return heal(t, "implement", g.reason || "the task has no branch", [result.file], ["retry", "replan", "decide"]);
-    if (handoff) return takeHandoff(t, handoff, g, result, "implement");
+    if (handoff) return takeHandoff(t, handoff, g, result);
     if (g.ok) {
       if (t.parent) {
         t.state = "done";
@@ -379,7 +375,7 @@ export default async function implement(args, port) {
     return reportHandoff(g, result.file);
   }
 
-  function takeHandoff(t, handoff, g, result, step) {
+  function takeHandoff(t, handoff, g, result) {
     t.head = g.head;
     const next = handoffCall(t.track, handoff, g, {
       firstContext: result.usage && result.usage.firstContext,
@@ -389,7 +385,6 @@ export default async function implement(args, port) {
     if (next.action === "relay") {
       noteMade(t.id, "relay", g.branch || t.branch, g.worktree || t.worktree);
       beginRelay(t, t.track, { branch: t.branch, note: handoff.note, from: t.runId });
-      t.relayFindings = step === "fix" ? t.findings : null;
       t.next = "implement";
       return;
     }
@@ -398,7 +393,7 @@ export default async function implement(args, port) {
       t.next = "split";
       return;
     }
-    askPerson(t, step, "the " + step + " step handed off and the task cannot go on: " + next.reason, result.file);
+    askPerson(t, "implement", "the implement step handed off and the task cannot go on: " + next.reason, result.file);
   }
 
   function needFix(t, findings) {
@@ -451,50 +446,6 @@ export default async function implement(args, port) {
     needFix(t, "The review at " + result.file + " found blocking problems.");
   }
 
-  function fixItem(t) {
-    t.fixes++;
-    const extra = t.fixes > MAX_FIXES;
-    t.extraFix = false;
-    const file = dir + "/fix-" + t.id + "-" + t.fixes + ".md";
-    return node(
-      "fix-" + t.id + "-" + t.fixes,
-      undefined,
-      [
-        extra ? "Extra fix round " + t.fixes + ", from a diagnosis." : "Fix round " + t.fixes + " of " + MAX_FIXES + ".",
-        "Continue in your worktree " + t.worktree + " on branch " + t.branch + ".",
-        t.findings,
-        "Fix the blocking findings only; small findings are recorded, not fixed. Touch only the owned files: " + ownsOf(t).join(", ") + ".",
-        "Commit on the same branch, leave nothing uncommitted, run the task's light check (" + t.spec.check + ") and quote its output.",
-        "Write the report to " + file,
-      ],
-      file,
-      { timeoutMs: bigMs, resume: t.runId },
-    );
-  }
-
-  function takeFix(t, result) {
-    if (!result.ok) {
-      const signal = stoppedItself(result)
-        ? "fix round " + t.fixes + " reported that it cannot finish"
-        : "fix round " + t.fixes + " failed twice: " + (result.error || "failed");
-      return heal(t, "fix", signal, [result.file, t.lastReview], ["replan", "decide"]);
-    }
-    t.runId = result.runId || t.runId;
-    const handoff = handedOff(result);
-    if (!handoff) {
-      t.next = "review";
-      return undefined;
-    }
-    const note = handoff.note || dir + "/fix-" + t.id + "-" + t.fixes + ".md";
-    return one(gateOnlyItem("handoff-" + t.id + "-" + t.fixes, taskGateCommand(t, note), dir + "/handoff-" + t.id + "-" + t.fixes + ".md")).then(function (checked) {
-      const g = checked.structuredOutput;
-      if (!checked.ok || !g) {
-        return heal(t, "fix", "the task check did not run after fix round " + t.fixes + " handed off", [result.file], ["replan", "decide"]);
-      }
-      return takeHandoff(t, handoff, g, result, "fix");
-    });
-  }
-
   function diagnosisContext(t) {
     const lines = ["Plan: " + dir + "/plan.md", "Repository: " + repo];
     lines.push("Task file: " + taskFile(t) + (t.extraOwns.length ? " (also may change: " + t.extraOwns.join(", ") + ")" : ""));
@@ -529,7 +480,6 @@ export default async function implement(args, port) {
       return;
     }
     if (d.action === "fix") {
-      if (!t.runId && !t.joined) return askPerson(t, step, "the diagnosis asks for a fix, but the implementer cannot be resumed: " + d.reason, result.file);
       t.findings = "The diagnosis at " + result.file + " found: " + d.reason + " Follow its ## Brief section.";
       t.extraFix = true;
       t.next = "fix";
@@ -691,11 +641,9 @@ export default async function implement(args, port) {
     });
   }
 
-  // A joined task has no session to resume, and with freshFixes a fresh context
-  // keeps the implementer's earlier mistakes out of the fix; diagnosis-granted extra rounds still resume.
   function relayFixes(active) {
     active.forEach(function (t) {
-      if (t.next !== "fix" || !(t.joined || (freshFixes && !t.extraFix))) return;
+      if (t.next !== "fix") return;
       t.fixes++;
       t.extraFix = false;
       beginRelay(t, null, { branch: t.branch, note: null, from: null });
@@ -721,12 +669,8 @@ export default async function implement(args, port) {
       })
       .then(function () {
         checkPieces(active);
-        active.forEach(function (t) {
-          if (t.next === "fix" && !t.runId && !t.joined && !(freshFixes && !t.extraFix))
-            heal(t, "fix", "the implementer cannot be resumed for a fix round", [t.report], ["replan", "decide"]);
-        });
         relayFixes(active);
-        return phase(active, "fix", fixItem, takeFix);
+        return undefined;
       })
       .then(function () {
         board(label + ", round " + (n + 1), view());

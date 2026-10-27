@@ -759,12 +759,6 @@ const gone = (record) => {
   assert.equal(truncated.error, "output limit reached");
   assert.equal(truncated.finalText, "cut off");
 
-  const noSession = specFor("nosession", { resume: true, sessionFile: undefined });
-  const lost = await run(noSession);
-  assert.equal(lost.status, "failed");
-  assert.equal(lost.error, "no session file to resume");
-  assert.ok(!fs.existsSync(noSession.logDir));
-
   const missing = await run(specFor("missing", { bin: [path.join(tmp, "no-such-pi")] }));
   assert.equal(missing.status, "failed");
   assert.match(missing.error, /ENOENT/);

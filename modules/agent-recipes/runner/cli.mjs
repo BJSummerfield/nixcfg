@@ -231,7 +231,6 @@ async function dispatch(argv) {
       worktree: { type: "boolean" },
       base: { type: "string" },
       "keep-worktree": { type: "boolean" },
-      resume: { type: "string" },
       "timeout-ms": { type: "string" },
       cwd: { type: "string" },
       dir: { type: "string" },
@@ -240,7 +239,7 @@ async function dispatch(argv) {
     },
     0,
   );
-  if (!values.role && !values.resume) throw new UsageError("--role is required");
+  if (!values.role) throw new UsageError("--role is required");
   if ((values.brief === undefined) === (values["brief-file"] === undefined)) {
     throw new UsageError("give exactly one of --brief and --brief-file");
   }
@@ -273,7 +272,6 @@ async function dispatch(argv) {
       : undefined,
     worktree: values.worktree ? true : undefined,
     baseRef: values.base,
-    resume: values.resume,
     maxRuntimeMs: number(values["timeout-ms"], "--timeout-ms"),
   };
   const port = createPort({

@@ -18,9 +18,6 @@ Parameters, from the request:
 - optional: `branch` (name of the integration branch, default
   `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
   plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
-- freshFixes (boolean, default false): when true, every review fix round is
-  a fresh implementer on the task's branch, handed the findings. The default
-  resumes the implementer's own session.
 - resume (boolean): continue a run that stopped, from the branches and
   reviews it left in the plan directory. `answers` (optional, task id to
   text) gives the user's decision for a task that was set aside.
@@ -35,12 +32,12 @@ to the plan:
 <dir>/deps/<id>/            worktree where a task's dependencies are merged
 <dir>/resolve-<scope>-<n>.md report of resolver n for a merge (a task id or integration)
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
-                            a replanned attempt n is impl-<id>-<n>.md
+                            attempt n after the first (a fix round, a relay or a
+                            replan) is impl-<id>-<n>.md
 <dir>/review-<id>-<n>.md    review n of the task
 <dir>/split/<id>-<n>/       the planner's plan for split n of a task, and join/, the
                             worktree where its pieces are merged
 <dir>/join-<id>-<n>.md      the check that joined the pieces of split n
-<dir>/fix-<id>-<n>.md       report of fix round n
 <dir>/diagnosis-<id>-<n>.md diagnosis n of the task (or of the integration)
 <dir>/integration.md        report of the integration step (integration-2.md
                             when a diagnosis ran it again)
@@ -132,14 +129,13 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    the branch's own diff, runs the check there and never touches the
    implementer's worktree. It gives a verdict (`recipe-gate verdict`, which
    records the review worktree). On needs-work, or when the task gate was
-   red, the same implementer is resumed in the same worktree with the
-   findings and fixes them in new commits; then a fresh review. At most two
-   fix rounds; a task still not clean goes to a diagnosis. Other tasks go
-   on. A fix round that hands off is checked by the task check once for its
-   head, then relayed from the branch with the findings. A needs-work verdict
+   red, a fresh implementer starts in a new worktree of the task's
+   branch with the findings and fixes them in new commits; then a fresh
+   review. At most two fix rounds; a task still not clean goes to a diagnosis. Other tasks go
+   on. A fix implementer that hands off is relayed like any implementer,
+   with the findings. A needs-work verdict
    on the joined pieces of a split task starts a fresh implementer on the
-   joined branch, with the findings, since no session can be resumed there;
-   it counts as a fix round.
+   joined branch, with the findings; it counts as a fix round.
 5. The finished branches that no other finished task builds on are merged by
    `recipe-gate merge` into the integration worktree `<dir>/integration`,
    branch `implement/<name of the plan directory>`, made from the base ref;
@@ -158,15 +154,14 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    and reports; it starts no other merge operation. The merge gate then runs
    again. A resolver that leaves the same conflict, or a third conflict
    that is still open, ends in `open` and a question for the user.
-7. A child that fails by itself is retried once (a fix round is resumed again
-   from the failed run). Whatever the script cannot accept goes to a diagnose
+7. A child that fails by itself is retried once. Whatever the script cannot accept goes to a diagnose
    child (a fresh reviewer, diagnosis variant) at once, for that task only:
    a child that failed twice, a `blocked` or `failed` report, a verdict
    that cannot be read, a task still not clean after two fix rounds, an
    integration the check does not accept. It reads the evidence and picks one
    action that `recipe-gate diagnosis` checks against the actions allowed at
    that step: `continue` (the output was fine, for example a verdict in the
-   wrong place), `retry`, `fix` (one more round for the same implementer
+   wrong place), `retry`, `fix` (one more round, a fresh implementer
    with its brief), `replan` (a fresh implementer in a new worktree with a
    revised brief, and files it may add to `owns` when no task outside its
    dependencies owns them) or `decide`. Each task gets at most two
@@ -190,8 +185,7 @@ reports, and again by the script.
 
 The pi mechanism behind the implementer and reviewer runs is the runner: each
 node gets a fresh worktree on its own branch from its base, under
-`/var/tmp/pi-worktrees/<repository name>/`. The runner keeps the worktree
-for resume, runs the gate in it, and a resumed child carries its gate.
+`/var/tmp/pi-worktrees/<repository name>/`. The runner runs the gate in it.
 
 ## pi binding
 
@@ -216,7 +210,7 @@ after a pi restart `recipe-run wait <plan dir>` waits for the end. A stopped
 run continues with the same call plus `resume: true`.
 
 ```
-{ base, fresh_fixes, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
+{ base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
   resumed: {done: [ids], continued: [ids], answered: [ids]},
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   handoffs: [{id, relays, splits, pieces: [ids]}],
@@ -224,8 +218,7 @@ run continues with the same call plus `resume: true`.
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
-`handoffs` is present only when a task was relayed or split. `fresh_fixes`
-is present only when the run used fresh fix rounds. The pieces of a
+`handoffs` is present only when a task was relayed or split. The pieces of a
 split task are listed under it in `report`, indented, and are not in `merged`;
 the branches of the implementers that were relayed are in `left` with kind
 `relay`.
