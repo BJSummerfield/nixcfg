@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Carry out a plan directory made by the plan skill: each task is built in its own worktree, reviewed by a fresh reviewer and fixed for at most two rounds, a clean review followed by one mutation round, then the finished tasks are merged on one branch, the heavy checks run once and the pull request text is written, all run by a script. Use only when the user asks for an implementation.
+description: Carry out a plan directory made by the plan skill: each task is built in its own worktree, reviewed by a fresh reviewer and fixed for at most two rounds, a clean review followed by one mutation round, then the finished tasks are merged on one branch, the final checks run once and the pull request text is written, all run by a script. Use only when the user asks for an implementation.
 disable-model-invocation: true
 ---
 
@@ -41,7 +41,7 @@ to the plan:
 <dir>/integration.md        report of the integration step (integration-2.md
                             when a diagnosis ran it again)
 <dir>/integration/          worktree of the integration branch
-<dir>/heavy.md              first line pass, none or fail: <why>, then the output
+<dir>/final-<n>.log         output of final check n, run from the integration worktree
 <dir>/pr.md                 pull request title and body
 <dir>/receipt.json          the receipt
 <dir>/runner/               the runner's status.json, board and log
@@ -150,10 +150,11 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    `recipe-gate merge` into the integration worktree `<dir>/integration`, branch
    `implement/<name of the plan directory>`, made from the base ref; the
    checkout does not move. Then one implementer with a brief (no worktree of its
-   own) runs the plan's heavy checks once from that worktree, under the box-wide
-   lock, and writes `pr.md` and `heavy.md`. `recipe-gate integrate` then
+   own) writes `pr.md`. Before it, the script runs each of the plan's final checks once from that worktree as a
+   gate-only step, under the runner's big lock where the harness provides one.
+   `recipe-gate integrate` then
    confirms every finished branch is in the branch, nothing is uncommitted,
-   `pr.md` is not empty and the heavy checks passed or were not needed, and with
+   `pr.md` is not empty and the final checks passed or were not needed, and with
    that it tidies (above); a worktree or branch it could not remove is an `open`
    line. Nothing here merges into the main branch or pushes. A gate that did not
    run (no verdict came back) is run once more by the runner; if it still does
@@ -224,7 +225,7 @@ continues with the same call plus `resume: true`.
   report: ["<id>: merged" | "<id>: set aside (<reason>)" | "<id>: skipped (<id> not done)" | "<id>: not merged"],
   handoffs: [{id, relays, splits, pieces: [ids]}],
   mutations: {<id>: {tried, survived, confirmed, fixed, equivalent, claims: [{n, reason}]}},
-  heavy_check, healed: [{id, step, action, reason}],
+  final_check, healed: [{id, step, action, reason}],
   decide: [{id, step, question, diagnosis}], open: [...],
   left: [{id, kind, branch, worktree}], cleanup, children, pr_text }
 ```
@@ -239,7 +240,7 @@ reason in `claims`. `base` is the commit every task started from. `left` holds
 the worktrees and branches still in the repository, and `cleanup` is the command
 that removes them (`recipe-gate abandon <plan dir>`, keeping the integration
 branch once it passed), empty when `left` is. The integration branch is never in
-`left` after a pass. `heavy_check` is `pass`, `none`, `fail: <why>` or `not
+`left` after a pass. `final_check` is `pass`, `none`, `fail: <why>` or `not
 recorded`; `open` holds whatever the script could not settle, including a plan
 refused by its check and an integration that did not complete. `pr_text` is last
 because it is the longest; the full text is `<plan dir>/pr.md`.
@@ -247,7 +248,7 @@ because it is the longest; the full text is `<plan dir>/pr.md`.
 Tell the user the branch first, then the `report` lines (one per task, in
 dependency-level order), then what merged, each `decide` question with its
 diagnosis file, each other set-aside task with its reason, the skipped tasks,
-the heavy-check result, the equivalence claims in `mutations`, what healed in
+the final-check result, the equivalence claims in `mutations`, what healed in
 one line each, and each `open` line, and point at `pr.md`. Report `left` and the
 `cleanup` command; do not run it, because the user may want those worktrees. Do
 not push, open the pull request or merge unasked, and do not answer a `decide`

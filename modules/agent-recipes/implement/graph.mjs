@@ -1,5 +1,6 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
 import { reviewBriefLines } from "../lib/review-brief.mjs";
+import { finalItems, finalResult } from "./final.mjs";
 import { joinSpec, piecesStatus, reviewRange, splitItem, takePieces } from "./split.mjs";
 
 export default async function implement(args, port) {
@@ -46,7 +47,7 @@ export default async function implement(args, port) {
   const STEPS = {
     implement: "the implementer's run (its report and the task check run in its worktree)",
     review: "the review of the task's diff",
-    integrate: "the integration of the finished branches, the heavy checks and the pull request text",
+    integrate: "the integration of the finished branches, the final checks and the pull request text",
   };
 
   const open = [];
@@ -77,7 +78,7 @@ export default async function implement(args, port) {
 
   let branch = null;
   let merged = [];
-  let heavy = null;
+  let final = null;
   let prText = "";
   let pinned = null;
   let tidied = null;
@@ -198,7 +199,7 @@ export default async function implement(args, port) {
       skipped: skipped,
       report: reportLines(),
       mutations: mutationsReceipt(),
-      heavy_check: heavy,
+      final_check: final,
       resumed: resumed,
       open: open,
       left: left,
@@ -327,7 +328,7 @@ export default async function implement(args, port) {
       if (t.relayFindings) lines.push(t.relayFindings);
     }
     if (answers[t.id]) lines.push("Decision from the user: " + answers[t.id]);
-    lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's light check green.");
+    lines.push("Commit your work on the branch, leave nothing uncommitted, and leave the task's check green.");
     lines.push("If the task cannot be done as written, stop and write `blocked: <why>` as the first line of the report; do not ask.");
     lines.push("Write the report to " + report);
     return lines;
@@ -1157,24 +1158,22 @@ export default async function implement(args, port) {
     const lines = [
       "Job: integrate the finished tasks of a plan (a brief, no task file).",
       "Repository: " + repo + " (never edit its checkout)",
-      "Plan: " + dir + "/plan.md (it names the heavy checks)",
+      "Plan: " + dir + "/plan.md",
       "Integration branch: " + integrationBranch,
       "Integration worktree: " + dir + "/integration (already made, with every finished branch merged into it; work only there)",
       "Finished tasks, as id:branch: " + pairs,
     ];
     if (diagnosisFile) lines.push("An earlier attempt did not finish; the diagnosis at " + diagnosisFile + " says why, and its ## Brief section says what to do differently.");
     lines.push(
-      "1. From the integration worktree, run each of plan.md's heavy checks once, each under the box-wide lock the environment file names. Write " + dir + "/heavy.md: first line `pass`, `none` (the plan names no heavy check) or `fail: <why>`, then each command, its wait time and its full output.",
-      "2. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
+      "1. Write the pull request title and body to " + dir + "/pr.md: what changed and why, nothing else. No checklist of how it was checked and no operator steps; a choice made without asking goes in only where it is part of the why.",
       "Create no worktree and merge nothing. Never merge into main and never push. Leave nothing uncommitted in the integration worktree.",
       "Write the report to " + report,
     );
     const item = node(attempt === 1 ? "integrate" : "integrate-" + attempt, "implementer", lines, report, {
-      gate: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
+      gate: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes --final " + quote(final),
       selfGate: false,
       worktree: false,
     });
-    item.big = true;
     return item;
   }
 
@@ -1197,11 +1196,20 @@ export default async function implement(args, port) {
     return finish();
   }
 
+  const finalCommands = list(plan.final_checks);
+  const finalRuns = [];
+  for (const item of finalItems(lib, dir, finalCommands)) finalRuns.push(await one(item));
+  final = finalResult(finalCommands, finalRuns);
+
   let integrated = await one(integrationItem(1, null));
   const problem = integrationTrouble(integrated);
   if (problem) {
     const subject = subjectOf("integration");
-    const trouble = troubleOf("integrate", problem, [integrated.file, dir + "/heavy.md"], ["retry", "decide"]);
+    const trouble = troubleOf("integrate", problem, [integrated.file].concat(
+      finalCommands.map(function (c, k) {
+        return dir + "/final-" + (k + 1) + ".log";
+      }),
+    ), ["retry", "decide"]);
     const context = ["Plan: " + dir + "/plan.md", "Repository: " + repo, "Worktree: " + dir + "/integration on branch " + integrationBranch + " (read it, run checks in it, edit nothing)"];
     const d = await diagnose(subject, trouble, dir, context, STEPS.integrate);
     if (d) integrated = await one(integrationItem(2, d.file));
@@ -1223,7 +1231,7 @@ export default async function implement(args, port) {
         return t.id;
       })
       .concat(list(g.merged));
-    heavy = g.heavy_check;
+    final = g.final_check;
     prText = g.pr_text || "";
     if (g.ok) tidied = merged;
     leftOver = list(g.left_over);
