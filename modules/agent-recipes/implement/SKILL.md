@@ -240,8 +240,8 @@ reason in `claims`. `base` is the commit every task started from. `left` holds
 the worktrees and branches still in the repository, and `cleanup` is the command
 that removes them (`recipe-gate abandon <plan dir>`, keeping the integration
 branch once it passed), empty when `left` is. The integration branch is never in
-`left` after a pass. `final_check` is `pass`, `none`, `fail: <why>` or `not
-recorded`; `open` holds whatever the script could not settle, including a plan
+`left` after a pass. `final_check` is `pass`, `none`, `fail: <why>`, `not
+recorded`, or null (the run stopped before the integration step); `open` holds whatever the script could not settle, including a plan
 refused by its check and an integration that did not complete. `pr_text` is last
 because it is the longest; the full text is `<plan dir>/pr.md`.
 
