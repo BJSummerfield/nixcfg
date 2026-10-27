@@ -79,10 +79,12 @@ each must be safe to repeat and must not hold a secret.
      `recipe-gate task --verify` runs the verify command (and `--check`) and
      reports a failure `signature`.
    - A gate that is ok goes to a review: a fresh reviewer (diff variant) in
-     its own worktree, `recipe-gate verdict`. Clean ends the run with that
-     branch as the fix. Needs-work sends the findings to a fresh implementer as a
-     fix round, at most two reviews per hypothesis; a third is a
-     `decide`.
+     its own worktree, gated by `recipe-gate findings`, which re-runs the
+     review's reproductions against the verify command (and the light check)
+     in the review worktree. Clean ends the run with that branch as the fix.
+     Reproduced findings go to a fresh implementer as a fix round, with the
+     command or patch and its output; unreproduced ones go as advice. At most
+     two reviews per hypothesis; a third is a `decide`.
    - A report `blocked: hypothesis refuted: ...` marks the hypothesis
      `refuted` and moves to the next, without a diagnosis.
    - Stuck rule, decided by code: every failing gate carries a signature, a
@@ -123,7 +125,7 @@ each must be safe to repeat and must not hold a secret.
      it ends the run with the outcome `out of rounds` and an open line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
-   failed twice, a piece that failed, a verdict that cannot be read. It
+   failed twice, a piece that failed, a review that gave no verdict. It
    picks one action that `recipe-gate diagnosis` checks:
    - `fix`: one more round with a fresh implementer on the hypothesis branch;
    - `next`: drop this hypothesis and start the next in a fresh worktree,

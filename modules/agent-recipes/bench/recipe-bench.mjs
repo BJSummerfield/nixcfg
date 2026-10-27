@@ -232,6 +232,10 @@ function repeatsFor(opts, dir) {
   return names.filter((n) => /^[1-9][0-9]*$/.test(n)).map(Number).sort((a, b) => a - b);
 }
 
+function shellQuote(text) {
+  return "'" + String(text).replace(/'/g, "'\\''") + "'";
+}
+
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -279,12 +283,18 @@ function scoreCase({ reviewText, c, result, grades }) {
     if (graded !== undefined) return { id: d.id, found: graded !== "none", named_in: graded, graded: true };
     return { id: d.id, found, named_in: found ? namedIn(reviewText, d.match) : "none" };
   });
-  const found = defects.filter((d) => d.found).length;
+  const named = defects.filter((d) => d.found).length;
   const control = defects.length === 0;
+  const count = (key) => (Array.isArray(structured?.[key]) ? structured[key].length : 0);
+  const reproduced = count("reproduced");
   return {
     verdict,
     defects,
-    caught: verdict === "needs-work" && found > 0,
+    reproduced,
+    unreproduced: count("unreproduced"),
+    unrunnable: count("unrunnable"),
+    named,
+    caught: verdict === "needs-work" && reproduced > 0,
     falseAlarm: control && verdict === "needs-work",
   };
 }
@@ -298,6 +308,7 @@ function median(sorted) {
 function summarize(rows, opts = {}) {
   const defectRows = rows.filter((r) => r.defects.length > 0);
   const caught = defectRows.filter((r) => r.caught).length;
+  const namedCaught = defectRows.filter((r) => r.named > 0).length;
   const verdicts = {};
   const tokens = { prompt: 0, cached: 0, output: 0 };
   for (const r of rows) {
@@ -311,6 +322,16 @@ function summarize(rows, opts = {}) {
       caught,
       total: defectRows.length,
       share: defectRows.length ? caught / defectRows.length : 0,
+    },
+    namedCasesCaught: {
+      caught: namedCaught,
+      total: defectRows.length,
+      share: defectRows.length ? namedCaught / defectRows.length : 0,
+    },
+    reproducedFindings: {
+      reproduced: rows.reduce((a, r) => a + r.reproduced, 0),
+      unreproduced: rows.reduce((a, r) => a + r.unreproduced, 0),
+      unrunnable: rows.reduce((a, r) => a + r.unrunnable, 0),
     },
     defectsFound: {
       found: rows.reduce((a, r) => a + foundCount(r), 0),
@@ -362,7 +383,9 @@ function formatConfig(name, entry) {
     `config ${name} (harness ${entry.harness})`,
     `  cases run            ${s.casesRun}`,
     `  defect cases caught  ${s.defectCasesCaught.caught} of ${s.defectCasesCaught.total} (${(s.defectCasesCaught.share * 100).toFixed(1)}%)`,
+    `  named by regex       ${s.namedCasesCaught.caught} of ${s.namedCasesCaught.total} (${(s.namedCasesCaught.share * 100).toFixed(1)}%)`,
     `  defects found        ${s.defectsFound.found} of ${s.defectsFound.total}`,
+    `  findings             reproduced ${s.reproducedFindings.reproduced}; unreproduced ${s.reproducedFindings.unreproduced}; unrunnable ${s.reproducedFindings.unrunnable}`,
   ];
   if (s.repeats) {
     lines.push(
@@ -380,13 +403,14 @@ function formatConfig(name, entry) {
     ...(entry.notRun?.length ? [`  not run              ${entry.notRun.map((n) => `${n.case}/${n.repeat}`).join(", ")}`] : []),
     "",
     renderTable(
-      ["case", "repeat", "verdict", "defects", "named", "caught", "false-alarm", "minutes", "prompt", "cached", "output"],
+      ["case", "repeat", "verdict", "defects", "named", "reproduced", "caught", "false-alarm", "minutes", "prompt", "cached", "output"],
       entry.rows.map((r) => [
         r.case,
         String(r.repeat),
         r.verdict,
         r.defects.length ? `${r.defects.filter((d) => d.found).length}/${r.defects.length}` : "-",
         r.defects.length ? r.defects.map((d) => (d.graded ? `${d.named_in}*` : d.named_in)).join("+") : "-",
+        `${r.reproduced}/${r.unreproduced}`,
         r.caught ? "yes" : "no",
         r.falseAlarm ? "yes" : "no",
         r.minutes.toFixed(1),
@@ -455,7 +479,8 @@ export async function main(argv, deps = {}) {
         const reviewFile = path.join(runDir, "review.md");
         const briefFile = path.join(runDir, "brief.md");
         const resultFile = path.join(runDir, "result.json");
-        const saved = fs.existsSync(resultFile);
+        const savedResult = readJson(resultFile);
+        const saved = opts.rescore ? fs.existsSync(resultFile) : savedResult != null && savedResult.status !== "aborted";
         if (opts.rescore && !saved) {
           notRun.push({ case: c.name, repeat: rep });
           continue;
@@ -498,8 +523,9 @@ export async function main(argv, deps = {}) {
               "--cwd", loaded.repo,
               "--brief-file", briefFile,
               "--output", reviewFile,
-              "--gate", `recipe-gate verdict ${reviewFile}`,
+              "--gate", `recipe-gate findings ${shellQuote(reviewFile)} --check ${shellQuote(c.check)}`,
               "--gate-json",
+              "--gate-timeout-ms", "3600000",
               "--result-file", resultFile,
               "--dir", runDir,
               "--timeout-ms", String(opts.timeoutMs),
@@ -532,6 +558,10 @@ export async function main(argv, deps = {}) {
           resultFile,
           verdict: scored.verdict,
           defects: scored.defects,
+          reproduced: scored.reproduced,
+          unreproduced: scored.unreproduced,
+          unrunnable: scored.unrunnable,
+          named: scored.named,
           caught: scored.caught,
           falseAlarm: scored.falseAlarm,
           minutes: (result?.ms ?? 0) / 60000,

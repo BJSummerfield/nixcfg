@@ -44,8 +44,15 @@ const hypotheses = {
 };
 const taskPass = (rank) => ({ ok: true, reason: "", report: { status: "done", why: "" }, branch: `pi/h${rank}`, worktree: `/wt/h${rank}`, signature: null });
 const taskFail = (rank, signature, extra = {}) => ({ ok: false, reason: `verify failed (${signature})`, report: { status: "done", why: "" }, branch: `pi/h${rank}`, worktree: `/wt/h${rank}`, signature, ...extra });
-const clean = { ok: true, verdict: "clean", branch: "pi/h1", worktree: "/rw/1" };
-const needsWork = { ok: true, verdict: "needs-work", branch: "pi/h1", worktree: "/rw/1" };
+const gateBase = { ok: true, reason: "", check: { command: "c", exit: 0, tail: "" }, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [], branch: "pi/h1", worktree: "/rw/1" };
+const clean = { ...gateBase, verdict: "clean" };
+const needsWork = {
+  ...gateBase,
+  verdict: "needs-work",
+  reproduced: [{ n: 1, kind: "sh", title: "B1. off by one", summary: "sh t.sh", exit: 1, tail: "FAIL" }],
+  unreproduced: [{ n: 2, kind: "diff", title: "B2. unchecked", summary: "a.nix", exit: 1, tail: "" }],
+  findings: 2,
+};
 const diagnosis = (action, reason, extra = {}) => ({ ok: true, action, reason, verdict: null, owns: [], brief: false, question: "", ...extra });
 const urlList = (list) => ({ ok: list.length > 0, urls: list });
 const src = (angle, n, kind) => ({ url: `https://example.com/${angle}/${n}`, angle, why: "w", kind });
@@ -126,7 +133,8 @@ function assertSound(f) {
   assert.match(k["review-1-1"].task, /^Review a diff on a branch \(the diff variant\)/);
   assert.doesNotMatch(k["review-1-1"].task, /Implementer report/);
   assert.equal(k["review-1-1"].baseRef, "refs/heads/pi/h1");
-  assert.equal(k["review-1-1"].gate.command, "recipe-gate verdict '/t/d/review-1-1.md' --run '/t/d' --id 'h1'");
+  assert.equal(k["review-1-1"].gate.command, "recipe-gate findings '/t/d/review-1-1.md' --check 'make repro' --run '/t/d' --id 'h1'");
+  assert.equal(k["review-1-1"].gate.timeoutMs, 3600000);
   assert.equal(r.branch, "pi/h1");
   assert.equal(r.review, "/t/d/review-1-1.md");
   assert.deepEqual(outcomes(r), ["fixed", "untried"]);
@@ -418,11 +426,38 @@ function assertSound(f) {
   assert.equal(k["change-1-2"].baseRef, "refs/heads/pi/h1");
   assert.ok("gate" in k["change-1-2"]);
   assert.match(k["change-1-2"].task, /review-1-1\.md/);
+  assert.match(k["change-1-2"].task, /showed these defects at the branch head/);
+  assert.match(k["change-1-2"].task, /1\. \[B1\. off by one\] sh t\.sh -> exit 1\nFAIL/);
+  assert.match(k["change-1-2"].task, /Advice from the review, not required: B2\. unchecked: a\.nix$/m);
   assert.doesNotMatch(k["review-1-2"].task, /Implementer report|Earlier review|re-review/);
   assert.equal(r.review, "/t/d/review-1-2.md");
   assert.equal(r.branch, "pi/h1");
   assert.equal(r.hypotheses[0].rounds, 2);
   assertSound(f);
+}
+
+// The review's check joins the verify command and the light check.
+{
+  const f = fake();
+  await run(f.runs, { ...args, verify: "make test", check: "make lint" });
+  assert.equal(byKey(f)["review-1-1"].gate.command, "recipe-gate findings '/t/d/review-1-1.md' --check 'make test && make lint' --run '/t/d' --id 'h1'");
+}
+
+// A review that gave no verdict is diagnosed with retry or decide only.
+{
+  const f = fake({ "review-1-1": { ...gateBase, ok: false, verdict: null, reason: "handoff" } });
+  await run(f.runs, args);
+  const d = byKey(f)["diagnose-h1-1"];
+  assert.ok(d);
+  assert.match(d.gate.command, /--allow 'retry,decide'/);
+  assert.match(d.task, /the review gave no verdict: handoff/);
+}
+
+// A failing check at head is the first item of the fix brief.
+{
+  const f = fake({ "review-1-1": { ...needsWork, check: { command: "c", exit: 1, tail: "boom" }, reproduced: [], unreproduced: [] } });
+  await run(f.runs, args);
+  assert.match(byKey(f)["change-1-2"].task, /1\. The task's check failed at head -> exit 1\nboom/);
 }
 
 // No hypotheses ends the run when the diagnosis cannot help.
@@ -455,7 +490,7 @@ const planGate = (tasks, extra = {}) => ({ ok: true, tasks, oversize: [], overla
 const piece = (id, owns, check, est = 30000) => ({ id, file: `/t/d/split/h1-1/tasks/${id}.md`, owns, reads: [], check, depends: [], research: "", est });
 const pieces = planGate([piece("h1-a", ["a.js"], "check a"), piece("h1-b", ["b.js"], "check b")]);
 const pieceDone = (branch, head) => ({ ok: true, reason: "", report: { status: "done", why: "" }, branch, worktree: `/wt/${branch.replace("pi/", "")}`, head, commits: 1, signature: null });
-const reviewClean = (branch) => ({ ok: true, verdict: "clean", branch, worktree: "/rw/1" });
+const reviewClean = (branch) => ({ ...clean, branch });
 
 // A change that hands off is relayed from its branch with the note; a second handoff with the
 // same head is split, and the pieces run in order from each other's branch before one verify and one review.

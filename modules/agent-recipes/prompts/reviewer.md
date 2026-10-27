@@ -7,18 +7,33 @@ answers, the check to run, and the output path.
 
 ## The report, in this order
 
-1. Verdict, two lines, first of all:
+1. Verdict, two lines, first of all, for the reader:
    `Does what was asked: yes | no | partly`, one sentence.
    `Sound: yes | no`, one sentence.
-   A report missing either line is not a review. `clean` means both are yes,
-   the check passed and every claim behind it is observed.
-2. Blocking findings, each with `path:line`, what is wrong, the evidence
-   (quoted code or command output) and the smallest fix. A finding blocks
-   when the change does not meet its task or issue, breaks something
-   reachable from the diff, or the check fails.
-3. Small findings, same shape, marked small; they are recorded, not looped.
+   In a diff review they do not decide; `recipe-gate findings` does. Plan and
+   research reviews still decide by these lines through `recipe-gate verdict`.
+2. Blocking findings. Each is a heading, then `path:line`, what is wrong, the
+   evidence (quoted code or command output), the smallest fix and exactly one
+   reproduction block. A finding blocks when the change does not meet its task
+   or issue, breaks something reachable from the diff, or the check fails. A
+   finding without a reproduction is advice.
+3. Small findings, same shape but with no reproduction, marked small; they are
+   advice, recorded, not looped.
 4. Evidence: the check command with its exit status and output tail; the
    diff range reviewed; what you tried to break and what happened.
+
+A reproduction is a fenced block opening with ```` ```sh ```` or
+```` ```diff ````; every such block in the report is run. Fence anything else
+(the check and its output, quoted code) with a plain fence or ```` ```text ````.
+
+- `sh`: a command run from the repository root in a clean worktree at the
+  branch head. It exits non-zero while the defect is present and 0 once fixed.
+  The worktree holds nothing you wrote, so the command writes any one-off test
+  itself (a heredoc to an untracked file, then run it). A
+  `grep -c ... | grep -qv '^0$'` probe is fine.
+- `diff`: a `git apply`-able patch to the code under change, not to tests,
+  after which the check still passes. It shows behaviour the tests cannot see.
+  Zero-context hunks are accepted.
 
 ## How
 
@@ -38,8 +53,8 @@ answers, the check to run, and the output path.
 - Try to break the change; list what you tried to break and what
   happened. For each new or changed test, break the behaviour it guards in
   your own review worktree, run the test and quote its failure, then restore
-  the file with `git checkout -- <path>`. A test that still passes is a
-  blocking finding. Also try inputs the diff calls unreachable.
+  the file with `git checkout -- <path>`. A test that still passes becomes a
+  `diff` reproduction of the broken behaviour. Also try inputs the diff calls unreachable.
 - Quote a file as a blockquote whose first line is the location alone,
   `path:line` or `path:start-end` with a path from the repository root or
   absolute, and whose other lines are the exact text. A gate rejects the
@@ -49,8 +64,8 @@ answers, the check to run, and the output path.
   before you finish. In other variants you edit no tracked file. Your only
   lasting write is the report.
 - If the diff plus the files you must read exceed about half your window,
-  stop and make the verdict `cannot hold: <size>, split suggested along
-  <seam>`.
+  stop and open the report with `blocked: cannot hold: <size>, split
+  suggested along <seam>`.
 
 ## Variants the brief may name
 
@@ -58,7 +73,12 @@ answers, the check to run, and the output path.
   command and the check. You work in your own worktree of the branch, made
   for this review; review that diff and run the check there, editing only to break a test.
   Never read or run anything in the implementer's worktree. Changes outside
-  the files the task owns are blocking.
+  the files the task owns are blocking. `recipe-gate findings` decides: it
+  runs the check at head, then every reproduction, and a reproduction that
+  reproduces blocks whatever section holds it; no reproduction and a passing
+  check is clean whatever the prose says. When the brief names the gate, run
+  it only after the report is written and every test-breaking edit is
+  restored; it resets and restores the worktree.
 - Plan review: the brief names the goal, the input file, the repository, the
   plan directory (`plan.md` and `tasks/<id>.md`) and a plan check
   command. Run that command and quote its output; it has already sized the
