@@ -8,6 +8,8 @@ const MAX_REVIEWS = 2;
 const REPRO_GATE_MS = 660000;
 const TASK_GATE_MS = 1260000;
 const PLAN_GATE_LIMIT = 100000;
+const FINDINGS_GATE_MS = 6600000;
+const MAX_ROUNDS = 6;
 
 const dir = args.dir;
 const goal = args.goal;
@@ -15,13 +17,6 @@ const repo = args.repo;
 const reproduce = args.reproduce;
 const verifyCommand = args.verify || reproduce;
 const lightCheck = args.check || "";
-const source = args.source || "web";
-const childMs = args.childTimeoutMs || 1200000;
-const bigMs = args.bigTimeoutMs || 3600000;
-const maxRounds = (function () {
-  const n = Number(args.rounds === undefined ? 6 : args.rounds);
-  return Number.isFinite(n) ? Math.max(1, Math.min(10, Math.floor(n))) : 6;
-})();
 
 const STEPS = {
   hypothesize: "the ranking of hypotheses for the failure",
@@ -138,7 +133,7 @@ function heal(h, step, signal, evidence, allowed) {
 }
 
 function outOfRounds(h) {
-  open.push("out of rounds: " + maxRounds + " change runs used");
+  open.push("out of rounds: " + MAX_ROUNDS + " change runs used");
   stopHere(h, "out of rounds");
   ended = true;
 }
@@ -176,7 +171,6 @@ function changeItem(h) {
   const item = node("change-" + tag, "implementer", lines, report, {
     gate: taskGate(h, report),
     gateTimeoutMs: TASK_GATE_MS,
-    timeoutMs: bigMs,
     worktree: true,
   });
   stampRelay(item, h, pinned.base_ref);
@@ -227,8 +221,7 @@ function reviewItem(h) {
   lines.push("Write the report to " + file);
   const item = node("review-" + h.rank + "-" + h.reviews, "reviewer", lines, file, {
     gate: "recipe-gate findings " + quote(file) + " --check " + quote(lightCheck ? verifyCommand + " && " + lightCheck : verifyCommand) + " --run " + quote(dir) + " --id " + quote("h" + h.rank),
-    gateTimeoutMs: 3600000,
-    timeoutMs: bigMs,
+    gateTimeoutMs: FINDINGS_GATE_MS,
     worktree: true,
     big: true,
   });
@@ -321,8 +314,10 @@ function takeReview(h, result) {
     open.push("hypothesis " + h.rank + ": the review's verdict gate did not run");
     return stopHere(h, "gate did not run");
   }
-  h.lastReview = result.file;
+  if (g.handoff) open.push("hypothesis " + h.rank + ": review " + h.reviews + " hit the reviewer's budget: " + g.handoff);
   if (g.verdict === "clean") {
+    const unrunnable = g.unrunnable || [];
+    if (unrunnable.length) open.push("hypothesis " + h.rank + ": review " + h.reviews + " could not run " + unrunnable.length + " reproduction(s): " + unrunnable.map((f) => f.n + ": " + f.reason).join("; "));
     stopHere(h, "fixed");
     h.cleanReview = result.file;
     winner = h;
@@ -357,7 +352,6 @@ function splitItem(h) {
     owns: [],
     parentId: "h" + h.rank,
     limit: limit,
-    timeoutMs: bigMs,
     handoffOf: h.handoffFrom,
   });
   const text = item.task.split("\n");
@@ -427,7 +421,7 @@ function pieceItem(h) {
     "--id",
     quote("h" + h.rank + "-" + p.spec.id),
   ].join(" ");
-  const item = node("piece-" + tag, "implementer", lines, report, { gate: command, gateTimeoutMs: TASK_GATE_MS, timeoutMs: bigMs, worktree: true });
+  const item = node("piece-" + tag, "implementer", lines, report, { gate: command, gateTimeoutMs: TASK_GATE_MS, worktree: true });
   stampRelay(item, p, "refs/heads/" + h.prev.branch);
   return item;
 }
@@ -509,7 +503,7 @@ function takeDiagnosis(h, d, trouble) {
   if (d.action === "research") {
     researchRounds++;
     const id = "h" + h.rank + "-r" + researchRounds;
-    return gatherSources({ goal: goal, question: d.question, id: id, dir: dir, source: source, repo: repo, limit: 3, childMs: childMs }).then(function (found) {
+    return gatherSources({ goal: goal, question: d.question, id: id, dir: dir, repo: repo, limit: 3 }).then(function (found) {
       researched.push({ hypothesis: h.rank, question: d.question, extracts: found.files, open: found.open });
       found.open.forEach(function (line) {
         open.push("research " + id + ": " + line);
@@ -524,7 +518,7 @@ function takeDiagnosis(h, d, trouble) {
 function diagnoseStep(h) {
   const trouble = h.trouble;
   h.trouble = null;
-  return diagnose(h.subject, trouble, dir, diagnosisContext(h), STEPS[trouble.step], childMs).then(function (d) {
+  return diagnose(h.subject, trouble, dir, diagnosisContext(h), STEPS[trouble.step]).then(function (d) {
     if (!d) {
       stopHere(h, "needs a decision");
       ended = true;
@@ -546,7 +540,7 @@ function step(h) {
       takeGate(h, r, "verify");
     });
   }
-  if (roundsUsed >= maxRounds) {
+  if (roundsUsed >= MAX_ROUNDS) {
     outOfRounds(h);
     return Promise.resolve();
   }
@@ -569,7 +563,6 @@ const problems = [];
 ["dir", "goal", "repo", "reproduce"].forEach(function (name) {
   if (!args[name]) problems.push("the " + name + " argument is required");
 });
-if (source !== "web" && source !== "repo" && source !== "both") problems.push("source must be web, repo or both");
 if (problems.length) {
   problems.forEach(function (p) {
     open.push(p);
@@ -630,7 +623,6 @@ for (let attempt = 1; !found; attempt++) {
   lines.push("Write the hypotheses to " + file);
   const item = node("hypothesize" + tag, "reviewer", lines, file, {
     gate: "recipe-gate hypotheses " + quote(file) + " --run " + quote(dir) + " --id " + quote("hypothesize" + tag),
-    timeoutMs: bigMs,
     worktree: true,
     big: true,
   });
@@ -646,7 +638,7 @@ for (let attempt = 1; !found; attempt++) {
     return finish();
   } else {
     const signal = !r.ok ? "the reviewer failed: " + (r.error || "failed") : "no usable hypotheses: " + g.problem;
-    const d = await diagnose(wholeRun, troubleOf("hypothesize", signal, [r.file], ["retry", "decide"]), dir, diagnosisContext({}), STEPS.hypothesize, childMs);
+    const d = await diagnose(wholeRun, troubleOf("hypothesize", signal, [r.file], ["retry", "decide"]), dir, diagnosisContext({}), STEPS.hypothesize);
     if (!d) {
       open.push("no hypotheses: " + short(signal));
       return finish();
@@ -670,7 +662,6 @@ found.forEach(function (spec) {
     report: null,
     branch: null,
     worktree: null,
-    lastReview: null,
     cleanReview: null,
     notes: [],
     briefNotes: [],

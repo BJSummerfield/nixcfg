@@ -33,14 +33,13 @@ const gateOf = (tasks, over = {}) => ({ ok: true, tasks, ...over });
 // splitItem
 {
   const t = parentOf();
-  const item = splitItem(lib, t, { dir: "/run", n: 1, note: "/run/note.md", limit: 50000, sizing: "/s.json", timeoutMs: 9 });
+  const item = splitItem(lib, t, { dir: "/run", n: 1, note: "/run/note.md" });
   assert.equal(item.agent, "planner");
   assert.equal(item.big, true);
   assert.equal(item.handoffOf, "run-a");
   assert.equal(item.handoffAs, "split");
-  assert.equal(item.maxRuntimeMs, 9);
   assert.equal(item.output, "/run/split/a-1/planner.md");
-  assert.equal(item.gate.command, "recipe-gate plan '/run/split/a-1' --repo '/wt/a' --limit 50000 --sizing '/s.json'");
+  assert.equal(item.gate.command, "recipe-gate plan '/run/split/a-1' --repo '/wt/a'");
   assert.match(item.task, /^Task file: \/plan\/tasks\/a\.md$/m);
   assert.match(item.task, /^Handoff note: \/run\/note\.md$/m);
   assert.match(item.task, /git diff base-a\.\.pi\/a/);

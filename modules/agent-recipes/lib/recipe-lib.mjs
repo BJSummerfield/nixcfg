@@ -77,7 +77,6 @@ export function recipeLib(rawPort) {
       output: output,
       outputMode: "file-only",
     });
-    if (o.timeoutMs) item.maxRuntimeMs = o.timeoutMs;
     if (o.gate) {
       item.gate = { command: o.gate, output: "json" };
       if (o.gateTimeoutMs) item.gate.timeoutMs = o.gateTimeoutMs;
@@ -182,7 +181,7 @@ export function recipeLib(rawPort) {
   function launchBig(item) {
     if (counted(item)) tally.children++;
     return port.runOne(item).then(function (first) {
-      if (item.agent === null ||(first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
+      if (item.agent === null || (first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
       const again = retryItem(item, first);
       tally.children++;
       return port.runOne(again).then(function (second) {
@@ -356,7 +355,6 @@ export function recipeLib(rawPort) {
     const file = o.splitDir + "/planner.md";
     let gate = "recipe-gate plan " + quote(o.splitDir) + " --repo " + quote(o.worktree);
     if (o.limit) gate += " --limit " + Number(o.limit);
-    if (o.sizing) gate += " --sizing " + quote(o.sizing);
     const lines = ["Split a task that its implementer could not finish within one context (the plan variant).", "Task file: " + o.taskFile];
     if (o.note) lines.push("Handoff note: " + o.note);
     lines.push(
@@ -370,7 +368,7 @@ export function recipeLib(rawPort) {
       "Write " + o.splitDir + "/plan.md and one " + o.splitDir + "/tasks/<id>.md per piece in the task header format.",
       "Write a short summary of the split to " + file,
     );
-    const item = node(o.key, "planner", lines, file, { gate: gate, timeoutMs: o.timeoutMs, big: true });
+    const item = node(o.key, "planner", lines, file, { gate: gate, big: true });
     if (o.handoffOf) item.handoffOf = o.handoffOf;
     item.handoffAs = "split";
     return item;
@@ -414,7 +412,7 @@ export function recipeLib(rawPort) {
     if (!result.ok || !result.handoff || UNREAD_ROLES.indexOf(item.agent) < 0) return Promise.resolve(result);
     if (item.merging) return Promise.resolve(failedStep(item, result, "the merge handed off"));
     const unread = list(result.handoff.unread);
-    if (unread.length === 0) return Promise.resolve(failedStep(item, result, "handed off without listing unread input"));
+    if (unread.length === 0) return Promise.resolve(result.handoff.empty ? failedStep(item, result, "handed off without writing its output") : result);
     if (item.splitDepth) {
       if (item.splitDepth >= HANDOFF_LIMITS.MAX_SPLITS) return Promise.resolve(failedStep(item, result, "a part handed off at the split limit"));
       if (unread.length >= item.unreadGiven) return Promise.resolve(failedStep(item, result, "a part handed off again without reading any of its input"));
@@ -515,7 +513,7 @@ export function recipeLib(rawPort) {
     decide.push({ id: subject.id, step: step, question: short(question), diagnosis: file || null });
   }
 
-  function diagnosisItem(subject, trouble, dir, context, stepText, childMs) {
+  function diagnosisItem(subject, trouble, dir, context, stepText) {
     subject.heals++;
     const file = dir + "/diagnosis-" + (subject.id ? subject.id + "-" : "") + subject.heals + ".md";
     let command = "recipe-gate diagnosis " + quote(file) + " --allow " + quote(trouble.allowed.join(","));
@@ -528,7 +526,7 @@ export function recipeLib(rawPort) {
     if (verdictWanted) lines.push("With continue, give the verdict the review states.");
     lines.push("Allowed actions: " + trouble.allowed.join(", "));
     lines.push("Write the diagnosis to " + file);
-    return node("diagnose-" + (subject.id ? subject.id + "-" : "") + subject.heals, "reviewer", lines, file, { gate: command, timeoutMs: childMs });
+    return node("diagnose-" + (subject.id ? subject.id + "-" : "") + subject.heals, "reviewer", lines, file, { gate: command });
   }
 
   function readDiagnosis(subject, trouble, result) {
@@ -554,47 +552,47 @@ export function recipeLib(rawPort) {
     return Object.assign({}, d, { file: result.file });
   }
 
-  function diagnose(subject, trouble, dir, context, stepText, childMs) {
+  function diagnose(subject, trouble, dir, context, stepText) {
     if (exhausted(subject)) {
       askDecision(subject, trouble.step, exhaustedQuestion(trouble), subject.lastDiagnosis);
       return Promise.resolve(null);
     }
-    return one(diagnosisItem(subject, trouble, dir, context, stepText, childMs)).then(function (result) {
+    return one(diagnosisItem(subject, trouble, dir, context, stepText)).then(function (result) {
       return readDiagnosis(subject, trouble, result);
     });
   }
 
-  function searchItem(goal, angle, file, childMs) {
+  function searchItem(goal, angle, file) {
     return node(
       "search-" + angle.id,
       "searcher",
       ["Goal: " + goal, "Angle: " + angle.id, "Question: " + angle.question, "Output: " + file],
       file,
-      { gate: "recipe-gate urls " + quote(file), timeoutMs: childMs, selfGate: false },
+      { gate: "recipe-gate urls " + quote(file), selfGate: false },
     );
   }
 
-  function extractItem(key, goal, url, angle, page, file, part, childMs) {
+  function extractItem(key, goal, url, angle, page, file, part) {
     const lines = ["Goal: " + goal, "URL: " + url, "Angle: " + angle, "Page: " + page, "Output: " + file];
     if (part) lines.push(part);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), selfGate: false });
   }
 
-  function locateItem(goal, angle, repo, file, childMs) {
+  function locateItem(goal, angle, repo, file) {
     return node(
       "locate-" + angle.id,
       "locator",
       ["Goal: " + goal, "Angle: " + angle.id, "Question: " + angle.question, "Repository: " + repo, "Output: " + file],
       file,
-      { gate: "recipe-gate paths " + quote(file), timeoutMs: childMs },
+      { gate: "recipe-gate paths " + quote(file) },
     );
   }
 
-  function extractFileItem(key, goal, path, range, angle, file, childMs) {
+  function extractFileItem(key, goal, path, range, angle, file) {
     const lines = ["Goal: " + goal, "File: " + path];
     if (range) lines.push("Range: " + range.start + "-" + range.end);
     lines.push("Angle: " + angle, "Output: " + file);
-    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), timeoutMs: childMs, selfGate: false });
+    return node(key, "extractor", lines, file, { gate: "recipe-gate extract " + quote(file), selfGate: false });
   }
 
   function rankAndCap(found, limit) {
@@ -672,26 +670,17 @@ export function recipeLib(rawPort) {
   }
 
   function gatherSources(spec) {
-    const source = spec.source || "web";
     const limit = spec.limit || 3;
     const open = [];
     const none = { files: [], sources: [], open: open };
-    if (source !== "web" && source !== "repo" && source !== "both") {
-      open.push("source must be web, repo or both");
-      return Promise.resolve(none);
-    }
-    if (source !== "web" && !spec.repo) {
-      open.push("a repository source needs the repo argument");
-      return Promise.resolve(none);
-    }
     const base = spec.dir + "/research/" + spec.id;
     const angles = [{ id: spec.id, question: spec.question }];
     const items = [];
-    if (source !== "repo") items.push(searchItem(spec.goal, angles[0], base + "/search.md", spec.childMs));
-    if (source !== "web") items.push(locateItem(spec.goal, angles[0], spec.repo, base + "/locate.md", spec.childMs));
+    items.push(searchItem(spec.goal, angles[0], base + "/search.md"));
+    if (spec.repo) items.push(locateItem(spec.goal, angles[0], spec.repo, base + "/locate.md"));
     return launch(items).then(function (results) {
-      const searches = source === "repo" ? [] : results.slice(0, 1);
-      const locates = source === "web" ? [] : results.slice(results.length - 1);
+      const searches = results.slice(0, 1);
+      const locates = spec.repo ? results.slice(results.length - 1) : [];
       const found = (searches.length ? sourcesFound(angles, searches, {}, open) : []).concat(
         locates.length ? pathsFound(angles, locates, {}, open) : [],
       );
@@ -705,8 +694,8 @@ export function recipeLib(rawPort) {
       });
       const extracts = picked.map(function (p, j) {
         const key = "extract-" + spec.id + "-" + (j + 1);
-        if (p.path) return extractFileItem(key, spec.question, spec.repo + "/" + p.path, p.range, spec.id, files[j], spec.childMs);
-        return extractItem(key, spec.question, p.url, spec.id, base + "/page-" + (j + 1) + ".md", files[j], "", spec.childMs);
+        if (p.path) return extractFileItem(key, spec.question, spec.repo + "/" + p.path, p.range, spec.id, files[j]);
+        return extractItem(key, spec.question, p.url, spec.id, base + "/page-" + (j + 1) + ".md", files[j], "");
       });
       return launch(extracts).then(function (done) {
         const sources = [];

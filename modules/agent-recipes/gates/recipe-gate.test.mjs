@@ -32,9 +32,6 @@ const gate = (...args) => {
 {
   assert.equal(gate().status, 2);
   assert.equal(gate("bogus", "x").status, 2);
-  assert.equal(gate("size", tmp, "--window").status, 2);
-  assert.equal(gate("size", tmp, "--window", "abc").status, 2);
-  assert.equal(gate("size", path.join(tmp, "nope")).status, 1);
 }
 
 // urls: bullets under angle headings, deduped and normalized; primary wins.
@@ -242,32 +239,6 @@ const gate = (...args) => {
   assert.deepEqual(invented.json.missing, ["no such line anywhere"]);
 }
 
-// size: bytes under the directory, recursively; split by the half-window rule.
-{
-  const d = dir();
-  fs.mkdirSync(path.join(d, "raw"));
-  fs.writeFileSync(path.join(d, "a.md"), "a".repeat(1000));
-  fs.writeFileSync(path.join(d, "raw", "b.md"), "b".repeat(3000));
-  assert.deepEqual(gate("size", d).json, { bytes: 4000, est_tokens: 1000, split: 1 });
-  assert.equal(gate("size", dir()).json.split, 1);
-}
-{
-  const half = 221184 / 2;
-  const at = dir();
-  fs.writeFileSync(path.join(at, "x"), "x".repeat(half * 4));
-  assert.equal(gate("size", at).json.split, 1);
-  const over = dir();
-  fs.writeFileSync(path.join(over, "x"), "x".repeat(half * 4 + 4));
-  assert.equal(gate("size", over).json.split, Math.ceil((half + 1) / 70000));
-  const big = dir();
-  fs.writeFileSync(path.join(big, "x"), "x".repeat(4 * 300000));
-  assert.equal(gate("size", big).json.split, 5);
-  assert.equal(gate("size", big, "--window", "1000000").json.split, 1);
-  const small = dir();
-  fs.writeFileSync(path.join(small, "x"), "x".repeat(4 * 60000));
-  assert.equal(gate("size", small, "--window", "100000").json.split, 2);
-}
-
 // verdict: the first verdict line and the few after it decide, up to the
 // next heading; anything missing is invalid.
 {
@@ -452,6 +423,29 @@ const gate = (...args) => {
   assert.equal(over.json.ok, false);
   assert.deepEqual(planGate(mkPlan({ t1: task(base) }), "--limit", "7500").json.oversize, []);
   assert.equal(gate("plan", mkPlan({ t1: task(base) }), "--limit", "x").status, 2);
+
+  const bigRepo = dir();
+  fs.writeFileSync(path.join(bigRepo, "own.txt"), "x".repeat(4000));
+  const planDefaults = (bytes, ...extra) => {
+    fs.writeFileSync(path.join(bigRepo, "read.txt"), "y".repeat(bytes));
+    const env = { ...process.env, HOME: tmp };
+    delete env.RECIPE_RUNNER_CONFIG;
+    const d = mkPlan({ t1: task({ ...base, owns: "own.txt", reads: "read.txt" }) });
+    const r = spawnSync(process.execPath, [script, "plan", d, "--repo", bigRepo, "--sizing", sizing, ...extra], { encoding: "utf8", env });
+    return JSON.parse(r.stdout);
+  };
+  assert.deepEqual(planDefaults(192000).oversize, []);
+  assert.equal(planDefaults(192000).tasks[0].est, 99500);
+  assert.deepEqual(planDefaults(192200).oversize, ["t1"]);
+  assert.equal(planDefaults(192200).tasks[0].est, 99600);
+
+  const windowConfig = write("runner.json", JSON.stringify({ window: 20000 }));
+  fs.writeFileSync(path.join(bigRepo, "read.txt"), "y".repeat(40000));
+  const sized = spawnSync(process.execPath, [script, "plan", mkPlan({ t1: task({ ...base, owns: "own.txt", reads: "read.txt" }) }), "--repo", bigRepo, "--sizing", sizing], {
+    encoding: "utf8",
+    env: { ...process.env, RECIPE_RUNNER_CONFIG: windowConfig },
+  });
+  assert.deepEqual(JSON.parse(sized.stdout).oversize, ["t1"]);
 
   const same = planGate(mkPlan({ t1: task(base), t2: task({ ...t2, owns: "new/c.txt, src/a.txt" }) }));
   assert.deepEqual(same.json.overlaps, [["t1", "t2", "src/a.txt"]]);
@@ -1198,11 +1192,11 @@ const gate = (...args) => {
   assert.equal(r.ok, true);
   assert.equal(r.base, base);
   assert.deepEqual(Object.keys(r.tasks).sort(), ["a", "b-1", "c", "d.1", "dx1", "gone"]);
-  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, reviews: 0, review_file: null, merged: true });
-  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", reviews: 10, review_file: path.join(run, "review-b-1-10.md"), merged: true });
-  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", reviews: 2, review_file: path.join(run, "review-c-2.md"), merged: false });
-  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, review_file: null, merged: false });
-  assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, review_file: path.join(run, "review-d.1-1.md"), merged: true });
+  assert.deepEqual(r.tasks.a, { branch: "pi/a", head: base, review: null, reviews: 0, merged: true });
+  assert.deepEqual(r.tasks["b-1"], { branch: "pi/b", head: bTip, review: "clean", reviews: 10, merged: true });
+  assert.deepEqual(r.tasks.c, { branch: "pi/c", head: cTip, review: "needs-work", reviews: 2, merged: false });
+  assert.deepEqual(r.tasks.gone, { branch: "pi/gone", head: null, review: null, reviews: 0, merged: false });
+  assert.deepEqual(r.tasks["d.1"], { branch: "pi/d", head: null, review: "clean", reviews: 1, merged: true });
   assert.equal(r.tasks.dx1.reviews, 4);
   const hand = "handoff: half done\n" + ok;
   fs.writeFileSync(path.join(run, "review-h-1.md"), hand);
@@ -1216,12 +1210,10 @@ const gate = (...args) => {
   fs.writeFileSync(path.join(run, "run.json"), JSON.stringify(withHand));
   const h = gate("resume", run, "--repo", repo, "--branch", "integ").json.tasks;
   assert.equal(h.h.review, "needs-work");
-  assert.equal(h.h.review_file, path.join(run, "review-h-1.merged.md"));
-  assert.equal(h.o.review, "needs-work");
+  assert.equal(h.o.review, "invalid");
   assert.equal(h.o.reviews, 2);
-  assert.equal(h.q.review, null);
+  assert.equal(h.q.review, "invalid");
   assert.equal(h.q.reviews, 3);
-  assert.equal(h.q.review_file, null);
   assert.equal(gate("resume", run, "--repo", repo).json.tasks["b-1"].merged, false);
   assert.equal(gate("resume", run, "--repo", repo, "--branch", "nope").json.tasks.a.merged, false);
 }

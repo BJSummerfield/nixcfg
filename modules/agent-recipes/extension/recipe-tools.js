@@ -83,7 +83,6 @@ export default function recipeTools(pi, deps = {}) {
         cwd: { type: "string", description: "Working directory of the run; defaults to the session's" },
         harness: { type: "string" },
         timeoutMs: { type: "number" },
-        maxChildren: { type: "number" },
         resume: { type: "boolean", description: "Resume the run recorded in the task directory" },
       },
       required: ["recipe", "args"],
@@ -105,7 +104,6 @@ export default function recipeTools(pi, deps = {}) {
             cwd,
             ...(params.harness ? ["--harness", params.harness] : []),
             ...(params.timeoutMs != null ? ["--timeout-ms", String(params.timeoutMs)] : []),
-            ...(params.maxChildren != null ? ["--max-children", String(params.maxChildren)] : []),
           ];
       const logFile = path.join(taskDir, "runner", "runner.log");
       const fd = openLog(logFile);
@@ -167,11 +165,9 @@ export default function recipeTools(pi, deps = {}) {
         brief: { type: "string" },
         output: { type: "string" },
         gate: { type: "string", description: "Shell command run after the child" },
-        gateJson: { type: "boolean" },
         gateTimeoutMs: { type: "number" },
         worktree: { type: "boolean" },
         base: { type: "string" },
-        keepWorktree: { type: "boolean" },
         timeoutMs: { type: "number" },
         cwd: { type: "string" },
         background: { type: "boolean" },
@@ -202,11 +198,9 @@ export default function recipeTools(pi, deps = {}) {
         cwd,
         ...(params.output ? ["--output", params.output] : []),
         ...(params.gate ? ["--gate", params.gate] : []),
-        ...(params.gateJson ? ["--gate-json"] : []),
         ...(params.gateTimeoutMs != null ? ["--gate-timeout-ms", String(params.gateTimeoutMs)] : []),
         ...(params.worktree ? ["--worktree"] : []),
         ...(params.base ? ["--base", params.base] : []),
-        ...(params.keepWorktree ? ["--keep-worktree"] : []),
         ...(params.timeoutMs != null ? ["--timeout-ms", String(params.timeoutMs)] : []),
       ];
       const fd = openLog(path.join(dir, "dispatch.log"));

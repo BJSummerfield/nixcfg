@@ -18,18 +18,7 @@ let
   home = config.home.homeDirectory;
   recipesDir = "${home}/.pi/agent/recipes";
 
-  mergedRoles = lib.recursiveUpdate (lib.mapAttrs (
-    name: role:
-    if role ? claude then
-      role
-      // {
-        claude = role.claude // {
-          model = cfg.claude.models.${name} or role.claude.model;
-        };
-      }
-    else
-      role
-  ) defaults.roles) cfg.roles;
+  mergedRoles = lib.recursiveUpdate defaults.roles cfg.roles;
 
   resolvedRoles = lib.mapAttrs (name: role: {
     inherit (role)
@@ -37,12 +26,12 @@ let
       thinking
       output
       budget
+      timeoutMs
       ;
     claude = role.claude // {
       agent = name;
     };
     acceptance = role.acceptance or null;
-    harness = role.harness or null;
   }) mergedRoles;
 
   runnerConfig = {
@@ -55,7 +44,7 @@ let
       worktreeDir
       stateDir
       concurrency
-      inFlightTokens
+      window
       ;
     sizing = "${recipesDir}/sizing.json";
     roles = lib.mapAttrs (
@@ -115,11 +104,6 @@ let
       }
     ) resolvedRoles
   );
-
-  claudeModelAssertions = lib.mapAttrsToList (name: _: {
-    assertion = defaults.roles ? ${name};
-    message = "agent-recipes: claude.models.${name} names a role that is not in the role table";
-  }) cfg.claude.models;
 in
 {
   options.mine.user.agent-recipes = {
@@ -145,11 +129,6 @@ in
       type = types.int;
       description = "Maximum reply size of the model the pi children run on, in tokens";
     };
-    claude.models = mkOption {
-      type = types.attrsOf types.str;
-      default = { };
-      description = "Per-role override of claude.model in the default role table";
-    };
     roles = mkOption {
       type = types.attrsOf types.anything;
       default = { };
@@ -170,11 +149,6 @@ in
       default = 3;
       description = "Number of helpers the runner runs at once";
     };
-    inFlightTokens = mkOption {
-      type = types.nullOr types.int;
-      default = null;
-      description = "Token cap on work in flight, or null for none";
-    };
     resolved = mkOption {
       internal = true;
       readOnly = true;
@@ -193,7 +167,7 @@ in
 
     mine.user.agent-recipes.package = tools;
 
-    assertions = roleAssertions ++ claudeModelAssertions;
+    assertions = roleAssertions;
 
     mine.user.agent-recipes.resolved = {
       roles = resolvedRoles;

@@ -39,8 +39,7 @@ export default async function implement(args, port) {
 
   const dir = args.plan;
   const repo = args.repo;
-  const childMs = args.childTimeoutMs || 1200000;
-  const bigMs = args.bigTimeoutMs || 3600000;
+  const FINDINGS_GATE_MS = 6600000;
   const slug = String(dir).replace(/\/+$/, "").split("/").pop().replace(/[^A-Za-z0-9._-]/g, "-") || "plan";
   const integrationBranch = args.branch || "implement/" + slug;
 
@@ -58,8 +57,6 @@ export default async function implement(args, port) {
 
   function planGateCommand() {
     let command = "recipe-gate plan " + quote(dir) + " --repo " + quote(repo);
-    if (args.limit) command += " --limit " + Number(args.limit);
-    if (args.sizing) command += " --sizing " + quote(args.sizing);
     return command;
   }
 
@@ -344,7 +341,6 @@ export default async function implement(args, port) {
     const item = node("impl-" + tag, "implementer", implementBrief(t, report), report, {
       gate: taskGateCommand(t, report),
       gateTimeoutMs: 900000,
-      timeoutMs: bigMs,
       worktree: true,
     });
     return stampRelay(item, t, t.baseRef);
@@ -362,6 +358,7 @@ export default async function implement(args, port) {
     }
     const handoff = handoffOf(result, g);
     t.report = result.file;
+    if (t.mutationFix) t.mutationReports.push(result.file);
     t.runId = result.runId || t.runId;
     t.branch = g.branch;
     t.worktree = g.worktree;
@@ -432,13 +429,17 @@ export default async function implement(args, port) {
     const lines = reviewBriefLines({ taskFile: taskFile(t), repo, branch: t.branch, implementerWorktree: t.worktree, diffRange: reviewRange(t, t.branch), owns: ownsOf(t), check: t.spec.check, output: file, revisedTask: t.replanBrief });
     const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
       gate: "recipe-gate findings " + quote(file) + " --check " + quote(t.spec.check) + " --run " + quote(dir) + " --id " + quote(t.id),
-      gateTimeoutMs: 3600000,
-      timeoutMs: bigMs,
+      gateTimeoutMs: FINDINGS_GATE_MS,
       worktree: true,
     });
     item.baseRef = "refs/heads/" + t.branch;
     item.big = true;
     return item;
+  }
+
+  function unrunnableLine(prefix, g) {
+    const entries = list(g.unrunnable);
+    return prefix + " could not run " + entries.length + " reproduction(s): " + entries.map((f) => f.n + ": " + f.reason).join("; ");
   }
 
   function takeReview(t, result) {
@@ -454,6 +455,8 @@ export default async function implement(args, port) {
     t.lastReview = result.file;
     const g = result.structuredOutput;
     t.lastVerdict = g.verdict;
+    if (g.handoff) open.push("task " + t.id + ": review " + t.reviews + " hit the reviewer's budget: " + g.handoff);
+    if (g.verdict === "clean" && list(g.unrunnable).length) open.push(unrunnableLine("task " + t.id + ": review " + t.reviews, g));
     if (g.verdict === "clean") {
       if (t.mutated || t.parent) {
         t.state = "done";
@@ -480,7 +483,7 @@ export default async function implement(args, port) {
       "Write the report to " + file,
     ];
     const gate = "recipe-gate findings " + quote(file) + " --check " + quote(t.spec.check) + " --run " + quote(dir) + " --id " + quote(t.id);
-    const item = node("mutate-" + t.id, "mutator", lines, file, { gate: gate, gateTimeoutMs: 3600000, timeoutMs: bigMs, worktree: true });
+    const item = node("mutate-" + t.id, "mutator", lines, file, { gate: gate, gateTimeoutMs: FINDINGS_GATE_MS, worktree: true });
     item.baseRef = "refs/heads/" + t.branch;
     return item;
   }
@@ -515,12 +518,14 @@ export default async function implement(args, port) {
       open.push("task " + t.id + ": the check failed at head in the mutation step");
       return done();
     }
+    if (list(g.unrunnable).length) open.push(unrunnableLine("task " + t.id + ": the mutation step", g));
     if (t.mutation.confirmed === 0) return done();
     if (t.fixes >= MAX_FIXES) {
       open.push("task " + t.id + ": " + t.mutation.confirmed + " mutation(s) survive the check and the fix rounds are used up");
       return done();
     }
     t.mutationFix = true;
+    t.mutationReports = [];
     return needFix(t, mutationFindings(result.file, g, t.spec.check));
   }
 
@@ -538,8 +543,8 @@ export default async function implement(args, port) {
   }
 
   function recheckItem(t) {
-    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + " --claims " + quote(t.report), {
-      gateTimeoutMs: 3600000,
+    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + t.mutationReports.map((f) => " --claims " + quote(f)).join(""), {
+      gateTimeoutMs: FINDINGS_GATE_MS,
       worktree: true,
       baseRef: "refs/heads/" + t.branch,
     });
@@ -552,6 +557,7 @@ export default async function implement(args, port) {
     if (!result.ok || !g || !g.ok) {
       open.push("task " + t.id + ": the mutation re-check did not run: " + (result.error || (g && g.reason) || "no result"));
     } else {
+      if (list(g.unrunnable).length) open.push(unrunnableLine("task " + t.id + ": the mutation re-check", g));
       const caught = list(g.unreproduced).map((f) => f.n);
       t.mutation.survivors.forEach(function (n) {
         const c = list(g.claimed).find((x) => x.n === n);
@@ -599,7 +605,7 @@ export default async function implement(args, port) {
   }
 
   function diagnoseItem(t) {
-    return diagnosisItem(t, t.trouble, dir, diagnosisContext(t), STEPS[t.trouble.step], childMs);
+    return diagnosisItem(t, t.trouble, dir, diagnosisContext(t), STEPS[t.trouble.step]);
   }
 
   function takeDiagnosis(t, result) {
@@ -637,6 +643,10 @@ export default async function implement(args, port) {
     t.fixes = 0;
     t.extraFix = false;
     t.lastReview = null;
+    t.mutationFix = false;
+    t.mutated = false;
+    t.mutation = null;
+    t.mutationReports = [];
     t.runId = null;
     clearRelay(t);
     t.relayFindings = null;
@@ -703,6 +713,7 @@ export default async function implement(args, port) {
         mutated: false,
         mutation: null,
         mutationFix: false,
+        mutationReports: [],
         joined: false,
         parent: null,
         splitN: 0,
@@ -713,7 +724,7 @@ export default async function implement(args, port) {
 
   function splitPlannerItem(t) {
     t.splitN++;
-    return splitItem(lib, t, { dir: dir, n: t.splitN, note: t.relayNote, limit: args.limit, sizing: args.sizing, timeoutMs: bigMs });
+    return splitItem(lib, t, { dir: dir, n: t.splitN, note: t.relayNote });
   }
 
   function takeSplit(active) {
@@ -906,7 +917,6 @@ export default async function implement(args, port) {
       gate: command,
       gateTimeoutMs: 900000,
       selfGate: false,
-      timeoutMs: bigMs,
       worktree: false,
     });
   }
@@ -1162,7 +1172,6 @@ export default async function implement(args, port) {
     const item = node(attempt === 1 ? "integrate" : "integrate-" + attempt, "implementer", lines, report, {
       gate: "recipe-gate integrate " + quote(dir) + " --tasks " + quote(pairs) + " --branch " + quote(integrationBranch) + " --tidy yes",
       selfGate: false,
-      timeoutMs: bigMs,
       worktree: false,
     });
     item.big = true;
@@ -1194,7 +1203,7 @@ export default async function implement(args, port) {
     const subject = subjectOf("integration");
     const trouble = troubleOf("integrate", problem, [integrated.file, dir + "/heavy.md"], ["retry", "decide"]);
     const context = ["Plan: " + dir + "/plan.md", "Repository: " + repo, "Worktree: " + dir + "/integration on branch " + integrationBranch + " (read it, run checks in it, edit nothing)"];
-    const d = await diagnose(subject, trouble, dir, context, STEPS.integrate, childMs);
+    const d = await diagnose(subject, trouble, dir, context, STEPS.integrate);
     if (d) integrated = await one(integrationItem(2, d.file));
   }
 

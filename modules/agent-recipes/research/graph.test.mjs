@@ -12,7 +12,7 @@ import path from "node:path";
 import graph from "./graph.mjs";
 import { portOf, runThroughRunner } from "../runner/fake.mjs";
 
-const run = (runs, args, emit) => graph(Object.freeze(args), portOf(runs, emit));
+const run = (runs, args, emit, config = { window: 221184 }) => graph(Object.freeze(args), portOf(runs, emit, config));
 
 const src = (angle, n, kind) => ({ url: `https://example.com/${angle}/${n}`, angle, why: "w", kind });
 const ok = (key, structuredOutput) => ({ ok: true, runId: `run-${key}`, structuredOutput });
@@ -97,10 +97,10 @@ function assertUniqueOutputs(f) {
   };
   const f = fake(respond);
 
-  const receipt = await run(f.runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 });
-  assert.deepEqual(await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", output: "/t/d/out.md", window: 150000 }), JSON.parse(JSON.stringify(receipt)));
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "The goal." }, undefined, { window: 150000 });
+  assert.deepEqual(await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal." }, { window: 150000 }), JSON.parse(JSON.stringify(receipt)));
 
-  const unnamed = await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal.", window: 150000 });
+  const unnamed = await runThroughRunner(graph, fake(respond).runs, { dir: "/t/d", goal: "The goal." }, { window: 150000 });
   assert.equal(unnamed.output, "/t/d/summary.updated.md");
 
   assert.deepEqual(keys(f.batches), [
@@ -129,7 +129,7 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey["search-a"].output, "/t/d/raw/search/search-a.md");
   assert.equal(byKey["search-a"].outputMode, "file-only");
   assert.equal(byKey["search-a"].gate.command, "recipe-gate urls '/t/d/raw/search/search-a.md'");
-  assert.equal(byKey["search-a"].maxRuntimeMs, 480000);
+  assert.equal(byKey["search-a"].maxRuntimeMs, undefined);
   assert.match(byKey["search-b"].task, /Angle: b\nQuestion: Question b\?/);
 
   assert.match(byKey["extract-0"].task, /URL: https:\/\/example\.com\/a\/1\nAngle: a\nPage: \/t\/d\/pages\/page-0\.md\nOutput: \/t\/d\/raw\/extract\/extract-0\.md/);
@@ -154,7 +154,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(files("synthesis-1"), [ex("1.retry"), ex(7), ex("2a"), ex(5)]);
   assert.equal(byKey["synthesis-0"].output, "/t/d/synthesis-0.md");
   assert.deepEqual(files("synthesis-combine"), ["/t/d/synthesis-0.md", "/t/d/synthesis-1.md"]);
-  assert.equal(byKey["synthesis-combine"].output, "/t/d/out.md");
+  assert.equal(byKey["synthesis-combine"].output, "/t/d/summary.md");
   assert.match(byKey["synthesis-combine"].task, /Merge them into the requested output/);
 
   assert.equal(byKey.review.agent, "reviewer");
@@ -164,7 +164,7 @@ function assertUniqueOutputs(f) {
   assert.ok(!("big" in byKey["search-gap-pricing"]), "searchers are small");
   assert.equal(byKey.review.gate.command, "recipe-gate gaps '/t/d/review.md'");
   assert.deepEqual(files("review"), [ex(0), ex("1.retry"), ex("2a"), ex(5), ex(6), ex(7), ex(8)]);
-  assert.match(byKey.review.task, /Deliverable: \/t\/d\/out\.md/);
+  assert.match(byKey.review.task, /Deliverable: \/t\/d\/summary\.md/);
 
   assert.match(byKey["search-gap-pricing"].task, /Question: Price\?/);
   assert.deepEqual(
@@ -174,12 +174,12 @@ function assertUniqueOutputs(f) {
   assert.match(byKey["extract-9"].task, /Angle: gap-pricing/);
 
   assert.deepEqual(files("synthesis-update"), [ex(9)]);
-  assert.equal(byKey["synthesis-update"].output, "/t/d/out.updated.md");
-  assert.match(byKey["synthesis-update"].task, /Update the existing output at \/t\/d\/out\.md .* write the full updated document to \/t\/d\/out\.updated\.md\./);
+  assert.equal(byKey["synthesis-update"].output, "/t/d/summary.updated.md");
+  assert.match(byKey["synthesis-update"].task, /Update the existing output at \/t\/d\/summary\.md .* write the full updated document to \/t\/d\/summary\.updated\.md\./);
   assertUniqueOutputs(f);
 
   assert.deepEqual(receipt, {
-    output: "/t/d/out.updated.md",
+    output: "/t/d/summary.updated.md",
     sources: { ok: 8, failed: 3, over_cap: 0 },
     healed: [],
     decide: [],
@@ -216,28 +216,28 @@ function assertUniqueOutputs(f) {
     }
     throw new Error(`unexpected agent ${item.agent}`);
   });
-  const receipt = await run(f.runs, { dir: "/t/e", goal: "G", output: "/t/e/out.md", format: "a table", maxSources: 3 });
+  const receipt = await run(f.runs, { dir: "/t/e", goal: "G", output: "/elsewhere/out.md", format: "a table" });
 
   assert.deepEqual(keys(f.batches), [
     ["angles"],
     ["search-a", "search-b", "search-c", "search-d"],
-    ["extract-0", "extract-1", "extract-2"],
+    ["extract-0", "extract-1", "extract-2", "extract-3"],
     ["extract-0a", "extract-0b"],
     ["synthesis"],
     ["review"],
   ]);
   const synth = f.items().find((i) => i.key === "synthesis");
   assert.match(synth.task, /Requested output: a table/);
-  assert.equal(synth.output, "/t/e/out.md");
+  assert.equal(synth.output, "/t/e/summary.md");
   assertUniqueOutputs(f);
   assert.deepEqual(receipt, {
-    output: "/t/e/out.md",
-    sources: { ok: 2, failed: 0, over_cap: 1 },
+    output: "/t/e/summary.md",
+    sources: { ok: 3, failed: 0, over_cap: 1 },
     healed: [],
     decide: [],
     open: ["source https://example.com/a/0: over_cap"],
     gap_round: false,
-    children: 12,
+    children: 13,
   });
 }
 
@@ -248,7 +248,7 @@ function assertUniqueOutputs(f) {
     if (item.agent === "planner") return failed(item.key, "503");
     return ok(item.key, urlList([]));
   });
-  const receipt = await run(f.runs, { dir: "/t/f", goal: "G", output: "/t/f/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/f", goal: "G" });
   assert.deepEqual(keys(f.batches), [["angles"], ["angles-retry"], ["search-main"]]);
   assert.match(f.batches[2][0].task, /Question: G$/m);
   assert.equal(f.batches[1][0].output, "/t/f/angles.retry.md");
@@ -296,7 +296,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
 // leaves no output and no review.
 {
   const f = small({ synth: () => "engine" });
-  const receipt = await run(f.runs, { dir: "/t/g", goal: "G", output: "/t/g/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/g", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(-3), [["synthesis"], ["synthesis-retry"], ["diagnose-1"]]);
   const d = f.batches.at(-1)[0];
   assert.equal(d.agent, "reviewer");
@@ -308,17 +308,17 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.deepEqual(receipt.open, ["the synthesizer failed, so there is no output"]);
   assert.deepEqual(receipt.decide, [{ id: null, step: "synthesize", question: "a person has to choose", diagnosis: "/t/g/diagnosis-1.md" }]);
   assert.equal(receipt.children, 6);
-  assert.equal(f.batches[f.batches.length - 2][0].output, "/t/g/out.retry.md");
+  assert.equal(f.batches[f.batches.length - 2][0].output, "/t/g/summary.retry.md");
   assertUniqueOutputs(f);
 }
 
 // One that says retry runs the synthesis once more, beside the first output.
 {
   const f = small({ synth: (key) => (key === "synthesis-2" ? undefined : "engine"), diagnose: () => diagnosis("retry", "the engine restarted") });
-  const receipt = await run(f.runs, { dir: "/t/g", goal: "G", output: "/t/g/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/g", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(-4), [["synthesis-retry"], ["diagnose-1"], ["synthesis-2"], ["review"]]);
-  assert.equal(f.batches.at(-2)[0].output, "/t/g/out.2.md");
-  assert.equal(receipt.output, "/t/g/out.2.md");
+  assert.equal(f.batches.at(-2)[0].output, "/t/g/summary.2.md");
+  assert.equal(receipt.output, "/t/g/summary.2.md");
   assert.deepEqual(receipt.healed, [{ id: null, step: "synthesize", action: "retry", reason: "the engine restarted" }]);
   assertUniqueOutputs(f);
 }
@@ -330,7 +330,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
     review: (key) => (key === "review" ? { ok: true, verdict: "invalid", clean: false, angles: [{ id: "x", question: "X?" }] } : undefined),
     diagnose: () => diagnosis("continue", "the verdict is under a title", { verdict: "clean" }),
   });
-  const receipt = await run(f.runs, { dir: "/t/h", goal: "G", output: "/t/h/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/h", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(4, 7), [["review"], ["diagnose-1"], ["search-gap-x"]]);
   assert.equal(f.batches[5][0].gate.command, "recipe-gate diagnosis '/t/h/diagnosis-1.md' --allow 'continue,retry,decide' --verdict yes");
   assert.equal(receipt.gap_round, true);
@@ -346,7 +346,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
         : { ok: true, verdict: "clean", clean: true, angles: [] },
     diagnose: () => diagnosis("retry", "the quote was wrong"),
   });
-  await run(f.runs, { dir: "/t/h", goal: "G", output: "/t/h/out.md" });
+  await run(f.runs, { dir: "/t/h", goal: "G" });
   const d = f.batches[keys(f.batches).findIndex((k) => k[0] === "diagnose-1")][0];
   assert.equal(d.gate.command, "recipe-gate diagnosis '/t/h/diagnosis-1.md' --allow 'retry,decide'");
   assert.match(d.task, /What went wrong: the review quotes text not found in the cited files: \/t\/h\/findings\/a\.md:4/);
@@ -360,7 +360,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
     review: (key) => (key.startsWith("review-2") ? { ok: true, verdict: "clean", clean: true, angles: [] } : "boom"),
     diagnose: () => diagnosis("retry", "an engine error"),
   });
-  const receipt = await run(f.runs, { dir: "/t/i", goal: "G", output: "/t/i/out.md" }, (v) => emits.push(JSON.parse(JSON.stringify(v))));
+  const receipt = await run(f.runs, { dir: "/t/i", goal: "G" }, (v) => emits.push(JSON.parse(JSON.stringify(v))));
   assert.deepEqual(keys(f.batches).slice(4), [["review"], ["review-retry"], ["diagnose-1"], ["review-2"]]);
   assert.equal(f.batches[7][0].output, "/t/i/review.2.md");
   assert.deepEqual(receipt.open, []);
@@ -374,7 +374,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
 // A review whose verdict gate did not run is an open line, not a diagnosis.
 {
   const f = small({ review: () => undefined });
-  const receipt = await run(f.runs, { dir: "/t/k", goal: "G", output: "/t/k/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/k", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(4), [["review"]]);
   assert.ok(!keys(f.batches).some((k) => k[0].startsWith("diagnose-")));
   assert.deepEqual(receipt.open, ["the review's verdict gate did not run"]);
@@ -387,41 +387,40 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
     review: (key) => (key === "review" ? { ok: true, verdict: "invalid", clean: false, angles: [{ id: "stale", question: "Stale?" }] } : undefined),
     diagnose: () => diagnosis("retry", "read it again"),
   });
-  const receipt = await run(f.runs, { dir: "/t/m", goal: "G", output: "/t/m/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/m", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(4), [["review"], ["diagnose-1"], ["review-2"]]);
   assert.deepEqual(receipt.open, ["the review's verdict gate did not run"]);
   assert.equal(receipt.gap_round, false);
 }
 
-// A reviewer that hands off without an unread list is not continued: its
-// partial file is not read as a verdict and the usual diagnosis follows.
+// A reviewer that hands off with nothing unread is taken as it stands: its
+// review is read for the verdict and no diagnosis follows.
 {
+  const clean = { ok: true, verdict: "clean", clean: true, angles: [] };
   const f = small({
-    review: (key) => (key === "review" ? { result: { handoff: { line: "handoff: out of budget", unread: [], note: null } } } : { ok: true, verdict: "clean", clean: true, angles: [] }),
-    diagnose: () => diagnosis("decide", "a person has to choose"),
+    review: (key) => (key === "review" ? { result: { structuredOutput: clean, handoff: { line: "handoff: out of budget", unread: [], note: null } } } : clean),
   });
-  const receipt = await run(f.runs, { dir: "/t/j", goal: "G", output: "/t/j/out.md" });
-  assert.deepEqual(keys(f.batches).slice(4), [["review"], ["diagnose-1"]]);
-  assert.match(f.batches.at(-1)[0].task, /handed off without listing unread input/);
+  const receipt = await run(f.runs, { dir: "/t/j", goal: "G" });
+  assert.deepEqual(keys(f.batches).slice(4), [["review"]]);
   assert.equal(receipt.gap_round, false);
-  assert.ok(!receipt.open.some((o) => /review verdict/.test(o)));
-  assert.equal(receipt.decide.length, 1);
+  assert.deepEqual(receipt.open, []);
+  assert.equal(receipt.decide.length, 0);
 }
 
 // A synthesizer that hands off with two unread extracts is continued as two
 // parts and a merge; the merged file is the deliverable.
 {
   const f = small({
-    synth: (key) => (key === "synthesis" ? { result: { handoff: { line: "handoff: half read", unread: ["/t/k/raw/extract/extract-1.md", "/t/k/raw/extract/extract-2.md"], note: "/t/k/out.md" } } } : undefined),
+    synth: (key) => (key === "synthesis" ? { result: { handoff: { line: "handoff: half read", unread: ["/t/k/raw/extract/extract-1.md", "/t/k/raw/extract/extract-2.md"], note: "/t/k/summary.md" } } } : undefined),
   });
-  const receipt = await run(f.runs, { dir: "/t/k", goal: "G", output: "/t/k/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/k", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(3, 7), [["synthesis"], ["synthesis-part-1"], ["synthesis-part-2"], ["synthesis-merge"]]);
   const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
   assert.match(byKey["synthesis-part-1"].task, /Read only these inputs, which it did not reach: \/t\/k\/raw\/extract\/extract-1\.md$/);
   assert.match(byKey["synthesis-part-2"].task, /did not reach: \/t\/k\/raw\/extract\/extract-2\.md$/);
-  assert.equal(byKey["synthesis-merge"].output, "/t/k/out.merged.md");
-  assert.match(byKey["synthesis-merge"].task, /out\.part-1\.md, \/t\/k\/out\.part-2\.md/);
-  assert.equal(receipt.output, "/t/k/out.merged.md");
+  assert.equal(byKey["synthesis-merge"].output, "/t/k/summary.merged.md");
+  assert.match(byKey["synthesis-merge"].task, /summary\.part-1\.md, \/t\/k\/summary\.part-2\.md/);
+  assert.equal(receipt.output, "/t/k/summary.merged.md");
   assertUniqueOutputs(f);
 }
 
@@ -435,7 +434,7 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
       return { ok: true, verdict: "clean", clean: true, angles: [] };
     },
   });
-  const receipt = await run(f.runs, { dir: "/t/l", goal: "G", output: "/t/l/out.md" });
+  const receipt = await run(f.runs, { dir: "/t/l", goal: "G" });
   assert.deepEqual(keys(f.batches).slice(4, 8), [["review"], ["review-part-1"], ["review-merge"], ["search-gap-x"]]);
   const merge = f.items().find((i) => i.key === "review-merge");
   assert.equal(merge.output, "/t/l/review.merged.md");
@@ -452,16 +451,16 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   const f = small({
     synth: (key) => (key === "synthesis" ? { result: { finalText: `handoff: half read\nunread: ${dir}/raw/extract/extract-0.md` } } : undefined),
   });
-  const receipt = await runThroughRunner(graph, f.runs, { dir, goal: "G", output: `${dir}/out.md` });
+  const receipt = await runThroughRunner(graph, f.runs, { dir, goal: "G" }, { window: 221184 });
   assert.deepEqual(keys(f.batches).slice(3, 6), [["synthesis"], ["synthesis-part-1"], ["synthesis-merge"]]);
   fs.rmSync(dir, { recursive: true, force: true });
-  assert.equal(receipt.output, `${dir}/out.merged.md`);
+  assert.equal(receipt.output, `${dir}/summary.merged.md`);
 }
 
 // A path with a quote is shell-escaped in the gate commands.
 {
   const f = fake((item) => ok(item.key, item.agent === "planner" ? { ok: true, angles: [{ id: "a b", question: "Q?" }] } : urlList([])));
-  await run(f.runs, { dir: "/tmp/it's", goal: "G", output: "/x" });
+  await run(f.runs, { dir: "/tmp/it's", goal: "G" });
   assert.equal(f.batches[0][0].gate.command, "recipe-gate angles '/tmp/it'\\''s/angles.md'");
   assert.equal(f.batches[1][0].key, "search-a-b");
   assert.equal(f.batches[1][0].gate.command, "recipe-gate urls '/tmp/it'\\''s/raw/search/search-a-b.md'");
@@ -498,7 +497,7 @@ function repoFake(locate, extract = {}) {
     { "locate-a": pathList([fileEntry("src/big.js", { start: 1, end: 101 }), fileEntry("README.md", null)]) },
     { "extract-0": extractOver("extract-0"), "extract-1": extractOver("extract-1") },
   );
-  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo", repo: "/work/r" });
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", source: "repo", repo: "/work/r" });
   assert.deepEqual(keys(f.batches).slice(0, 4), [["angles"], ["locate-a"], ["extract-0", "extract-1"], ["extract-0a", "extract-0b"]]);
   const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
   assert.equal(byKey["locate-a"].agent, "locator");
@@ -521,7 +520,7 @@ function repoFake(locate, extract = {}) {
 // both: searchers and locators run together and their finds rank together.
 {
   const f = repoFake({ "locate-a": pathList([fileEntry("src/x.js", { start: 3, end: 9 }, "primary")]) });
-  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "both", repo: "/work/r" });
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", source: "both", repo: "/work/r" });
   assert.deepEqual(keys(f.batches).slice(0, 3), [["angles"], ["search-a", "locate-a"], ["extract-0", "extract-1"]]);
   const byKey = Object.fromEntries(f.items().map((i) => [i.key, i]));
   assert.match(byKey["extract-0"].task, /File: \/work\/r\/src\/x\.js\nRange: 3-9\n/);
@@ -532,7 +531,7 @@ function repoFake(locate, extract = {}) {
 // A repository source without a repo ends the run with an open line.
 {
   const f = repoFake({});
-  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md", source: "repo" });
+  const receipt = await run(f.runs, { dir: "/t/d", goal: "G", source: "repo" });
   assert.equal(f.batches.length, 0);
   assert.equal(receipt.output, null);
   assert.deepEqual(receipt.open, ["a repository source needs the repo argument"]);
@@ -549,7 +548,7 @@ function repoFake(locate, extract = {}) {
   };
   const f = fake(respond);
   const views = [];
-  await assert.rejects(run(f.runs, { dir: "/t/d", goal: "G", output: "/t/d/out.md" }, (v) => views.push(v)), { name: "RunStopped" });
+  await assert.rejects(run(f.runs, { dir: "/t/d", goal: "G" }, (v) => views.push(v)), { name: "RunStopped" });
   assert.deepEqual(keys(f.batches), [["angles"], ["search-a"], ["extract-0", "extract-1"]]);
   assert.ok(views.every((v) => !v.sources || v.sources.failed === 0), "an interrupted source was counted as failed");
   assert.ok(views.every((v) => v.stage !== "finished"));

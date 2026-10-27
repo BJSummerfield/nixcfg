@@ -6,13 +6,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { bigLock, procStartTime, reserveTokens, roleEstimate, semaphore } from "./limits.mjs";
+import { bigLock, procStartTime, semaphore } from "./limits.mjs";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-limits-"));
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const tick = () => wait(30);
-const sizingFile = fileURLToPath(new URL("../sizing/sizing.json", import.meta.url));
 
 function deadPid() {
   const child = spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"]);
@@ -159,66 +157,6 @@ async function pending(promise) {
   controller.abort(new Error("stopped"));
   await assert.rejects(bigLock(file, { signal: controller.signal }), /stopped/);
   assert.ok(!fs.existsSync(file));
-}
-
-// token reservations
-{
-  const dir = path.join(tmp, "inflight");
-  const first = await reserveTokens(dir, { budget: 150000, tokens: 100000, id: "a", pollMs: 20 });
-  assert.equal(fs.readFileSync(path.join(dir, `${process.pid}-a`), "utf8"), "100000");
-  const second = reserveTokens(dir, { budget: 150000, tokens: 100000, id: "b", pollMs: 20 });
-  assert.ok(await pending(second));
-  first();
-  first();
-  const releaseSecond = await second;
-  assert.ok(!fs.existsSync(path.join(dir, `${process.pid}-a`)));
-  assert.ok(fs.existsSync(path.join(dir, `${process.pid}-b`)));
-  releaseSecond();
-  assert.deepEqual(fs.readdirSync(dir), []);
-
-  const lone = await reserveTokens(dir, { budget: 150000, tokens: 200000, id: "c", pollMs: 20 });
-  lone();
-
-  const smalls = await Promise.all(
-    ["d", "e", "f"].map((id) => reserveTokens(dir, { budget: 150000, tokens: 50000, id, pollMs: 20 })),
-  );
-  assert.equal(fs.readdirSync(dir).length, 3);
-  smalls.forEach((release) => release());
-
-  const free = await Promise.all(
-    ["g", "h"].map((id) => reserveTokens(dir, { budget: null, tokens: 900000, id })),
-  );
-  free.forEach((release) => release());
-
-  let inside = 0;
-  let most = 0;
-  await Promise.all(
-    ["i", "j", "k"].map(async (id) => {
-      const release = await reserveTokens(dir, { budget: 150000, tokens: 100000, id, pollMs: 20 });
-      inside += 1;
-      most = Math.max(most, inside);
-      await wait(40);
-      inside -= 1;
-      release();
-    }),
-  );
-  assert.equal(most, 1, "only one 100000 reservation fits a 150000 budget");
-
-  const orphan = path.join(dir, `${deadPid()}-x`);
-  fs.writeFileSync(orphan, "140000");
-  const afterOrphan = await reserveTokens(dir, { budget: 150000, tokens: 100000, id: "m", pollMs: 20 });
-  assert.ok(!fs.existsSync(orphan), "a dead pid's entry is deleted");
-  afterOrphan();
-}
-
-// role estimates
-{
-  assert.equal(
-    roleEstimate(sizingFile, "scout"),
-    JSON.parse(fs.readFileSync(sizingFile, "utf8")).roles.scout.peak_p90,
-  );
-  assert.equal(roleEstimate(sizingFile, "no-such-role"), 100000);
-  assert.equal(roleEstimate(path.join(tmp, "missing.json"), "scout"), 100000);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

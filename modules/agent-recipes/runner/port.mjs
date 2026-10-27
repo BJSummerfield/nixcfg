@@ -4,14 +4,13 @@ import path from "node:path";
 
 import { runGate as defaultRunGate } from "./gate.mjs";
 import { parseHandoff } from "./handoff.mjs";
-import { bigLock as defaultBigLock, procStartTime, reserveTokens as defaultReserve, roleEstimate, semaphore } from "./limits.mjs";
+import { bigLock as defaultBigLock, procStartTime, semaphore } from "./limits.mjs";
 import { killTree } from "./tree-kill.mjs";
 import { makeWorktree, removeWorktree, worktreeState } from "./worktree.mjs";
 
 const DEFAULT_STATE_DIR = "/var/tmp/recipe-runner";
 const WRITER_STOP = /^\s*(failed|blocked)\s*:/i;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-const HARNESS_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const EMPTY_USAGE = { prompt: 0, cached: 0, output: 0, peakContext: 0, turns: 0, compactions: 0 };
 
 const HANDOFF_NOTE_BYTES = 1048576;
@@ -142,13 +141,11 @@ export function createPort(opts) {
     config = {},
     harnessName = "pi",
     harness,
-    loadHarness,
     replay = [],
     maxChildren = 200,
     defaultTimeoutMs = 1200000,
     signal,
     onBoard,
-    keepWorktrees = true,
     deps = {},
   } = opts;
   const stateDir = config.stateDir ?? DEFAULT_STATE_DIR;
@@ -156,28 +153,10 @@ export function createPort(opts) {
   const runGate = deps.runGate ?? defaultRunGate;
   const worktrees = deps.worktrees ?? { make: makeWorktree, state: worktreeState, remove: removeWorktree };
   const bigLock = deps.bigLock ?? defaultBigLock;
-  const reserveTokens = deps.reserveTokens ?? defaultReserve;
   const now = deps.now ?? Date.now;
   const lookupRun = deps.lookupRun ?? defaultLookup(stateDir);
   const newRunId =
     deps.newRunId ?? ((item) => `r${stamp(now())}-${randomBytes(3).toString("hex")}-${slug(item.key)}`);
-  const harnessLoader =
-    loadHarness ??
-    ((name) =>
-      import(new URL(`./harness/${name}.mjs`, import.meta.url).href).then(
-        (module) => module,
-        (error) => {
-          throw new Error(`cannot load the harness ${name}: ${error?.message ?? error}`);
-        },
-      ));
-  const loadedHarnesses = new Map();
-  const harnessFor = (name) => {
-    if (name === harnessName) return Promise.resolve(harness);
-    if (!HARNESS_NAME.test(String(name))) return Promise.reject(new Error(`bad harness name: ${name}`));
-    if (!loadedHarnesses.has(name))
-      loadedHarnesses.set(name, Promise.resolve().then(() => harnessLoader(name)));
-    return loadedHarnesses.get(name);
-  };
   const log = path.join(runDir, "children.jsonl");
   const slots = semaphore(concurrency);
   let spawned = 0;
@@ -281,16 +260,6 @@ export function createPort(opts) {
       const gate = await gateWithRerun(item, runId, gateCwd, undefined);
       if (stopped()) return aborted("run stopped during the gate");
 
-      if (made && !keepWorktrees) {
-        const state = worktrees.state(made.worktree, base);
-        if (state.exists && state.clean && state.commits === 0) {
-          if (worktrees.remove(made.worktree).ok) {
-            worktree = null;
-            branch = null;
-          }
-        }
-      }
-
       const ok = gate.value !== undefined;
       const result = {
         ok,
@@ -325,7 +294,6 @@ export function createPort(opts) {
     if (!roleName) return skipped("item names no role");
     const role = config.roles?.[roleName];
     if (!role) return skipped(`unknown role: ${roleName}`);
-    const chosenHarness = role.harness ?? harnessName;
     if (spawned >= maxChildren) return skipped(`child limit reached (${maxChildren})`);
     spawned += 1;
 
@@ -342,25 +310,9 @@ export function createPort(opts) {
     try {
       releases.push(await slots.acquire());
       if (stopped()) return aborted();
-      let module;
-      try {
-        module = await harnessFor(chosenHarness);
-      } catch (error) {
-        return bare("failed", error?.message ?? String(error), { runId });
-      }
-      if (item.big && module.usesEngine !== false) {
+      if (item.big && harness.usesEngine !== false) {
         releases.push(
           await bigLock(path.join(stateDir, "big.lock"), { signal, holderChildGone: childOfHolder(stateDir) }),
-        );
-      }
-      if (config.inFlightTokens) {
-        releases.push(
-          await reserveTokens(path.join(stateDir, "inflight"), {
-            budget: config.inFlightTokens,
-            tokens: roleEstimate(config.sizing, roleName),
-            id: runId,
-            signal,
-          }),
         );
       }
       if (stopped()) return aborted();
@@ -397,7 +349,7 @@ export function createPort(opts) {
         cwd: childCwd,
         sessionDir,
         sessionId,
-        timeoutMs: item.maxRuntimeMs ?? defaultTimeoutMs,
+        timeoutMs: item.maxRuntimeMs ?? role.timeoutMs ?? defaultTimeoutMs,
         env: {
           ...(opts.env ?? {}),
           RECIPE_ROLE: roleName,
@@ -444,7 +396,7 @@ export function createPort(opts) {
           key: item.key,
           runId,
           role: roleName,
-          harness: chosenHarness,
+          harness: harnessName,
           cwd: childCwd,
           worktree,
           branch,
@@ -463,7 +415,7 @@ export function createPort(opts) {
 
       let outcome;
       try {
-        outcome = await module.start(spec);
+        outcome = await harness.start(spec);
       } catch (error) {
         outcome = {
           status: stopped() ? "aborted" : "failed",
@@ -548,16 +500,6 @@ export function createPort(opts) {
         if (stopped()) return aborted("run stopped during the gate");
       }
 
-      if (made && !keepWorktrees) {
-        const state = worktrees.state(made.worktree, base);
-        if (state.exists && state.clean && state.commits === 0) {
-          if (worktrees.remove(made.worktree).ok) {
-            worktree = null;
-            branch = null;
-          }
-        }
-      }
-
       const result = {
         ok: status === "done",
         status,
@@ -632,6 +574,7 @@ export function createPort(opts) {
 
   return {
     runOne,
+    window: config.window,
     runMany: (items) => Promise.all(items.map(runOne)),
     emit: (view) => onBoard?.(view),
   };

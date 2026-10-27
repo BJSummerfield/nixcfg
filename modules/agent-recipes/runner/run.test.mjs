@@ -162,7 +162,7 @@ try {
   {
     const config = loadConfig({ RECIPE_RUNNER_CONFIG: configFile });
     assert.equal(config.concurrency, 2);
-    assert.equal(config.inFlightTokens, null);
+    assert.equal(config.window, 221184);
     const missing = path.join(tmp, "nothing.json");
     assert.throws(() => loadConfig({ RECIPE_RUNNER_CONFIG: missing }), /cannot read the runner config/);
     const bare = path.join(tmp, "bare.json");
@@ -171,6 +171,8 @@ try {
     assert.equal(defaults.worktreeDir, "/var/tmp/pi-worktrees");
     assert.equal(defaults.stateDir, "/var/tmp/recipe-runner");
     assert.equal(defaults.concurrency, 3);
+    assert.equal(defaults.window, 221184);
+    assert.equal(defaults.inFlightTokens, undefined);
   }
 
   // A foreground run writes status, board and receipt.
@@ -370,6 +372,8 @@ try {
   }
 
   // dispatch: one child through the same port.
+  const briefFile = path.join(tmp, "brief.md");
+  fs.writeFileSync(briefFile, "x");
   {
     const dir = path.join(tmp, "dispatch");
     const resultFile = path.join(tmp, "result.json");
@@ -377,11 +381,10 @@ try {
       "dispatch",
       "--role",
       "scout",
-      "--brief",
-      "x",
+      "--brief-file",
+      briefFile,
       "--gate",
       String.raw`echo {\"ok\":true}`,
-      "--gate-json",
       "--dir",
       dir,
       "--result-file",
@@ -394,26 +397,24 @@ try {
     assert.deepEqual(readJson(resultFile).structuredOutput, { ok: true });
     assert.ok(fs.existsSync(path.join(dir, "children.jsonl")));
 
-    const unknown = json(cli(["dispatch", "--role", "nobody", "--brief", "x"]).stdout);
+    const unknown = json(cli(["dispatch", "--role", "nobody", "--brief-file", briefFile]).stdout);
     assert.equal(unknown.status, "skipped");
   }
 
-  // dispatch with a worktree: removed when untouched, kept on request.
+  // dispatch with a worktree: the worktree is kept.
   {
     const repo = path.join(tmp, "repo");
     fs.mkdirSync(repo);
     const git = (...args) => spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
     git("init", "-q");
     git("commit", "-q", "--allow-empty", "-m", "base");
-    const removed = json(cli(["dispatch", "--role", "scout", "--brief", "x", "--worktree", "--cwd", repo]).stdout);
-    assert.equal(removed.status, "done");
-    assert.equal(removed.worktree, null);
-    const kept = json(cli(["dispatch", "--role", "scout", "--brief", "x", "--worktree", "--keep-worktree", "--cwd", repo]).stdout);
+    const kept = json(cli(["dispatch", "--role", "scout", "--brief-file", briefFile, "--worktree", "--cwd", repo]).stdout);
     assert.ok(kept.worktree && fs.existsSync(kept.worktree));
     assert.match(kept.branch, /^recipe\//);
   }
 
   // Usage errors exit 2.
+  assert.equal(cli(["run", "tiny", "--args", "{}", "--max-children", "3"]).code, 2);
   assert.equal(cli(["nonsense"]).code, 2);
   assert.equal(cli(["run", "tiny"]).code, 2);
 } finally {

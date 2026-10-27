@@ -16,11 +16,10 @@ Parameters, from the request:
   have a clean working tree, because the runner refuses to make task
   worktrees from a dirty source checkout.
 - optional: `branch` (name of the integration branch, default
-  `implement/<name of the plan directory>`), `limit` and `sizing` (as in the
-  plan skill, for the plan check), `childTimeoutMs`, `bigTimeoutMs`.
-- resume (boolean): continue a run that stopped, from the branches and
-  reviews it left in the plan directory. `answers` (optional, task id to
-  text) gives the user's decision for a task that was set aside.
+  `implement/<name of the plan directory>`), `resume` (boolean: continue a
+  run that stopped, from the branches and reviews it left in the plan
+  directory), `answers` (task id to text: the user's decision for a task that
+  was set aside).
 
 The plan directory is also the task directory. The run writes into it, next
 to the plan:
@@ -63,80 +62,75 @@ branch>` removes them on request (`--keep a,b` keeps branches).
 ## What runs
 
 1. The plan gate `recipe-gate plan` is a gate-only step: the runner runs it
-   without a child. It checks sizes, file ownership, dependencies and that
-   every task has a check. A plan that is not ok is refused
-   with the check's findings in the receipt, before any worktree exists.
-   Then `recipe-gate pin` fixes the run's base: the repository's HEAD commit
-   and a ref to it, written to `<dir>/run.json`. Every task starts from that
-   base, so the checkout may move while the run goes on.
-   Pin and resume are gate-only steps too. With `resume`, the runner then runs `recipe-gate resume`,
-   which reads the ledger and the review files: a task whose branch has a
-   clean review (or is already merged into the integration branch, or was
-   tidied after it merged) is done and never launched again; a task whose
-   branch exists and has any other review, or none, starts from that branch
-   with a brief line to continue it, and
-   its review files number on from the highest one found; a task whose branch
-   is gone and which is not merged starts fresh with an `open` line; a task
-   named in `answers` gets the line `Decision from the user: <text>` and is
-   launched even if it was set aside before, and an answer for an id outside
-   the plan is an `open` line. Every merge of a resumed run passes
-   `--refresh yes`, so the merge worktrees take the branches' current tips. A
-   continued task's dependency merge is made as for a fresh task, so its
-   `--base` is the dependencies' merge head and its own branch is only the
-   worktree's base ref. A dependency that is gone and merged is left out of the
-   tips and the merge is made `--onto refs/heads/<integration branch>`. When
-   every finished task is gone, the integration merge and gate are skipped
-   and the receipt's `open` says there is nothing new to integrate.
-   A resume gate that fails adds an `open` line and the run goes on as a
-   fresh run.
+   without a child. It checks sizes, file ownership, dependencies and that every
+   task has a check. A plan that is not ok is refused with the check's findings
+   in the receipt, before any worktree exists. Then `recipe-gate pin` fixes the
+   run's base: the repository's HEAD commit and a ref to it, written to
+   `<dir>/run.json`. Every task starts from that base, so the checkout may move
+   while the run goes on. Pin and resume are gate-only steps too. With `resume`,
+   the runner then runs `recipe-gate resume`, which reads the ledger and the
+   review files: a task whose branch has a clean review (or is already merged
+   into the integration branch, or was tidied after it merged) is done and never
+   launched again; a task whose branch exists and has any other review, or none,
+   starts from that branch with a brief line to continue it, and its review
+   files number on from the highest one found; a task whose branch is gone and
+   which is not merged starts fresh with an `open` line; a task named in
+   `answers` gets the line `Decision from the user: <text>` and is launched even
+   if it was set aside before, and an answer for an id outside the plan is an
+   `open` line. Every merge of a resumed run passes `--refresh yes`, so the
+   merge worktrees take the branches' current tips. A continued task's
+   dependency merge is made as for a fresh task, so its `--base` is the
+   dependencies' merge head and its own branch is only the worktree's base ref.
+   A dependency that is gone and merged is left out of the tips and the merge is
+   made `--onto refs/heads/<integration branch>`. When every finished task is
+   gone, the integration merge and gate are skipped and the receipt's `open`
+   says there is nothing new to integrate. A resume gate that fails adds an
+   `open` line and the run goes on as a fresh run.
 2. Tasks are ordered by `depends` into waves. A task runs once everything it
-   depends on has finished; a task whose dependency was set aside or skipped
-   is skipped. Within a wave the tasks run in parallel, three at a time at
-   most.
+   depends on has finished; a task whose dependency was set aside or skipped is
+   skipped. Within a wave the tasks run in parallel, three at a time at most.
 3. A task with dependencies first gets a worktree at `<dir>/deps/<id>` on its
    own branch, made by `recipe-gate merge`, which merges the dependencies'
-   branches into the base. No model merges: a conflict goes to a resolver
-   (step 7). Then an implementer in a worktree whose branch already holds
-   the dependencies reads the research notes under
-   `<plan dir>/research/<id>/` when the task asks a `research` question,
-   makes its change, commits it and writes its report. `recipe-gate task`
-   then runs in that worktree and reports the branch, the commits since the
-   task's base, the files changed outside `owns`, whether anything is
-   uncommitted and the result of the task's check run once more. A report
-   that says `blocked` or `failed` goes to a diagnosis (step 8).
-   An implementer that reaches its context budget stops with a note whose
-   first line is `handoff:`, after committing what it did. The script
-   relays it: a fresh implementer starts on the first one's branch and is
-   told to continue from the note and not to redo the committed work (the
-   brief has no note line when the child was cut off before writing one).
-   Relays go on while each one commits something new and loads its context
-   cheaply. A task is split instead when it has been relayed twice, when a
-   relay committed nothing, or when a relay spent over half its budget just
-   loading context. A planner child, checked by the plan check, writes two
-   or more independent pieces that start from the branch and are each
-   smaller than the task. The pieces are tasks of the same wave: they run
-   with the others, each in its own worktree, and are not reviewed on their
-   own. When all are done, `recipe-gate merge` joins them onto the task's
-   branch and one reviewer reads the whole diff from the task's base. A task
-   is split at most twice, counting its pieces. A task goes to the user
-   instead, as a question, when the same remainder comes back, when a piece
+   branches into the base. No model merges: a conflict goes to a resolver (step
+   7). Then an implementer in a worktree whose branch already holds the
+   dependencies reads the research notes under `<plan dir>/research/<id>/` when
+   the task asks a `research` question, makes its change, commits it and writes
+   its report. `recipe-gate task` then runs in that worktree and reports the
+   branch, the commits since the task's base, the files changed outside `owns`,
+   whether anything is uncommitted and the result of the task's check run once
+   more. A report that says `blocked` or `failed` goes to a diagnosis (step 8).
+   An implementer that reaches its context budget stops with a note whose first
+   line is `handoff:`, after committing what it did. The script relays it: a
+   fresh implementer starts on the first one's branch and is told to continue
+   from the note and not to redo the committed work (the brief has no note line
+   when the child was cut off before writing one). Relays go on while each one
+   commits something new and loads its context cheaply. A task is split instead
+   when it has been relayed twice, when a relay committed nothing, or when a
+   relay spent over half its budget just loading context. A planner child,
+   checked by the plan check, writes two or more independent pieces that start
+   from the branch and are each smaller than the task. The pieces are tasks of
+   the same wave: they run with the others, each in its own worktree, and are
+   not reviewed on their own. When all are done, `recipe-gate merge` joins them
+   onto the task's branch and one reviewer reads the whole diff from the task's
+   base. A task is split at most twice, counting its pieces. A task goes to the
+   user instead, as a question, when the same remainder comes back, when a piece
    hands off with nothing committed, when the pieces are not smaller than the
-   task, when a piece cannot be joined, or when a third split would be
-   needed. Only the task, not its pieces, is integrated in step 6.
+   task, when a piece cannot be joined, or when a third split would be needed.
+   Only the task, not its pieces, is integrated in step 6.
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
-   branch, a new one for every review round (made by the runner under its worktree root), reads
-   the branch's own diff, runs the check there and never touches the
-   implementer's worktree. Its blocking findings carry reproductions, and
-   `recipe-gate findings` re-runs them in the review worktree at head
-   (and records that worktree); its verdict decides. On needs-work, or when the task gate was
-   red, a fresh implementer starts in a new worktree of the task's
-   branch with the reproduced findings, each with its command or patch and
-   output, and the unreproduced ones as advice, and fixes them in new commits; then a fresh
-   review. At most two fix rounds; a task still not clean goes to a diagnosis. Other tasks go
-   on. A fix implementer that hands off is relayed like any implementer,
-   with the findings. A needs-work verdict
-   on the joined pieces of a split task starts a fresh implementer on the
-   joined branch, with the findings; it counts as a fix round.
+   branch, a new one for every review round (made by the runner under its
+   worktree root), reads the branch's own diff, runs the check there and never
+   touches the implementer's worktree. Its blocking findings carry
+   reproductions, and `recipe-gate findings` re-runs them in the review worktree
+   at head (and records that worktree); its verdict decides. On needs-work, or
+   when the task gate was red, a fresh implementer starts in a new worktree of
+   the task's branch with the reproduced findings, each with its command or
+   patch and output, and the unreproduced ones as advice, and fixes them in new
+   commits; then a fresh review. At most two fix rounds; a task still not clean
+   goes to a diagnosis. Other tasks go on. A fix implementer that hands off is
+   relayed like any implementer, with the findings. A needs-work verdict on the
+   joined pieces of a split task starts a fresh implementer on the joined
+   branch, with the findings; it counts as a fix round.
 5. After the first clean review, a fresh mutator in its own worktree of the
    task's branch breaks up to 10 changed non-test lines one at a time, runs the
    check after each and reports the uncaught ones as patches in
@@ -150,48 +144,47 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    clean verdict ends the task. With no survivor the task is done. The mutator
    runs once per task and never on a piece, and not for a task resumed with a
    clean review. When the fix rounds are already used up, confirmed survivors
-   get no fix round and become an `open` line. A mutator that fails or whose gate gives no verdict is an `open`
-   line, not a diagnosis.
+   get no fix round and become an `open` line. A mutator that fails or whose
+   gate gives no verdict is an `open` line, not a diagnosis.
 6. The finished branches that no other finished task builds on are merged by
-   `recipe-gate merge` into the integration worktree `<dir>/integration`,
-   branch `implement/<name of the plan directory>`, made from the base ref;
-   the checkout does not move. Then one implementer with a brief (no
-   worktree of its own) runs the plan's heavy checks once from that
-   worktree, under the box-wide lock, and writes `pr.md` and `heavy.md`.
-   `recipe-gate integrate` then confirms every finished branch is in the
-   branch, nothing is uncommitted, `pr.md` is not empty and the heavy checks
-   passed or were not needed, and with that it tidies (above); a worktree or
-   branch it could not remove is an `open` line. Nothing here merges into
-   the main branch or pushes. A gate that did not run (no verdict came back)
-   is run once more by the runner; if it still does not run, it becomes an `open` line, not a diagnosis.
+   `recipe-gate merge` into the integration worktree `<dir>/integration`, branch
+   `implement/<name of the plan directory>`, made from the base ref; the
+   checkout does not move. Then one implementer with a brief (no worktree of its
+   own) runs the plan's heavy checks once from that worktree, under the box-wide
+   lock, and writes `pr.md` and `heavy.md`. `recipe-gate integrate` then
+   confirms every finished branch is in the branch, nothing is uncommitted,
+   `pr.md` is not empty and the heavy checks passed or were not needed, and with
+   that it tidies (above); a worktree or branch it could not remove is an `open`
+   line. Nothing here merges into the main branch or pushes. A gate that did not
+   run (no verdict came back) is run once more by the runner; if it still does
+   not run, it becomes an `open` line, not a diagnosis.
 7. A merge that conflicts stops with the conflict named; a resolver (an
-   implementer with a brief, no task file) is sent into that worktree, where
-   the merge is already started. It edits only the conflicted files, runs
-   `git add` and `git commit --no-edit`, runs the conflicting task's check
-   and reports; it starts no other merge operation. The merge gate then runs
-   again. A resolver that leaves the same conflict, or a third conflict
-   that is still open, ends in `open` and a question for the user.
-8. A child that fails by itself is retried once. Whatever the script cannot accept goes to a diagnose
-   child (a fresh reviewer, diagnosis variant) at once, for that task only:
-   a child that failed twice, a `blocked` or `failed` report, a review with no verdict
-   that cannot be read, a task still not clean after two fix rounds, an
-   integration the check does not accept. It reads the evidence and picks one
-   action that `recipe-gate diagnosis` checks against the actions allowed at
-   that step: `retry`, `fix` (one more round, a fresh implementer
-   with its brief), `replan` (a fresh implementer in a new worktree with a
-   revised brief, and files it may add to `owns` when no task outside its
-   dependencies owns them) or `decide`. Each task gets at most two
-   diagnoses, and the same diagnosis twice counts as `decide`. A `decide`
-   sets the task aside and goes in the receipt as a question for the user;
-   tasks that depend on it are skipped. Relay, split, piece and join steps
-   are bounded by the limits in step 3 and do not count as review or fix
-   rounds; a wave that splits a task gets four more rounds. A resolver that
-   hands off is not relayed: the merge check that follows it still sees the
-   conflict, and the limit of three resolvers ends it.
-9. After every round the script emits a board (each task's state, next step,
-   fix rounds and diagnoses, what healed, what needs a decision);
-   `recipe-status <plan dir>` prints it with the children still running,
-   from any shell.
+   implementer with a brief, no task file) is sent into that worktree, where the
+   merge is already started. It edits only the conflicted files, runs `git add`
+   and `git commit --no-edit`, runs the conflicting task's check and reports; it
+   starts no other merge operation. The merge gate then runs again. A resolver
+   that leaves the same conflict, or a third conflict that is still open, ends
+   in `open` and a question for the user.
+8. A child that fails by itself is retried once. Whatever the script cannot
+   accept goes to a diagnose child (a fresh reviewer, diagnosis variant) at
+   once, for that task only: a child that failed twice, a `blocked` or `failed`
+   report, a review with no verdict that cannot be read, a task still not clean
+   after two fix rounds, an integration the check does not accept. It reads the
+   evidence and picks one action that `recipe-gate diagnosis` checks against the
+   actions allowed at that step: `retry`, `fix` (one more round, a fresh
+   implementer with its brief), `replan` (a fresh implementer in a new worktree
+   with a revised brief, and files it may add to `owns` when no task outside its
+   dependencies owns them) or `decide`. Each task gets at most two diagnoses,
+   and the same diagnosis twice counts as `decide`. A `decide` sets the task
+   aside and goes in the receipt as a question for the user; tasks that depend
+   on it are skipped. Relay, split, piece and join steps are bounded by the
+   limits in step 3 and do not count as review or fix rounds; a wave that splits
+   a task gets four more rounds. A resolver that hands off is not relayed: the
+   merge check that follows it still sees the conflict, and the limit of three
+   resolvers ends it.
+9. After every round the script emits a board (each task's state, next step, fix
+   rounds and diagnoses, what healed, what needs a decision); `recipe-status
+   <plan dir>` prints it with the children still running, from any shell.
 
 A gate with side effects (the merges and the integration tidy) is run by the
 script only: the child it follows is not told to run it first, because the
@@ -214,17 +207,16 @@ recipe_run({
   recipe: "implement",
   args: { plan: "<plan dir>", repo: "<repo path>" },
   cwd: "<repo path>",
-  timeoutMs: 14400000,
-  maxChildren: <16 x tasks + 6>
+  timeoutMs: 14400000
 })
 ```
 
 All paths are absolute. `cwd` is the repository, so the worktrees branch from
-it. The call returns at once and this session is woken once when the run ends, so do
-not poll, sleep or check on it. Then read `<plan dir>/receipt.json`, the whole
-receipt. `recipe-status <plan dir>` shows progress from any shell, and
-after a pi restart `recipe-run wait <plan dir>` waits for the end. A stopped
-run continues with the same call plus `resume: true`.
+it. The call returns at once and this session is woken once when the run ends,
+so do not poll, sleep or check on it. Then read `<plan dir>/receipt.json`, the
+whole receipt. `recipe-status <plan dir>` shows progress from any shell, and
+after a pi restart `recipe-run wait <plan dir>` waits for the end. A stopped run
+continues with the same call plus `resume: true`.
 
 ```
 { base, branch, merged: [ids], set_aside: [{id, reason}], skipped: [ids],
@@ -239,27 +231,27 @@ run continues with the same call plus `resume: true`.
 `handoffs` is present only when a task was relayed or split. The pieces of a
 split task are listed under it in `report`, indented, and are not in `merged`;
 the branches of the implementers that were relayed are in `left` with kind
-`relay`.
-`mutations` has an entry for each task that had a mutation round: `tried` is
-the number on the mutator's `Tried:` line, `survived` the patches it reported,
-`confirmed` those the gate reproduced, `fixed` those caught after the fix
-round and `equivalent` those the fix report claimed, each with its `n` and
-reason in `claims`. `base` is the commit every task started from. `left` holds the worktrees and
-branches still in the repository, and `cleanup` is the command that removes
-them (`recipe-gate abandon <plan dir>`, keeping the integration branch once
-it passed), empty when `left` is. The integration branch is never in `left`
-after a pass.
-`heavy_check` is `pass`, `none`, `fail: <why>` or `not recorded`; `open` holds
-whatever the script could not settle, including a plan refused by its check
-and an integration that did not complete. `pr_text` is last because it is the
-longest; the full text is `<plan dir>/pr.md`.
+`relay`. `mutations` has an entry for each task that had a mutation round:
+`tried` is the number on the mutator's `Tried:` line, `survived` the patches it
+reported, `confirmed` those the gate reproduced, `fixed` those caught after the
+fix round and `equivalent` those the fix report claimed, each with its `n` and
+reason in `claims`. `base` is the commit every task started from. `left` holds
+the worktrees and branches still in the repository, and `cleanup` is the command
+that removes them (`recipe-gate abandon <plan dir>`, keeping the integration
+branch once it passed), empty when `left` is. The integration branch is never in
+`left` after a pass. `heavy_check` is `pass`, `none`, `fail: <why>` or `not
+recorded`; `open` holds whatever the script could not settle, including a plan
+refused by its check and an integration that did not complete. `pr_text` is last
+because it is the longest; the full text is `<plan dir>/pr.md`.
 
-Tell the user the branch first, then the `report` lines (one per task, in dependency-level order), then what merged, each `decide` question with
-its diagnosis file, each other set-aside task with its reason, the skipped
-tasks, the heavy-check result, the equivalence claims in `mutations`, what healed in one line each, and each `open`
-line, and point at `pr.md`. Report `left` and the `cleanup` command; do not
-run it, because the user may want those worktrees. Do not push, open the pull request or merge
-unasked, and do not answer a `decide` question for the user.
+Tell the user the branch first, then the `report` lines (one per task, in
+dependency-level order), then what merged, each `decide` question with its
+diagnosis file, each other set-aside task with its reason, the skipped tasks,
+the heavy-check result, the equivalence claims in `mutations`, what healed in
+one line each, and each `open` line, and point at `pr.md`. Report `left` and the
+`cleanup` command; do not run it, because the user may want those worktrees. Do
+not push, open the pull request or merge unasked, and do not answer a `decide`
+question for the user.
 
 ## Claude Code binding
 
@@ -267,13 +259,12 @@ The same graph runs with Claude Code children; this session only starts it and
 reads the result.
 
 ```
-recipe-run start implement --harness claude --cwd <repo path> --args '{"plan":"<plan dir>","repo":"<repo path>"}' --timeout-ms 14400000 --max-children <16 x tasks + 6>
+recipe-run start implement --harness claude --cwd <repo path> --args '{"plan":"<plan dir>","repo":"<repo path>"}' --timeout-ms 14400000
 ```
 
-All paths are absolute. It returns at once. Then run `recipe-run wait <plan dir> --timeout-ms 7000000`
-with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
-wait timed out while the run is still going: run the same wait again. On exit 0
-or 1 read `<plan dir>/receipt.json`, the
-whole receipt, and report as in the pi binding. `recipe-status <plan dir>`
-shows progress from any shell. A stopped run continues with `recipe-run resume
-<plan dir> --detach`.
+All paths are absolute. It returns at once. Then run `recipe-run wait <plan dir>
+--timeout-ms 7000000` with Bash in the background and a Bash timeout of 7200000.
+Exit 3 means the wait timed out while the run is still going: run the same wait
+again. On exit 0 or 1 read `<plan dir>/receipt.json`, the whole receipt, and
+report as in the pi binding. `recipe-status <plan dir>` shows progress from any
+shell. A stopped run continues with `recipe-run resume <plan dir> --detach`.
