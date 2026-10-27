@@ -88,9 +88,11 @@ async function bench(argv, { spawn: spawnDep, busy = false, fetchThrows = false 
   }
 }
 
-function result(verdict, ms, usage = { prompt: 1000, cached: 500, output: 200 }) {
+function result(verdict, ms, usage = { prompt: 1000, cached: 500, output: 200 }, reproduced = verdict === "needs-work" ? 1 : 0) {
   const r = { ok: true, status: "done", ms, usage };
-  if (verdict !== undefined) r.structuredOutput = { verdict };
+  if (verdict !== undefined) {
+    r.structuredOutput = { verdict, reproduced: Array.from({ length: reproduced }, (_, i) => ({ id: i })), unreproduced: [] };
+  }
   return r;
 }
 
@@ -127,8 +129,9 @@ test("argument parsing: repeated configs, the harness suffix, dispatch argv and 
     "--cwd", repo,
     "--brief-file", path.join(a, "brief.md"),
     "--output", review,
-    "--gate", `recipe-gate verdict ${review}`,
+    "--gate", `recipe-gate findings ${review} --check nix fmt --check x.nix`,
     "--gate-json",
+    "--gate-timeout-ms", "3600000",
     "--result-file", path.join(a, "result.json"),
     "--dir", a,
     "--timeout-ms", "1200000",
@@ -218,11 +221,11 @@ test("scoring: caught, missed, clean on a defect case, false alarm and invalid",
       name === "caught"
         ? { review: "the diff has an integer OVERFLOW in parse", result: result("needs-work", 180000) }
         : name === "missed"
-          ? { review: "the structure looks fine", result: result("needs-work", 120000) }
+          ? { review: "the structure looks fine", result: result("needs-work", 120000, undefined, 0) }
           : name === "cleandefect"
             ? { review: "no problems", result: result("clean", 240000) }
             : name === "control"
-              ? { review: "this change needs rework", result: result("needs-work", 60000) }
+              ? { review: "this change needs rework", result: result("needs-work", 60000, undefined, 0) }
               : { review: "the review is broken", result: result(undefined, 300000) };
   }
   const spawn = makeSpawn(resp);
@@ -280,7 +283,7 @@ test("the per-config aggregates and bench.json", async () => {
       name === "caught"
         ? { review: "an integer OVERFLOW", result: result("needs-work", 180000) }
         : name === "missed"
-          ? { review: "nothing", result: result("needs-work", 120000) }
+          ? { review: "nothing", result: result("needs-work", 120000, undefined, 0) }
           : name === "cleandefect"
             ? { review: "no problems", result: result("clean", 240000) }
             : name === "control"
@@ -378,7 +381,7 @@ test("repeats: per-case and per-config caught counts with min/max defects found"
   const out = path.join(tmp, "out-rep2");
   const resp = {
     [path.join(out, "c1", "a", "1", "review.md")]: { review: "an OVERFLOW here", result: result("needs-work", 180000) },
-    [path.join(out, "c1", "a", "2", "review.md")]: { review: "nothing here", result: result("needs-work", 60000) },
+    [path.join(out, "c1", "a", "2", "review.md")]: { review: "nothing here", result: result("needs-work", 60000, undefined, 0) },
     [path.join(out, "c2", "a", "1", "review.md")]: { review: "an OVERFLOW here", result: result("needs-work", 180000) },
     [path.join(out, "c2", "a", "2", "review.md")]: { review: "an OVERFLOW here", result: result("clean", 60000) },
   };
@@ -537,6 +540,50 @@ test("--grades overrides the regex result and marks graded defects", async () =>
   fs.writeFileSync(gradesFile, JSON.stringify({ "c1/a/1": { d1: "maybe" } }));
   const bad = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--grades", gradesFile], { spawn: makeSpawn({}) });
   assert.equal(bad.code, 2);
+});
+
+test("scoring: caught follows the reproduced findings; named keeps the regex measure", async () => {
+  const cases = writeCases(path.join(tmp, "cases-gate.json"), [oneDefect("repro"), oneDefect("regexonly")]);
+  const out = path.join(tmp, "out-gate");
+  const spawn = makeSpawn({
+    [path.join(out, "repro", "a", "1", "review.md")]: { review: "nothing matching", result: result("needs-work", 60000) },
+    [path.join(out, "regexonly", "a", "1", "review.md")]: { review: "an OVERFLOW", result: result("needs-work", 60000, undefined, 0) },
+  });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  const entry = JSON.parse(fs.readFileSync(path.join(out, "bench.json"), "utf8")).configs.a;
+  const rows = Object.fromEntries(entry.rows.map((x) => [x.case, x]));
+  assert.equal(rows.repro.caught, true);
+  assert.equal(rows.repro.named, 0);
+  assert.equal(rows.regexonly.caught, false);
+  assert.equal(rows.regexonly.named, 1);
+  for (const row of entry.rows) {
+    for (const key of ["reproduced", "unreproduced", "unrunnable", "named"]) assert.equal(typeof row[key], "number", key);
+  }
+  assert.equal(rows.repro.reproduced, 1);
+  assert.deepEqual(entry.summary.reproducedFindings, { reproduced: 1, unreproduced: 0, unrunnable: 0 });
+  assert.deepEqual(entry.summary.defectCasesCaught, { caught: 1, total: 2, share: 0.5 });
+  assert.deepEqual(entry.summary.namedCasesCaught, { caught: 1, total: 2, share: 0.5 });
+  assert.match(r.stdout, /named by regex\s+1 of 2/);
+  assert.match(r.stdout, /reproduced/);
+});
+
+test("resume: an aborted saved result is dispatched again, a done one is not", async () => {
+  const cases = writeCases(path.join(tmp, "cases-aborted.json"), [oneDefect("c1"), oneDefect("c2")]);
+  const out = path.join(tmp, "out-aborted");
+  const review = (n) => path.join(out, n, "a", "1", "review.md");
+  for (const [n, status] of [["c1", "aborted"], ["c2", "done"]]) {
+    fs.mkdirSync(path.dirname(review(n)), { recursive: true });
+    fs.writeFileSync(review(n), "old");
+    fs.writeFileSync(path.join(path.dirname(review(n)), "result.json"), JSON.stringify({ ...result("clean", 1000), status }));
+  }
+  const spawn = makeSpawn({ [review("c1")]: { review: "an OVERFLOW", result: result("needs-work", 60000) } });
+  const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
+  assert.equal(r.code, 0);
+  assert.equal(spawn.launches.length, 1);
+  assert.equal(valueAt(spawn.launches[0].args, "--output"), review("c1"));
+  const resc = await bench([cases, "--config", `a=${cfgA}`, "--out", out, "--rescore"], { spawn: makeSpawn({}), fetchThrows: true });
+  assert.equal(resc.code, 0);
 });
 
 let failed = 0;
