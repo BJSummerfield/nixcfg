@@ -138,5 +138,13 @@ const ctx = { cwd: tmp };
   assert.equal(pi.sent.length, 0);
 }
 
+{
+  const pi = fakePi();
+  recipeTools(pi, { env });
+  assert.equal("maxChildren" in pi.tools.recipe_run.parameters.properties, false);
+  assert.equal("gateJson" in pi.tools.recipe_dispatch.parameters.properties, false);
+  assert.equal("keepWorktree" in pi.tools.recipe_dispatch.parameters.properties, false);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-tools tests passed");
