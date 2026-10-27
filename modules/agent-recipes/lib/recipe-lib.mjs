@@ -87,6 +87,19 @@ export function recipeLib(rawPort) {
     return item;
   }
 
+  function gateOnly(key, command, opts) {
+    const o = opts || {};
+    const item = { key: key, agent: null, gate: { command: command, output: "json" } };
+    if (o.gateTimeoutMs !== undefined) item.gate.timeoutMs = o.gateTimeoutMs;
+    if (o.worktree !== undefined) item.worktree = o.worktree;
+    if (o.baseRef !== undefined) item.baseRef = o.baseRef;
+    return item;
+  }
+
+  function counted(item) {
+    return item.agent != null;
+  }
+
   function retryItem(item, failed) {
     const moved = sibling(item.output, "retry");
     const copy = Object.assign({}, item, {
@@ -130,7 +143,7 @@ export function recipeLib(rawPort) {
   }
 
   function launchSmall(items, runFirst) {
-    tally.children += items.length;
+    tally.children += items.filter(counted).length;
     return (runFirst || port.runMany)(items).then(function (first) {
       const merged = first.map(function (result, i) {
         return Object.assign({}, result, { file: items[i].output });
@@ -139,6 +152,7 @@ export function recipeLib(rawPort) {
       const again = [];
       const where = [];
       first.forEach(function (result, i) {
+        if (items[i].agent === null) return;
         if ((result.ok && replyRejected(items[i], result)) || (!result.ok && !stoppedItself(result))) {
           again.push(retryItem(items[i], result));
           where.push(i);
@@ -152,7 +166,7 @@ export function recipeLib(rawPort) {
         );
       };
       if (again.length === 0) return finish();
-      tally.children += again.length;
+      tally.children += again.filter(counted).length;
       return port.runMany(again).then(function (second) {
         second.forEach(function (result, j) {
           merged[where[j]] = Object.assign({}, result, { file: again[j].output });
@@ -166,9 +180,9 @@ export function recipeLib(rawPort) {
   // A big item gets the engine's window to itself: it runs alone, and so does
   // its retry.
   function launchBig(item) {
-    tally.children++;
+    if (counted(item)) tally.children++;
     return port.runOne(item).then(function (first) {
-      if ((first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
+      if (item.agent === null ||(first.ok && !replyRejected(item, first)) || stoppedItself(first)) return unreadStep(item, Object.assign({}, first, { file: item.output }));
       const again = retryItem(item, first);
       tally.children++;
       return port.runOne(again).then(function (second) {
@@ -725,6 +739,7 @@ export function recipeLib(rawPort) {
     short,
     passed,
     node,
+    gateOnly,
     retryItem,
     stoppedItself,
     launchSmall,
