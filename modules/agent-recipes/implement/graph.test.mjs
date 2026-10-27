@@ -116,14 +116,14 @@ const handedOff = (id, over = {}) => ({
 const piece = (id, over = {}) => ({ id, owns: [`lib/a/${id}`], reads: [], check: `nixfmt --check ${id}.nix`, depends: [], est: 400, file: `/t/p/split/tasks/${id}.md`, ...over });
 const splitPlan = (ids) => planOf(ids.map((id) => piece(id)));
 
-function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, fix = {}, integrate = {}, diagnose = {}, merge = {}, planner = {} } = {}) {
+function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, intake = {}, impl = {}, review = {}, integrate = {}, diagnose = {}, merge = {}, planner = {} } = {}) {
   const batches = [];
   const answer = (table, key, fallback) => {
     const given = key in table ? table[key] : fallback;
     if (given && given.result) return { runId: `run-${key}`, ...given.result };
     return typeof given === "string" ? failed(key, given) : ok(key, given);
   };
-  const idOf = (key) => key.replace(/^impl-(piece-)?/, "").replace(/-retry$/, "");
+  const idOf = (key) => (key.startsWith("impl-piece-") ? key.replace(/^impl-piece-/, "") : key.replace(/^impl-/, "").replace(/-\d+(-retry)?$/, "")).replace(/-retry$/, "");
   const integrated = (item) => {
     const pairs = item.gate.command.match(/--tasks '([^']*)'/)[1].split(",");
     const branch = item.gate.command.match(/--branch '([^']*)'/)[1];
@@ -146,13 +146,11 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
       all: async (items) => {
         batches.push(items);
         return items.map((item) => {
-          if (item.resume) return answer(fix, item.key, undefined);
           switch (item.agent) {
             case "scout":
               if (item.key.startsWith("pin")) return answer({}, item.key, pin);
               if (item.key.startsWith("resume")) return answer({}, item.key, back);
               if (/^(deps-|merge|join-)/.test(item.key)) return answer(merge, item.key, mergeGate(item));
-              if (item.key.startsWith("handoff-")) return answer(intake, item.key, handoffGate(item.key.replace(/^handoff-/, "").replace(/-\d+$/, "")));
               return answer(intake, item.key, plan);
             case "planner": {
               const parent = item.key.replace(/^split-/, "").replace(/-\d+$/, "");
@@ -206,10 +204,10 @@ function assertUniqueOutputs(f) {
     ["review-a-1"],
     ["review-b-1"],
     ["review-c-1"],
-    ["fix-b-1", "fix-c-1"],
+    ["impl-b-2", "impl-c-2"],
     ["review-b-2"],
     ["review-c-2"],
-    ["fix-c-2"],
+    ["impl-c-3"],
     ["review-c-3"],
     ["diagnose-c-1"],
     ["deps-d"],
@@ -289,16 +287,17 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(k["review-b-2"].task, /Earlier review/);
   assert.match(k["review-b-2"].task, /^Review a diff on a branch \(the diff variant\)\./m);
 
-  assert.equal(k["fix-b-1"].resume, "run-impl-b");
-  assert.equal(k["fix-b-1"].agent, undefined);
-  assert.equal(k["fix-b-1"].gate, undefined);
-  assert.equal(k["fix-b-1"].output, "/t/p/fix-b-1.md");
-  assert.match(k["fix-b-1"].task, /^Fix round 1 of 2\.$/m);
-  assert.match(k["fix-b-1"].task, /worktree \/wt\/b on branch pi\/b/);
-  assert.match(k["fix-b-1"].task, /The review at \/t\/p\/review-b-1\.md found blocking problems\./);
-  assert.equal(k["fix-c-1"].resume, "run-impl-c");
-  assert.equal(k["fix-c-2"].resume, "run-fix-c-1");
-  assert.match(k["fix-c-2"].task, /^Fix round 2 of 2\.$/m);
+  assert.equal(k["impl-b-2"].agent, "implementer");
+  assert.equal(k["impl-b-2"].resume, undefined);
+  assert.equal(k["impl-b-2"].handoffOf, undefined);
+  assert.equal(k["impl-b-2"].worktree, true);
+  assert.equal(k["impl-b-2"].baseRef, "refs/heads/pi/b");
+  assert.match(k["impl-b-2"].gate.command, /^recipe-gate task '\/t\/p\/impl-b-2\.md'/);
+  assert.equal(k["impl-b-2"].output, "/t/p/impl-b-2.md");
+  assert.match(k["impl-b-2"].task, /^Continue this task; the branch pi\/b holds the committed work, so build on it and do not redo it\.$/m);
+  assert.match(k["impl-b-2"].task, /The review at \/t\/p\/review-b-1\.md found blocking problems\./);
+  assert.equal(k["impl-c-3"].resume, undefined);
+  assert.equal(f.items().filter((i) => i.resume).length, 0);
 
   assert.equal(k.integrate.agent, "implementer");
   assert.equal(k.integrate.worktree, false);
@@ -322,7 +321,7 @@ function assertUniqueOutputs(f) {
   });
   assert.match(k["diagnose-c-1"].task, /^Diagnose a step whose output the script did not accept \(the diagnosis variant\)\.$/m);
   assert.match(k["diagnose-c-1"].task, /What went wrong: still not clean after 2 fix rounds: The review at \/t\/p\/review-c-3\.md/);
-  assert.match(k["diagnose-c-1"].task, /Evidence: \/t\/p\/review-c-3\.md, \/t\/p\/impl-c\.md/);
+  assert.match(k["diagnose-c-1"].task, /Evidence: \/t\/p\/review-c-3\.md, \/t\/p\/impl-c-3\.md/);
   assert.match(k["diagnose-c-1"].task, /Worktree: \/wt\/c on branch pi\/c/);
   assert.match(k["diagnose-c-1"].task, /Allowed actions: fix, replan, decide/);
   assert.match(k["impl-a"].task, /write `blocked: <why>` as the first line of the report; do not ask/);
@@ -446,10 +445,10 @@ function assertUniqueOutputs(f) {
     impl: { "impl-a": { ...taskGate("a"), ok: false, reason: "check failed (exit 1): red" } },
   });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["fix-a-1"], ["review-a-1"], ["merge"], ["integrate"]]);
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["impl-a-2"], ["review-a-1"], ["merge"], ["integrate"]]);
   const k = byKey(f);
-  assert.equal(k["fix-a-1"].resume, "run-impl-a");
-  assert.match(k["fix-a-1"].task, /The task check reported: check failed \(exit 1\): red/);
+  assert.equal(k["impl-a-2"].resume, undefined);
+  assert.match(k["impl-a-2"].task, /The task check reported: check failed \(exit 1\): red/);
   assert.doesNotMatch(k["review-a-1"].task, /re-review/);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.equal(receipt.children, 7);
@@ -489,18 +488,18 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(receipt.set_aside, []);
 }
 
-// A fix that fails twice goes to a diagnosis; the retry resumes the failed run.
+// A fix that fails twice goes to a diagnosis; the retry is a fresh run too.
 {
   const f = fake({
     review: { "review-a-1": needsWork },
-    fix: { "fix-a-1": "x", "fix-a-1-retry": "x" },
+    impl: { "impl-a-2": "x", "impl-a-2-retry": "x" },
   });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["fix-a-1"], ["fix-a-1-retry"], ["diagnose-a-1"]]);
-  assert.equal(f.batches[5][0].resume, "run-fix-a-1");
-  assert.equal(f.batches[5][0].output, "/t/p/fix-a-1.retry.md");
+  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["impl-a-2"], ["impl-a-2-retry"], ["diagnose-a-1"]]);
+  assert.equal(f.batches[5][0].resume, undefined);
+  assert.equal(f.batches[5][0].output, "/t/p/impl-a-2.retry.md");
   assertUniqueOutputs(f);
-  assert.match(byKey(f)["diagnose-a-1"].task, /What went wrong: fix round 1 failed twice: x/);
+  assert.match(byKey(f)["diagnose-a-1"].task, /What went wrong: the implementer failed twice: x/);
   assert.deepEqual(receipt.set_aside, [{ id: "a", reason: "needs a decision: a person has to choose" }]);
   assert.equal(receipt.children, 7);
 }
@@ -537,8 +536,8 @@ function assertUniqueOutputs(f) {
     diagnose: { "diagnose-a-1": diagnosis("continue", "it says partly", { verdict: "needs-work" }) },
   });
   const again = await run(g.runs, base);
-  assert.deepEqual(keys(g), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["diagnose-a-1"], ["fix-a-1"], ["review-a-2"], ["merge"], ["integrate"]]);
-  assert.match(byKey(g)["fix-a-1"].task, /The review at \/t\/p\/review-a-1\.md found blocking problems\./);
+  assert.deepEqual(keys(g), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["diagnose-a-1"], ["impl-a-2"], ["review-a-2"], ["merge"], ["integrate"]]);
+  assert.match(byKey(g)["impl-a-2"].task, /The review at \/t\/p\/review-a-1\.md found blocking problems\./);
   assert.deepEqual(again.merged, ["a"]);
 }
 
@@ -591,12 +590,12 @@ function assertUniqueOutputs(f) {
   });
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [
-    ["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["fix-a-1"], ["review-a-2"], ["fix-a-2"], ["review-a-3"], ["diagnose-a-1"], ["fix-a-3"], ["review-a-4"], ["merge"], ["integrate"],
+    ["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["impl-a-2"], ["review-a-2"], ["impl-a-3"], ["review-a-3"], ["diagnose-a-1"], ["impl-a-4"], ["review-a-4"], ["merge"], ["integrate"],
   ]);
   const k = byKey(f);
-  assert.match(k["fix-a-3"].task, /^Extra fix round 3, from a diagnosis\.$/m);
-  assert.match(k["fix-a-3"].task, /The diagnosis at \/t\/p\/diagnosis-a-1\.md found: the test asserts the old flag order Follow its ## Brief section\./);
-  assert.equal(k["fix-a-3"].resume, "run-fix-a-2");
+  assert.match(k["impl-a-4"].task, /^Continue this task; the branch pi\/a holds the committed work, so build on it and do not redo it\.$/m);
+  assert.match(k["impl-a-4"].task, /The diagnosis at \/t\/p\/diagnosis-a-1\.md found: the test asserts the old flag order Follow its ## Brief section\./);
+  assert.equal(k["impl-a-4"].resume, undefined);
   assert.deepEqual(receipt.merged, ["a"]);
 }
 
@@ -702,7 +701,7 @@ function assertUniqueOutputs(f) {
     { id: "a", state: "pending", next: null, fixes: 0, heals: 0 },
     { id: "b", state: "pending", next: null, fixes: 0, heals: 0 },
   ]);
-  assert.deepEqual(emits[1].tasks[0], { id: "a", state: "running", next: "review", fixes: 1, heals: 0 });
+  assert.deepEqual(emits[1].tasks[0], { id: "a", state: "running", next: "implement", fixes: 1, heals: 0 });
   assert.deepEqual(emits.at(-1).merged, ["a", "b"]);
 }
 
@@ -715,15 +714,15 @@ function assertUniqueOutputs(f) {
     review: { "review-a-1": needsWork },
     impl: {
       "impl-b": { result: { ok: false, error: rejected, structuredOutput: { ...taskGate("b"), ok: false, reason: "report blocked: needs the port", report: { status: "blocked", why: "needs the port" } } } },
+      "impl-a-2": { result: { ok: false, error: rejected } },
     },
-    fix: { "fix-a-1": { result: { ok: false, error: rejected } } },
     diagnose: { "diagnose-b-1": diagnosis("decide", "what port?") },
   });
   const receipt = await run(f.runs, base);
   assert.equal(f.items().filter((i) => /-retry$/.test(i.key)).length, 0);
   const k = byKey(f);
   assert.match(k["diagnose-b-1"].task, /What went wrong: the implementer reported blocked: report blocked: needs the port/);
-  assert.match(k["diagnose-a-1"].task, /What went wrong: fix round 1 reported that it cannot finish/);
+  assert.match(k["diagnose-a-1"].task, /What went wrong: the implementer failed twice: Acceptance rejected/);
   assert.deepEqual(receipt.decide.map((d) => d.id).sort(), ["a", "b"]);
 }
 
@@ -1234,7 +1233,7 @@ function assertUniqueOutputs(f) {
   assert.match(k["impl-a-2"].gate.command, / --base 'base0' --run '\/t\/p' --id 'a'$/);
   assert.match(k["impl-a-2"].gate.command, /^recipe-gate task '\/t\/p\/impl-a-2\.md'/);
   assert.equal(k["impl-a"].baseRef, "refs/recipes/p/base");
-  assert.match(k.integrate.gate.command, /--tasks 'a:pi\/a-2'/);
+  assert.match(k.integrate.gate.command, /--tasks 'a:pi\/a'/);
   assert.deepEqual(receipt.handoffs, [{ id: "a", relays: 1, splits: 0, pieces: [] }]);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.deepEqual(receipt.left, [{ id: "a", kind: "relay", branch: "pi/a", worktree: "/wt/a" }]);
@@ -1324,8 +1323,8 @@ function assertUniqueOutputs(f) {
   assert.match(k["review-a-1"].task, /^Branch: implement\/p-split-a-1$/m);
   assert.match(k["review-a-1"].task, /Diff to review: git diff base0\.\.implement\/p-split-a-1/);
   assert.equal(f.items().filter((i) => /^review-a-1-/.test(i.key) || /^review-piece/.test(i.key)).length, 0);
-  assert.match(k.integrate.gate.command, /--tasks 'a:implement\/p-split-a-1,b:pi\/b-3'/);
-  assert.match(k.merge.gate.command, /--tips 'a:implement\/p-split-a-1,b:pi\/b-3'/);
+  assert.match(k.integrate.gate.command, /--tasks 'a:implement\/p-split-a-1,b:pi\/b'/);
+  assert.match(k.merge.gate.command, /--tips 'a:implement\/p-split-a-1,b:pi\/b'/);
   assert.deepEqual(receipt.merged, ["a", "b"]);
   assert.deepEqual(receipt.report, ["a: merged", "  a-1: done, joined into a", "  a-2: done, joined into a", "b: merged"]);
   assert.deepEqual(receipt.handoffs, [
@@ -1489,33 +1488,21 @@ function assertUniqueOutputs(f) {
   assert.match(receipt.report[0], /^a: merged/);
 }
 
-// With freshFixes a needs-work verdict goes to a fresh implementer on the task
-// branch with the findings, not to the implementer's own session.
+// A needs-work verdict goes to a fresh implementer on the task branch with
+// the findings; no run is ever resumed.
 {
   const f = fake({ review: { "review-a-1": needsWork } });
-  const receipt = await run(f.runs, { ...base, freshFixes: true });
+  const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["impl-a-2"], ["review-a-2"], ["merge"], ["integrate"]]);
   const k = byKey(f);
+  assert.equal(k["impl-a-2"].agent, "implementer");
+  assert.equal(k["impl-a-2"].worktree, true);
   assert.equal(k["impl-a-2"].baseRef, "refs/heads/pi/a");
   assert.equal(k["impl-a-2"].resume, undefined);
   assert.equal(k["impl-a-2"].handoffOf, undefined);
   assert.match(k["impl-a-2"].task, /^Continue this task; the branch pi\/a holds the committed work, so build on it and do not redo it\.$/m);
   assert.match(k["impl-a-2"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
   assert.equal(f.items().filter((i) => i.resume).length, 0);
-  assert.equal(receipt.fresh_fixes, true);
-  assert.deepEqual(receipt.merged, ["a"]);
-  assert.equal(receipt.children, 8);
-}
-
-// Without freshFixes the needs-work verdict resumes the implementer's session,
-// and the receipt carries no fresh-fixes marker.
-{
-  const f = fake({ review: { "review-a-1": needsWork } });
-  const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["fix-a-1"], ["review-a-2"], ["merge"], ["integrate"]]);
-  const k = byKey(f);
-  assert.equal(k["fix-a-1"].resume, "run-impl-a");
-  assert.match(k["fix-a-1"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
   assert.equal(receipt.fresh_fixes, undefined);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.equal(receipt.children, 8);
@@ -1531,31 +1518,26 @@ function assertUniqueOutputs(f) {
     review: { "review-a-1": needsWork, "review-a-2": needsWork, "review-a-3": needsWork },
   });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f).slice(-7), [["join-a-1"], ["review-a-1"], ["impl-a-3"], ["review-a-2"], ["fix-a-2"], ["review-a-3"], ["diagnose-a-1"]]);
-  assert.equal(f.items().find((i) => i.key === "fix-a-2").resume, "run-impl-a-3");
+  assert.deepEqual(keys(f).slice(-7), [["join-a-1"], ["review-a-1"], ["impl-a-3"], ["review-a-2"], ["impl-a-4"], ["review-a-3"], ["diagnose-a-1"]]);
+  assert.equal(f.items().find((i) => i.key === "impl-a-4").resume, undefined);
   assert.equal(receipt.decide[0].id, "a");
   assert.match(byKey(f)["diagnose-a-1"].task, /still not clean after 2 fix rounds/);
 }
 
-// A fix round that hands off: the task gate runs once on its note for the head, then a relay starts with the findings.
+// A fix round that hands off: the implementer path relays it with the findings still in the brief.
 {
   const f = fake({
     review: { "review-a-1": needsWork },
-    fix: { "fix-a-1": { result: { ok: true, handoff: { line: "handoff: half the fix", unread: [], note: "/t/p/fix-a-1.md", empty: false }, usage: { firstContext: 1000 }, budget: { tokens: 100000 } } } },
+    impl: { "impl-a-2": handedOff("a", { line: "half the fix", key: "a-2" }) },
   });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f).slice(2), [["impl-a"], ["review-a-1"], ["fix-a-1"], ["handoff-a-1"], ["impl-a-2"], ["review-a-2"], ["merge"], ["integrate"]]);
+  assert.deepEqual(keys(f).slice(2), [["impl-a"], ["review-a-1"], ["impl-a-2"], ["impl-a-3"], ["review-a-2"], ["merge"], ["integrate"]]);
   const k = byKey(f);
-  assert.equal(k["handoff-a-1"].agent, "scout");
-  assert.equal(
-    k["handoff-a-1"].gate.command,
-    "recipe-gate task '/t/p/fix-a-1.md' --check 'nixfmt --check a.nix' --owns 'a.nix,lib/a' --repo '/r' --base 'base0' --run '/t/p' --id 'a'",
-  );
-  assert.equal(k["impl-a-2"].baseRef, "refs/heads/pi/a");
-  assert.equal(k["impl-a-2"].handoffOf, "run-fix-a-1");
-  assert.equal(k["impl-a-2"].handoffAs, "relay");
-  assert.match(k["impl-a-2"].task, /^Continue this task from the handoff note at \/t\/p\/fix-a-1\.md; the branch pi\/a holds/m);
-  assert.match(k["impl-a-2"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
+  assert.equal(k["impl-a-3"].baseRef, "refs/heads/pi/a");
+  assert.equal(k["impl-a-3"].handoffOf, "run-impl-a-2");
+  assert.equal(k["impl-a-3"].handoffAs, "relay");
+  assert.match(k["impl-a-3"].task, /^Continue this task from the handoff note at \/t\/p\/impl-a-2\.md; the branch pi\/a holds/m);
+  assert.match(k["impl-a-3"].task, /^The review at \/t\/p\/review-a-1\.md found blocking problems\.$/m);
   assert.equal(receipt.handoffs[0].relays, 1);
   assert.deepEqual(receipt.merged, ["a"]);
 }
