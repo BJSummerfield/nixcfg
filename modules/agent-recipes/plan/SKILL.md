@@ -10,17 +10,8 @@ Parameters, from the request:
 
 - goal: what the plan must achieve, in one or two sentences.
 - input: absolute path of the file the plan starts from. Without one, write
-  the user's description to `<task dir>/input.md` and use that. Optional when
-  `batch` is given.
-- optional `batch`: `{rule: "<glob|grep|list> <value>", change: "<description>"}`.
-  It makes the planner run its batch job: the brief says `Job: batch.` and adds
-  `Targets: <rule>` and `Change: <change>` after the goal; revisions keep the
-  job. With no `input` the Input line is left out. On Claude, dispatch
-  `planner` for the batch job with the same lines.
+  the user's description to `<task dir>/input.md` and use that.
 - repo: absolute path of the repository the tasks change.
-- optional limits: `limit` (estimate ceiling per task, default 100000
-  tokens), `sizing` (a sizing file, default
-  `~/.pi/agent/recipes/sizing.json`), `childTimeoutMs`, `bigTimeoutMs`.
 
 The task directory is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up at any
 time. It is the plan directory the implement skill reads:
@@ -106,9 +97,9 @@ replaces (`<name>.retry.md`, `planner-2.md`, `review.2.md`), never over it.
    plan check passes, the review verdict, what healed, what needs a decision);
    `recipe-status <task dir>` prints it with the children still running.
 
-The default limit of 100000 tokens is under half of the 221184-token window,
-so a task that is estimated at the limit still has the rest of the window for
-the edits and check output the estimate does not cover.
+The limit is 45 percent of the model window the runner config names, so a task
+at the limit still has the rest of the window for the edits and check output
+the estimate does not cover.
 
 ## pi binding
 
@@ -118,9 +109,8 @@ it ends.
 ```
 recipe_run({
   recipe: "plan",
-  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", batch: { rule: "<glob|grep|list ...>", change: "<change>" }, repo: "<repo path>" },
-  timeoutMs: 5400000,
-  maxChildren: 30
+  args: { dir: "<task dir>", goal: "<goal>", input: "<input path>", repo: "<repo path>" },
+  timeoutMs: 5400000
 })
 ```
 
@@ -150,7 +140,7 @@ The same graph runs with Claude Code children; this session only starts it and
 reads the result.
 
 ```
-recipe-run start plan --harness claude --args '{"dir":"<task dir>","goal":"<goal>","input":"<input path>","batch":{"rule":"<glob|grep|list ...>","change":"<change>"},"repo":"<repo path>"}' --timeout-ms 5400000 --max-children 30
+recipe-run start plan --harness claude --args '{"dir":"<task dir>","goal":"<goal>","input":"<input path>","repo":"<repo path>"}' --timeout-ms 5400000
 ```
 
 All paths are absolute. It returns at once. Then run `recipe-run wait <task dir> --timeout-ms 7000000`

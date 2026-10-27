@@ -9,11 +9,9 @@ disable-model-invocation: true
 Parameters, from the request:
 
 - goal: the question, in one or two sentences.
-- output: the format and location the user wants. Without one, use
-  `summary.md` in the task directory, whose first section answers the goal.
+- output: the answer is always written to `<task dir>/summary.md`, whose first
+  section answers the goal.
 - optional `source`: `web` (default), `repo` or `both`; `repo`, the absolute path of the repository, is required for `repo` and `both` (without it the run ends with an open line).
-- optional limits: `maxSources` (at most 12), `window` (default 221184
-  tokens), `childTimeoutMs`, `bigTimeoutMs`.
 
 The task directory is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up at any
 time; an output the user wants to keep goes elsewhere. The run writes
@@ -75,9 +73,8 @@ it ends.
 ```
 recipe_run({
   recipe: "research",
-  args: { dir: "<task dir>", goal: "<goal>", output: "<output path>", format: "<format>" },
-  timeoutMs: 5400000,
-  maxChildren: 120
+  args: { dir: "<task dir>", goal: "<goal>", format: "<format>" },
+  timeoutMs: 5400000
 })
 ```
 
@@ -100,7 +97,7 @@ The same graph runs with Claude Code children; this session only starts it and
 reads the result.
 
 ```
-recipe-run start research --harness claude --args '{"dir":"<task dir>","goal":"<goal>","output":"<output path>","format":"<format>"}' --timeout-ms 5400000 --max-children 120
+recipe-run start research --harness claude --args '{"dir":"<task dir>","goal":"<goal>","format":"<format>"}' --timeout-ms 5400000
 ```
 
 All paths are absolute. It returns at once. Then run `recipe-run wait <task dir> --timeout-ms 7000000`
