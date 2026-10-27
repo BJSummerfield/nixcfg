@@ -88,10 +88,14 @@ async function bench(argv, { spawn: spawnDep, busy = false, fetchThrows = false 
   }
 }
 
-function result(verdict, ms, usage = { prompt: 1000, cached: 500, output: 200 }, reproduced = verdict === "needs-work" ? 1 : 0) {
+function result(verdict, ms, usage = { prompt: 1000, cached: 500, output: 200 }, reproduced = verdict === "needs-work" ? 1 : 0, unreproduced = 0, unrunnable = 0) {
   const r = { ok: true, status: "done", ms, usage };
   if (verdict !== undefined) {
-    r.structuredOutput = { verdict, reproduced: Array.from({ length: reproduced }, (_, i) => ({ id: i })), unreproduced: [] };
+    r.structuredOutput = {
+      verdict,
+      reproduced: Array.from({ length: reproduced }, (_, i) => ({ id: i })), unreproduced: Array.from({ length: unreproduced }, (_, i) => ({ id: i })),
+      unrunnable: Array.from({ length: unrunnable }, (_, i) => ({ id: i })),
+    };
   }
   return r;
 }
@@ -129,7 +133,7 @@ test("argument parsing: repeated configs, the harness suffix, dispatch argv and 
     "--cwd", repo,
     "--brief-file", path.join(a, "brief.md"),
     "--output", review,
-    "--gate", `recipe-gate findings ${review} --check nix fmt --check x.nix`,
+    "--gate", `recipe-gate findings '${review}' --check 'nix fmt --check x.nix'`,
     "--gate-json",
     "--gate-timeout-ms", "3600000",
     "--result-file", path.join(a, "result.json"),
@@ -543,10 +547,11 @@ test("--grades overrides the regex result and marks graded defects", async () =>
 });
 
 test("scoring: caught follows the reproduced findings; named keeps the regex measure", async () => {
-  const cases = writeCases(path.join(tmp, "cases-gate.json"), [oneDefect("repro"), oneDefect("regexonly")]);
+  const cases = writeCases(path.join(tmp, "cases-gate.json"), [oneDefect("repro"), oneDefect("repro2"), oneDefect("regexonly")]);
   const out = path.join(tmp, "out-gate");
   const spawn = makeSpawn({
-    [path.join(out, "repro", "a", "1", "review.md")]: { review: "nothing matching", result: result("needs-work", 60000) },
+    [path.join(out, "repro", "a", "1", "review.md")]: { review: "nothing matching", result: result("needs-work", 60000, undefined, 1, 2, 3) },
+    [path.join(out, "repro2", "a", "1", "review.md")]: { review: "nothing matching", result: result("needs-work", 60000) },
     [path.join(out, "regexonly", "a", "1", "review.md")]: { review: "an OVERFLOW", result: result("needs-work", 60000, undefined, 0) },
   });
   const r = await bench([cases, "--config", `a=${cfgA}`, "--out", out], { spawn });
@@ -561,11 +566,13 @@ test("scoring: caught follows the reproduced findings; named keeps the regex mea
     for (const key of ["reproduced", "unreproduced", "unrunnable", "named"]) assert.equal(typeof row[key], "number", key);
   }
   assert.equal(rows.repro.reproduced, 1);
-  assert.deepEqual(entry.summary.reproducedFindings, { reproduced: 1, unreproduced: 0, unrunnable: 0 });
-  assert.deepEqual(entry.summary.defectCasesCaught, { caught: 1, total: 2, share: 0.5 });
-  assert.deepEqual(entry.summary.namedCasesCaught, { caught: 1, total: 2, share: 0.5 });
-  assert.match(r.stdout, /named by regex\s+1 of 2/);
-  assert.match(r.stdout, /reproduced/);
+  assert.equal(rows.repro.unreproduced, 2);
+  assert.equal(rows.repro.unrunnable, 3);
+  assert.deepEqual(entry.summary.reproducedFindings, { reproduced: 2, unreproduced: 2, unrunnable: 3 });
+  assert.deepEqual(entry.summary.defectCasesCaught, { caught: 2, total: 3, share: 2 / 3 });
+  assert.deepEqual(entry.summary.namedCasesCaught, { caught: 1, total: 3, share: 1 / 3 });
+  assert.match(r.stdout, /named by regex\s+1 of 3/);
+  assert.match(r.stdout, /^repro\s+1\s.*\s1\/2\s/m);
 });
 
 test("resume: an aborted saved result is dispatched again, a done one is not", async () => {

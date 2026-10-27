@@ -232,6 +232,10 @@ function repeatsFor(opts, dir) {
   return names.filter((n) => /^[1-9][0-9]*$/.test(n)).map(Number).sort((a, b) => a - b);
 }
 
+function shellQuote(text) {
+  return "'" + String(text).replace(/'/g, "'\\''") + "'";
+}
+
 function readJson(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -519,7 +523,7 @@ export async function main(argv, deps = {}) {
               "--cwd", loaded.repo,
               "--brief-file", briefFile,
               "--output", reviewFile,
-              "--gate", `recipe-gate findings ${reviewFile} --check ${c.check}`,
+              "--gate", `recipe-gate findings ${shellQuote(reviewFile)} --check ${shellQuote(c.check)}`,
               "--gate-json",
               "--gate-timeout-ms", "3600000",
               "--result-file", resultFile,
