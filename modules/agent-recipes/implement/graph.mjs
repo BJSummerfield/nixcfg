@@ -628,7 +628,7 @@ export default async function implement(args, port) {
     });
     return launch(
       due.map(function (t, i) {
-        return gateOnly("join-" + t.id + "-" + t.splitN, mergeCommand(states[i]), { gateTimeoutMs: childMs });
+        return gateOnly("join-" + t.id + "-" + t.splitN, mergeCommand(states[i]));
       }),
     ).then(function (results) {
       return due.reduce(function (chain, t, i) {
@@ -798,7 +798,7 @@ export default async function implement(args, port) {
   }
 
   function depsItem(t, m) {
-    return gateOnly("deps-" + t.id, mergeCommand(m), { gateTimeoutMs: childMs });
+    return gateOnly("deps-" + t.id, mergeCommand(m));
   }
 
   function prepare(active) {
@@ -855,7 +855,7 @@ export default async function implement(args, port) {
   }
 
   const intake = await one(
-    gateOnly("intake", planGateCommand(), { gateTimeoutMs: childMs }),
+    gateOnly("intake", planGateCommand()),
   );
 
   if (!intake.ok || !intake.structuredOutput) {
@@ -872,7 +872,7 @@ export default async function implement(args, port) {
     return finish();
   }
 
-  const pin = await one(gateOnly("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo), { gateTimeoutMs: childMs }));
+  const pin = await one(gateOnly("pin", "recipe-gate pin " + quote(dir) + " --repo " + quote(repo)));
   if (!pin.ok || !pin.structuredOutput) {
     open.push("the base could not be pinned: " + (pin.error || "the pin did not run"));
     return finish();
@@ -891,9 +891,7 @@ export default async function implement(args, port) {
 
   if (args.resume) {
     const back = await one(
-      gateOnly("resume", "recipe-gate resume " + quote(dir) + " --repo " + quote(repo) + " --branch " + quote(integrationBranch), {
-        gateTimeoutMs: childMs,
-      }),
+      gateOnly("resume", "recipe-gate resume " + quote(dir) + " --repo " + quote(repo) + " --branch " + quote(integrationBranch)),
     );
     if (!back.ok || !back.structuredOutput || !back.structuredOutput.ok) {
       open.push(
@@ -1045,7 +1043,7 @@ export default async function implement(args, port) {
 
   board("integrating", view());
   const joining = mergeState("integration", "integration", dir + "/integration", integrationBranch, tipTasks);
-  const joined = await one(gateOnly("merge", mergeCommand(joining), { gateTimeoutMs: childMs }));
+  const joined = await one(gateOnly("merge", mergeCommand(joining)));
   const joinedOut = await settle(joining, joined);
   if (!joinedOut.ok) {
     askDecision(subjectOf("integration"), "integrate", "the finished branches could not be merged: " + joinedOut.why, null);
