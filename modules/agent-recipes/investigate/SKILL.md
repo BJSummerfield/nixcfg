@@ -48,10 +48,8 @@ each must be safe to repeat and must not hold a secret.
 <dir>/pin.md                       the pin step's marker
 <dir>/reproduce.md, reproduce.log  the reproduction (verify-base.* when verify differs)
 <dir>/hypotheses.md                the ranked hypotheses (hypotheses-<n>.md when a diagnosis ran it again)
-<dir>/change-<rank>.md             implementer report for a hypothesis (change-<rank>-<n>.md for a fresh attempt)
-<dir>/fix-<rank>-<n>.md            report of fix round n
-<dir>/verify-<rank>-<n>.md         marker of the gate-only step after a fix round
-                                   (verify-<rank>-<n>s<k>.md after the last piece of split k)
+<dir>/change-<rank>.md             implementer report for a hypothesis (change-<rank>-<n>.md for a fix round or a relay)
+<dir>/verify-<rank>s<k>.md         marker of the gate-only step after the last piece of split k
 <dir>/split/h<rank>-<n>/           a split: planner.md, plan.md and the tasks of its pieces
 <dir>/piece-<piece id>.md          report of one piece (piece-<piece id>-<n>.md when it was relayed or retried)
 <dir>/review-<rank>-<n>.md         review n of the change
@@ -81,8 +79,8 @@ each must be safe to repeat and must not hold a secret.
      reports a failure `signature`.
    - A gate that is ok goes to a review: a fresh reviewer (diff variant) in
      its own worktree, `recipe-gate verdict`. Clean ends the run with that
-     branch as the fix. Needs-work sends the findings to the same implementer
-     as a fix round, at most two reviews per hypothesis; a third is a
+     branch as the fix. Needs-work sends the findings to a fresh implementer as a
+     fix round, at most two reviews per hypothesis; a third is a
      `decide`.
    - A report `blocked: hypothesis refuted: ...` marks the hypothesis
      `refuted` and moves to the next, without a diagnosis.
@@ -94,18 +92,15 @@ each must be safe to repeat and must not hold a secret.
      gate with a new signature is a fix round; with a signature already seen
      it is stuck and goes to a diagnosis. A change that left the failure
      untouched is therefore diagnosed at once.
-   - fix round: the same implementer is resumed in its worktree with the
-     findings (a resumed item cannot carry a gate), then a gate-only
-     `verify-<rank>-<n>` scout child runs the same task gate with `--in` the
-     worktree. Stuck detection reads that step.
+   - fix round: a fresh implementer starts in a new worktree of the
+     hypothesis branch (`change-<rank>-<n>`) with the findings and runs the
+     task gate itself. Stuck detection reads its gate.
    - handoff: an implementer that reaches its context budget stops and
      writes a note whose first line starts `handoff:`; the task gate reports
-     it as status `handoff` with the branch, head and commit count. A fix
-     round that hands off gets those from the `verify-<rank>-<n>` step that
-     follows it. The first handoff is relayed: a fresh implementer starts on
-     `refs/heads/<branch>` of the one that handed off, told to read the note
-     and not redo the committed work, and the findings of the fix round
-     when there were any. It is then decided by code whether the next handoff
+     it as status `handoff` with the branch, head and commit count, for a
+     fix round as for the first change. The first handoff is relayed: a fresh
+     implementer starts on `refs/heads/<branch>` of the one that handed off,
+     told to read the note and not redo the committed work. It is then decided by code whether the next handoff
      is relayed or split: a split follows when the relay committed nothing
      (same head), spent over half its budget loading context, or a task has
      been relayed twice. The same remainder line twice, or a need for a
@@ -121,16 +116,15 @@ each must be safe to repeat and must not hold a secret.
      before handing off, or would need a second split, is a `decide`. After
      the last piece the hypothesis takes that branch, goes to `verify` (the
      verify command and the light check on the whole result) and then to one
-     review of the whole diff from the pinned base. No implementer can be
-     resumed there, so a failing verify goes to a diagnosis without `fix`.
+     review of the whole diff from the pinned base. `verify-<rank>s<k>` is the
+     only gate-only step after a change.
    - Every change, fix, relay and piece run counts against `rounds`. Reaching
      it ends the run with the outcome `out of rounds` and an open line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
    failed twice, a piece that failed, a gate that did not run, a verdict that cannot be read. It
    picks one action that `recipe-gate diagnosis` checks:
-   - `fix`: one more round for the same implementer, offered only when it can
-     be resumed;
+   - `fix`: one more round with a fresh implementer on the hypothesis branch;
    - `next`: drop this hypothesis and start the next in a fresh worktree,
      offered only when a later one exists;
    - `research`: ask one question (the first line of its `## Brief`), offered
@@ -143,8 +137,7 @@ each must be safe to repeat and must not hold a secret.
    one exists is dropped (`dropped: out of recoveries`) and the next starts.
 6. Research: searchers (or locators, by `source`) list at most three sources
    for the question, extractors copy out the passages
-   (`<dir>/research/h<rank>-r<n>/`), and the next fix round (a fresh change
-   when the implementer cannot be resumed) is told to read those extracts
+   (`<dir>/research/h<rank>-r<n>/`), and the next fix round is told to read those extracts
    before editing.
 7. Every hypothesis ends as `fixed`, `refuted`, `dropped`, `out of rounds` or
    `needs a decision`. When none led to a clean change and nothing else
