@@ -124,6 +124,7 @@ function assertSound(f) {
   assert.equal(k["change-1"].gate.timeoutMs, 1260000);
   assert.match(k["change-1"].task, /Verify command: make repro/);
   assert.match(k["review-1-1"].task, /^Review a diff on a branch \(the diff variant\)/);
+  assert.doesNotMatch(k["review-1-1"].task, /Implementer report/);
   assert.equal(k["review-1-1"].baseRef, "refs/heads/pi/h1");
   assert.equal(k["review-1-1"].gate.command, "recipe-gate verdict '/t/d/review-1-1.md' --run '/t/d' --id 'h1'");
   assert.equal(r.branch, "pi/h1");
@@ -384,6 +385,7 @@ function assertSound(f) {
   assert.ok(!("gate" in k["fix-1-1"]));
   assert.match(k["fix-1-1"].task, /review-1-1\.md/);
   assert.equal(k["verify-1-1"].worktree, false);
+  assert.doesNotMatch(k["review-1-2"].task, /Implementer report|Earlier review|re-review/);
   assert.equal(r.review, "/t/d/review-1-2.md");
   assert.equal(r.branch, "pi/h1");
   assert.equal(r.hypotheses[0].rounds, 2);
