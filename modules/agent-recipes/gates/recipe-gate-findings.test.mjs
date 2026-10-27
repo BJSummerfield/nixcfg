@@ -132,6 +132,19 @@ const patch = (line, from, to) => `--- a/sum.sh
   assert.equal(runFindings("nothing\n").json.verdict, "clean");
 }
 
+// a reproduction that commits or switches branch is undone before the next one
+for (const [name, cmd] of [["commit", "echo x > moved.txt && git add moved.txt && git commit -qm moved"], ["branch", "git checkout -q -b other"]]) {
+  const before = git(worktree, "rev-parse", "HEAD");
+  const branchBefore = git(worktree, "rev-parse", "--abbrev-ref", "HEAD");
+  const r = runFindings(`## A\n\n\`\`\`sh\n${cmd}\n\`\`\`\n\n## B\n\n\`\`\`sh\ntest ! -e moved.txt && test \"$(git rev-parse --abbrev-ref HEAD)\" != other\n\`\`\`\n`).json;
+  assert.equal(git(worktree, "rev-parse", "HEAD"), before, name);
+  assert.equal(git(worktree, "rev-parse", "--abbrev-ref", "HEAD"), branchBefore, name);
+  assert.equal(r.verdict, "clean", name);
+  assert.deepEqual(r.reproduced, [], name);
+  assert.equal(r.check.exit, 0);
+  spawnSync("git", ["branch", "-D", "other"], { cwd: worktree, env });
+}
+
 // no verdict cases
 {
   const missing = gate(["findings", path.join(dir(), "none.md"), "--check", check, "--worktree", worktree]);
@@ -144,6 +157,7 @@ const patch = (line, from, to) => `--- a/sum.sh
     assert.equal(r.status, 0);
     assert.equal(r.json.ok, false);
     assert.equal(r.json.verdict, null);
+    assert.equal(r.json.reason, head === "blocked: y" ? "review is blocked: y" : "review is a handoff");
   }
   const noCheck = gate(["findings", review("x\n"), "--worktree", worktree]);
   assert.equal(noCheck.status, 2);

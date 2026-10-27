@@ -613,13 +613,17 @@ function findings(file, flags) {
     return out;
   }
   const head = firstLine(text);
-  if (/^(handoff|blocked):/i.test(head)) return finish(`review is a ${head.split(":")[0].toLowerCase()}`);
+  if (/^handoff:/i.test(head)) return finish("review is a handoff");
+  if (/^blocked:/i.test(head)) return finish(`review is blocked:${head.slice(head.indexOf(":") + 1)}`);
   const g = (args, input) => spawnSync("git", args, { cwd: worktree, encoding: "utf8", input });
   if (g(["rev-parse", "--git-dir"]).status !== 0) throw new Usage(`${worktree} is not a git worktree`);
+  const startHead = g(["rev-parse", "HEAD"]).stdout.trim();
+  const startRef = g(["symbolic-ref", "-q", "--short", "HEAD"]).stdout.trim();
   const reset = () => {
-    g(["checkout", "--", "."]);
+    if (startRef) g(["checkout", "-q", "-f", startRef]);
+    g(["reset", "-q", "--hard", startHead]);
     g(["clean", "-fdq"]);
-    return g(["status", "--porcelain"]).stdout.trim() === "";
+    return g(["rev-parse", "HEAD"]).stdout.trim() === startHead && g(["status", "--porcelain"]).stdout.trim() === "";
   };
   if (flags.run) {
     const here = where(worktree);
