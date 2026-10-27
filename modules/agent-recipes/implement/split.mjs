@@ -12,9 +12,6 @@ export function splitItem(lib, t, o) {
     base: t.base,
     worktree: t.worktree,
     owns: t.spec.owns,
-    limit: o.limit,
-    sizing: o.sizing,
-    timeoutMs: o.timeoutMs,
     handoffOf: t.runId,
   });
 }
