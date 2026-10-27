@@ -8,10 +8,11 @@ you. Your brief names one of two jobs; do only that job.
 Your brief names the goal, an input file, the repository, scout notes, the
 plan directory and a plan check command.
 
-- If there is a repository, read its `AGENTS.md` first for its light checks,
-  heavy checks and the changes agents must not make; if it has no such
-  lists, treat its full test or build command as heavy and say so in the
-  plan.
+- If there is a repository, read its contributor instructions (`AGENTS.md`,
+  `CONTRIBUTING`, `README` or equivalent) first for its checks and the
+  changes agents must not make. When they name no quick check, the task
+  check is the test command for the owned files and the whole build or test
+  is the final check; say so in the plan.
 - Read the input and the scout notes; open anything else only when they
   point you at it.
 - Mark what you decided yourself as a guess. Never invent a fact; write
@@ -23,8 +24,9 @@ plan directory and a plan check command.
   needs another's result lists it in `depends`.
 
 `plan.md`: the problem in one paragraph; the approach; the tasks in merge
-order with the light check each runs; the heavy checks the merger runs once;
-the ineligible changes the plan avoids; open risks. If the goal needs an
+order with the task check each runs; a `## Final checks` section with the
+checks the run executes once at the end, one command per line, or the single
+line `none`; the ineligible changes the plan avoids; open risks. If the goal needs an
 ineligible change, say so at the top and write no tasks.
 
 One `tasks/<id>.md` per implementer, named after its id. It opens with this
@@ -33,7 +35,7 @@ header, one `key: value` per line, nothing before it and a blank line after:
     id: <id, the file name without .md>
     owns: <repository paths the task may change, comma separated>
     reads: <repository paths it must read, comma separated, or none>
-    check: <one light check command from the repository's AGENTS.md>
+    check: <one task check command from the repository's contributor instructions>
     depends: <ids of tasks that must merge first, or none>
     research: <question a web searcher can answer, or none>
 

@@ -19,7 +19,7 @@ Parameters, from the request:
 - optional `verify`: the shell command that decides whether a change fixed
   the failure; default `reproduce`. When it differs, it must also fail at the
   base, or the run ends with an open line.
-- optional `check`: a light check run after the verify command on every
+- optional `check`: a task check run after the verify command on every
   attempt.
 
 The task directory `dir` is `$TMPDIR/pi-plans/<slug>/` and may be cleaned up
@@ -74,7 +74,7 @@ each must be safe to repeat and must not hold a secret.
      reports a failure `signature`.
    - A gate that is ok goes to a review: a fresh reviewer (diff variant) in
      its own worktree, gated by `recipe-gate findings`, which re-runs the
-     review's reproductions against the verify command (and the light check)
+     review's reproductions against the verify command (and the task check)
      in the review worktree. Clean ends the run with that branch as the fix.
      Reproduced findings go to a fresh implementer as a fix round, with the
      command or patch and its output; unreproduced ones go as advice. At most
@@ -112,7 +112,7 @@ each must be safe to repeat and must not hold a secret.
      A piece that hands off is relayed once or twice; one that commits nothing
      before handing off, or would need a second split, is a `decide`. After
      the last piece the hypothesis takes that branch, goes to `verify` (the
-     verify command and the light check on the whole result) and then to one
+     verify command and the task check on the whole result) and then to one
    review of the whole diff from the pinned base. `verify-<rank>s<k>` is a
    gate-only step the runner runs without a child, the only one after a change.
    - Every change, fix, relay and piece run counts toward the limit of 6 in

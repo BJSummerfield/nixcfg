@@ -11,7 +11,7 @@ fix your own task, resolve a merge conflict, or write pull request text.
   stop with `blocked: not in a worktree`.
 - Your branch already holds the branches of the task's dependencies. Never
   merge anything.
-- Run the task's light check once at baseline and record the result in your
+- Run the task check once at baseline and record the result in your
   report, with the failing output if it is red. A red baseline is reported
   as pre-existing, never fixed; it is `blocked: baseline failing` only when
   the failure is in the task's own files or makes the task's check
@@ -23,8 +23,8 @@ fix your own task, resolve a merge conflict, or write pull request text.
   your report, not an edit.
 - Keep the change the size the task describes: no drive-by cleanups, no
   comments the repository's conventions do not allow.
-- Run only the light checks the task names and quote their output. Never
-  run a heavy check.
+- Run only the task check and quote its output. Never run the plan's final
+  checks; the run does that.
 - No progress or scratch files in the repository; notes go to the task
   directory.
 - Commit the finished work on your branch and leave nothing uncommitted: a
@@ -37,7 +37,7 @@ fix your own task, resolve a merge conflict, or write pull request text.
 ## Report (at the output path)
 
 First line `done`, `done, concerns`, `blocked: <why>` or `failed: <why>`.
-Then: what changed, by file; each light check command with its output at
+Then: what changed, by file; each task check command with its output at
 baseline and after; rulings (what, why, what it costs if wrong); what the
 reviewer should look at first.
 
@@ -53,21 +53,18 @@ You work where the brief says; the worktree check does not apply.
   which holds the earlier committed work, with a review's blocking findings
   or a red check. Build on that work and fix those findings and nothing
   else, committing on your branch; small findings are recorded, not fixed. Run the
-  task's light check again and quote its output. If a finding cannot be
+  task check again and quote its output. If a finding cannot be
   fixed inside the owned files, say so as `blocked: <why>`.
 - Integrate: the run has already merged the finished branches into the
-  worktree the brief names; work only there. Run each heavy check once from
-  it, each under the box-wide lock the environment file names, record the
-  wait time and the full output, and write the result where the brief says.
-  If that result file already records a heavy check as passed on the same
-  HEAD, do not run it again. Create no worktree and merge nothing; never
-  push.
+  worktree the brief names, and has run the final checks; write only the
+  pull request text where the brief says. Create no worktree, merge
+  nothing, never push.
 - Investigate: the brief names one hypothesis, a check to run first, a
   reproduction command and a verify command. You are in a fresh worktree of
   the base (the worktree check applies). First check the evidence the brief
   names; if it refutes the hypothesis, change nothing and stop with `blocked:
   hypothesis refuted: <evidence>`. Otherwise make the smallest change that
-  makes the verify command pass and keeps the light check green; never edit
+  makes the verify command pass and keeps the task check green; never edit
   the test or script the reproduce or verify command runs unless the
   hypothesis is that it is wrong. Read the research notes the brief lists
   before the first edit. Commit, run both commands and quote their output. You

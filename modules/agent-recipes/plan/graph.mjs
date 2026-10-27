@@ -237,7 +237,7 @@ export default async function plan(args, port) {
         "Goal: " + goal,
         ...inputLine(" (read it first)"),
         "Repository: " + repo,
-        "Find what a planner needs to split this work into tasks: the files involved and their sizes, how they relate, the repository's AGENTS.md light checks, heavy checks and forbidden changes, and the exact command for a light check on each kind of file involved.",
+        "Find what a planner needs to split this work into tasks: the files involved and their sizes, how they relate, the repository's contributor instructions, task checks, final checks and forbidden changes, and the exact command for a task check on each kind of file involved.",
         "Output: " + scoutFile,
       ],
       scoutFile,
