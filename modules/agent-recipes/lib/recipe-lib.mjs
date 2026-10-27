@@ -92,6 +92,7 @@ export function recipeLib(rawPort) {
     if (o.gateTimeoutMs !== undefined) item.gate.timeoutMs = o.gateTimeoutMs;
     if (o.worktree !== undefined) item.worktree = o.worktree;
     if (o.baseRef !== undefined) item.baseRef = o.baseRef;
+    if (o.big) item.big = true;
     return item;
   }
 
@@ -365,7 +366,7 @@ export function recipeLib(rawPort) {
       "Piece ids start with " + o.parentId + "-.",
       "Plan two or more pieces, each smaller than the task, independent of each other (depends: none), each starting from the branch " + o.branch + "; work already committed there is not redone.",
       "Plan directory: " + o.splitDir,
-      "Write " + o.splitDir + "/plan.md and one " + o.splitDir + "/tasks/<id>.md per piece in the task header format.",
+      "Write " + o.splitDir + "/plan.md and one " + o.splitDir + "/tasks/<id>.md per piece in the task header format. plan.md holds a `## Final checks` section whose single line is `none`.",
       "Write a short summary of the split to " + file,
     );
     const item = node(o.key, "planner", lines, file, { gate: gate, big: true });
