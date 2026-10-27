@@ -163,6 +163,15 @@ for (const [name, cmd] of [["commit", "echo x > moved.txt && git add moved.txt &
   assert.equal(noCheck.status, 2);
 }
 
+// a skip-worktree edit made by a reproduction does not outlive it
+{
+  const r = runFindings('# Review\n\n## Small findings\n\n```sh\ngit update-index --skip-worktree sum.sh\necho tampered > sum.sh\nexit 1\n```\n\n```sh\ntest "$(cat sum.sh)" = tampered && exit 1\nexit 0\n```\n').json;
+  assert.equal(r.reproduced.length, 1);
+  assert.equal(r.unreproduced.length, 1);
+  assert.equal(r.unreproduced[0].n, 2);
+  assert.equal(git(worktree, "ls-files", "-v").split("\n").filter((l) => l.startsWith("S")).length, 0);
+}
+
 // --run records the worktree
 {
   const root = dir();

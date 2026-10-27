@@ -621,6 +621,8 @@ function findings(file, flags) {
   const startRef = g(["symbolic-ref", "-q", "--short", "HEAD"]).stdout.trim();
   const reset = () => {
     if (startRef) g(["checkout", "-q", "-f", startRef]);
+    // skip-worktree bits in the index survive reset --hard and hide edits from status
+    fs.rmSync(path.resolve(worktree, g(["rev-parse", "--git-path", "index"]).stdout.trim()), { force: true });
     g(["reset", "-q", "--hard", startHead]);
     g(["clean", "-fdq"]);
     return g(["rev-parse", "HEAD"]).stdout.trim() === startHead && g(["status", "--porcelain"]).stdout.trim() === "";
