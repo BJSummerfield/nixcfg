@@ -641,15 +641,19 @@ export async function killUnfinished(runDir, { stateDir, graceMs } = {}) {
   const log = path.join(runDir, "children.jsonl");
   const records = readRecords(log);
   const ended = new Set(records.filter((r) => r.type === "end").map((r) => r.runId));
-  const gateEnded = new Set(records.filter((r) => r.type === "gate-end").map((r) => r.runId));
+  const openGates = new Map();
+  for (const rec of records) {
+    if (rec.type === "gate-start") openGates.set(rec.runId, rec);
+    else if (rec.type === "gate-end") openGates.delete(rec.runId);
+  }
   const killed = [];
   const latest = new Map();
   for (const rec of records) {
     if (rec.type === "start" || rec.type === "respawn") latest.set(rec.runId, rec);
   }
   for (const rec of records) {
-    if (rec.type === "gate-start" && !gateEnded.has(rec.runId)) {
-      gateEnded.add(rec.runId);
+    if (rec.type === "gate-start" && openGates.get(rec.runId) === rec) {
+      openGates.delete(rec.runId);
       if (rec.pid && rec.pidStart && procStartTime(rec.pid) === String(rec.pidStart)) {
         await killTree(rec.pid, { graceMs });
       }

@@ -1044,5 +1044,28 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   );
   assert.deepEqual(out.structuredOutput, { k: "go" });
 }
+// A gate orphaned during its rerun is still killed on resume.
+{
+  const runDir = path.join(tmp, "kill-rerun", "runner");
+  const old = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  const live = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  try {
+    const start = (proc) => ({ type: "gate-start", key: "g", runId: "X", pid: proc.pid, pidStart: procStartTime(proc.pid), at: "t" });
+    const lines = [start(old), { type: "gate-end", key: "g", runId: "X", at: "t" }, start(live)];
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "children.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    await killUnfinished(runDir, { graceMs: 200 });
+    await sleep(100);
+    const alive = (proc) => spawnSync("kill", ["-0", String(proc.pid)]).status === 0 && !/^Z/.test(fs.readFileSync(`/proc/${proc.pid}/stat`, "utf8").split(") ")[1]);
+    assert.equal(alive(live), false);
+    assert.equal(alive(old), true);
+  } finally {
+    for (const proc of [old, live]) {
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {}
+    }
+  }
+}
 
 console.log("port tests passed");
