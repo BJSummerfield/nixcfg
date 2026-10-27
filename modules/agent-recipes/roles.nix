@@ -211,5 +211,27 @@ in
         model = "opus";
       };
     };
+    mutator = {
+      description = "Breaks the changed lines of a diff one at a time and reports the breaks the check does not catch, as patches";
+      tools = [
+        "read"
+        "grep"
+        "find"
+        "ls"
+        "bash"
+        "write"
+      ];
+      thinking = "medium";
+      output = "mutations.md";
+      budget = {
+        tokens = 100000;
+        reserve = 30000;
+        action = "stop";
+      };
+      claude = {
+        tools = "Read, Grep, Glob, Bash, Write";
+        model = "sonnet";
+      };
+    };
   };
 }
