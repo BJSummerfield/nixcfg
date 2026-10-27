@@ -313,7 +313,6 @@ export default async function implement(args, port) {
     }
     if (t.resumeRef && t.attempts === 1) {
       lines.push("Work already on this branch from an earlier run: continue it; do not start over. The old worktree may be gone; only what was committed on the branch is kept.");
-      if (t.earlierReview) lines.push("Earlier review: " + t.earlierReview);
     }
     if (t.relayRef) {
       relayBriefLines(t).forEach(function (l) {
@@ -419,7 +418,7 @@ export default async function implement(args, port) {
     t.reviews++;
     const file = dir + "/review-" + t.id + "-" + t.reviews + ".md";
     const lines = [
-      "Review a diff on a branch (the diff variant)" + (t.lastReview ? ", re-review after fix round " + t.fixes : "") + ".",
+      "Review a diff on a branch (the diff variant).",
       "Task file: " + taskFile(t),
       "Repository: " + repo,
       "Branch: " + t.branch,
@@ -427,10 +426,8 @@ export default async function implement(args, port) {
       "Diff to review: git diff " + reviewRange(t, t.branch),
       "Owned files: " + ownsOf(t).join(", "),
       "Check to run: " + t.spec.check,
-      "Implementer report: " + t.report,
     ];
     if (t.replanBrief) lines.push("Revised task (wins over the task file): the ## Brief section of " + t.replanBrief);
-    if (t.lastReview) lines.push("Earlier review: " + t.lastReview);
     lines.push("Write the report to " + file);
     const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
       gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote(t.id),
@@ -608,7 +605,6 @@ export default async function implement(args, port) {
         fixes: 0,
         extraFix: false,
         reviews: 0,
-        earlierReview: null,
         gone: false,
         extraOwns: [],
         replanBrief: null,
@@ -993,7 +989,6 @@ export default async function implement(args, port) {
         }
         t.resumeRef = "refs/heads/" + entry.branch;
         t.reviews = entry.reviews || 0;
-        t.earlierReview = entry.review_file || null;
         resumed.continued.push(t.id);
       });
     }
