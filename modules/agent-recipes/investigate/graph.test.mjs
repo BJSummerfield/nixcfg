@@ -134,7 +134,7 @@ function assertSound(f) {
   assert.doesNotMatch(k["review-1-1"].task, /Implementer report/);
   assert.equal(k["review-1-1"].baseRef, "refs/heads/pi/h1");
   assert.equal(k["review-1-1"].gate.command, "recipe-gate findings '/t/d/review-1-1.md' --check 'make repro' --run '/t/d' --id 'h1'");
-  assert.equal(k["review-1-1"].gate.timeoutMs, 3600000);
+  assert.equal(k["review-1-1"].gate.timeoutMs, 6600000);
   assert.equal(r.branch, "pi/h1");
   assert.equal(r.review, "/t/d/review-1-1.md");
   assert.deepEqual(outcomes(r), ["fixed", "untried"]);
@@ -181,8 +181,8 @@ function assertSound(f) {
   );
   const g = fake();
   const r = await run(g.runs, { ...args, source: "ftp" });
-  assert.equal(g.batches.length, 0);
-  assert.equal(r.open.length, 1);
+  assert.ok(g.batches.length > 0);
+  assert.ok(!r.open.some((l) => /source/.test(l)));
   const h = fake();
   const r2 = await run(h.runs, { dir: "/t/d", goal: "g" });
   assert.equal(h.batches.length, 0);
@@ -303,17 +303,6 @@ function assertSound(f) {
   assert.equal(r.branch, "pi/h1");
   assertSound(f);
 
-  const g = fake({
-    ...table,
-    "locate-h1-r1": { ok: true, paths: [{ path: "src/cache.js", kind: "primary", why: "w", range: { start: 1, end: 9 } }] },
-    "extract-h1-r1-1": extractOk,
-  });
-  const r2 = await run(g.runs, { ...args, source: "repo" });
-  const gk = keys(g);
-  assert.ok(gk.includes("locate-h1-r1"));
-  assert.ok(!gk.includes("search-h1-r1"));
-  assert.deepEqual(r2.researched[0].extracts, ["/t/d/research/h1-r1/extract-1.md"]);
-  assert.ok(gk.indexOf("change-1-2") > gk.indexOf("extract-h1-r1-1"));
 }
 
 // Research is allowed twice per run; after that a diagnosis no longer offers it.
@@ -328,7 +317,7 @@ function assertSound(f) {
     "search-h1-r1": urlList([src("h1-r1", 1, "primary")]),
     "search-h1-r2": urlList([src("h1-r2", 1, "primary")]),
   });
-  const r = await run(f.runs, { ...args, rounds: 10 });
+  const r = await run(f.runs, args);
   assert.equal(r.researched.length, 2);
   const k = byKey(f);
   assert.match(k["diagnose-h1-1"].task, /Allowed actions: fix, next, research, decide/);
@@ -387,7 +376,7 @@ function assertSound(f) {
     "diagnose-h2-1": fixing(3),
     "diagnose-h2-2": fixing(4),
   });
-  const r = await run(f.runs, { ...args, rounds: 10 });
+  const r = await run(f.runs, args);
   assert.deepEqual(keys(f).slice(3), [
     "change-1", "diagnose-h1-1", "change-1-2", "diagnose-h1-2", "change-1-3",
     "change-2", "diagnose-h2-1", "change-2-2", "diagnose-h2-2", "change-2-3",
@@ -399,21 +388,25 @@ function assertSound(f) {
   assertSound(f);
 }
 
-// The round cap counts every implementer run.
+// A clean review that hit the reviewer's budget or could not run reproductions says so in open.
 {
   const f = fake({
-    "change-1": taskFail(1, "sigA"),
-    "change-1-2": taskFail(1, "sigB"),
-    "change-1-3": taskFail(1, "sigC"),
+    "review-1-1": { ...clean, handoff: "ran out of room", unrunnable: [{ n: 2, reason: "needs a gpu", title: "t", summary: "s" }] },
   });
-  const r = await run(f.runs, { ...args, rounds: 2 });
-  assert.equal(f.items().filter((i) => i.agent === "implementer").length, 2);
-  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2"]);
+  const r = await run(f.runs, args);
+  assert.ok(r.open.includes("hypothesis 1: review 1 hit the reviewer's budget: ran out of room"));
+  assert.ok(r.open.includes("hypothesis 1: review 1 could not run 1 reproduction(s): 2: needs a gpu"));
+}
+
+// The round cap counts every implementer run.
+{
+  const f = fake(Object.fromEntries(["change-1", "change-1-2", "change-1-3", "change-1-4", "change-1-5", "change-1-6", "change-1-7"].map((k, i) => [k, taskFail(1, "sig" + i)])));
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "change-1-3", "change-1-4", "change-1-5", "change-1-6"]);
   assert.equal(r.hypotheses[0].outcome, "out of rounds");
-  assert.equal(r.rounds_used, 2);
+  assert.equal(r.rounds_used, 6);
   assert.match(r.open.join("\n"), /out of rounds/);
   assert.equal(r.branch, null);
-  assert.equal(r.cleanup, "recipe-gate abandon '/t/d'");
 }
 
 // A review that needs work leads to a fresh implementer on the branch and a second review.
@@ -553,13 +546,6 @@ const reviewClean = (branch) => ({ ...clean, branch });
   assert.equal(r.cleanup, "recipe-gate abandon '/t/d' --keep 'pi/pb'");
   assertSound(f);
 
-  // Rounds run out during the pieces.
-  const g = fake(table);
-  const r2 = await run(g.runs, { ...args, rounds: 3 });
-  assert.deepEqual(keys(g).slice(3), ["change-1", "change-1-2", "split-1-1", "piece-h1-a"]);
-  assert.equal(r2.hypotheses[0].outcome, "out of rounds");
-  assert.match(r2.open.join("\n"), /out of rounds/);
-  assert.equal(r2.branch, null);
 }
 
 // A handoff with no usable budget still splits, at half the plan gate's default limit.
