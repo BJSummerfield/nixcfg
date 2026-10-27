@@ -199,3 +199,31 @@ for (const [name, cmd] of [["commit", "echo x > moved.txt && git add moved.txt &
   fs.writeFileSync(`${f}.findings.json`, "not json");
   assert.equal(gate(["resume", run, "--repo", repo]).json.tasks.t.review, "needs-work");
 }
+
+// a mutator's report: tried is read, claims are optional
+{
+  const mutator = `## Survivor 1: sum.sh:2\n\nThe subtraction is not covered.\n\n\`\`\`diff\n${patch("2,0", "sub() { echo $(($1 - $2)); }", "sub() { echo 0; }")}\`\`\`\n\nTried: 4, survived: 1, caught: 3, did not build: 0\n`;
+  const r = runFindings(mutator);
+  assert.equal(r.json.tried, 4);
+  assert.equal(r.json.reproduced[0].n, 1);
+  assert.equal(r.json.verdict, "needs-work");
+  assert.deepEqual(r.json.claimed, []);
+  assert.equal(JSON.parse(fs.readFileSync(`${r.file}.findings.json`, "utf8")).tried, 4);
+
+  const fix = review("done\n\n## Equivalent 1\nThe constant is dead code.\n\n## Equivalent 7\n\n## Notes\nx\n");
+  const c = runFindings(mutator, ["--claims", fix]).json;
+  assert.deepEqual(c.claimed, [{ n: 1, reason: "The constant is dead code." }, { n: 7, reason: "" }]);
+  assert.equal(c.reproduced.length, 1);
+  assert.equal(c.reproduced[0].n, 1);
+  assert.equal(c.verdict, "needs-work");
+}
+
+// a missing claims file, no Tried line, and the missing review
+{
+  const m = runFindings("# Review\n\nLooks fine.\n", ["--claims", path.join(dir(), "none.md")]).json;
+  assert.deepEqual(m.claimed, []);
+  assert.equal(m.tried, null);
+  const missing = gate(["findings", path.join(dir(), "none.md"), "--check", check, "--worktree", worktree]).json;
+  assert.equal(missing.tried, null);
+  assert.deepEqual(missing.claimed, []);
+}
