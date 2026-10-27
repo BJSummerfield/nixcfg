@@ -152,23 +152,19 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.deepEqual(locked, []);
 }
 
-// Token reservations are taken only when the config has a budget.
+// The child's timeout is the item's, else the role's, else the default; the
+// port exposes the config's window.
 {
-  const reserved = [];
-  const reserveTokens = async (dir, o) => {
-    reserved.push({ dir, ...o });
-    return () => {};
-  };
   const harness = fakeHarness(() => ({}));
-  const none = setup("noreserve", { harness, deps: { reserveTokens } });
-  await none.port.runOne(item("a"));
-  assert.equal(reserved.length, 0);
-  const some = setup("reserve", { harness, config: { inFlightTokens: 500000, sizing: path.join(tmp, "missing.json") }, deps: { reserveTokens } });
-  await some.port.runOne(item("a"));
-  assert.equal(reserved.length, 1);
-  assert.equal(reserved[0].budget, 500000);
-  assert.equal(reserved[0].tokens, 100000);
-  assert.equal(reserved[0].dir, path.join(some.stateDir, "inflight"));
+  const { port } = setup("timeout", {
+    harness,
+    config: { window: 4242, roles: { ...roles, writer: { ...roles.writer, timeoutMs: 777 } } },
+  });
+  await port.runOne(item("role"));
+  await port.runOne(item("item", { maxRuntimeMs: 55 }));
+  await port.runOne(item("plain", { agent: "reader" }));
+  assert.deepEqual(harness.calls.map((c) => c.timeoutMs), [777, 55, 1200000]);
+  assert.equal(port.window, 4242);
 }
 
 // A writer that reports blocked or failed stops itself; a reader does not.
@@ -808,13 +804,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(git(kept.worktree, "rev-parse", "--abbrev-ref", "HEAD"), kept.branch);
   assert.equal(fs.existsSync(path.join(kept.worktree, "a.txt")), true);
 
-  const dispatch = make({ keepWorktrees: false });
-  const clean = await dispatch.runOne(item("clean", { worktree: true }));
-  assert.equal(fs.existsSync(clean.cwd), false);
-  assert.equal(clean.worktree, null);
-  const dirty = await dispatch.runOne(item("dirty", { worktree: true }));
-  assert.equal(fs.existsSync(dirty.worktree), true);
-
   const bad = await make().runOne(item("bad", { worktree: true, baseRef: "no-such-ref" }));
   assert.equal(bad.status, "skipped");
   assert.match(bad.error, /worktree could not be made/);
@@ -872,103 +861,23 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal("valve" in (await fakeDeps(runs).harness.start({ item: { key: "x" }, runId: "x", roleName: "scout" })), false);
 }
 
-// A role's own harness wins over the run's default; a role without one keeps
-// the default, and the default never goes through loadHarness.
-{
-  const def = fakeHarness(() => ({}));
-  const alpha = fakeHarness(() => ({}));
-  const loads = [];
-  const loadHarness = (name) => {
-    loads.push(name);
-    return Promise.resolve({ alpha }[name]);
-  };
-  const config = { roles: { ...roles, writer: { ...roles.writer, harness: "alpha" } } };
-  const { port, runDir } = setup("role-harness", { harness: def, config, loadHarness });
-  const [w, r] = await port.runMany([item("w"), item("r", { agent: "reader" })]);
-  assert.ok(w.ok && r.ok);
-  assert.deepEqual(alpha.calls.map((c) => c.item.key), ["w"]);
-  assert.deepEqual(def.calls.map((c) => c.item.key), ["r"]);
-  assert.deepEqual(loads, ["alpha"]);
-  const starts = readLog(runDir).filter((rec) => rec.type === "start");
-  assert.deepEqual(starts.map((s) => [s.key, s.harness]).sort(), [["r", "fake"], ["w", "alpha"]].sort());
-}
-
-// The engine lock follows the child's harness: a big item on a harness that
-// does not use the engine takes no lock, the same item on the run's default does.
+// The engine lock follows the run's harness: a big item on a harness that
+// does not use the engine takes no lock.
 {
   const locked = [];
   const bigLock = async (file) => {
     locked.push(file);
     return () => locked.push("released");
   };
-  const off = fakeHarness(() => ({}), { usesEngine: false });
-  const loadHarness = (name) => Promise.resolve({ off }[name]);
   const onEngine = setup("role-big-1", { harness: fakeHarness(() => ({})), deps: { bigLock } });
   await onEngine.port.runOne(item("big", { big: true }));
   assert.deepEqual(locked, [path.join(onEngine.stateDir, "big.lock"), "released"]);
   locked.length = 0;
-  const offEngine = setup("role-big-2", {
-    harness: fakeHarness(() => ({})),
-    config: { roles: { writer: { ...roles.writer, harness: "off" } } },
-    loadHarness,
-    deps: { bigLock },
-  });
+  const off = fakeHarness(() => ({}), { usesEngine: false });
+  const offEngine = setup("role-big-2", { harness: off, deps: { bigLock } });
   await offEngine.port.runOne(item("big", { big: true }));
   assert.deepEqual(locked, []);
   assert.equal(off.calls.length, 1);
-}
-
-// An unknown or invalid harness name fails only its own child and names it.
-{
-  const loads = [];
-  const loadHarness = (name) => {
-    loads.push(name);
-    throw new Error(`no harness named ${name}`);
-  };
-  const missing = setup("harness-missing", {
-    harness: fakeHarness(() => ({})),
-    config: { roles: { ...roles, writer: { ...roles.writer, harness: "ghost" } } },
-    loadHarness,
-  });
-  const [bad, good] = await missing.port.runMany([item("bad"), item("good", { agent: "reader" })]);
-  assert.equal(bad.status, "failed");
-  assert.equal(bad.ok, false);
-  assert.match(bad.error, /no harness named ghost/);
-  assert.ok(good.ok);
-  assert.equal(good.status, "done");
-  assert.deepEqual(loads, ["ghost"]);
-  const invalid = setup("harness-invalid", {
-    harness: fakeHarness(() => ({})),
-    config: { roles: { writer: { ...roles.writer, harness: "../evil" } } },
-    loadHarness,
-  });
-  const evil = await invalid.port.runOne(item("bad"));
-  assert.equal(evil.status, "failed");
-  assert.match(evil.error, /bad harness name: \.\.\/evil/);
-  assert.deepEqual(loads, ["ghost"]);
-}
-
-// Each harness module is loaded once, however many children run on it.
-{
-  const loads = [];
-  const alpha = fakeHarness(() => ({}));
-  const beta = fakeHarness(() => ({}));
-  const loadHarness = (name) => {
-    loads.push(name);
-    return Promise.resolve(name === "alpha" ? alpha : beta);
-  };
-  const config = {
-    roles: {
-      writer: { ...roles.writer, harness: "alpha" },
-      reader: { ...roles.reader, harness: "beta" },
-    },
-  };
-  const { port } = setup("harness-once", { harness: fakeHarness(() => ({})), config, loadHarness });
-  const results = await port.runMany([item("w1"), item("w2"), item("r1", { agent: "reader" })]);
-  assert.ok(results.every((r) => r.ok));
-  assert.deepEqual(loads.sort(), ["alpha", "beta"]);
-  assert.equal(alpha.calls.length, 2);
-  assert.equal(beta.calls.length, 1);
 }
 
 // Gate-only items run the gate without a harness, a slot or a child count.

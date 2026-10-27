@@ -2,8 +2,6 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_ESTIMATE = 100000;
-
 export function semaphore(n) {
   let free = n;
   const waiting = [];
@@ -159,82 +157,5 @@ export async function bigLock(file, { pollMs = 2000, signal, holderChildGone = (
     const seen = readText(file);
     if (seen !== null && (await isStale(seen)) && (await takeOver(seen))) return makeRelease();
     await sleep(pollMs, signal);
-  }
-}
-
-function readEntries(dir, ownName) {
-  let names;
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const live = [];
-  for (const name of names) {
-    const match = /^(\d+)-/.exec(name);
-    if (!match || name === ownName) continue;
-    const file = path.join(dir, name);
-    if (!pidAlive(Number(match[1]))) {
-      fs.rmSync(file, { force: true });
-      continue;
-    }
-    try {
-      const tokens = Number(fs.readFileSync(file, "utf8"));
-      if (Number.isFinite(tokens)) live.push({ name, tokens, mtimeMs: fs.statSync(file).mtimeMs });
-    } catch {
-      continue;
-    }
-  }
-  return live;
-}
-
-const total = (entries) => entries.reduce((sum, e) => sum + e.tokens, 0);
-
-export async function reserveTokens(dir, { budget, tokens, id, pollMs = 2000, signal } = {}) {
-  fs.mkdirSync(dir, { recursive: true });
-  const name = `${process.pid}-${id}`;
-  const file = path.join(dir, name);
-  const fits = (others) =>
-    budget == null || others.length === 0 || total(others) + tokens <= budget;
-
-  let done = false;
-  const release = () => {
-    if (done) return;
-    done = true;
-    fs.rmSync(file, { force: true });
-  };
-
-  for (;;) {
-    if (signal?.aborted) throw abortError(signal);
-    const before = readEntries(dir, name);
-    if (fits(before)) {
-      const tmp = path.join(dir, `.${name}.${randomBytes(4).toString("hex")}.tmp`);
-      fs.writeFileSync(tmp, String(tokens));
-      fs.renameSync(tmp, file);
-      if (budget == null) return release;
-      // Two reservers can both see room at once; the one that wrote later,
-      // by (mtime, name), gives way so only one stays.
-      const known = new Set(before.map((e) => e.name));
-      const after = readEntries(dir, name);
-      if (fits(after)) return release;
-      const mtimeMs = fs.statSync(file).mtimeMs;
-      const earlier = after.some(
-        (e) =>
-          !known.has(e.name) && (e.mtimeMs < mtimeMs || (e.mtimeMs === mtimeMs && e.name < name)),
-      );
-      if (!earlier) return release;
-      fs.rmSync(file, { force: true });
-    }
-    await sleep(pollMs, signal);
-  }
-}
-
-export function roleEstimate(sizingFile, role) {
-  try {
-    const sizing = JSON.parse(fs.readFileSync(sizingFile, "utf8"));
-    const peak = sizing?.roles?.[role]?.peak_p90;
-    return Number.isFinite(peak) ? peak : DEFAULT_ESTIMATE;
-  } catch {
-    return DEFAULT_ESTIMATE;
   }
 }
