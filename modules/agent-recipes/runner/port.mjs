@@ -239,8 +239,13 @@ export function createPort(opts) {
     if (!item.gate) return skipped("item names no gate and no role");
     const runId = newRunId(item);
     let made = null;
+    let releaseBig = null;
     try {
       if (stopped()) return aborted();
+      if (item.big && harness.usesEngine !== false) {
+        releaseBig = await bigLock(path.join(stateDir, "big.lock"), { signal, holderChildGone: childOfHolder(stateDir) });
+        if (stopped()) return aborted();
+      }
       let gateCwd = cwd;
       let worktree = null;
       let branch = null;
@@ -284,6 +289,8 @@ export function createPort(opts) {
     } catch (error) {
       if (stopped()) return aborted();
       return bare("failed", `runner error: ${error?.message ?? error}`, { runId });
+    } finally {
+      releaseBig?.();
     }
   }
 
