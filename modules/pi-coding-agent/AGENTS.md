@@ -33,8 +33,8 @@ environment file and their own prompt.
 - A Result with `handoff` set is a child that reached its context budget and
   handed off, not a failure: its output file holds what is done and what is
   left (with `empty`, only its branch does).
-- `resume: <runId>` continues a child in its own cwd; `recipe_run` with
-  `resume: true` continues a recipe from its task directory.
+- `recipe_run` with `resume: true` continues a recipe from its task
+  directory.
 - After a pi or paseo restart the wake is lost. A recipe run carries on
   without the session: check it with `recipe-status <task dir>` or wait for it
   with `recipe-run wait <task dir>`, and do not start it again; the runner

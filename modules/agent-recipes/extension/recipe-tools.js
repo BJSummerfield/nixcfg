@@ -172,7 +172,6 @@ export default function recipeTools(pi, deps = {}) {
         worktree: { type: "boolean" },
         base: { type: "string" },
         keepWorktree: { type: "boolean" },
-        resume: { type: "string", description: "Run id of a child to continue" },
         timeoutMs: { type: "number" },
         cwd: { type: "string" },
         background: { type: "boolean" },
@@ -208,7 +207,6 @@ export default function recipeTools(pi, deps = {}) {
         ...(params.worktree ? ["--worktree"] : []),
         ...(params.base ? ["--base", params.base] : []),
         ...(params.keepWorktree ? ["--keep-worktree"] : []),
-        ...(params.resume ? ["--resume", params.resume] : []),
         ...(params.timeoutMs != null ? ["--timeout-ms", String(params.timeoutMs)] : []),
       ];
       const fd = openLog(path.join(dir, "dispatch.log"));
