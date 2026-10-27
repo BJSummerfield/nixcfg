@@ -61,12 +61,13 @@ each must be safe to repeat and must not hold a secret.
 
 ## What runs
 
-1. A scout child carries `recipe-gate pin`, which fixes the base: the
-   repository's HEAD commit and a ref to it. A pin that fails ends the run
-   with an open line.
-2. `reproduce`: a gate-only scout child in its own worktree of the base runs
-   `recipe-gate repro --expect fail`. When `verify` differs, `verify-base`
-   does the same for it. Either passing at the base ends the run.
+1. `pin` is a gate-only step: the runner runs `recipe-gate pin` itself, with
+   no child, to fix the base: the repository's HEAD commit and a ref to it.
+   A pin that fails ends the run with an open line.
+2. `reproduce` is a gate-only step the runner runs without a child, in its own
+   worktree of the base, as `recipe-gate repro --expect fail`. When `verify`
+   differs, `verify-base` does the same for it. Either passing at the base
+   ends the run.
 3. `hypothesize`: a reviewer (hypotheses variant) in its own worktree of the
    base reads and runs commands, edits nothing, and writes at least two
    ranked hypotheses, each with a claim and a first check
@@ -116,13 +117,13 @@ each must be safe to repeat and must not hold a secret.
      before handing off, or would need a second split, is a `decide`. After
      the last piece the hypothesis takes that branch, goes to `verify` (the
      verify command and the light check on the whole result) and then to one
-     review of the whole diff from the pinned base. `verify-<rank>s<k>` is the
-     only gate-only step after a change.
+   review of the whole diff from the pinned base. `verify-<rank>s<k>` is a
+   gate-only step the runner runs without a child, the only one after a change.
    - Every change, fix, relay and piece run counts against `rounds`. Reaching
      it ends the run with the outcome `out of rounds` and an open line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
-   failed twice, a piece that failed, a gate that did not run, a verdict that cannot be read. It
+   failed twice, a piece that failed, a verdict that cannot be read. It
    picks one action that `recipe-gate diagnosis` checks:
    - `fix`: one more round with a fresh implementer on the hypothesis branch;
    - `next`: drop this hypothesis and start the next in a fresh worktree,
@@ -131,6 +132,9 @@ each must be safe to repeat and must not hold a secret.
      while fewer than two research rounds ran in the run;
    - `retry`, where the step allows it;
    - `decide`: the run stops and the question goes to the user.
+
+   A gate that did not run is not diagnosed: after one mechanical rerun it
+   becomes an open line and the hypothesis stops.
 
    Each hypothesis gets at most two diagnoses, and the same diagnosis twice
    counts as `decide`. A hypothesis whose diagnoses are used up while a later
