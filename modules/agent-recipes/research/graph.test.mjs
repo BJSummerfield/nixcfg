@@ -371,6 +371,16 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.deepEqual(emits.at(-1).sources, { ok: 1, failed: 0, over_cap: 0 });
 }
 
+// A review whose verdict gate did not run is an open line, not a diagnosis.
+{
+  const f = small({ review: () => undefined });
+  const receipt = await run(f.runs, { dir: "/t/k", goal: "G", output: "/t/k/out.md" });
+  assert.deepEqual(keys(f.batches).slice(4), [["review"]]);
+  assert.ok(!keys(f.batches).some((k) => k[0].startsWith("diagnose-")));
+  assert.deepEqual(receipt.open, ["the review's verdict gate did not run"]);
+  assert.equal(receipt.gap_round, false);
+}
+
 // A reviewer that hands off without an unread list is not continued: its
 // partial file is not read as a verdict and the usual diagnosis follows.
 {
