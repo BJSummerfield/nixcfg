@@ -33,7 +33,7 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   const L = await load(fake(() => null).runs);
   const gated = L.node("k", "writer", ["Do it.", "Output: /t/o.md"], "/t/o.md", {
     gate: "recipe-gate x '/t/o.md'",
-    timeoutMs: 5,
+    timeoutMs: 9,
     gateTimeoutMs: 7,
     worktree: "wt",
   });
@@ -43,7 +43,6 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
     task: "Do it.\nOutput: /t/o.md\nWhen the file is written, run `recipe-gate x '/t/o.md'`; if it reports a problem, fix the file and run it again before you finish, unless your report says blocked or failed.",
     output: "/t/o.md",
     outputMode: "file-only",
-    maxRuntimeMs: 5,
     gate: { command: "recipe-gate x '/t/o.md'", output: "json", timeoutMs: 7 },
     worktree: "wt",
   });
@@ -342,7 +341,7 @@ console.log("recipe library: ok");
 // gatherSources(): search and/or locate, rank and cap, extract.
 {
   const search = (urls) => ok("search-q", { ok: true, urls: urls.map((u, i) => ({ url: u, kind: i === 0 ? "primary" : "secondary", why: "w" })) });
-  const spec = { goal: "G", question: "Q?", id: "q", dir: "/t", repo: "/r", childMs: 9 };
+  const spec = { goal: "G", question: "Q?", id: "q", dir: "/t", repo: "/r" };
 
   {
     const urls = ["u1", "u2", "u3", "u4", "u5"];
@@ -351,7 +350,7 @@ console.log("recipe library: ok");
       return item.key === "extract-q-2" ? ok(item.key, { ok: false, reason: "thin" }) : ok(item.key, { ok: true, bytes: 5 });
     });
     const L = await load(f.runs);
-    const out = await L.gatherSources(spec);
+    const out = await L.gatherSources({ ...spec, repo: "" });
     assert.equal(f.batches.length, 2);
     assert.deepEqual(f.batches[0].map((i) => i.key), ["search-q"]);
     assert.equal(f.batches[0][0].output, "/t/research/q/search.md");
@@ -366,12 +365,13 @@ console.log("recipe library: ok");
 
   {
     const f = fake((item) => {
+      if (item.key === "search-q") return search([]);
       if (item.key === "locate-q") return ok(item.key, { ok: true, paths: [{ path: "src/a.js", kind: "primary", why: "w", range: { start: 1, end: 9 } }] });
       return ok(item.key, { ok: true, bytes: 1 });
     });
     const L = await load(f.runs);
-    const out = await L.gatherSources({ ...spec, source: "repo" });
-    assert.deepEqual(f.batches[0].map((i) => i.key), ["locate-q"]);
+    const out = await L.gatherSources(spec);
+    assert.deepEqual(f.batches[0].map((i) => i.key).sort(), ["locate-q", "search-q"]);
     assert.ok(f.batches[1][0].task.includes("File: /r/src/a.js"));
     assert.ok(f.batches[1][0].task.includes("Range: 1-9"));
     assert.deepEqual(out.files, ["/t/research/q/extract-1.md"]);
@@ -384,7 +384,7 @@ console.log("recipe library: ok");
       return failed(item.key, "boom");
     });
     const L = await load(f.runs);
-    const out = await L.gatherSources({ ...spec, source: "both" });
+    const out = await L.gatherSources(spec);
     assert.deepEqual(f.batches[0].map((i) => i.key).sort(), ["locate-q", "search-q"]);
     assert.equal(f.batches[1].length, 2);
     assert.deepEqual(out.files, []);
@@ -394,18 +394,17 @@ console.log("recipe library: ok");
   {
     const f = fake((item) => ok(item.key, { ok: true, urls: [] }));
     const L = await load(f.runs);
-    const out = await L.gatherSources(spec);
+    const out = await L.gatherSources({ ...spec, repo: "" });
     assert.deepEqual(out.files, []);
     assert.ok(out.open.includes("no sources were found"));
     assert.equal(f.batches.length, 1);
   }
 
   {
-    const f = fake(() => null);
+    const f = fake((item) => ok(item.key, { ok: true, urls: [] }));
     const L = await load(f.runs);
-    assert.deepEqual((await L.gatherSources({ ...spec, source: "ftp" })).open, ["source must be web, repo or both"]);
-    assert.deepEqual((await L.gatherSources({ ...spec, source: "both", repo: "" })).open, ["a repository source needs the repo argument"]);
-    assert.equal(f.batches.length, 0);
+    await L.gatherSources({ ...spec, repo: "" });
+    assert.deepEqual(f.batches[0].map((i) => i.key), ["search-q"]);
   }
 }
 
@@ -615,11 +614,11 @@ console.log("recipe library: ok");
   const item = L.splitPlanItem(o);
   assert.equal(item.agent, "planner");
   assert.equal(item.big, true);
-  assert.equal(item.maxRuntimeMs, 9);
+  assert.ok(!("maxRuntimeMs" in item));
   assert.equal(item.output, "/t/split/a-1/planner.md");
   assert.equal(item.handoffOf, "run-1");
   assert.equal(item.handoffAs, "split");
-  assert.equal(item.gate.command, "recipe-gate plan '/t/split/a-1' --repo '/w/it'\\''s' --limit 50000 --sizing '/s.json'");
+  assert.equal(item.gate.command, "recipe-gate plan '/t/split/a-1' --repo '/w/it'\\''s' --limit 50000");
   assert.match(item.task, /^Task file: \/t\/tasks\/a\.md$/m);
   assert.match(item.task, /^Handoff note: \/t\/note\.md$/m);
   assert.match(item.task, /^Branch: task-a$/m);
@@ -806,15 +805,15 @@ console.log("recipe library: ok");
   assert.ok(!("gate" in f.batches[2][0]), "an item without a gate stays without one");
 }
 
-// A reviewer or synthesizer handoff without an unread list is a failure; an
-// implementer or scout handoff is returned untouched.
+// A handoff without an unread list passes through unchanged.
 {
   const handoff = { line: "handoff: x", unread: [], note: "/t/r.md", empty: false };
   const f = fake((item) => Object.assign(ok(item.key, { ok: true, verdict: "invalid" }), { handoff }));
   const L = await load(f.runs);
   for (const agent of ["reviewer", "synthesizer"]) {
     const r = await L.one(L.node(agent, agent, ["x"], "/t/" + agent + ".md"));
-    assert.deepEqual(r, { ok: false, error: "handed off without listing unread input", runId: "run-" + agent, file: "/t/" + agent + ".md" });
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.handoff, handoff);
   }
   for (const agent of ["implementer", "scout", undefined]) {
     const r = await L.one(L.node("k-" + agent, agent, ["x"], "/t/" + agent + ".md"));
