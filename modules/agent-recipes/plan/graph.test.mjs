@@ -555,7 +555,7 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md' --repo '/r o'");
 }
 
-// A reviewer that hands off without listing what it did not read fails the step: its partial file is never read as a verdict and the usual healing runs.
+// A reviewer that hands off with no usable verdict gets the usual healing, whether or not it listed anything unread.
 {
   const f = fake({ reviewer: { review: handedOff("handoff: read two of five tasks") } });
   const receipt = await run(f.runs, base);
@@ -565,16 +565,14 @@ function assertUniqueOutputs(f) {
   assert.equal(receipt.decide.length, 1);
 }
 
-// The same failure healed by a retry reaches a fresh review; the partial one is not a verdict.
+// A reviewer that hands off with nothing left unread is taken as it stands: its review is the verdict and nothing is healed or continued.
 {
-  const f = fake({
-    reviewer: { review: handedOff("handoff: read two of five tasks", clean) },
-    diagnose: { "diagnose-1": diagnosis("retry", "ran out of room") },
-  });
+  const f = fake({ reviewer: { review: handedOff("handoff: read all five tasks, out of room for notes", clean) } });
   const receipt = await run(f.runs, base);
-  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"], ["diagnose-1"], ["review-2"]]);
+  assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
   assert.equal(receipt.review, "clean");
-  assert.equal(receipt.healed.length, 1);
+  assert.deepEqual(receipt.healed, []);
+  assert.deepEqual(receipt.open, []);
 }
 
 // A reviewer that hands off with unread task files is continued by parts over those files and a merge; the merged review's verdict is the one used.

@@ -73,6 +73,7 @@ function fake(table = {}) {
     if (k.startsWith("review-")) return clean;
     if (k.startsWith("diagnose-")) return diagnosis("decide", "a person has to choose");
     if (k.startsWith("extract-")) return extractOk;
+    if (k.startsWith("locate-")) return { ok: true, paths: [] };
     return urlList([]);
   };
   return {
@@ -288,9 +289,9 @@ function assertSound(f) {
   const f = fake(table);
   const r = await run(f.runs, args);
   const ks = keys(f);
-  assert.deepEqual(ks.slice(3, 6), ["change-1", "diagnose-h1-1", "search-h1-r1"]);
-  assert.deepEqual(ks.slice(6, 9), ["extract-h1-r1-1", "extract-h1-r1-2", "extract-h1-r1-3"]);
-  assert.deepEqual(ks.slice(9), ["change-1-2", "review-1-1"]);
+  assert.deepEqual(ks.slice(3, 7), ["change-1", "diagnose-h1-1", "search-h1-r1", "locate-h1-r1"]);
+  assert.deepEqual(ks.slice(7, 10), ["extract-h1-r1-1", "extract-h1-r1-2", "extract-h1-r1-3"]);
+  assert.deepEqual(ks.slice(10), ["change-1-2", "review-1-1"]);
   const k = byKey(f);
   assert.match(k["diagnose-h1-1"].task, /Allowed actions: fix, next, research, decide/);
   assert.equal(k["change-1-2"].baseRef, "refs/heads/pi/h1");

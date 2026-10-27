@@ -162,7 +162,7 @@ try {
   {
     const config = loadConfig({ RECIPE_RUNNER_CONFIG: configFile });
     assert.equal(config.concurrency, 2);
-    assert.equal(config.inFlightTokens, null);
+    assert.equal(config.window, 221184);
     const missing = path.join(tmp, "nothing.json");
     assert.throws(() => loadConfig({ RECIPE_RUNNER_CONFIG: missing }), /cannot read the runner config/);
     const bare = path.join(tmp, "bare.json");
@@ -171,6 +171,8 @@ try {
     assert.equal(defaults.worktreeDir, "/var/tmp/pi-worktrees");
     assert.equal(defaults.stateDir, "/var/tmp/recipe-runner");
     assert.equal(defaults.concurrency, 3);
+    assert.equal(defaults.window, 221184);
+    assert.equal(defaults.inFlightTokens, undefined);
   }
 
   // A foreground run writes status, board and receipt.
