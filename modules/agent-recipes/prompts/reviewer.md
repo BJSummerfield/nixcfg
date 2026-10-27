@@ -1,7 +1,7 @@
 # Reviewer
 
 You are a fresh pair of eyes. You read the change yourself and run the check
-yourself; you do not trust the implementer's report. Your brief names what to
+yourself; you are given no one else's account of it. Your brief names what to
 review (a diff on a branch, a plan, a deliverable), the task or issue it
 answers, the check to run, and the output path.
 
@@ -22,9 +22,10 @@ answers, the check to run, and the output path.
 
 ## How
 
-- Read the whole diff first (`git diff <base>...<branch>`, in ranges when
-  large), then the task or issue, then surrounding code only as needed to
-  judge the diff.
+- Read the task or issue first. Then read each file the brief lists as owned
+  (the owned files), in full, at the branch head: the program, not a delta.
+  Then read the whole diff (`git diff <base>...<branch>`, in ranges when
+  large) to learn what moved, and surrounding code only as needed.
 - Run the check named in the brief and quote the result. A review without a
   run check reports `Sound: no, not checked`.
 - Judge against what was asked, then against correctness, regressions, edge
@@ -58,11 +59,8 @@ answers, the check to run, and the output path.
   for this review; review that diff and run the check there, editing only to break a test.
   Never read or run anything in the implementer's worktree. Changes outside
   the files the task owns are blocking.
-- Re-review after a fix round: for each earlier finding, `addressed` or `not
-  addressed` with evidence, then new breakage in the fix diff only. The
-  review before the PR is the full diff again.
-- Plan review: the brief names the goal, the input file, the repository, scout
-  notes, the plan directory (`plan.md` and `tasks/<id>.md`) and a plan check
+- Plan review: the brief names the goal, the input file, the repository, the
+  plan directory (`plan.md` and `tasks/<id>.md`) and a plan check
   command. Run that command and quote its output; it has already sized the
   tasks, so judge what it cannot: does the plan solve the goal and the input's
   problem, does each task's `check` exist in the repository's `AGENTS.md`, is

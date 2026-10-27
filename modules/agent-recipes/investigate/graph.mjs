@@ -227,7 +227,7 @@ function reviewItem(h) {
   h.reviews++;
   const file = dir + "/review-" + h.rank + "-" + h.reviews + ".md";
   const lines = [
-    "Review a diff on a branch (the diff variant)" + (h.lastReview ? ", re-review after fix round " + h.fixes : "") + ".",
+    "Review a diff on a branch (the diff variant).",
     "Goal: " + goal,
     "Hypothesis " + h.rank + ": " + h.claim,
     "Repository: " + repo,
@@ -236,8 +236,6 @@ function reviewItem(h) {
     "Diff to review: git diff " + pinned.base + ".." + h.branch,
     reproLine(),
   ].concat(commandLines());
-  lines.push("Implementer report: " + h.report);
-  if (h.lastReview) lines.push("Earlier review: " + h.lastReview);
   lines.push("Write the report to " + file);
   const item = node("review-" + h.rank + "-" + h.reviews, "reviewer", lines, file, {
     gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote("h" + h.rank),
