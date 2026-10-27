@@ -41,7 +41,7 @@ each must be safe to repeat and must not hold a secret.
 
 ```
 <dir>/run.json                     the ledger: base commit and ref, every worktree and branch made
-<dir>/reproduce.md, reproduce.log  the reproduction (verify-base.log when verify differs)
+<dir>/reproduce.log                the reproduction (verify-base.log when verify differs)
 <dir>/hypotheses.md                the ranked hypotheses (hypotheses-<n>.md when a diagnosis ran it again)
 <dir>/change-<rank>.md             implementer report for a hypothesis (change-<rank>-<n>.md for a fix round or a relay)
 <dir>/split/h<rank>-<n>/           a split: planner.md, plan.md and the tasks of its pieces
@@ -113,9 +113,11 @@ each must be safe to repeat and must not hold a secret.
      before handing off, or would need a second split, is a `decide`. After
      the last piece the hypothesis takes that branch, goes to `verify` (the
      verify command and the light check on the whole result) and then to one
-   review of the whole diff from the pinned base.
-   - Every change, fix, relay and piece run counts toward the limit of 6 in all. Reaching
-     it ends the run with the outcome `out of rounds` and an open line.
+   review of the whole diff from the pinned base. `verify-<rank>s<k>` is a
+   gate-only step the runner runs without a child, the only one after a change.
+   - Every change, fix, relay and piece run counts toward the limit of 6 in
+     all. Reaching it ends the run with the outcome `out of rounds` and an open
+     line.
 5. A diagnosis is a fresh reviewer (diagnosis variant), run at once for that
    hypothesis for: a stuck gate, a blocked or failed report, a child that
    failed twice, a piece that failed, a review that gave no verdict. It
