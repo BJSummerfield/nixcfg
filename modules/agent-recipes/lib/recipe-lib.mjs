@@ -83,7 +83,6 @@ export function recipeLib(rawPort) {
       if (o.gateTimeoutMs) item.gate.timeoutMs = o.gateTimeoutMs;
     }
     if (o.worktree !== undefined) item.worktree = o.worktree;
-    if (o.resume) item.resume = o.resume;
     if (o.big) item.big = true;
     return item;
   }
@@ -106,7 +105,6 @@ export function recipeLib(rawPort) {
           ? "The previous attempt was rejected: " + reason + ". Write it to " + moved + "."
           : "The previous attempt did not write the output file. Write it to " + moved + ".");
     }
-    if (item.resume) copy.resume = failed.runId || item.resume;
     if (item.gate) {
       copy.gate = Object.assign({}, item.gate, {
         command: item.gate.command.split(quote(item.output)).join(quote(moved)),
@@ -412,7 +410,6 @@ export function recipeLib(rawPort) {
 
   function withOutput(item, output, task) {
     const copy = Object.assign({}, item, { output: output, task: task });
-    delete copy.resume;
     if (item.gate) {
       copy.gate = Object.assign({}, item.gate, {
         command: item.gate.command.split(quote(item.output)).join(quote(output)),
