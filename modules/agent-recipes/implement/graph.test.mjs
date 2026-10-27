@@ -287,6 +287,7 @@ function assertUniqueOutputs(f) {
   assert.doesNotMatch(k["review-b-1"].task, /Earlier review/);
   assert.doesNotMatch(k["review-b-2"].task, /re-review/);
   assert.doesNotMatch(k["review-b-2"].task, /Earlier review/);
+  assert.match(k["review-b-2"].task, /^Review a diff on a branch \(the diff variant\)\./m);
 
   assert.equal(k["fix-b-1"].resume, "run-impl-b");
   assert.equal(k["fix-b-1"].agent, undefined);
