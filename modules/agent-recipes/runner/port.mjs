@@ -80,7 +80,6 @@ export function fingerprint(item) {
     gate: item.gate?.command ?? null,
     worktree: item.worktree ?? null,
     baseRef: item.baseRef ?? null,
-    resume: item.resume ?? null,
   };
   return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
@@ -214,20 +213,11 @@ export function createPort(opts) {
   const aborted = (reason = "run stopped") => bare("aborted", reason);
 
   async function execute(item, fp) {
-    const resumed = item.resume ? lookupRun(item.resume) : null;
-    if (item.resume && !resumed) return skipped(`unknown resume id: ${item.resume}`);
-    const roleName = item.agent ?? resumed?.role;
+    const roleName = item.agent;
     if (!roleName) return skipped("item names no role");
     const role = config.roles?.[roleName];
     if (!role) return skipped(`unknown role: ${roleName}`);
-    // A session can only be resumed by the harness that made it.
-    const chosenHarness = resumed?.harness ?? role.harness ?? harnessName;
-    if (resumed) {
-      const present = resumed.worktree
-        ? worktrees.state(resumed.worktree, "HEAD").exists
-        : fs.existsSync(resumed.cwd);
-      if (!present) return skipped(`resumed child's directory is gone: ${resumed.worktree ?? resumed.cwd}`);
-    }
+    const chosenHarness = role.harness ?? harnessName;
     if (spawned >= maxChildren) return skipped(`child limit reached (${maxChildren})`);
     spawned += 1;
 
@@ -271,12 +261,7 @@ export function createPort(opts) {
       let worktree = null;
       let branch = null;
       let base = null;
-      if (resumed) {
-        childCwd = resumed.cwd;
-        worktree = resumed.worktree ?? null;
-        branch = resumed.branch ?? null;
-        base = resumed.base ?? null;
-      } else if (item.worktree === true) {
+      if (item.worktree === true) {
         made = worktrees.make({
           repo: cwd,
           base: item.baseRef ?? "HEAD",
@@ -295,9 +280,8 @@ export function createPort(opts) {
         base = made.head ?? item.baseRef ?? "HEAD";
       }
 
-      const sessionDir = resumed?.sessionDir ?? path.join(runDir, "sessions");
-      const sessionId = resumed?.sessionId ?? runId;
-      const sessionFile = resumed?.sessionFile;
+      const sessionDir = path.join(runDir, "sessions");
+      const sessionId = runId;
       const outputPath = item.output ? path.resolve(childCwd, item.output) : null;
       const before = outputPath ? snapshot(outputPath) : null;
       const spec = {
@@ -311,8 +295,6 @@ export function createPort(opts) {
         cwd: childCwd,
         sessionDir,
         sessionId,
-        sessionFile,
-        resume: Boolean(resumed),
         timeoutMs: item.maxRuntimeMs ?? defaultTimeoutMs,
         env: {
           ...(opts.env ?? {}),
@@ -368,13 +350,11 @@ export function createPort(opts) {
           transcriptFile: spec.transcriptFile,
           sessionDir,
           sessionId,
-          sessionFile: sessionFile ?? null,
           pid: childPid,
           pidStart: childPid ? procStartTime(childPid) : null,
           runPid: process.pid,
           at: at(),
         };
-        if (resumed) record.resumes = item.resume;
         appendJsonl(log, record);
         writeJson(indexFile(stateDir, runId), record);
       };

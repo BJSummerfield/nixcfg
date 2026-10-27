@@ -129,7 +129,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(spec.logDir, path.join(runDir, "children", spec.runId));
   assert.equal(spec.sessionDir, path.join(runDir, "sessions"));
   assert.equal(spec.sessionId, spec.runId);
-  assert.equal(spec.resume, false);
   assert.equal(spec.timeoutMs, 1200000);
 }
 
@@ -208,7 +207,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(gates[0].env.PATH, process.env.PATH);
 }
 
-// A failed child still gets its gate, and so does a resumed one.
+// A failed child still gets its gate.
 {
   const harness = fakeHarness((spec) => (spec.item.key === "bad" ? { status: "failed", error: "boom", finalText: "" } : {}));
   const { port, gates } = setup("gates", { harness });
@@ -220,12 +219,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(bad.status, "failed");
   assert.equal(bad.error, "boom");
   assert.equal(bad.gate.ran, true);
-  const fix = await port.runOne(item("fix", { agent: undefined, resume: first.runId, gate }));
-  assert.equal(fix.status, "done");
-  assert.equal(fix.cwd, first.cwd);
-  assert.equal(gates.length, 3);
-  assert.equal(harness.calls[2].resume, true);
-  assert.equal(harness.calls[2].roleName, "writer");
+  assert.equal(gates.length, 2);
   const none = await port.runOne(item("nogate"));
   assert.equal(none.gate, null);
   assert.equal(none.structuredOutput, undefined);
@@ -280,7 +274,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(fs.readFileSync(stray, "utf8"), "the real output");
 }
 
-// maxChildren gives skipped; so do an unknown role and an unknown resume id.
+// maxChildren gives skipped; so does an unknown role.
 {
   const harness = fakeHarness(() => ({}));
   const { port, runDir } = setup("caps", { harness, maxChildren: 2 });
@@ -292,9 +286,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(role.status, "skipped");
   const open = setup("caps2", { harness });
   assert.match((await open.port.runOne(item("d", { agent: "nobody" }))).error, /unknown role: nobody/);
-  const unknown = await open.port.runOne(item("e", { resume: "nope" }));
-  assert.equal(unknown.status, "skipped");
-  assert.match(unknown.error, /unknown resume id/);
   assert.equal(readLog(runDir).filter((r) => r.type === "settle").length, 2);
 }
 
@@ -393,31 +384,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(harness.calls.length, calls + 1);
   assert.equal(harness.calls.at(-1).item.key, "second");
   assert.deepEqual(first.gates.map((g) => g.item.key), ["first", "second"]);
-}
-
-// A resumed item keeps the original session and directory under a new run id.
-{
-  const harness = fakeHarness((spec) => ({ sessionFile: `/s/${spec.sessionId}.jsonl` }));
-  const { port, runDir, stateDir } = setup("session", { harness });
-  const first = await port.runOne(item("one", { worktree: true }));
-  const second = await port.runOne(item("two", { agent: undefined, resume: first.runId }));
-  assert.notEqual(second.runId, first.runId);
-  const spec = harness.calls[1];
-  assert.equal(spec.sessionId, first.runId);
-  assert.equal(spec.sessionDir, path.join(runDir, "sessions"));
-  assert.equal(spec.sessionFile, `/s/${first.runId}.jsonl`);
-  assert.equal(spec.cwd, first.cwd);
-  const starts = readLog(runDir).filter((r) => r.type === "start");
-  assert.equal(starts[1].runId, second.runId);
-  assert.equal(starts[1].sessionId, first.runId);
-  assert.equal(starts[1].sessionDir, starts[0].sessionDir);
-  assert.equal(starts[1].worktree, starts[0].worktree);
-  assert.equal(starts[1].branch, starts[0].branch);
-  assert.equal(starts[1].cwd, starts[0].cwd);
-  const index = JSON.parse(fs.readFileSync(path.join(stateDir, "children", `${second.runId}.json`), "utf8"));
-  assert.equal(index.sessionId, first.runId);
-  assert.equal(index.sessionDir, starts[0].sessionDir);
-  assert.equal(second.worktree, first.worktree);
 }
 
 // killUnfinished kills a recorded live child and leaves a reused pid alone.
@@ -881,8 +847,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
         { key: "good", agent: "scout", task: "t", gate: { command: "c", output: "json" } },
         { key: "no", agent: "implementer", task: "t" },
       ]);
-      const fix = await port.runOne({ key: "fix", resume: good.runId, task: "t", gate: { command: "c" } });
-      return { good, bad, fix, args };
+      return { good, bad, args };
     },
     runs,
     { n: 1 },
@@ -891,8 +856,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(out.good.runId, "run-good");
   assert.equal(out.bad.status, "failed");
   assert.equal(out.bad.error, "bad");
-  assert.equal(out.fix.ok, true);
-  assert.equal(out.fix.cwd, "/wt/run-good");
 
   const peaks = {
     all: async (items) =>
@@ -928,36 +891,6 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.deepEqual(loads, ["alpha"]);
   const starts = readLog(runDir).filter((rec) => rec.type === "start");
   assert.deepEqual(starts.map((s) => [s.key, s.harness]).sort(), [["r", "fake"], ["w", "alpha"]].sort());
-}
-
-// A resumed child runs on the harness recorded for it, even if the role's
-// harness now names another.
-{
-  const alpha = fakeHarness(() => ({}));
-  const beta = fakeHarness(() => ({}));
-  const loadHarness = (name) => Promise.resolve({ alpha, beta }[name]);
-  const first = setup("harness-resume", {
-    harness: fakeHarness(() => ({})),
-    config: { roles: { writer: { ...roles.writer, harness: "alpha" } } },
-    loadHarness,
-  });
-  const done = await first.port.runOne(item("w"));
-  assert.ok(done.ok);
-  assert.equal(alpha.calls.length, 1);
-  const second = setup("harness-resume-2", {
-    harness: fakeHarness(() => ({})),
-    config: { stateDir: first.stateDir, roles: { writer: { ...roles.writer, harness: "beta" } } },
-    loadHarness,
-  });
-  const resumed = await second.port.runOne(item("again", { resume: done.runId }));
-  assert.ok(resumed.ok);
-  assert.equal(alpha.calls.length, 2);
-  assert.equal(beta.calls.length, 0);
-  const start = readLog(second.runDir).filter((rec) => rec.type === "start")[0];
-  assert.equal(start.harness, "alpha");
-  assert.equal(start.resumes, done.runId);
-  const index = JSON.parse(fs.readFileSync(path.join(first.stateDir, "children", `${resumed.runId}.json`), "utf8"));
-  assert.equal(index.harness, "alpha");
 }
 
 // The engine lock follows the child's harness: a big item on a harness that
