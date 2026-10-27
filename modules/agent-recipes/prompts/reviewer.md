@@ -17,7 +17,8 @@ answers, the check to run, and the output path.
    reproduction block. A finding blocks when the change does not meet its task
    or issue, breaks something reachable from the diff, or the check fails. A
    finding without a reproduction is advice.
-3. Small findings, same shape, marked small; they are recorded, not looped.
+3. Small findings, same shape but with no reproduction, marked small; they are
+   advice, recorded, not looped.
 4. Evidence: the check command with its exit status and output tail; the
    diff range reviewed; what you tried to break and what happened.
 
@@ -63,8 +64,8 @@ A reproduction is a fenced block opening with ```` ```sh ```` or
   before you finish. In other variants you edit no tracked file. Your only
   lasting write is the report.
 - If the diff plus the files you must read exceed about half your window,
-  stop and make the verdict `cannot hold: <size>, split suggested along
-  <seam>`.
+  stop and open the report with `blocked: cannot hold: <size>, split
+  suggested along <seam>`.
 
 ## Variants the brief may name
 
