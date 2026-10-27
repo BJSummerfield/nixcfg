@@ -179,6 +179,16 @@ export default async function implement(args, port) {
       });
   }
 
+  function mutationsReceipt() {
+    const out = {};
+    tasks.forEach(function (t) {
+      if (t.parent || !t.mutation) return;
+      const m = t.mutation;
+      out[t.id] = { tried: m.tried, survived: m.survived, confirmed: m.confirmed, fixed: m.fixed, equivalent: m.equivalent, claims: m.claims };
+    });
+    return out;
+  }
+
   function finish() {
     const left = leftBehind();
     const handoffs = handoffsOf();
@@ -190,6 +200,7 @@ export default async function implement(args, port) {
       set_aside: setAside,
       skipped: skipped,
       report: reportLines(),
+      mutations: mutationsReceipt(),
       heavy_check: heavy,
       resumed: resumed,
       open: open,
@@ -368,7 +379,7 @@ export default async function implement(args, port) {
         t.next = null;
         return;
       }
-      t.next = "review";
+      t.next = t.mutationFix ? "recheck" : "review";
       return;
     }
     needFix(t, "The task check reported: " + g.reason);
@@ -444,14 +455,114 @@ export default async function implement(args, port) {
     const g = result.structuredOutput;
     t.lastVerdict = g.verdict;
     if (g.verdict === "clean") {
-      t.state = "done";
-      t.next = null;
+      if (t.mutated || t.parent) {
+        t.state = "done";
+        t.next = null;
+        return;
+      }
+      t.next = "mutate";
       return;
     }
     if (g.verdict !== "needs-work") {
       return heal(t, "review", "the review gave no verdict: " + g.reason, [result.file], ["retry", "decide"]);
     }
     needFix(t, fixFindings(result.file, g));
+  }
+
+  function mutatorItem(t) {
+    const file = dir + "/mutations-" + t.id + ".md";
+    const lines = [
+      "Job: find changed code the check does not cover (the mutation step).",
+      "Repository: " + repo + " (your working directory is your own worktree of branch " + t.branch + "; make no other worktree)",
+      "Diff range: " + reviewRange(t, t.branch) + " (run git diff " + reviewRange(t, t.branch) + ")",
+      "Owned files: " + ownsOf(t).join(", "),
+      "Check: " + t.spec.check,
+      "Write the report to " + file,
+    ];
+    const gate = "recipe-gate findings " + quote(file) + " --check " + quote(t.spec.check) + " --run " + quote(dir) + " --id " + quote(t.id);
+    const item = node("mutate-" + t.id, "mutator", lines, file, { gate: gate, gateTimeoutMs: 3600000, timeoutMs: bigMs, worktree: true });
+    item.baseRef = "refs/heads/" + t.branch;
+    return item;
+  }
+
+  function takeMutation(t, result) {
+    t.mutated = true;
+    const g = result.structuredOutput;
+    if (g) noteMade(t.id, "review", g.branch, g.worktree, g.recorded);
+    const done = function () {
+      t.state = "done";
+      t.next = null;
+    };
+    if (!result.ok || !g) {
+      open.push("task " + t.id + ": the mutation step did not run: " + (result.error || "no result"));
+      return done();
+    }
+    t.mutation = {
+      tried: g.tried ?? null,
+      survived: g.findings,
+      confirmed: list(g.reproduced).length,
+      fixed: 0,
+      equivalent: 0,
+      claims: [],
+      survivors: list(g.reproduced).map((f) => f.n),
+      file: result.file,
+    };
+    if (g.verdict === null) {
+      open.push("task " + t.id + ": the mutation step gave no result: " + g.reason);
+      return done();
+    }
+    if (g.check && g.check.exit !== 0) {
+      open.push("task " + t.id + ": the check failed at head in the mutation step");
+      return done();
+    }
+    if (t.mutation.confirmed === 0) return done();
+    if (t.fixes >= MAX_FIXES) {
+      open.push("task " + t.id + ": " + t.mutation.confirmed + " mutation(s) survive the check and the fix rounds are used up");
+      return done();
+    }
+    t.mutationFix = true;
+    return needFix(t, mutationFindings(result.file, g, t.spec.check));
+  }
+
+  function mutationFindings(file, g, check) {
+    const lines = [
+      "The mutation step at " +
+        file +
+        " found changed code the check does not cover: each patch below was applied at the branch head and the check still passed. The patches are the ```diff blocks of that file, numbered in order. Add or strengthen tests in the owned files so that the check fails with each patch applied; if a patch exposes a real defect, fix the code and add the test. A patch that changes no behaviour is answered in your report under a heading `## Equivalent <n>` with the evidence on the next line, and nothing else is done for it. Keep the check passing on the unmodified code.",
+      "Check: " + check,
+    ];
+    list(g.reproduced).forEach(function (f) {
+      lines.push(f.n + ". [" + f.title + "] patch to " + f.summary);
+    });
+    return lines.join("\n");
+  }
+
+  function recheckItem(t) {
+    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + " --claims " + quote(t.report), {
+      gateTimeoutMs: 3600000,
+      worktree: true,
+      baseRef: "refs/heads/" + t.branch,
+    });
+  }
+
+  function takeRecheck(t, result) {
+    t.mutationFix = false;
+    if (result.worktree) noteMade(t.id, "review", result.branch || null, result.worktree, false);
+    const g = result.structuredOutput;
+    if (!result.ok || !g || !g.ok) {
+      open.push("task " + t.id + ": the mutation re-check did not run: " + (result.error || (g && g.reason) || "no result"));
+    } else {
+      const caught = list(g.unreproduced).map((f) => f.n);
+      t.mutation.survivors.forEach(function (n) {
+        const c = list(g.claimed).find((x) => x.n === n);
+        if (caught.includes(n)) t.mutation.fixed++;
+        else if (c) {
+          t.mutation.equivalent++;
+          t.mutation.claims.push({ n: n, reason: c.reason });
+        } else open.push("task " + t.id + ": mutation " + n + " still survives the check after the fix round");
+      });
+    }
+    t.next = "review";
   }
 
   function fixFindings(file, g) {
@@ -589,6 +700,9 @@ export default async function implement(args, port) {
         handoffFrom: null,
         relayNote: null,
         relayFindings: null,
+        mutated: false,
+        mutation: null,
+        mutationFix: false,
         joined: false,
         parent: null,
         splitN: 0,
@@ -687,7 +801,13 @@ export default async function implement(args, port) {
         return joinPieces(active);
       })
       .then(function () {
+        return phase(active, "recheck", recheckItem, takeRecheck);
+      })
+      .then(function () {
         return phase(active, "review", reviewItem, takeReview);
+      })
+      .then(function () {
+        return phase(active, "mutate", mutatorItem, takeMutation);
       })
       .then(function () {
         return phase(active, "heal", diagnoseItem, takeDiagnosis);
