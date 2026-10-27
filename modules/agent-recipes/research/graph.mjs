@@ -10,13 +10,9 @@ export default async function research(args, port) {
 
   const dir = args.dir;
   const goal = args.goal;
-  const output = args.output || dir + "/summary.md";
+  const output = dir + "/summary.md";
   const format =
     args.format || "a markdown document whose first section answers the goal, every claim carrying a URL and a quotation or location";
-  const maxSources = Math.min(args.maxSources || MAX_SOURCES, MAX_SOURCES);
-  const windowTokens = args.window || 221184;
-  const childMs = args.childTimeoutMs || 480000;
-  const bigMs = args.bigTimeoutMs || 2400000;
 
   const source = args.source || "web";
   const repo = args.repo;
@@ -41,7 +37,7 @@ export default async function research(args, port) {
 
   function extractFor(rec, suffix, part, range) {
     if (rec.path) {
-      return extractFileItem("extract-" + rec.k + suffix, goal, repo + "/" + rec.path, range, rec.angle, extractFile(rec.k, suffix), childMs);
+      return extractFileItem("extract-" + rec.k + suffix, goal, repo + "/" + rec.path, range, rec.angle, extractFile(rec.k, suffix));
     }
     return extractItem(
       "extract-" + rec.k + suffix,
@@ -51,7 +47,6 @@ export default async function research(args, port) {
       dir + "/pages/page-" + rec.k + suffix + ".md",
       extractFile(rec.k, suffix),
       part,
-      childMs,
     );
   }
 
@@ -73,7 +68,7 @@ export default async function research(args, port) {
       lines.push("- " + file);
     });
     lines.push("Write the result to " + out);
-    return node(key, "synthesizer", lines, out, { timeoutMs: bigMs, big: true });
+    return node(key, "synthesizer", lines, out, { big: true });
   }
 
   function reviewItem(n, file, files) {
@@ -90,7 +85,6 @@ export default async function research(args, port) {
     lines.push("Write the report to " + file);
     return node(n === 1 ? "review" : "review-" + n, "reviewer", lines, file, {
       gate: "recipe-gate gaps " + quote(file),
-      timeoutMs: bigMs,
       big: true,
     });
   }
@@ -161,7 +155,7 @@ export default async function research(args, port) {
 
   function heal(step, signal, evidence, allowed) {
     board("diagnosing " + step, view());
-    return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal, "Requested output: " + format, "Task directory: " + dir], STEPS[step], childMs);
+    return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal, "Requested output: " + format, "Task directory: " + dir], STEPS[step]);
   }
 
   function synthesize(files, split, tag, out) {
@@ -204,7 +198,7 @@ export default async function research(args, port) {
       "planner",
       ["Job: angles.", "Goal: " + goal, "Requested output: " + format, "Write at most " + MAX_ANGLES + " angles to " + anglesFile + ", in the angles format."],
       anglesFile,
-      { gate: "recipe-gate angles " + quote(anglesFile), timeoutMs: childMs },
+      { gate: "recipe-gate angles " + quote(anglesFile) },
     ),
   );
 
@@ -222,16 +216,16 @@ export default async function research(args, port) {
 
   for (let round = 0; round < 2; round++) {
     board(round === 0 ? "searching" : "gap round: searching", view());
-    const limit = round === 0 ? maxSources : Math.min(maxSources, GAP_SOURCES);
+    const limit = round === 0 ? MAX_SOURCES : Math.min(MAX_SOURCES, GAP_SOURCES);
 
     const searchItems = useWeb
       ? current.map(function (angle) {
-          return searchItem(goal, angle, dir + "/raw/search/search-" + angle.id + ".md", childMs);
+          return searchItem(goal, angle, dir + "/raw/search/search-" + angle.id + ".md");
         })
       : [];
     const locateItems = useRepo
       ? current.map(function (angle) {
-          return locateItem(goal, angle, repo, dir + "/raw/locate/locate-" + angle.id + ".md", childMs);
+          return locateItem(goal, angle, repo, dir + "/raw/locate/locate-" + angle.id + ".md");
         })
       : [];
     const gathered = await launch(searchItems.concat(locateItems));
@@ -318,7 +312,7 @@ export default async function research(args, port) {
 
       const bytes = files.reduce(function (sum, f) { return sum + f.bytes; }, 0);
       const est = Math.ceil(bytes / 4);
-      const split = est <= 0.5 * windowTokens ? 1 : Math.max(2, Math.ceil(est / SYNTH_TOKENS));
+      const split = est <= 0.5 * port.window ? 1 : Math.max(2, Math.ceil(est / SYNTH_TOKENS));
 
       board("synthesizing", view());
       deliverable = await synthesize(files, split, "", output);

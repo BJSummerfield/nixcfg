@@ -4,11 +4,12 @@ import path from "node:path";
 
 import { createPort } from "./port.mjs";
 
-export function portOf(runs, emit) {
+export function portOf(runs, emit, config = {}) {
   return {
     runMany: (items) => runs.all(items),
     runOne: (item) => runs.all([item]).then((results) => results[0]),
     emit: emit ?? (() => {}),
+    window: config.window,
   };
 }
 
@@ -79,7 +80,7 @@ export function fakeDeps(runs) {
   return { harness, runGate, worktrees, newRunId: (item) => `run-${item.key}`, lookupRun };
 }
 
-export function runThroughRunner(graph, runs, args) {
+export function runThroughRunner(graph, runs, args, config = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "recipe-fake-run-"));
   const roles = new Proxy(
     {},
@@ -89,7 +90,7 @@ export function runThroughRunner(graph, runs, args) {
   const port = createPort({
     runDir: path.join(dir, "runner"),
     cwd: dir,
-    config: { stateDir: path.join(dir, "state"), roles },
+    config: { stateDir: path.join(dir, "state"), roles, ...config },
     harnessName: "fake",
     harness: deps.harness,
     deps,
