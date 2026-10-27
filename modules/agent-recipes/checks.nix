@@ -69,7 +69,7 @@ lib.listToAttrs (
       ''
         node -e '
           const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-          const names = ["implementer", "scout", "locator", "planner", "reviewer", "synthesizer", "searcher", "extractor"];
+          const names = ["implementer", "scout", "locator", "planner", "reviewer", "synthesizer", "searcher", "extractor", "mutator"];
           const xhigh = ["planner", "reviewer", "synthesizer"];
           const errors = [];
           for (const n of names) {
