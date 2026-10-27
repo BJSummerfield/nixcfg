@@ -412,7 +412,7 @@ try {
   }
 
   // Usage errors exit 2.
-  assert.equal(cli(["run", "tiny", "--max-children", "3"]).code, 2);
+  assert.equal(cli(["run", "tiny", "--args", "{}", "--max-children", "3"]).code, 2);
   assert.equal(cli(["nonsense"]).code, 2);
   assert.equal(cli(["run", "tiny"]).code, 2);
 } finally {
