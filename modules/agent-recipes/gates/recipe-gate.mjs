@@ -22,7 +22,6 @@
 //   quotes <file> [--repo DIR]     {ok, quotes, missing:[{location, quote}]}; every
 //                                  located quote must appear in its cited file;
 //                                  the output adds reason when not ok
-//   size <dir> [--window N]       {bytes, est_tokens, split}; N defaults to 221184
 //   verdict <review.md> [--repo DIR] [--run DIR --id ID]
 //                                  {asked, sound, clean, verdict}; a located quote
 //                                  not found in its file makes the verdict
@@ -32,21 +31,26 @@
 //                                  working directory's linked worktree is
 //                                  recorded in <DIR>/run.json as kind review
 //                                  and the output gains branch and worktree
-//   findings <review.md> --check CMD [--worktree DIR] [--run DIR --id ID] [--timeout-ms N] [--claims FILE]
+//   findings <review.md> --check CMD [--worktree DIR] [--run DIR --id ID] [--timeout-ms N] [--claims FILE]...
 //                                  re-run the review's ```sh and ```diff blocks in a clean
 //                                  worktree at head -> {ok, verdict, reason, check:{command,
 //                                  exit, tail}, reproduced, unreproduced, unrunnable, findings,
-//                                  quotes_missing, tried, claimed[, branch, worktree, recorded]};
+//                                  quotes_missing, tried, claimed, handoff[, branch, worktree, recorded]};
 //                                  verdict is needs-work when the check fails or any block
 //                                  reproduced; tried is the count on the review's Tried: line
 //                                  (null if none); claimed lists the "## Equivalent N" headings
-//                                  of the --claims file as {n, reason};
+//                                  of every --claims file (the flag may repeat) as {n, reason};
+//                                  handoff is the review's first line when it starts with
+//                                  `handoff:`, else null, and the review is judged as usual;
+//                                  --timeout-ms defaults to the check cap;
 //                                  also written to <review.md>.findings.json
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md> [--repo DIR]  {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //   diagnosis <file> [--allow a,b] [--verdict yes]
 //                                  {ok, action, reason, verdict, owns:[], brief, question, problem}
 //   plan <dir> [--sizing FILE] [--repo DIR] [--limit N]
+//                                  --limit defaults to 45% of the runner config window,
+//                                  --sizing to the config's sizing, then the $HOME path
 //                                  plan directory -> {ok, sizing:{base, k_read,
 //                                  growth_p90}, tasks:[{id, owns, reads, check,
 //                                  depends, research, bytes, est}], oversize:[id],
@@ -82,7 +86,7 @@
 //                                  clean, heavy_check, pr_text[, tidied:[id], tidy_problems]}
 //   resume <dir> --repo DIR [--branch NAME]
 //                                  each task the ledger made -> {ok, reason, base,
-//                                  tasks:{id:{branch, head, review, reviews, review_file, merged}}}; head is
+//                                  tasks:{id:{branch, head, review, reviews, merged}}}; head is
 //                                  null for a deleted branch, review is the verdict of
 //                                  the highest <dir>/review-<id>-<n>.md (its .findings.json sidecar
 //                                  when present) or null, merged
@@ -144,7 +148,6 @@
 // $HOME/.pi/agent/recipes/sizing.json, and to base 7000, k_read 1 and
 // growth_p90 10000 when that file is absent. Each task carries the bytes its
 // estimate used as `bytes`, and the output carries the values as `sizing`.
-// --limit defaults to 100000 tokens, under half of the 221184-token window.
 // `oversize` lists the ids whose estimate exceeds it. `overlaps` has one [a, b, file] per pair of tasks
 // owning the same file, or a directory and a path inside it. `missing` has
 // one line per problem: plan.md absent, no tasks, a task whose id is not its
@@ -229,13 +232,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { loadConfig } from "../runner/config.mjs";
 import { abandon, merge, pin, record, where } from "./recipe-git.mjs";
 
 const EXTRACT_CAP_BYTES = 24 * 1024;
 // A locator's range is approximate, so a quote a little outside it is still legitimate.
 const RANGE_MARGIN_LINES = 10;
-const DEFAULT_WINDOW = 221184;
-const SYNTH_TOKENS = 70000;
 const PR_CHARS = 4000;
 
 class Usage extends Error {}
@@ -247,7 +249,8 @@ function parseArgs(argv) {
     if (argv[i].startsWith("--")) {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith("--")) throw new Usage(`${argv[i]} needs a value`);
-      flags[argv[i].slice(2)] = value;
+      const name = argv[i].slice(2);
+      flags[name] = name in flags ? [].concat(flags[name], value) : value;
       i++;
     } else positional.push(argv[i]);
   }
@@ -495,14 +498,6 @@ function dirBytes(dir) {
   return total;
 }
 
-function size(dir, flags) {
-  const window = intFlag(flags, "window", DEFAULT_WINDOW);
-  const bytes = dirBytes(dir);
-  const est_tokens = Math.ceil(bytes / 4);
-  const split = est_tokens <= 0.5 * window ? 1 : Math.max(2, Math.ceil(est_tokens / SYNTH_TOKENS));
-  return { bytes, est_tokens, split };
-}
-
 const VERDICT_SPAN = 6;
 
 function verdictOf(file) {
@@ -607,7 +602,7 @@ function claimsOf(text) {
       const m = line.match(/^##\s+Equivalent\s+(\d+)\b/);
       open = m ? { n: Number(m[1]), reason: "" } : null;
       if (open) claims.push(open);
-    } else if (open && line.trim()) {
+    } else if (open && line.trim() && !/^\s*```/.test(line)) {
       open.reason = line.trim().slice(0, SUMMARY_CHARS);
       open = null;
     }
@@ -617,9 +612,9 @@ function claimsOf(text) {
 
 function findings(file, flags) {
   if (!flags.check) throw new Usage("findings needs --check");
-  const timeoutMs = intFlag(flags, "timeout-ms", 300000);
+  const timeoutMs = intFlag(flags, "timeout-ms", CHECK_TIMEOUT_MS);
   const worktree = path.resolve(flags.worktree ?? process.cwd());
-  const out = { ok: false, verdict: null, reason: "", check: null, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [], tried: null, claimed: [] };
+  const out = { ok: false, verdict: null, reason: "", check: null, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [], tried: null, claimed: [], handoff: null };
   const finish = (reason) => {
     out.reason = reason;
     out.ok = out.verdict !== null;
@@ -633,10 +628,12 @@ function findings(file, flags) {
   }
   const triedLine = text.match(/^Tried:\s*(\d+)/m);
   out.tried = triedLine ? Number(triedLine[1]) : null;
-  const claimsText = flags.claims ? readIfExists(path.resolve(flags.claims)) : null;
-  if (claimsText !== null) out.claimed = claimsOf(claimsText);
+  for (const claimsFile of [].concat(flags.claims ?? [])) {
+    const claimsText = readIfExists(path.resolve(claimsFile));
+    if (claimsText !== null) out.claimed.push(...claimsOf(claimsText));
+  }
   const head = firstLine(text);
-  if (/^handoff:/i.test(head)) return finish("review is a handoff");
+  if (/^handoff:/i.test(head)) out.handoff = head;
   if (/^blocked:/i.test(head)) return finish(`review is blocked:${head.slice(head.indexOf(":") + 1)}`);
   const g = (args, input) => spawnSync("git", args, { cwd: worktree, encoding: "utf8", input });
   if (g(["rev-parse", "--git-dir"]).status !== 0) throw new Usage(`${worktree} is not a git worktree`);
@@ -738,15 +735,16 @@ function gaps(file, flags) {
   return { ok: v.verdict !== "invalid", angles: angleBullets(section.join("\n")), ...v };
 }
 
-const PLAN_LIMIT = 100000;
+const PLAN_LIMIT_SHARE = 0.45;
 const SIZING_FALLBACK = { base: 7000, k_read: 1, growth_p90: 10000 };
 const TASK_KEYS = ["id", "owns", "reads", "check", "depends", "research"];
 const TASK_HEADER = new RegExp(`^(${TASK_KEYS.join("|")}):[ \\t]*(.*?)\\s*$`);
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-function implementerCost(flags) {
-  const explicit = flags.sizing !== undefined;
-  const file = explicit ? flags.sizing : path.join(process.env.HOME ?? "", ".pi/agent/recipes/sizing.json");
+function implementerCost(flags, config) {
+  const chosen = flags.sizing ?? config.sizing;
+  const explicit = chosen !== undefined && chosen !== null;
+  const file = explicit ? chosen : path.join(process.env.HOME ?? "", ".pi/agent/recipes/sizing.json");
   const text = explicit ? fs.readFileSync(file, "utf8") : readIfExists(file);
   if (text === null) return SIZING_FALLBACK;
   const entry = JSON.parse(text).roles?.implementer ?? {};
@@ -819,8 +817,9 @@ function findCycles(tasks) {
 
 function plan(dir, flags) {
   const repo = flags.repo ?? process.cwd();
-  const limit = intFlag(flags, "limit", PLAN_LIMIT);
-  const cost = implementerCost(flags);
+  const config = loadConfig();
+  const limit = intFlag(flags, "limit", Math.floor(PLAN_LIMIT_SHARE * config.window));
+  const cost = implementerCost(flags, config);
   const missing = [];
   if (readIfExists(path.join(dir, "plan.md")) === null) missing.push("plan.md");
 
@@ -1245,19 +1244,14 @@ function resume(dir, flags) {
       if (!prior || m[2]) byN.set(n, [f, m[1]]);
     }
     const seen = [...byN.keys()].sort((a, b) => b - a);
-    const usable = seen.find((n) => {
-      const [f] = byN.get(n);
-      return !/^handoff:/i.test(firstLine(readIfExists(path.join(dir, f)) ?? ""));
-    });
-    const latest = usable === undefined ? null : byN.get(usable);
     const highest = seen.length ? seen[0] : 0;
+    const latest = seen.length ? byN.get(highest) : null;
     const inTarget = Boolean(head && target) && spawnSync("git", ["merge-base", "--is-ancestor", head, target], { cwd: repo }).status === 0;
     tasks[m.id] = {
       branch: m.branch,
       head,
       review: latest ? reviewVerdict(path.join(dir, latest[0])) : null,
       reviews: highest,
-      review_file: latest ? path.join(dir, latest[0]) : null,
       merged: inTarget || (!head && Boolean(tidied[m.branch])),
     };
   }
@@ -1321,7 +1315,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|findings|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|verdict|findings|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -1331,8 +1325,6 @@ function run(argv) {
       return extract(target, flags);
     case "quotes":
       return quotes(target, flags);
-    case "size":
-      return size(target, flags);
     case "verdict":
       return verdict(target, flags);
     case "findings":
