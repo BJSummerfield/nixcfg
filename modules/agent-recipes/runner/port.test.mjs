@@ -152,6 +152,32 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.deepEqual(locked, []);
 }
 
+// A big gate-only item takes the lock too, unless the harness does not use the engine.
+{
+  const locked = [];
+  const bigLock = async (file) => {
+    locked.push(file);
+    return () => locked.push("released");
+  };
+  const gateItem = (key, extra = {}) => ({ key, agent: null, gate: { command: "c", output: "json" }, ...extra });
+  const runGate = async () => {
+    locked.push("gate");
+    return { ran: true, exit: 0, timedOut: false, ms: 1, tail: "", value: { ok: true }, problem: undefined };
+  };
+  const { port, stateDir } = setup("big-gate", { harness: fakeHarness(() => ({})), deps: { bigLock, runGate } });
+  await port.runOne(gateItem("big", { big: true }));
+  assert.deepEqual(locked, [path.join(stateDir, "big.lock"), "gate", "released"]);
+  locked.length = 0;
+  await port.runOne(gateItem("small"));
+  assert.deepEqual(locked, ["gate"]);
+
+  const claude = fakeHarness(() => ({}), { usesEngine: false });
+  const other = setup("nobig-gate", { harness: claude, deps: { bigLock, runGate } });
+  locked.length = 0;
+  await other.port.runOne(gateItem("big", { big: true }));
+  assert.deepEqual(locked, ["gate"]);
+}
+
 // The child's timeout is the item's, else the role's, else the default; the
 // port exposes the config's window.
 {
