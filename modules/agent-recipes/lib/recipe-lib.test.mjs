@@ -140,6 +140,7 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
     worktree: "wt",
     baseRef: "main",
   });
+  assert.deepEqual(L.gateOnly("g", "check it", { big: true }), { key: "g", agent: null, gate: { command: "check it", output: "json" }, big: true });
 
   const f = fake((item) => (item.key === "g" || item.key === "a" ? failed(item.key, "engine") : ok(item.key)));
   const S = await load(f.runs);
