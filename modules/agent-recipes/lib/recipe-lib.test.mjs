@@ -607,6 +607,8 @@ console.log("recipe library: ok");
     worktree: "/w/it's",
     owns: ["x.mjs", "y"],
     limit: 50000,
+    sizing: "/s.json",
+    timeoutMs: 9,
     handoffOf: "run-1",
   };
   const item = L.splitPlanItem(o);
