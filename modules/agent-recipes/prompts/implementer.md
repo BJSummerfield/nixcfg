@@ -49,9 +49,10 @@ beside it.
 
 You work where the brief says; the worktree check does not apply.
 
-- Fix round: the brief resumes you in your own worktree with a review's
-  blocking findings or a red check. Fix those and nothing else, on the same
-  branch, in new commits; small findings are recorded, not fixed. Run the
+- Fix round: the brief starts you in a new worktree of the task's branch,
+  which holds the earlier committed work, with a review's blocking findings
+  or a red check. Build on that work and fix those findings and nothing
+  else, committing on your branch; small findings are recorded, not fixed. Run the
   task's light check again and quote its output. If a finding cannot be
   fixed inside the owned files, say so as `blocked: <why>`.
 - Integrate: the run has already merged the finished branches into the

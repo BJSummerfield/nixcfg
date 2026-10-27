@@ -28,7 +28,6 @@ export default async function implement(args, port) {
     reportHandoff,
     short,
     stampRelay,
-    stoppedItself,
     subjectOf,
     troubleOf,
   } = lib;

@@ -32,12 +32,12 @@ to the plan:
 <dir>/deps/<id>/            worktree where a task's dependencies are merged
 <dir>/resolve-<scope>-<n>.md report of resolver n for a merge (a task id or integration)
 <dir>/impl-<id>.md          implementer report; a retried one is impl-<id>.retry.md,
-                            a replanned attempt n is impl-<id>-<n>.md
+                            attempt n after the first (a fix round, a relay or a
+                            replan) is impl-<id>-<n>.md
 <dir>/review-<id>-<n>.md    review n of the task
 <dir>/split/<id>-<n>/       the planner's plan for split n of a task, and join/, the
                             worktree where its pieces are merged
 <dir>/join-<id>-<n>.md      the check that joined the pieces of split n
-<dir>/fix-<id>-<n>.md       report of fix round n
 <dir>/diagnosis-<id>-<n>.md diagnosis n of the task (or of the integration)
 <dir>/integration.md        report of the integration step (integration-2.md
                             when a diagnosis ran it again)
@@ -132,8 +132,8 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    red, a fresh implementer starts in a new worktree of the task's
    branch with the findings and fixes them in new commits; then a fresh
    review. At most two fix rounds; a task still not clean goes to a diagnosis. Other tasks go
-   on. A fix round that hands off is checked by the task check once for its
-   head, then relayed from the branch with the findings. A needs-work verdict
+   on. A fix implementer that hands off is relayed like any implementer,
+   with the findings. A needs-work verdict
    on the joined pieces of a split task starts a fresh implementer on the
    joined branch, with the findings; it counts as a fix round.
 5. The finished branches that no other finished task builds on are merged by
