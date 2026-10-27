@@ -393,22 +393,18 @@ const implDone = (id, firstContext) => settleRec(`impl-${id}`, `impl-${id}-run`,
   assert.deepEqual(r.json.plan_fit, { pairs: 1, k_read: 2.5, growth_p90: 0, covered: 1, coverage: 1 });
 }
 
-// Graph-step children run under the role scout; only real scouts are sampled.
+// A scout settled under a former graph-step key is sampled like any scout.
 {
-  const dir = newTree("scout-steps");
-  const stepKeys = ["pin", "merge", "intake", "resume", "join-a-1", "deps-a", "handoff-a-1", "verify-a", "reproduce", "verify-base"];
-  const records = [];
-  stepKeys.forEach((key, i) => {
-    transcriptIn(dir, "scout", [assistant(4000), assistant(500, 4000), outcome(`step-${i}`, false, null)]);
-    records.push(settleRec(key, `step-${i}`, { status: "done", loop: null }));
-  });
+  const dir = newTree("scout-pin");
+  transcriptIn(dir, "scout", [assistant(4000), assistant(500, 4000), outcome("pin-1", false, null)]);
   transcriptIn(dir, "scout", [assistant(4000), assistant(500, 59500), outcome("real-scout", false, null)]);
-  records.push(settleRec("scout", "real-scout", { status: "done", loop: null }));
-  writeChildren(dir, records);
+  writeChildren(dir, [
+    settleRec("pin", "pin-1", { status: "done", loop: null }),
+    settleRec("scout", "real-scout", { status: "done", loop: null }),
+  ]);
   const r = run([dir, "--min-samples", "1"]);
-  assert.equal(r.json.roles.scout.samples, 1);
-  assert.equal(r.json.roles.scout.peak_p90, 60000);
-  assert.deepEqual(r.json.excluded, { scout: stepKeys.length });
+  assert.equal(r.json.roles.scout.samples, 2);
+  assert.equal(r.json.excluded.scout, undefined);
 }
 
 // A real file reachable by two paths in a plain tree is one sample.
