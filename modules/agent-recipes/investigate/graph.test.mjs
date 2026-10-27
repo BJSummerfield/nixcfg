@@ -398,6 +398,17 @@ function assertSound(f) {
   assert.ok(r.open.includes("hypothesis 1: review 1 could not run 1 reproduction(s): 2: needs a gpu"));
 }
 
+// The round cap counts every implementer run.
+{
+  const f = fake(Object.fromEntries(["change-1", "change-1-2", "change-1-3", "change-1-4", "change-1-5", "change-1-6", "change-1-7"].map((k, i) => [k, taskFail(1, "sig" + i)])));
+  const r = await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "change-1-3", "change-1-4", "change-1-5", "change-1-6"]);
+  assert.equal(r.hypotheses[0].outcome, "out of rounds");
+  assert.equal(r.rounds_used, 6);
+  assert.match(r.open.join("\n"), /out of rounds/);
+  assert.equal(r.branch, null);
+}
+
 // A review that needs work leads to a fresh implementer on the branch and a second review.
 {
   let reviews = 0;
