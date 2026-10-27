@@ -93,7 +93,7 @@ function reproLine() {
 
 function commandLines() {
   const lines = ["Verify command: " + verifyCommand];
-  if (lightCheck) lines.push("Light check: " + lightCheck);
+  if (lightCheck) lines.push("Task check: " + lightCheck);
   return lines;
 }
 
