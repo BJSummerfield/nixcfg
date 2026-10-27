@@ -9,10 +9,7 @@ export default async function plan(args, port) {
   const dir = args.dir;
   const goal = args.goal;
   const input = args.input;
-  const batch = args.batch;
   const repo = args.repo;
-  const childMs = args.childTimeoutMs || 1200000;
-  const bigMs = args.bigTimeoutMs || 2400000;
 
   const STEPS = {
     plan: "the planner's run (plan.md, the task files and the plan check)",
@@ -49,27 +46,19 @@ export default async function plan(args, port) {
 
   function heal(step, signal, evidence, allowed) {
     show("diagnosing " + step);
-    return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal].concat(inputLine("")).concat(["Repository: " + repo, "Plan directory: " + dir]), STEPS[step], childMs);
+    return diagnose(wholeRun, troubleOf(step, signal, evidence, allowed), dir, ["Goal: " + goal].concat(inputLine("")).concat(["Repository: " + repo, "Plan directory: " + dir]), STEPS[step]);
   }
 
   function planGateCommand() {
-    let command = "recipe-gate plan " + quote(dir) + " --repo " + quote(repo);
-    if (args.limit) command += " --limit " + Number(args.limit);
-    if (args.sizing) command += " --sizing " + quote(args.sizing);
-    return command;
+    return "recipe-gate plan " + quote(dir) + " --repo " + quote(repo);
   }
 
   function inputLine(suffix) {
     return input ? ["Input: " + input + suffix] : [];
   }
 
-  function batchLines() {
-    return batch ? ["Targets: " + batch.rule, "Change: " + batch.change] : [];
-  }
-
   function brief(job, extra) {
-    return [(batch ? "Job: batch" : "Job: implementation plan") + job + ".", "Goal: " + goal]
-      .concat(batchLines())
+    return ["Job: implementation plan" + job + ".", "Goal: " + goal]
       .concat(inputLine(""))
       .concat(["Repository: " + repo, "Scout notes: " + scoutNotes])
       .concat([
@@ -80,7 +69,7 @@ export default async function plan(args, port) {
   }
 
   function plannerItem(key, output, lines) {
-    return node(key, "planner", lines, output, { gate: planGateCommand(), timeoutMs: bigMs, big: true });
+    return node(key, "planner", lines, output, { gate: planGateCommand(), big: true });
   }
 
   function findingLines(g) {
@@ -149,7 +138,6 @@ export default async function plan(args, port) {
       [
         "Review an implementation plan (the plan variant).",
         "Goal: " + goal,
-        ...batchLines(),
         ...inputLine(""),
         "Repository: " + repo,
         "Plan: " + dir + "/plan.md and " + dir + "/tasks/",
@@ -157,7 +145,7 @@ export default async function plan(args, port) {
         "Write the report to " + file,
       ],
       file,
-      { gate: "recipe-gate verdict " + quote(file) + " --repo " + quote(repo), timeoutMs: bigMs, big: true },
+      { gate: "recipe-gate verdict " + quote(file) + " --repo " + quote(repo), big: true },
     );
   }
 
@@ -165,7 +153,6 @@ export default async function plan(args, port) {
     show("reviewing");
     return one(reviewItem()).then(function (result) {
       if (result.ok && !result.structuredOutput) {
-        open.push("the review's verdict gate did not run");
         return { verdict: null, file: result.file };
       }
       if (!result.ok) {
@@ -207,7 +194,7 @@ export default async function plan(args, port) {
     const notes = [];
     return launch(
       angles.map(function (angle) {
-        return searchItem(goal, angle, dir + "/research/" + angle.id + "/search.md", childMs);
+        return searchItem(goal, angle, dir + "/research/" + angle.id + "/search.md");
       }),
     ).then(function (searches) {
       const found = sourcesFound(angles, searches, {}, notes);
@@ -222,7 +209,7 @@ export default async function plan(args, port) {
           MAX_RESEARCH_SOURCES,
         ).forEach(function (source, k) {
           const base = dir + "/research/" + t.id;
-          items.push(extractItem("extract-" + t.id + "-" + (k + 1), t.research, source.url, t.id, base + "/page-" + (k + 1) + ".md", base + "/extract-" + (k + 1) + ".md", "", childMs));
+          items.push(extractItem("extract-" + t.id + "-" + (k + 1), t.research, source.url, t.id, base + "/page-" + (k + 1) + ".md", base + "/extract-" + (k + 1) + ".md", ""));
           owners.push(t.id);
         });
       });
@@ -248,14 +235,13 @@ export default async function plan(args, port) {
       "scout",
       [
         "Goal: " + goal,
-        ...batchLines(),
         ...inputLine(" (read it first)"),
         "Repository: " + repo,
         "Find what a planner needs to split this work into tasks: the files involved and their sizes, how they relate, the repository's AGENTS.md light checks, heavy checks and forbidden changes, and the exact command for a light check on each kind of file involved.",
         "Output: " + scoutFile,
       ],
       scoutFile,
-      { gate: "recipe-gate quotes " + quote(scoutFile) + " --repo " + quote(repo), timeoutMs: childMs },
+      { gate: "recipe-gate quotes " + quote(scoutFile) + " --repo " + quote(repo) },
     ),
   );
   let scoutNotes = "none: the scout failed, so look up the facts yourself";

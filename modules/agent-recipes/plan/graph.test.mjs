@@ -112,7 +112,7 @@ function assertUniqueOutputs(f) {
 // A clean plan: scout, planner, review, receipt.
 {
   const f = fake();
-  const receipt = await run(f.runs, { ...base, limit: 80000, sizing: "/s.json" });
+  const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
   const k = byKey(f);
 
@@ -128,10 +128,10 @@ function assertUniqueOutputs(f) {
   assert.equal(k.plan.agent, "planner");
   assert.equal(k.plan.output, "/t/d/planner.md");
   assert.equal(k.plan.outputMode, "file-only");
-  assert.deepEqual(k.plan.gate, { command: "recipe-gate plan '/t/d' --repo '/r' --limit 80000 --sizing '/s.json'", output: "json" });
+  assert.deepEqual(k.plan.gate, { command: "recipe-gate plan '/t/d' --repo '/r'", output: "json" });
   assert.match(k.plan.task, /^Job: implementation plan\.$/m);
   assert.match(k.plan.task, /Input: \/t\/in\.md\nRepository: \/r\nScout notes: \/t\/d\/scout\.md\nPlan directory: \/t\/d/);
-  assert.match(k.plan.task, /When the file is written, run `recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000 --sizing '\/s\.json'`; if it reports a problem/);
+  assert.match(k.plan.task, /When the file is written, run `recipe-gate plan '\/t\/d' --repo '\/r'`; if it reports a problem/);
   assert.doesNotMatch(k.review.task, /Scout notes/);
   assert.match(k.scout.task, /When the file is written, run `recipe-gate quotes '\/t\/d\/scout\.md' --repo '\/r'`; if it reports a problem/);
   assert.match(k.review.task, /When the file is written, run `recipe-gate verdict '\/t\/d\/review\.md' --repo '\/r'`/);
@@ -142,17 +142,12 @@ function assertUniqueOutputs(f) {
   assert.equal(k.review.gate.command, "recipe-gate verdict '/t/d/review.md' --repo '/r'");
   assert.match(k.review.task, /Review an implementation plan \(the plan variant\)\./);
   assert.match(k.review.task, /Plan: \/t\/d\/plan\.md and \/t\/d\/tasks\//);
-  assert.match(k.review.task, /Plan check to run: recipe-gate plan '\/t\/d' --repo '\/r' --limit 80000/);
+  assert.match(k.review.task, /Plan check to run: recipe-gate plan '\/t\/d' --repo '\/r'/);
+  assert.doesNotMatch(k.plan.task, /Targets:/);
+  assert.ok(f.items().every((i) => !("maxRuntimeMs" in i)));
   assertUniqueOutputs(f);
 
   assert.deepEqual(receipt, { plan_dir: "/t/d", tasks: 2, oversize: [], overlaps: [], review: "clean", research: {}, healed: [], decide: [], open: [], children: 3 });
-}
-
-// The default gate command carries no limit and no sizing file.
-{
-  const f = fake();
-  await run(f.runs, base);
-  assert.equal(byKey(f).plan.gate.command, "recipe-gate plan '/t/d' --repo '/r'");
 }
 
 // A failing gate sends the findings back to the planner once; the revision
@@ -560,25 +555,6 @@ function assertUniqueOutputs(f) {
   assert.equal(byKey(f).review.gate.command, "recipe-gate verdict '/tmp/it'\\''s/review.md' --repo '/r o'");
 }
 
-// A batch job: the planner and its revisions carry the rule and the change; no input line without an input.
-{
-  const bad = { gate: { ok: false, findings: ["x"] } };
-  const f = fake({ planner: { plan: bad } });
-  const { input, ...noInput } = base;
-  await run(f.runs, { ...noInput, batch: { rule: "glob src/*.js", change: "rename foo to bar" } });
-  const k = byKey(f);
-  for (const key of ["plan", "revise-1"]) {
-    assert.match(k[key].task, /^Job: batch/m);
-    assert.doesNotMatch(k[key].task, /implementation plan/);
-    assert.match(k[key].task, /Goal: The goal\.\nTargets: glob src\/\*\.js\nChange: rename foo to bar\n/);
-    assert.doesNotMatch(k[key].task, /Input:/);
-  }
-  assert.match(k.plan.task, /^Job: batch\.$/m);
-  assert.doesNotMatch(k.scout.task, /Input:/);
-  assert.doesNotMatch(k.review.task, /Input:/);
-  assert.match(k.review.task, /Goal: The goal\.\nTargets: glob src\/\*\.js\nChange: rename foo to bar\n/);
-}
-
 // A reviewer that hands off without listing what it did not read fails the step: its partial file is never read as a verdict and the usual healing runs.
 {
   const f = fake({ reviewer: { review: handedOff("handoff: read two of five tasks") } });
@@ -665,7 +641,7 @@ function assertUniqueOutputs(f) {
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["scout"], ["plan"], ["review"]]);
   assert.equal(receipt.review, null);
-  assert.ok(receipt.open.includes("the review's verdict gate did not run"));
+  assert.deepEqual(receipt.open.filter((line) => /verdict/.test(line)), ["no review verdict; see /t/d/review.md"]);
 }
 
 console.log("plan graph: ok");
