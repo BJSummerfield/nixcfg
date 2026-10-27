@@ -260,7 +260,7 @@ function researchSetup(ctx, sub) {
   fs.mkdirSync(taskDir, { recursive: true });
   const fixture = JSON.parse(fs.readFileSync(path.join(ctx.fixturesDir, "research.json"), "utf8"));
   const q = ctx.full ? fixture.full : fixture;
-  const args = { dir: taskDir, goal: q.goal, source: q.source, repo, maxSources: q.maxSources };
+  const args = { dir: taskDir, goal: q.goal, source: q.source, repo };
   return { repo, taskDir, args };
 }
 
@@ -298,14 +298,16 @@ async function dispatchTest(name, ctx, harness) {
     const repo = path.join(sub, "repo");
     const outFile = path.join(sub, "output.md");
     const resultFile = path.join(sub, "dispatch-result.json");
+    const briefFile = path.join(sub, "brief.md");
+    fs.writeFileSync(briefFile, dispatchBrief);
     setupRepo(ctx.fixturesDir, repo);
     await ctx.runner(
       [
         "dispatch",
         "--role",
         DISPATCH_ROLE,
-        "--brief",
-        dispatchBrief,
+        "--brief-file",
+        briefFile,
         "--output",
         outFile,
         "--result-file",
