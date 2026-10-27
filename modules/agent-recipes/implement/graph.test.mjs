@@ -283,10 +283,11 @@ function assertUniqueOutputs(f) {
   assert.equal(k.integrate.big, true);
   assert.match(k["review-b-1"].task, /Diff to review: git diff base0..pi\/b/);
   assert.match(k["review-b-1"].task, /Check to run: nixfmt --check b\.nix/);
-  assert.match(k["review-b-1"].task, /Implementer report: \/t\/p\/impl-b\.md/);
+  assert.doesNotMatch(k["review-b-1"].task, /Implementer report/);
   assert.doesNotMatch(k["review-b-1"].task, /Earlier review/);
-  assert.match(k["review-b-2"].task, /re-review after fix round 1\./);
-  assert.match(k["review-b-2"].task, /Earlier review: \/t\/p\/review-b-1\.md/);
+  assert.doesNotMatch(k["review-b-2"].task, /re-review/);
+  assert.doesNotMatch(k["review-b-2"].task, /Earlier review/);
+  assert.match(k["review-b-2"].task, /^Review a diff on a branch \(the diff variant\)\./m);
 
   assert.equal(k["fix-b-1"].resume, "run-impl-b");
   assert.equal(k["fix-b-1"].agent, undefined);
@@ -484,7 +485,7 @@ function assertUniqueOutputs(f) {
   const f = fake({ impl: { "impl-a": "503" } });
   const receipt = await run(f.runs, base);
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["impl-a-retry"], ["review-a-1"], ["merge"], ["integrate"]]);
-  assert.match(byKey(f)["review-a-1"].task, /Implementer report: \/t\/p\/impl-a\.retry\.md/);
+  assert.doesNotMatch(byKey(f)["review-a-1"].task, /Implementer report/);
   assert.deepEqual(receipt.set_aside, []);
 }
 
@@ -615,7 +616,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["diagnose-a-1"], ["impl-a-2"], ["diagnose-a-2"]]);
   assert.equal(receipt.decide.length, 1);
   assert.match(receipt.decide[0].question, /the same diagnosis came back twice: split the change$/);
-  assert.match(byKey(f)["diagnose-a-2"].task, /Earlier diagnosis: \/t\/p\/diagnosis-a-1\.md/);
+  assert.doesNotMatch(byKey(f)["diagnose-a-2"].task, /Earlier diagnosis/);
 }
 
 // After two recoveries the next problem goes to a person without a third diagnosis.
@@ -1198,7 +1199,7 @@ function assertUniqueOutputs(f) {
   const k = byKey(f);
   assert.equal(k["review-a-4"].output, "/t/p/review-a-4.md");
   assert.equal(k["review-a-1"], undefined);
-  assert.match(k["impl-a"].task, /Earlier review: \/t\/p\/review-a-3\.md/);
+  assert.doesNotMatch(k["impl-a"].task, /Earlier review/);
   assert.match(k["impl-a"].task, /old worktree may be gone/);
 }
 
