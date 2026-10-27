@@ -55,7 +55,7 @@
 //                                  growth_p90}, tasks:[{id, owns, reads, check,
 //                                  depends, research, bytes, est}], oversize:[id],
 //                                  overlaps:[[a, b, file]], missing:[text],
-//                                  cycles:[[id, ...]]}
+//                                  cycles:[[id, ...]], final_checks:[command]}
 //   task <report> [--check CMD] [--verify CMD] [--in DIR] [--owns a,b] [--repo DIR]
 //                 [--base SHA] [--run DIR --id ID]
 //                                  run in a task worktree -> {ok, reason, report:{status,
@@ -63,7 +63,7 @@
 //                                  identity:{expected, mismatched, unreadable}, files, outside,
 //                                  check:{command, exit, tail, signature},
 //                                  verify:{command, exit, tail, signature} | null, signature}
-//   repro <dir> --command CMD [--expect fail|pass] [--id ID] [--in DIR]
+//   repro <dir> --command CMD [--expect fail|pass] [--id ID] [--in DIR] [--timeout-ms MS]
 //                                  run a command and judge its exit status ->
 //                                  {ok, reason, command, expect, exit, timed_out, tail,
 //                                  signature, log, branch, worktree, head}
@@ -80,10 +80,10 @@
 //   abandon <dir> [--keep a,b]     remove every worktree, branch and the base ref the
 //                                  run recorded, except the kept branches ->
 //                                  {ok, removed, kept, problems}
-//   integrate <dir> --tasks id:branch,... [--branch NAME] [--tidy yes]
+//   integrate <dir> --tasks id:branch,... [--branch NAME] [--tidy yes] [--final V]
 //                                  integration worktree at <dir>/integration ->
 //                                  {ok, reasons, branch, head, merged:[id], unmerged:[id],
-//                                  clean, heavy_check, pr_text[, tidied:[id], tidy_problems]}
+//                                  clean, final_check, pr_text[, tidied:[id], tidy_problems]}
 //   resume <dir> --repo DIR [--branch NAME]
 //                                  each task the ledger made -> {ok, reason, base,
 //                                  tasks:{id:{branch, head, review, reviews, merged}}}; head is
@@ -120,8 +120,8 @@
 // Plan directory, the contract between the plan skill and the implement skill:
 //
 //   <dir>/plan.md         problem (one paragraph), approach, tasks in merge
-//                         order, heavy checks to run once at the end, changes
-//                         the plan avoids, open risks
+//                         order, a `## Final checks` section, changes the plan
+//                         avoids, open risks
 //   <dir>/tasks/<id>.md   one per task
 //
 // A task file starts with a header of `key: value` lines, in any order, with
@@ -131,9 +131,14 @@
 //   id: <id>          letters, digits, `-` or `_`; equals the file name
 //   owns: a, b        repository paths the task may change; at least one
 //   reads: c, d       repository paths it must read; may be `none`
-//   check: <command>  one light check, the rest of the line
+//   check: <command>  the task's check, the rest of the line
 //   depends: x, y     ids of tasks that must merge first; may be `none`
 //   research: <one question a web searcher can answer>; optional, or `none`
+//
+// The `## Final checks` section of plan.md runs to the next line starting with
+// `#`: one command per non-blank line (a leading `- ` or `* ` and one pair of
+// enclosing backticks removed), or the single line `none`. The plan gate
+// returns them as final_checks.
 //
 // Paths are relative to --repo (default: the working directory), separated by
 // commas, backticks stripped, `./` prefixes and trailing slashes removed; a
@@ -186,7 +191,7 @@
 // lines are hashed.
 //
 // repro: runs --command with `sh -c` in --in (default the working directory)
-// for up to 10 minutes and writes the last 64 KB of its output to
+// for up to --timeout-ms (default 10 minutes) and writes the last 64 KB of its output to
 // <dir>/<id>.log (id defaults to `repro`). A linked worktree under <dir> or
 // the pi worktree base is recorded in <dir>/run.json as kind repro. --expect
 // is fail (the default: ok needs a nonzero exit that is not a timeout) or pass
@@ -212,11 +217,12 @@
 // research and empty otherwise.
 //
 // integrate: reads the integration worktree at <dir>/integration, <dir>/pr.md
-// and the first line of <dir>/heavy.md (`pass`, `none` or `fail: <why>`).
+// and takes the result of the final checks from --final (`pass`, `none` or
+// `fail: <why>`; absent or anything else is `not recorded`).
 // merged lists the task ids whose branch is an ancestor of its HEAD. ok needs
 // every task merged, a clean tree, every commit since the run's pinned base
 // made with the configured git identity (a log that cannot be read fails the
-// check), a pull request text and heavy checks that passed or were not
+// check), a pull request text and final checks that passed or were not
 // needed. With --tidy yes and ok true it then removes the worktree and
 // deletes the branch of every merged task, and prunes stale worktree entries;
 // tidied lists those tasks and tidy_problems what it kept.
@@ -815,13 +821,29 @@ function findCycles(tasks) {
   return cycles;
 }
 
+function finalChecks(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => /^##\s+Final checks\s*$/i.test(l));
+  if (start < 0) return null;
+  const body = [];
+  for (const l of lines.slice(start + 1)) {
+    if (l.startsWith("#")) break;
+    if (l.trim()) body.push(l.trim().replace(/^[-*] /, "").replace(/^`(.*)`$/, "$1"));
+  }
+  if (body.length === 0) return null;
+  return body.filter((s) => !/^none\.?$/i.test(s));
+}
+
 function plan(dir, flags) {
   const repo = flags.repo ?? process.cwd();
   const config = loadConfig();
   const limit = intFlag(flags, "limit", Math.floor(PLAN_LIMIT_SHARE * config.window));
   const cost = implementerCost(flags, config);
   const missing = [];
-  if (readIfExists(path.join(dir, "plan.md")) === null) missing.push("plan.md");
+  const planText = readIfExists(path.join(dir, "plan.md"));
+  if (planText === null) missing.push("plan.md");
+  const final_checks = planText === null ? [] : finalChecks(planText);
+  if (final_checks === null) missing.push("plan.md: ## Final checks needs one command per line, or none");
 
   let names = [];
   try {
@@ -876,7 +898,7 @@ function plan(dir, flags) {
 
   const cycles = findCycles(tasks);
   const ok = oversize.length === 0 && overlaps.length === 0 && cycles.length === 0 && missing.length === 0;
-  return { ok, tasks, sizing: cost, oversize, overlaps, missing, cycles };
+  return { ok, tasks, sizing: cost, oversize, overlaps, missing, cycles, final_checks: final_checks ?? [] };
 }
 
 const CHECK_TIMEOUT_MS = 10 * 60 * 1000;
@@ -1059,14 +1081,16 @@ function repro(dir, flags) {
   if (expect !== "fail" && expect !== "pass") throw new Usage("--expect must be fail or pass");
   const id = flags.id ?? "repro";
   const cwd = flags.in ?? process.cwd();
-  const r = runCommand(cwd, flags.command);
+  const timeoutMs = intFlag(flags, "timeout-ms", CHECK_TIMEOUT_MS);
+  if (timeoutMs < 1) throw new Usage("--timeout-ms must be a positive integer");
+  const r = runCommand(cwd, flags.command, timeoutMs);
   fs.mkdirSync(dir, { recursive: true });
   const log = path.join(dir, `${id}.log`);
   fs.writeFileSync(log, r.output.slice(-REPRO_LOG_BYTES));
   const here = where(cwd);
   if (recordable(dir, here)) record(dir, { kind: "repro", id, branch: here.branch, worktree: here.worktree });
   let reason = "";
-  if (r.timed_out) reason = "the command did not finish in 10 minutes";
+  if (r.timed_out) reason = `the command did not finish in ${timeoutMs} ms`;
   else if (r.overflowed) reason = "the command printed more output than can be captured";
   else if (expect === "fail" && r.exit === 0) reason = "the command passed (exit 0) but was expected to fail";
   else if (expect === "pass" && r.exit !== 0) reason = `the command failed (exit ${r.exit}) but was expected to pass`;
@@ -1118,10 +1142,9 @@ function hypothesesOf(file) {
   return { ok, hypotheses: list, problem: ok ? null : "fewer than two hypotheses with a Check first line" };
 }
 
-function heavyCheck(file) {
-  const text = readIfExists(file);
-  if (text === null) return "not recorded";
-  const line = firstLine(text);
+function finalCheck(value) {
+  if (typeof value !== "string") return "not recorded";
+  const line = value.trim();
   if (/^pass\b/i.test(line)) return "pass";
   if (/^none\b/i.test(line)) return "none";
   const fail = line.match(/^fail\w*\b:?\s*(.*)$/i);
@@ -1146,7 +1169,7 @@ function integrate(dir, flags) {
   const unmerged = pairs.map(([id]) => id).filter((id) => !merged.includes(id));
   const clean = head ? git(worktree, ["status", "--porcelain"]) === "" : false;
   const pr_text = (readIfExists(path.join(dir, "pr.md")) ?? "").trim().slice(0, PR_CHARS);
-  const heavy_check = heavyCheck(path.join(dir, "heavy.md"));
+  const final_check = finalCheck(flags.final);
   const pinned = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null")?.base ?? null;
 
   const reasons = [];
@@ -1161,9 +1184,9 @@ function integrate(dir, flags) {
       reasons.push(`commits not made with the configured git identity ${identityLabel(identity.expected)}: ${identity.mismatched.slice(0, LIST_CAP).join(", ")}`);
   }
   if (!pr_text) reasons.push("pr.md missing or empty");
-  if (heavy_check !== "pass" && heavy_check !== "none") reasons.push(`heavy checks: ${heavy_check}`);
+  if (final_check !== "pass" && final_check !== "none") reasons.push(`final checks: ${final_check}`);
   const ok = reasons.length === 0;
-  const out = { ok, reasons, branch, head, merged, unmerged, clean, heavy_check, pr_text };
+  const out = { ok, reasons, branch, head, merged, unmerged, clean, final_check, pr_text };
   if (flags.tidy === "yes" && ok) {
     Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied));
     const swept = abandon(dir, { kinds: ["review", "deps", "base"] });
