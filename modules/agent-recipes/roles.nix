@@ -49,6 +49,7 @@ in
       ];
       thinking = "xhigh";
       output = "plan.md";
+      timeoutMs = 3600000;
       budget = {
         tokens = 130000;
         reserve = 40000;
@@ -71,6 +72,7 @@ in
       ];
       thinking = "medium";
       output = "scout.md";
+      timeoutMs = 1200000;
       budget = {
         tokens = 100000;
         reserve = 20000;
@@ -93,6 +95,7 @@ in
       ];
       thinking = "medium";
       output = "locator.md";
+      timeoutMs = 1200000;
       budget = {
         tokens = 100000;
         reserve = 20000;
@@ -112,6 +115,7 @@ in
       ];
       thinking = "medium";
       output = "searcher.md";
+      timeoutMs = 1200000;
       budget = {
         tokens = 60000;
         reserve = 20000;
@@ -134,6 +138,7 @@ in
       ];
       thinking = "medium";
       output = "extractor.md";
+      timeoutMs = 1200000;
       budget = {
         tokens = 60000;
         reserve = 20000;
@@ -155,6 +160,7 @@ in
       ];
       thinking = "xhigh";
       output = "synthesis.md";
+      timeoutMs = 2400000;
       budget = {
         tokens = 130000;
         reserve = 40000;
@@ -178,6 +184,7 @@ in
       ];
       thinking = "medium";
       output = "result.md";
+      timeoutMs = 3600000;
       budget = {
         tokens = 100000;
         reserve = 30000;
@@ -201,6 +208,7 @@ in
       ];
       thinking = "xhigh";
       output = "review.md";
+      timeoutMs = 3600000;
       budget = {
         tokens = 130000;
         reserve = 40000;
@@ -223,6 +231,7 @@ in
       ];
       thinking = "medium";
       output = "mutations.md";
+      timeoutMs = 3600000;
       budget = {
         tokens = 100000;
         reserve = 30000;
