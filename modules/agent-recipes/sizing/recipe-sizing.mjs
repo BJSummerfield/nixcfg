@@ -10,8 +10,7 @@
 // so its transcript is left out of every estimate. `looped` counts the
 // children left out, per role. A child the graph ran for something other than
 // a task (settled under `integrate` or `resolve-*`) is left out the same way
-// and counted in `excluded`, per role; so are scout-role graph steps (pin,
-// merge, intake, resume, join-*, deps-*, handoff-*, verify-*, reproduce).
+// and counted in `excluded`, per role.
 // A request's context is usage.input (uncached) + usage.cacheRead (cached).
 // Per role: base is the median first-request context, peak_p90 the 90th
 // percentile of the run's peak, growth_p90 the 90th percentile of peak minus
@@ -59,8 +58,6 @@ const K_READ_ROLES = new Set(["implementer", "reviewer"]);
 const ROLE_ALIASES = { worker: "implementer" };
 const CLAMPED = ["base", "k_read", "growth_p90", "peak_p90", "compact_rate", "cold_per_run"];
 const DEFAULT_SIZING = { base: 7000, k_read: 1, growth_p90: 10000 };
-const GRAPH_STEP_KEYS = new Set(["pin", "merge", "intake", "resume", "reproduce", "verify-base"]);
-const GRAPH_STEP_PREFIXES = ["join-", "deps-", "handoff-", "verify-"];
 const TRANS_NAME = /^[0-9a-f-]{36}_.+_transcript\.jsonl$/;
 
 class Usage extends Error {}
@@ -283,10 +280,6 @@ function clamp(measured, current, role) {
   return out;
 }
 
-function isGraphStep(key) {
-  return typeof key === "string" && (GRAPH_STEP_KEYS.has(key) || GRAPH_STEP_PREFIXES.some((p) => key.startsWith(p)));
-}
-
 function propose(sessionsDirs, currentFile, minSamples, engineRev) {
   const current = currentFile ? JSON.parse(fs.readFileSync(currentFile, "utf8")) : { engine_rev: null, roles: {} };
   const { transcripts, children } = findFiles(sessionsDirs);
@@ -309,7 +302,7 @@ function propose(sessionsDirs, currentFile, minSamples, engineRev) {
       continue;
     }
     const key = runId === null ? undefined : keys.get(runId);
-    if (key === "integrate" || (typeof key === "string" && key.startsWith("resolve-")) || (role === "scout" && isGraphStep(key))) {
+    if (key === "integrate" || (typeof key === "string" && key.startsWith("resolve-"))) {
       excludedOut[role] = (excludedOut[role] ?? 0) + 1;
       continue;
     }

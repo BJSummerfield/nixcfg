@@ -333,11 +333,18 @@ export default async function research(args, port) {
 
       let rg = null;
       let reviewFile = null;
+      let gateOpen = false;
       for (let n = 1; ; n++) {
         board("reviewing", view());
         reviewFile = n === 1 ? dir + "/review.md" : sibling(dir + "/review.md", String(n));
         const review = await one(reviewItem(n, reviewFile, files));
         reviewFile = review.file;
+        if (review.ok && review.structuredOutput === undefined) {
+          open.push("the review's verdict gate did not run");
+          rg = null;
+          gateOpen = true;
+          break;
+        }
         rg = review.ok ? review.structuredOutput : null;
         if (!rg) {
           const d = await heal("review", "the reviewer failed: " + (review.error || "its gate did not run"), [review.file], ["retry", "decide"]);
@@ -358,7 +365,7 @@ export default async function research(args, port) {
         break;
       }
       if (!rg) {
-        open.push("the review failed or its gate did not run");
+        if (!gateOpen) open.push("the review failed or its gate did not run");
       } else {
         if (rg.verdict === "invalid") open.push("the review verdict could not be read; see " + reviewFile);
         else if (!rg.clean) open.push("review verdict " + rg.verdict + "; see " + reviewFile);

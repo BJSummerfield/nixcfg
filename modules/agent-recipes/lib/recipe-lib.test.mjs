@@ -130,6 +130,34 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   assert.equal(single.file, "/t/c.md");
 }
 
+// gateOnly(): a gate with no agent; it is never retried and never counted.
+{
+  const L = await load(fake(() => null).runs);
+  assert.deepEqual(L.gateOnly("g", "check it"), { key: "g", agent: null, gate: { command: "check it", output: "json" } });
+  assert.deepEqual(L.gateOnly("g", "check it", { gateTimeoutMs: 5, worktree: "wt", baseRef: "main" }), {
+    key: "g",
+    agent: null,
+    gate: { command: "check it", output: "json", timeoutMs: 5 },
+    worktree: "wt",
+    baseRef: "main",
+  });
+
+  const f = fake((item) => (item.key === "g" || item.key === "a" ? failed(item.key, "engine") : ok(item.key)));
+  const S = await load(f.runs);
+  const results = await S.launchSmall([S.gateOnly("g", "check it"), S.node("a", "w", ["Output: /t/a.md"], "/t/a.md")]);
+  assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["g", "a"], ["a-retry"]], "the child is retried, the gate-only item is not");
+  assert.equal(results[0].ok, false);
+  assert.equal(results[0].file, undefined);
+  assert.equal(S.tally.children, 2, "the gate-only item is not counted");
+
+  const h = fake(() => failed("g", "engine"));
+  const B = await load(h.runs);
+  const big = await B.launchBig(B.gateOnly("g", "check it"));
+  assert.deepEqual(h.batches.map((b) => b.map((i) => i.key)), [["g"]]);
+  assert.equal(big.ok, false);
+  assert.equal(B.tally.children, 0);
+}
+
 // A done child whose output the gate rejected after the port filled it from
 // the reply is retried once, and the retry names the file the child must
 // write; the retry itself, an over-cap verdict and a rejected file are not
