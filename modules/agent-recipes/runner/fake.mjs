@@ -33,15 +33,29 @@ export function fakeDeps(runs) {
       };
     },
   };
-  const runGate = async (_gate, { outcome }) => ({
-    ran: true,
-    exit: 0,
-    timedOut: false,
-    ms: 0,
-    tail: "",
-    value: outcome?.structuredOutput,
-    problem: undefined,
-  });
+  const runGate = async (_gate, { outcome, item }) => {
+    if (!outcome) {
+      const [result] = await runs.all([item]);
+      return {
+        ran: true,
+        exit: result?.ok ? 0 : 1,
+        timedOut: false,
+        ms: 0,
+        tail: "",
+        value: result?.ok ? result.structuredOutput : undefined,
+        problem: result?.ok ? undefined : (result?.error ?? "failed"),
+      };
+    }
+    return {
+      ran: true,
+      exit: 0,
+      timedOut: false,
+      ms: 0,
+      tail: "",
+      value: outcome.structuredOutput,
+      problem: undefined,
+    };
+  };
   const worktrees = {
     make: ({ item }) => ({
       ok: true,

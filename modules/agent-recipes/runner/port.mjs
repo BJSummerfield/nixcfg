@@ -212,8 +212,116 @@ export function createPort(opts) {
   const skipped = (reason) => bare("skipped", reason);
   const aborted = (reason = "run stopped") => bare("aborted", reason);
 
+  const gateFailed = (record) => Boolean(record.problem) || record.timedOut === true;
+
+  async function gateOnce(item, runId, gateCwd, outcome) {
+    let recorded = false;
+    try {
+      return await runGate(item.gate, {
+        cwd: gateCwd,
+        env: { ...process.env, ...(config.worktreeDir ? { RECIPE_WORKTREE_ROOT: config.worktreeDir } : {}) },
+        item,
+        outcome,
+        signal,
+        onSpawn: ({ pid }) => {
+          recorded = true;
+          appendJsonl(log, {
+            type: "gate-start",
+            key: item.key,
+            runId,
+            pid,
+            pidStart: procStartTime(pid),
+            at: at(),
+          });
+        },
+      });
+    } finally {
+      if (recorded) appendJsonl(log, { type: "gate-end", key: item.key, runId, at: at() });
+    }
+  }
+
+  async function gateWithRerun(item, runId, gateCwd, outcome) {
+    const first = await gateOnce(item, runId, gateCwd, outcome);
+    if (!gateFailed(first) || stopped()) return first;
+    return gateOnce(item, runId, gateCwd, outcome);
+  }
+
+  function makeItemWorktree(item, runId) {
+    return worktrees.make({
+      repo: cwd,
+      base: item.baseRef ?? "HEAD",
+      root: config.worktreeDir,
+      name: runId,
+      item,
+    });
+  }
+
+  async function executeGateOnly(item, fp) {
+    if (!item.gate) return skipped("item names no gate and no role");
+    const runId = newRunId(item);
+    let made = null;
+    try {
+      if (stopped()) return aborted();
+      let gateCwd = cwd;
+      let worktree = null;
+      let branch = null;
+      let base = null;
+      if (item.worktree === true) {
+        made = makeItemWorktree(item, runId);
+        if (!made.ok) {
+          const reason = made.reason ?? "unknown";
+          made = null;
+          return skipped(`worktree could not be made: ${reason}`);
+        }
+        gateCwd = made.worktree;
+        worktree = made.worktree;
+        branch = made.branch;
+        base = made.head ?? item.baseRef ?? "HEAD";
+      }
+      const gate = await gateWithRerun(item, runId, gateCwd, undefined);
+      if (stopped()) return aborted("run stopped during the gate");
+
+      if (made && !keepWorktrees) {
+        const state = worktrees.state(made.worktree, base);
+        if (state.exists && state.clean && state.commits === 0) {
+          if (worktrees.remove(made.worktree).ok) {
+            worktree = null;
+            branch = null;
+          }
+        }
+      }
+
+      const ok = gate.value !== undefined;
+      const result = {
+        ok,
+        status: ok ? "done" : "failed",
+        runId,
+        error: ok ? undefined : (gate.problem ?? (gate.timedOut ? "gate timed out" : "gate produced no value")),
+        structuredOutput: gate.value,
+        gate,
+        output: null,
+        outputExists: false,
+        cwd: gateCwd,
+        worktree,
+        branch,
+        sessionFile: null,
+        usage: { ...EMPTY_USAGE },
+        ms: gate.ms ?? 0,
+        handoff: null,
+        finalText: "",
+      };
+      appendJsonl(log, { type: "settle", key: item.key, runId, fingerprint: fp, at: at(), result });
+      return result;
+    } catch (error) {
+      if (stopped()) return aborted();
+      return bare("failed", `runner error: ${error?.message ?? error}`, { runId });
+    }
+  }
+
   async function execute(item, fp) {
     const roleName = item.agent;
+    if (roleName === undefined) return skipped("item names no role");
+    if (roleName === null) return executeGateOnly(item, fp);
     if (!roleName) return skipped("item names no role");
     const role = config.roles?.[roleName];
     if (!role) return skipped(`unknown role: ${roleName}`);
@@ -262,13 +370,7 @@ export function createPort(opts) {
       let branch = null;
       let base = null;
       if (item.worktree === true) {
-        made = worktrees.make({
-          repo: cwd,
-          base: item.baseRef ?? "HEAD",
-          root: config.worktreeDir,
-          name: runId,
-          item,
-        });
+        made = makeItemWorktree(item, runId);
         if (!made.ok) {
           const reason = made.reason ?? "unknown";
           made = null;
@@ -442,29 +544,7 @@ export function createPort(opts) {
 
       let gate = null;
       if (item.gate) {
-        let gateRecorded = false;
-        try {
-          gate = await runGate(item.gate, {
-            cwd: childCwd,
-            env: { ...process.env, ...(config.worktreeDir ? { RECIPE_WORKTREE_ROOT: config.worktreeDir } : {}) },
-            item,
-            outcome,
-            signal,
-            onSpawn: ({ pid }) => {
-              gateRecorded = true;
-              appendJsonl(log, {
-                type: "gate-start",
-                key: item.key,
-                runId,
-                pid,
-                pidStart: procStartTime(pid),
-                at: at(),
-              });
-            },
-          });
-        } finally {
-          if (gateRecorded) appendJsonl(log, { type: "gate-end", key: item.key, runId, at: at() });
-        }
+        gate = await gateWithRerun(item, runId, childCwd, outcome);
         if (stopped()) return aborted("run stopped during the gate");
       }
 
