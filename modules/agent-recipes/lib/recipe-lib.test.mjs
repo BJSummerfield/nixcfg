@@ -36,7 +36,6 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
     timeoutMs: 5,
     gateTimeoutMs: 7,
     worktree: "wt",
-    resume: "run-1",
   });
   assert.deepEqual(gated, {
     key: "k",
@@ -47,7 +46,6 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
     maxRuntimeMs: 5,
     gate: { command: "recipe-gate x '/t/o.md'", output: "json", timeoutMs: 7 },
     worktree: "wt",
-    resume: "run-1",
   });
 
   const quiet = L.node("k", "writer", ["Do it."], "/t/o.md", { gate: "recipe-gate integrate", selfGate: false });
@@ -76,19 +74,16 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
 }
 
 // retryItem(): every mention of the output moves, including the gate command
-// and the self-gate line; resume follows the failed run.
+// and the self-gate line.
 {
   const L = await load(fake(() => null).runs);
-  const item = L.node("w", "writer", ["Output: /t/d/a.md"], "/t/d/a.md", { gate: "recipe-gate x '/t/d/a.md'", resume: "run-old" });
+  const item = L.node("w", "writer", ["Output: /t/d/a.md"], "/t/d/a.md", { gate: "recipe-gate x '/t/d/a.md'" });
   const copy = L.retryItem(item, { runId: "run-failed" });
   assert.equal(copy.key, "w-retry");
   assert.equal(copy.output, "/t/d/a.retry.md");
   assert.equal(copy.task, item.task.replaceAll("/t/d/a.md", "/t/d/a.retry.md"));
   assert.equal(copy.gate.command, "recipe-gate x '/t/d/a.retry.md'");
-  assert.equal(copy.resume, "run-failed");
-  assert.equal(L.retryItem(item, {}).resume, "run-old");
   assert.equal(item.output, "/t/d/a.md", "the original is untouched");
-  assert.ok(!("resume" in L.retryItem(L.node("w", "writer", ["x"], "/t/d/a.md"), { runId: "r" })));
 }
 
 // launch(): a failed child runs once more beside its file; a child that
@@ -648,7 +643,7 @@ console.log("recipe library: ok");
     return ok(item.key, { ok: true, from: item.key });
   });
   const L = await load(f.runs);
-  const item = L.node("syn", "synthesizer", ["Synthesize the inputs.", "Output: /t/syn.md"], "/t/syn.md", { gate: "recipe-gate synth '/t/syn.md'", resume: "run-old" });
+  const item = L.node("syn", "synthesizer", ["Synthesize the inputs.", "Output: /t/syn.md"], "/t/syn.md", { gate: "recipe-gate synth '/t/syn.md'" });
   const result = await L.one(item);
   assert.deepEqual(f.batches.map((b) => b.map((i) => i.key)), [["syn"], ["syn-part-1", "syn-part-2"], ["syn-merge"]]);
   const [p1, p2] = f.batches[1];
@@ -660,7 +655,6 @@ console.log("recipe library: ok");
   assert.match(p1.task, /^Output: \/t\/syn\.part-1\.md$/m);
   assert.match(p1.task, /This continues an earlier synthesizer that handed off; its notes are at \/t\/syn\.md\. Read only these inputs, which it did not reach: \/in\/b\.md, \/in\/c\.md$/m);
   assert.match(p2.task, /did not reach: \/in\/d\.md$/m);
-  assert.ok(!("resume" in p1));
   assert.deepEqual([p1.handoffOf, p1.handoffAs, p1.splitDepth], ["run-syn", "split", 1]);
 
   const merge = f.batches[2][0];
