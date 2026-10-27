@@ -230,7 +230,7 @@ const failed = (key, error) => ({ ok: false, runId: `run-${key}`, error });
   const brief = f.batches[0][0];
   assert.equal(brief.gate.command, "recipe-gate diagnosis '/t/diagnosis-1.md' --allow 'retry,decide'");
   assert.match(brief.task, /Evidence: \/e$/m);
-  assert.match(f.batches[1][0].task, /Earlier diagnosis: \/t\/diagnosis-1\.md/);
+  assert.doesNotMatch(f.batches[1][0].task, /Earlier diagnosis/);
 
   const t1 = L.subjectOf("t1");
   const g1 = await L.diagnose(t1, trouble, "/t", [], "s", 100);

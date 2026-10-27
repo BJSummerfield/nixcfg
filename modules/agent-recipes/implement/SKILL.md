@@ -78,7 +78,7 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    clean review (or is already merged into the integration branch, or was
    tidied after it merged) is done and never launched again; a task whose
    branch exists and has any other review, or none, starts from that branch
-   with a brief line to continue it and the earlier review file named, and
+   with a brief line to continue it, and
    its review files number on from the highest one found; a task whose branch
    is gone and which is not merged starts fresh with an `open` line; a task
    named in `answers` gets the line `Decision from the user: <text>` and is
