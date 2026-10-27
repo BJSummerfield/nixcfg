@@ -1,4 +1,5 @@
 import { recipeLib } from "../lib/recipe-lib.mjs";
+import { reviewBriefLines } from "../lib/review-brief.mjs";
 import { joinSpec, piecesStatus, reviewRange, splitItem, takePieces } from "./split.mjs";
 
 export default async function implement(args, port) {
@@ -417,18 +418,7 @@ export default async function implement(args, port) {
   function reviewItem(t) {
     t.reviews++;
     const file = dir + "/review-" + t.id + "-" + t.reviews + ".md";
-    const lines = [
-      "Review a diff on a branch (the diff variant).",
-      "Task file: " + taskFile(t),
-      "Repository: " + repo,
-      "Branch: " + t.branch,
-      "Worktree: your working directory is your own worktree of the branch; read and run the check there and make no other worktree. The implementer's worktree " + t.worktree + " is not yours: never read or run anything in it.",
-      "Diff to review: git diff " + reviewRange(t, t.branch),
-      "Owned files: " + ownsOf(t).join(", "),
-      "Check to run: " + t.spec.check,
-    ];
-    if (t.replanBrief) lines.push("Revised task (wins over the task file): the ## Brief section of " + t.replanBrief);
-    lines.push("Write the report to " + file);
+    const lines = reviewBriefLines({ taskFile: taskFile(t), repo, branch: t.branch, implementerWorktree: t.worktree, diffRange: reviewRange(t, t.branch), owns: ownsOf(t), check: t.spec.check, output: file, revisedTask: t.replanBrief });
     const item = node("review-" + t.id + "-" + t.reviews, "reviewer", lines, file, {
       gate: "recipe-gate verdict " + quote(file) + " --run " + quote(dir) + " --id " + quote(t.id),
       timeoutMs: bigMs,
