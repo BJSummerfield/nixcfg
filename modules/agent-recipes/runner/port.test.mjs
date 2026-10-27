@@ -971,4 +971,101 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(beta.calls.length, 1);
 }
 
+// Gate-only items run the gate without a harness, a slot or a child count.
+{
+  const harness = fakeHarness(() => ({}));
+  const { port, dir, gates, runDir } = setup("gate-only", { harness, maxChildren: 1 });
+  const gateItem = (key, extra = {}) => ({ key, agent: null, gate: { command: "c", output: "json" }, ...extra });
+  const r = await port.runOne(gateItem("g1"));
+  assert.equal(r.ok, true);
+  assert.equal(r.status, "done");
+  assert.deepEqual(r.structuredOutput, { ok: true });
+  assert.equal(r.cwd, dir);
+  assert.equal(gates[0].cwd, dir);
+  assert.equal(harness.calls.length, 0);
+  assert.deepEqual(readLog(runDir).map((x) => x.type), ["settle"]);
+
+  const wt = await port.runOne(gateItem("g2", { worktree: true }));
+  assert.equal(wt.worktree, path.join(dir, "wt", "g2"));
+  assert.equal(wt.branch, "recipe/g2");
+  assert.equal(gates[1].cwd, wt.worktree);
+
+  const child = await port.runOne(item("c1"));
+  assert.equal(child.ok, true);
+  assert.equal(harness.calls.length, 1);
+
+  const none = await port.runOne({ key: "n", agent: null });
+  assert.equal(none.status, "skipped");
+  assert.match(none.error, /gate/);
+  assert.equal((await port.runOne({ key: "u" })).error, "item names no role");
+}
+
+// A gate with a problem is rerun once; a value, even a negative one, is not.
+{
+  let calls = 0;
+  const runGate = async () => {
+    calls += 1;
+    return calls % 2 === 1
+      ? { ran: true, exit: 1, timedOut: false, ms: 1, tail: "", value: undefined, problem: "boom" }
+      : { ran: true, exit: 0, timedOut: false, ms: 1, tail: "", value: { second: true }, problem: undefined };
+  };
+  const { port } = setup("gate-rerun", { harness: fakeHarness(() => ({})), deps: { runGate } });
+  const r = await port.runOne({ key: "g", agent: null, gate: { command: "c", output: "json" } });
+  assert.equal(calls, 2);
+  assert.deepEqual(r.structuredOutput, { second: true });
+
+  calls = 0;
+  const child = await port.runOne(item("c", { gate: { command: "c", output: "json" } }));
+  assert.equal(calls, 2);
+  assert.deepEqual(child.structuredOutput, { second: true });
+
+  let negative = 0;
+  const neg = setup("gate-negative", {
+    harness: fakeHarness(() => ({})),
+    deps: {
+      runGate: async () => {
+        negative += 1;
+        return { ran: true, exit: 0, timedOut: false, ms: 1, tail: "", value: { ok: false }, problem: undefined };
+      },
+    },
+  });
+  const n = await neg.port.runOne({ key: "g", agent: null, gate: { command: "c", output: "json" } });
+  assert.equal(negative, 1);
+  assert.deepEqual(n.structuredOutput, { ok: false });
+}
+
+// A gate-only item through the fake settles with the fake's structuredOutput.
+{
+  const runs = { all: async (items) => items.map((it) => ({ ok: true, structuredOutput: { k: it.key } })) };
+  const out = await runThroughRunner(
+    (_args, port) => port.runOne({ key: "go", agent: null, gate: { command: "c", output: "json" } }),
+    runs,
+    {},
+  );
+  assert.deepEqual(out.structuredOutput, { k: "go" });
+}
+// A gate orphaned during its rerun is still killed on resume.
+{
+  const runDir = path.join(tmp, "kill-rerun", "runner");
+  const old = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  const live = spawn("sleep", ["60"], { detached: true, stdio: "ignore" });
+  try {
+    const start = (proc) => ({ type: "gate-start", key: "g", runId: "X", pid: proc.pid, pidStart: procStartTime(proc.pid), at: "t" });
+    const lines = [start(old), { type: "gate-end", key: "g", runId: "X", at: "t" }, start(live)];
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(path.join(runDir, "children.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    await killUnfinished(runDir, { graceMs: 200 });
+    await sleep(100);
+    const alive = (proc) => spawnSync("kill", ["-0", String(proc.pid)]).status === 0 && !/^Z/.test(fs.readFileSync(`/proc/${proc.pid}/stat`, "utf8").split(") ")[1]);
+    assert.equal(alive(live), false);
+    assert.equal(alive(old), true);
+  } finally {
+    for (const proc of [old, live]) {
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {}
+    }
+  }
+}
+
 console.log("port tests passed");
