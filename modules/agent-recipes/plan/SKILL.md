@@ -18,8 +18,8 @@ time. It is the plan directory the implement skill reads:
 
 ```
 <dir>/plan.md        problem in one paragraph, approach, tasks in merge order,
-                     heavy checks to run once at the end, changes the plan
-                     avoids, open risks
+                     `## Final checks` (one command per
+                     line, or none), changes the plan avoids, open risks
 <dir>/tasks/<id>.md  one per task
 <dir>/research/<id>/ extract-<k>.md and page-<k>.md for a task that asked
 <dir>/receipt.json   the receipt
@@ -33,7 +33,7 @@ and the body (what to change and why, acceptance):
 id: <id>             letters, digits, - or _; the file name without .md
 owns: a, b           repository paths the task may change; at least one
 reads: c, d          repository paths it must read, or none
-check: <command>     one light check from the repository's AGENTS.md
+check: <command>     one task check from the contributor instructions
 depends: x, y        ids of tasks that must merge first, or none
 research: <question>  one question a web searcher can answer, or none; optional
 ```

@@ -25,5 +25,5 @@
   and this includes a function header that restates its name, arguments or
   return value. They are plain English a stranger can read alone: no run names, role names,
   review rounds, temp paths or mention of the conversation. The repository's
-  own `AGENTS.md` may restrict comments further.
+  own contributor instructions may restrict comments further.
 - Cite file and line for every claim about code.
