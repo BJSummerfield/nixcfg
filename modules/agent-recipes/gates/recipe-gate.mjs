@@ -32,12 +32,15 @@
 //                                  working directory's linked worktree is
 //                                  recorded in <DIR>/run.json as kind review
 //                                  and the output gains branch and worktree
-//   findings <review.md> --check CMD [--worktree DIR] [--run DIR --id ID] [--timeout-ms N]
+//   findings <review.md> --check CMD [--worktree DIR] [--run DIR --id ID] [--timeout-ms N] [--claims FILE]
 //                                  re-run the review's ```sh and ```diff blocks in a clean
 //                                  worktree at head -> {ok, verdict, reason, check:{command,
 //                                  exit, tail}, reproduced, unreproduced, unrunnable, findings,
-//                                  quotes_missing[, branch, worktree, recorded]}; verdict is
-//                                  needs-work when the check fails or any block reproduced;
+//                                  quotes_missing, tried, claimed[, branch, worktree, recorded]};
+//                                  verdict is needs-work when the check fails or any block
+//                                  reproduced; tried is the count on the review's Tried: line
+//                                  (null if none); claimed lists the "## Equivalent N" headings
+//                                  of the --claims file as {n, reason};
 //                                  also written to <review.md>.findings.json
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md> [--repo DIR]  {ok, angles:[{id, question}], asked, sound, clean, verdict}
@@ -596,11 +599,27 @@ function summaryOf(block) {
   return (block.text.split("\n").find((l) => l.trim()) ?? "").slice(0, SUMMARY_CHARS);
 }
 
+function claimsOf(text) {
+  const claims = [];
+  let open = null;
+  for (const line of text.split("\n")) {
+    if (/^#{1,6}\s/.test(line)) {
+      const m = line.match(/^##\s+Equivalent\s+(\d+)\b/);
+      open = m ? { n: Number(m[1]), reason: "" } : null;
+      if (open) claims.push(open);
+    } else if (open && line.trim()) {
+      open.reason = line.trim().slice(0, SUMMARY_CHARS);
+      open = null;
+    }
+  }
+  return claims;
+}
+
 function findings(file, flags) {
   if (!flags.check) throw new Usage("findings needs --check");
   const timeoutMs = intFlag(flags, "timeout-ms", 300000);
   const worktree = path.resolve(flags.worktree ?? process.cwd());
-  const out = { ok: false, verdict: null, reason: "", check: null, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [] };
+  const out = { ok: false, verdict: null, reason: "", check: null, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [], tried: null, claimed: [] };
   const finish = (reason) => {
     out.reason = reason;
     out.ok = out.verdict !== null;
@@ -612,6 +631,10 @@ function findings(file, flags) {
     out.reason = "review file missing";
     return out;
   }
+  const triedLine = text.match(/^Tried:\s*(\d+)/m);
+  out.tried = triedLine ? Number(triedLine[1]) : null;
+  const claimsText = flags.claims ? readIfExists(path.resolve(flags.claims)) : null;
+  if (claimsText !== null) out.claimed = claimsOf(claimsText);
   const head = firstLine(text);
   if (/^handoff:/i.test(head)) return finish("review is a handoff");
   if (/^blocked:/i.test(head)) return finish(`review is blocked:${head.slice(head.indexOf(":") + 1)}`);
