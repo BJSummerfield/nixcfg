@@ -98,10 +98,6 @@ export async function start(spec) {
 
   if (spec.signal?.aborted) return outcome({ status: "aborted" });
 
-  if (spec.resume && !spec.sessionFile && !findSessionFile(spec.sessionDir, spec.sessionId)) {
-    return outcome({ error: "no session file to resume" });
-  }
-
   fs.mkdirSync(spec.logDir, { recursive: true });
   fs.mkdirSync(path.dirname(spec.transcriptFile), { recursive: true });
   const events = fs.createWriteStream(path.join(spec.logDir, "events.jsonl"), { flags: "a" });
