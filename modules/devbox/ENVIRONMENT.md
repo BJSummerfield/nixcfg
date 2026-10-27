@@ -31,6 +31,8 @@ the security boundary; no sandbox wraps your commands.
 - Memory is shared with the local LLM engine's pinned host cache. Expensive
   commands (full test suites, flake checks, release builds) run one at a time
   box-wide: `flock -w 7200 /var/tmp/pi-plans/locks/heavy.lock <command>`.
+  A command written down for something else to run later, such as a plan's
+  final checks, carries the same wrapper.
 - The local LLM engine admits @imageBudget@ images per prompt, counted over
   the whole conversation because history is resent every turn. Exceeding it
   is terminal for that session: every later request fails with
