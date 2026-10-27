@@ -32,6 +32,13 @@
 //                                  working directory's linked worktree is
 //                                  recorded in <DIR>/run.json as kind review
 //                                  and the output gains branch and worktree
+//   findings <review.md> --check CMD [--worktree DIR] [--run DIR --id ID] [--timeout-ms N]
+//                                  re-run the review's ```sh and ```diff blocks in a clean
+//                                  worktree at head -> {ok, verdict, reason, check:{command,
+//                                  exit, tail}, reproduced, unreproduced, unrunnable, findings,
+//                                  quotes_missing[, branch, worktree, recorded]}; verdict is
+//                                  needs-work when the check fails or any block reproduced;
+//                                  also written to <review.md>.findings.json
 //   angles <file>                  angle list -> {ok, angles:[{id, question}]}
 //   gaps <review.md> [--repo DIR]  {ok, angles:[{id, question}], asked, sound, clean, verdict}
 //   diagnosis <file> [--allow a,b] [--verdict yes]
@@ -74,7 +81,8 @@
 //                                  each task the ledger made -> {ok, reason, base,
 //                                  tasks:{id:{branch, head, review, reviews, review_file, merged}}}; head is
 //                                  null for a deleted branch, review is the verdict of
-//                                  the highest <dir>/review-<id>-<n>.md or null, merged
+//                                  the highest <dir>/review-<id>-<n>.md (its .findings.json sidecar
+//                                  when present) or null, merged
 //                                  is whether the tip is in --branch
 //
 // Source list format: a `## <angle id>` heading per angle, then one bullet per
@@ -556,6 +564,114 @@ function verdict(file, flags) {
   return { ...out, branch: here.branch, worktree: here.worktree, recorded };
 }
 
+const FINDINGS_CAP = 10;
+const SUMMARY_CHARS = 200;
+
+function reproductionBlocks(text) {
+  const found = [];
+  let heading = "";
+  let open = null;
+  for (const line of text.split("\n")) {
+    if (open) {
+      if (/^\s*```\s*$/.test(line)) {
+        if (open.kind) found.push(open);
+        open = null;
+      } else open.lines.push(line);
+      continue;
+    }
+    const fence = line.match(/^\s*```(.*)$/);
+    if (fence) {
+      const info = fence[1].trim();
+      open = { kind: info === "sh" || info === "diff" ? info : null, title: heading, lines: [] };
+      continue;
+    }
+    const h = line.match(/^#{1,6}\s+(.*?)\s*#*\s*$/);
+    if (h) heading = h[1];
+  }
+  return found.map((b, i) => ({ n: i + 1, kind: b.kind, title: b.title, text: b.lines.join("\n") + "\n" }));
+}
+
+function summaryOf(block) {
+  if (block.kind === "diff") return ((block.text.match(/^\+\+\+ b\/(.+)$/m) || [])[1] ?? "?").slice(0, SUMMARY_CHARS);
+  return (block.text.split("\n").find((l) => l.trim()) ?? "").slice(0, SUMMARY_CHARS);
+}
+
+function findings(file, flags) {
+  if (!flags.check) throw new Usage("findings needs --check");
+  const timeoutMs = intFlag(flags, "timeout-ms", 300000);
+  const worktree = path.resolve(flags.worktree ?? process.cwd());
+  const out = { ok: false, verdict: null, reason: "", check: null, reproduced: [], unreproduced: [], unrunnable: [], findings: 0, quotes_missing: [] };
+  const finish = (reason) => {
+    out.reason = reason;
+    out.ok = out.verdict !== null;
+    fs.writeFileSync(`${file}.findings.json`, JSON.stringify(out) + "\n");
+    return out;
+  };
+  const text = readIfExists(file);
+  if (text === null) {
+    out.reason = "review file missing";
+    return out;
+  }
+  const head = firstLine(text);
+  if (/^(handoff|blocked):/i.test(head)) return finish(`review is a ${head.split(":")[0].toLowerCase()}`);
+  const g = (args, input) => spawnSync("git", args, { cwd: worktree, encoding: "utf8", input });
+  if (g(["rev-parse", "--git-dir"]).status !== 0) throw new Usage(`${worktree} is not a git worktree`);
+  const reset = () => {
+    g(["checkout", "--", "."]);
+    g(["clean", "-fdq"]);
+    return g(["status", "--porcelain"]).stdout.trim() === "";
+  };
+  if (flags.run) {
+    const here = where(worktree);
+    out.branch = here.branch;
+    out.worktree = here.worktree;
+    out.recorded = recordable(flags.run, here);
+    if (out.recorded) record(flags.run, { kind: "review", id: flags.id, branch: here.branch, worktree: here.worktree });
+  }
+  const blocks = reproductionBlocks(text);
+  out.findings = blocks.length;
+  if (!reset()) return finish("worktree not clean");
+  const tail = (r) => r.output.slice(-TAIL_CHARS);
+  const base = runCommand(worktree, flags.check, timeoutMs);
+  const exit = base.timed_out ? -1 : base.exit;
+  out.check = { command: flags.check, exit, tail: tail(base) };
+  const entry = (b) => ({ n: b.n, kind: b.kind, title: b.title, summary: summaryOf(b) });
+  const timedOut = `timed out after ${timeoutMs} ms`;
+  for (const [i, b] of blocks.entries()) {
+    if (exit !== 0) {
+      out.unrunnable.push({ ...entry(b), reason: "the check fails at head" });
+      continue;
+    }
+    if (i >= FINDINGS_CAP) {
+      out.unrunnable.push({ ...entry(b), reason: `over the cap of ${FINDINGS_CAP} reproductions` });
+      continue;
+    }
+    let r;
+    let reproducedWhen;
+    if (b.kind === "sh") {
+      r = runCommand(worktree, b.text, timeoutMs);
+      reproducedWhen = r.exit !== 0;
+    } else {
+      let applied = g(["apply", "--unidiff-zero", "-"], b.text);
+      if (applied.status !== 0) applied = g(["apply", "--recount", "-"], b.text);
+      if (applied.status !== 0) {
+        out.unrunnable.push({ ...entry(b), reason: `patch does not apply: ${(applied.stderr ?? "").trim().slice(-TAIL_CHARS)}` });
+      } else {
+        r = runCommand(worktree, flags.check, timeoutMs);
+        reproducedWhen = r.exit === 0;
+      }
+    }
+    if (r) {
+      if (r.timed_out) out.unrunnable.push({ ...entry(b), reason: timedOut });
+      else out[reproducedWhen ? "reproduced" : "unreproduced"].push({ ...entry(b), exit: r.exit, tail: tail(r) });
+    }
+    if (!reset()) return finish(`worktree left dirty after reproduction ${b.n}`);
+  }
+  out.quotes_missing = missingLocated(text, worktree).missing;
+  out.verdict = exit !== 0 || out.reproduced.length > 0 ? "needs-work" : "clean";
+  return finish("");
+}
+
 const ANGLE = /^\s*[-*]\s+([A-Za-z0-9][A-Za-z0-9_-]*)\s*\|\s*(\S.*?)\s*$/;
 
 function angleBullets(text) {
@@ -789,8 +905,8 @@ function signatureOf(text, roots) {
 }
 
 // The signature covers the full output; the tail is only for display.
-function runCommand(cwd, command) {
-  const r = spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout: CHECK_TIMEOUT_MS, maxBuffer: RUN_BUFFER });
+function runCommand(cwd, command, timeoutMs = CHECK_TIMEOUT_MS) {
+  const r = spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: RUN_BUFFER });
   const stdout = r.stdout ?? "";
   const stderr = r.stderr ?? "";
   return {
@@ -1070,6 +1186,14 @@ function branchTip(cwd, b) {
   return git(cwd, ["rev-parse", "--verify", "--quiet", `refs/heads/${b}^{commit}`]);
 }
 
+function reviewVerdict(file) {
+  try {
+    const side = JSON.parse(readIfExists(`${file}.findings.json`) ?? "null");
+    if (typeof side?.verdict === "string") return side.verdict;
+  } catch {}
+  return verdictOf(file).verdict;
+}
+
 function resume(dir, flags) {
   const ledger = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null");
   if (!ledger) return { ok: false, reason: "no ledger", base: null, tasks: {} };
@@ -1102,7 +1226,7 @@ function resume(dir, flags) {
     tasks[m.id] = {
       branch: m.branch,
       head,
-      review: latest ? verdictOf(path.join(dir, latest[0])).verdict : null,
+      review: latest ? reviewVerdict(path.join(dir, latest[0])) : null,
       reviews: highest,
       review_file: latest ? path.join(dir, latest[0]) : null,
       merged: inTarget || (!head && Boolean(tidied[m.branch])),
@@ -1168,7 +1292,7 @@ function run(argv) {
   const [cmd, ...rest] = argv;
   const { positional, flags } = parseArgs(rest);
   const target = positional[0];
-  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
+  if (!cmd || target === undefined) throw new Usage("usage: recipe-gate urls|paths|extract|quotes|size|verdict|findings|angles|gaps|diagnosis|plan|task|repro|hypotheses|pin|merge|abandon|integrate|resume <path> [flags]");
   switch (cmd) {
     case "urls":
       return urls(target);
@@ -1182,6 +1306,8 @@ function run(argv) {
       return size(target, flags);
     case "verdict":
       return verdict(target, flags);
+    case "findings":
+      return findings(target, flags);
     case "angles":
       return angles(target);
     case "gaps":
