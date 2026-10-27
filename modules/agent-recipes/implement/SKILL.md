@@ -125,10 +125,12 @@ branch>` removes them on request (`--keep a,b` keeps branches).
 4. A fresh reviewer (diff variant) works in its own worktree of the task's
    branch, a new one for every review round (made by the runner under its worktree root), reads
    the branch's own diff, runs the check there and never touches the
-   implementer's worktree. It gives a verdict (`recipe-gate verdict`, which
-   records the review worktree). On needs-work, or when the task gate was
+   implementer's worktree. Its blocking findings carry reproductions, and
+   `recipe-gate findings` re-runs them in the review worktree at head
+   (and records that worktree); its verdict decides. On needs-work, or when the task gate was
    red, a fresh implementer starts in a new worktree of the task's
-   branch with the findings and fixes them in new commits; then a fresh
+   branch with the reproduced findings, each with its command or patch and
+   output, and the unreproduced ones as advice, and fixes them in new commits; then a fresh
    review. At most two fix rounds; a task still not clean goes to a diagnosis. Other tasks go
    on. A fix implementer that hands off is relayed like any implementer,
    with the findings. A needs-work verdict
@@ -155,12 +157,11 @@ branch>` removes them on request (`--keep a,b` keeps branches).
    that is still open, ends in `open` and a question for the user.
 7. A child that fails by itself is retried once. Whatever the script cannot accept goes to a diagnose
    child (a fresh reviewer, diagnosis variant) at once, for that task only:
-   a child that failed twice, a `blocked` or `failed` report, a verdict
+   a child that failed twice, a `blocked` or `failed` report, a review with no verdict
    that cannot be read, a task still not clean after two fix rounds, an
    integration the check does not accept. It reads the evidence and picks one
    action that `recipe-gate diagnosis` checks against the actions allowed at
-   that step: `continue` (the output was fine, for example a verdict in the
-   wrong place), `retry`, `fix` (one more round, a fresh implementer
+   that step: `retry`, `fix` (one more round, a fresh implementer
    with its brief), `replan` (a fresh implementer in a new worktree with a
    revised brief, and files it may add to `owns` when no task outside its
    dependencies owns them) or `decide`. Each task gets at most two
@@ -179,7 +180,7 @@ branch>` removes them on request (`--keep a,b` keeps branches).
 A gate with side effects (the merges and the integration tidy) is run by the
 script only: the child it follows is not told to run it first, because the
 child's own run would change what the script's run sees. Gates without side
-effects (plan, task, verdict, diagnosis) are run by the child before it
+effects (plan, task, findings, diagnosis) are run by the child before it
 reports, and again by the script.
 
 The pi mechanism behind the implementer and reviewer runs is the runner: each
