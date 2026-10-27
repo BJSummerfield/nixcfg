@@ -402,6 +402,10 @@ function assertUniqueOutputs(f) {
   await run(failing.runs, base);
   assert.match(byKey(failing).integrate.gate.command, / --final 'fail: make test: exit 2'$/);
 
+  const broken = fake({ plan: finals, integrate: { integrate: "boom", "integrate-retry": "boom" } });
+  await run(broken.runs, base);
+  assert.match(byKey(broken)["diagnose-integration-1"].task, /^Evidence: \/t\/p\/integration\.retry\.md, \/t\/p\/final-1\.log, \/t\/p\/final-2\.log$/m);
+
   const none = fake();
   await run(none.runs, base);
   assert.equal(none.items().some((i) => i.key.startsWith("final-")), false);
@@ -792,7 +796,7 @@ function assertUniqueOutputs(f) {
   assert.deepEqual(keys(f), [["intake"], ["pin"], ["impl-a"], ["review-a-1"], ["mutate-a"], ["merge"], ["integrate"], ["integrate-retry"], ["diagnose-integration-1"]]);
   assert.equal(f.batches[7][0].output, "/t/p/integration.retry.md");
   assert.match(byKey(f)["diagnose-integration-1"].gate.command, / --allow 'retry,decide'$/);
-  assert.match(byKey(f)["diagnose-integration-1"].task, /Evidence: \/t\/p\/integration\.retry\.md/);
+  assert.match(byKey(f)["diagnose-integration-1"].task, /^Evidence: \/t\/p\/integration\.retry\.md$/m);
   assert.equal(f.batches[7][0].gate.command, f.batches[6][0].gate.command);
   assertUniqueOutputs(f);
   assert.deepEqual(receipt, {
