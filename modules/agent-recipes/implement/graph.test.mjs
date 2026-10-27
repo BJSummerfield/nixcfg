@@ -169,6 +169,7 @@ function fake({ plan = planOf([spec("a")]), pin = pinGate, back = undefined, int
     runs: {
       all: async (items) => {
         batches.push(items);
+        for (const i of items) assert.equal(i.maxRuntimeMs, undefined, i.key);
         return items.map((item) => {
           switch (item.agent) {
             case null:
