@@ -85,6 +85,7 @@ function fake(table = {}) {
   };
 }
 
+const failedChild = "the child crashed";
 const keys = (f) => f.items().map((i) => i.key);
 const byKey = (f) => Object.fromEntries(f.items().map((i) => [i.key, i]));
 const args = { dir: "/t/d", goal: "find the bug", repo: "/r", reproduce: "make repro" };
@@ -233,6 +234,21 @@ function assertSound(f) {
   const h2 = fake({ ...base, "change-1": taskFail(1, "sigB") });
   await run(h2.runs, { ...args, verify: "make test" });
   assert.deepEqual(keys(h2).slice(4, 6), ["change-1", "diagnose-h1-1"]);
+}
+
+// A retried fix round carries the findings again.
+{
+  const f = fake({
+    "change-1": taskFail(1, "sigA"),
+    "change-1-2": failedChild,
+    "change-1-2-retry": failedChild,
+    "diagnose-h1-1": diagnosis("retry", "try once more"),
+  });
+  await run(f.runs, args);
+  assert.deepEqual(keys(f).slice(3), ["change-1", "change-1-2", "change-1-2-retry", "diagnose-h1-1", "change-1-3", "review-1-1"]);
+  const k = byKey(f);
+  assert.equal(k["change-1-3"].baseRef, "refs/heads/pi/h1");
+  assert.match(k["change-1-3"].task, /The task gate reported: verify failed \(sigA\)/);
 }
 
 // Research: a diagnosis asks a question, sources are read, the fix round carries the notes.

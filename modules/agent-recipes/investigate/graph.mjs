@@ -177,11 +177,12 @@ function changeItem(h) {
   const tag = h.rank + (h.attempts === 1 ? "" : "-" + h.attempts);
   const report = dir + "/change-" + tag + ".md";
   h.report = report;
+  h.briefNotes = takeNotes(h);
   const lines = ["Job: test one hypothesis (the investigate variant).", "Goal: " + goal, "Hypothesis " + h.rank + ": " + h.claim, "Check first: " + h.check, reproLine()]
     .concat(commandLines())
     .concat(["Repository: " + repo + " (you are in your own worktree of " + (h.relayRef ? "the branch " + h.relayBranch : "the base") + ", on your own branch)"])
     .concat(relayBriefLines(h))
-    .concat(takeNotes(h));
+    .concat(h.briefNotes);
   lines.push("If the evidence refutes the hypothesis, change nothing and write `blocked: hypothesis refuted: <evidence>` as the first line of the report.");
   lines.push("Commit your work on the branch and leave nothing uncommitted.");
   lines.push("Write the report to " + report);
@@ -473,6 +474,7 @@ function researchLine(question, files) {
 function takeDiagnosis(h, d, trouble) {
   const step = trouble.step;
   if (d.action === "retry") {
+    if (step === "change") h.notes = h.briefNotes.concat(h.notes);
     h.next = step;
     return Promise.resolve();
   }
@@ -650,6 +652,7 @@ found.forEach(function (spec) {
     lastReview: null,
     cleanReview: null,
     notes: [],
+    briefNotes: [],
     trouble: null,
     track: handoffTrack(),
     relayRef: null,
