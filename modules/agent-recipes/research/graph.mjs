@@ -341,6 +341,7 @@ export default async function research(args, port) {
         reviewFile = review.file;
         if (review.ok && review.structuredOutput === undefined) {
           open.push("the review's verdict gate did not run");
+          rg = null;
           gateOpen = true;
           break;
         }

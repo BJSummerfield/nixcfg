@@ -381,6 +381,18 @@ const small = ({ synth = () => undefined, review = () => ({ ok: true, verdict: "
   assert.equal(receipt.gap_round, false);
 }
 
+// A retried invalid verdict must not leak into a later round whose gate did not run.
+{
+  const f = small({
+    review: (key) => (key === "review" ? { ok: true, verdict: "invalid", clean: false, angles: [{ id: "stale", question: "Stale?" }] } : undefined),
+    diagnose: () => diagnosis("retry", "read it again"),
+  });
+  const receipt = await run(f.runs, { dir: "/t/m", goal: "G", output: "/t/m/out.md" });
+  assert.deepEqual(keys(f.batches).slice(4), [["review"], ["diagnose-1"], ["review-2"]]);
+  assert.deepEqual(receipt.open, ["the review's verdict gate did not run"]);
+  assert.equal(receipt.gap_round, false);
+}
+
 // A reviewer that hands off without an unread list is not continued: its
 // partial file is not read as a verdict and the usual diagnosis follows.
 {
