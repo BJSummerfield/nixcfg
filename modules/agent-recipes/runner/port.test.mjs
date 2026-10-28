@@ -1013,15 +1013,19 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   const gateItem = (key) => ({ key, agent: null, gate: { command: "c", output: "json" }, worktree: true });
   const withState = (state, removeResult = { ok: true }) => {
     const removed = [];
+    const states = [];
     const worktrees = {
-      make: ({ item: it }) => ({ ok: true, worktree: path.join(tmp, "gate-clean-wt", it.key), branch: `recipe/${it.key}`, head: "HEAD" }),
-      state: () => state,
+      make: ({ item: it }) => ({ ok: true, worktree: path.join(tmp, "gate-clean-wt", it.key), branch: `recipe/${it.key}`, head: "made-head" }),
+      state: (wt, base) => {
+        states.push([wt, base]);
+        return state;
+      },
       remove: (wt) => {
         removed.push(wt);
         return removeResult;
       },
     };
-    return { removed, worktrees };
+    return { removed, states, worktrees };
   };
   const made = (key) => path.join(tmp, "gate-clean-wt", key);
 
@@ -1029,6 +1033,7 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   const a = setup("gate-clean", { harness: fakeHarness(() => ({})), deps: { worktrees: clean.worktrees } });
   const ra = await a.port.runOne(gateItem("c1"));
   assert.deepEqual(clean.removed, [made("c1")]);
+  assert.deepEqual(clean.states, [[made("c1"), "made-head"]]);
   assert.equal(ra.worktree, null);
   assert.equal(ra.branch, null);
   assert.equal(a.gates[0].cwd, made("c1"));
