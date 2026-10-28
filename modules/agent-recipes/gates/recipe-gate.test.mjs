@@ -1535,6 +1535,13 @@ const gate = (...args) => {
   const ledgerFile = path.join(run, "run.json");
   const ledger = JSON.parse(fs.readFileSync(ledgerFile, "utf8"));
   ledger.made.push({ kind: "task", id: "a", branch: null, worktree: detached });
+  // A review branch checked out in an unrecorded worktree cannot be deleted by the sweep, so it is reported.
+  git(repo, "worktree", "add", "-q", "-b", "pi/rev", path.join(run, "rev-held"), pinned.json.base_ref);
+  const swept = { kind: "review", id: "r", branch: "pi/rev", worktree: null };
+  ledger.made.push(swept);
+  // A non-task entry of a merged id is not a leftover attempt.
+  ledger.made.push({ kind: "other", id: "a", branch: "pi/other", worktree: null });
+  git(repo, "branch", "pi/other", pinned.json.base_ref);
   fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + "\n");
 
   git(repo, "branch", "--set-upstream-to=main", "pi/c");
@@ -1543,6 +1550,8 @@ const gate = (...args) => {
   assert.equal(r.json.ok, true, r.json.reasons.join("; "));
   assert.ok(fs.existsSync(detached), "a detached worktree is not removed");
   assert.ok(r.json.left_over.some((m) => m.worktree === detached && m.branch === null));
+  assert.ok(r.json.left_over.some((m) => m.kind === "review" && m.branch === "pi/rev"), JSON.stringify(r.json.left_over));
+  assert.ok(!r.json.left_over.some((m) => m.kind === "other"));
   assert.ok(!r.json.tidied.includes("c"));
   assert.ok(r.json.tidy_problems.some((l) => l.startsWith("c: branch pi/c kept: ")), r.json.tidy_problems.join("; "));
   assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/c"));
