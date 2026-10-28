@@ -70,8 +70,10 @@ in
       };
     };
 
-    systemd.services.gmediarender.environment.GIO_EXTRA_MODULES =
-      "${pkgs.glib-networking}/lib/gio/modules";
+    systemd.services.gmediarender.environment = {
+      GIO_EXTRA_MODULES = "${pkgs.glib-networking}/lib/gio/modules";
+      SOUP_FORCE_HTTP1 = mkIf (lib.versionOlder pkgs.libsoup_3.version "3.8.1") "1";
+    };
 
     services.shairport-sync = {
       enable = true;
