@@ -31,7 +31,7 @@
   mine = {
     system = {
       hostName = "streamer";
-      externalInterface = "end0";
+      externalInterface = "wlan0";
       autoUpgrade.enable = true;
       fish.enable = true;
       # sudo tailscale up
