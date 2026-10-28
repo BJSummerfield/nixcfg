@@ -44,7 +44,7 @@ export function worktreeState(worktree, base) {
   return {
     exists: true,
     clean: status.status === 0 && status.out === "",
-    commits: count.status === 0 ? Number(count.out) : 0,
+    commits: count.status === 0 ? Number(count.out) : null,
   };
 }
 
