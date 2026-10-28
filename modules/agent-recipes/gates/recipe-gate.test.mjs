@@ -974,6 +974,82 @@ const gate = (...args) => {
   assert.deepEqual(gone.unmerged, ["b"]);
 }
 
+// integrate --tidy with a ledger: extra attempts of a merged task are cleared
+// when merged and kept, and reported, when not.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "f\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const fresh = () => {
+    const wt = fs.realpathSync(dir());
+    fs.rmSync(wt, { recursive: true });
+    return wt;
+  };
+  const attempt = (b, file) => {
+    const wt = fresh();
+    git(repo, "worktree", "add", "-q", "-b", b, wt, "main");
+    if (file) {
+      fs.writeFileSync(path.join(wt, file), b + "\n");
+      git(wt, "add", "-A");
+      git(wt, "commit", "-q", "-m", b);
+    }
+    return wt;
+  };
+  const plan = fs.realpathSync(dir());
+  const iw = path.join(plan, "integration");
+  const wa = attempt("pi/a", "a.txt");
+  const wa2 = attempt("pi/a2", "a2.txt");
+  const wb = attempt("pi/b", "b.txt");
+  const wb0 = attempt("pi/b0", null);
+  const wd = attempt("pi/d", "d.txt");
+  const wdOld = fresh();
+  git(repo, "worktree", "add", "-q", "--detach", wdOld, "main");
+  const we = attempt("pi/e", "e.txt");
+  const wf = attempt("pi/f", "f2.txt");
+  const wf2 = attempt("pi/f2", null);
+  git(repo, "worktree", "lock", wf2);
+  git(repo, "worktree", "add", "-q", "-b", "implement/q", iw, "main");
+  for (const b of ["a", "b", "d", "e", "f"]) git(iw, "merge", "-q", "--no-edit", `pi/${b}`);
+  const gitDir = git(repo, "rev-parse", "--absolute-git-dir");
+  fs.writeFileSync(path.join(gitDir, "refs", "heads", "pi", "e.lock"), "");
+  fs.writeFileSync(path.join(plan, "pr.md"), "Title\n");
+  const made = [
+    { kind: "task", id: "a", branch: "pi/a", worktree: wa },
+    { kind: "task", id: "a", branch: "pi/a2", worktree: wa2 },
+    { kind: "task", id: "b", branch: "pi/b", worktree: wb },
+    { kind: "task", id: "b", branch: "pi/b0", worktree: wb0 },
+    { kind: "task", id: "d", branch: "pi/d", worktree: wd },
+    { kind: "task", id: "d", worktree: wdOld },
+    { kind: "task", id: "e", branch: "pi/e", worktree: we },
+    { kind: "task", id: "f", branch: "pi/f", worktree: wf },
+    { kind: "task", id: "f", branch: "pi/f2", worktree: wf2 },
+    { kind: "review", id: "f", branch: "pi/f2", worktree: wf2 },
+  ];
+  fs.writeFileSync(path.join(plan, "run.json"), JSON.stringify({ repo, made }));
+  const r = spawnSync(process.execPath, [script, "integrate", plan, "--tasks", "a:pi/a,b:pi/b,d:pi/d,e:pi/e,f:pi/f", "--branch", "implement/q", "--tidy", "yes", "--final", "none"], { env, encoding: "utf8" });
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.ok, true, out.reasons.join("; "));
+  assert.deepEqual(out.tidied, ["b", "d"]);
+  const branches = git(repo, "branch", "--format=%(refname:short)").split("\n");
+
+  assert.ok(out.tidy_problems.includes("a: branch pi/a2 kept: not merged"), out.tidy_problems.join("\n"));
+  assert.ok(fs.existsSync(wa2) && branches.includes("pi/a2"));
+
+  assert.ok(!fs.existsSync(wb0) && !branches.includes("pi/b0"));
+
+  assert.ok(out.tidy_problems.some((s) => s.startsWith("e: branch pi/e kept: ")), out.tidy_problems.join("\n"));
+
+  assert.ok(out.left_over.some((m) => m.id === "d" && m.worktree === wdOld && !m.branch));
+  assert.equal(out.left_over.filter((m) => m.worktree === wf2 && m.branch === "pi/f2").length, 1);
+}
 
 // pin, merge, abandon, task --base/--run, verdict --run and integrate --tidy
 // clearing recorded worktrees, through the CLI.
