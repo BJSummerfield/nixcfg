@@ -1667,6 +1667,7 @@ const mutationFixed = {
   assert.match(k["impl-a-2"].task, /^1\. \[Survivor 1: a\.nix:3\] patch to a\.nix$/m);
   assert.match(k["impl-a-2"].task, /^2\. \[Survivor 2: lib\/a\/x\] patch to lib\/a\/x$/m);
   assert.match(k["impl-a-2"].task, /## Equivalent <n>/);
+  assert.match(k["impl-a-2"].task, /never add a test that pins the wording/);
   assert.equal(k["recheck-a"].agent, null);
   assert.equal(k["recheck-a"].worktree, true);
   assert.equal(k["recheck-a"].baseRef, "refs/heads/pi/a");
@@ -1683,7 +1684,7 @@ const mutationFixed = {
 // The re-check's worktree is recorded by its gate, so the tidy removes it and it is not left behind;
 // one the gate could not record is left, with a command that removes it.
 {
-  const rechecked = (extra) => ({ recheck: { "recheck-a": { ...mutationFixed.recheck["recheck-a"], branch: "pi/a", worktree: "/cw/recheck-a", ...extra } } });
+  const rechecked = (extra) => ({ recheck: { "recheck-a": { result: { ok: true, worktree: "/cw/recheck-a", branch: "pi/a", structuredOutput: { ...mutationFixed.recheck["recheck-a"], branch: "pi/a", worktree: "/cw/recheck-a", ...extra } } } } });
   const f = fake({ ...mutationFixed, ...rechecked({}), integrate: { integrate: { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over: [] } } });
   const receipt = await run(f.runs, base);
   assert.equal(receipt.left.some((l) => l.worktree === "/cw/recheck-a"), false);
@@ -1692,6 +1693,39 @@ const mutationFixed = {
   const stray = await run(g.runs, base);
   assert.ok(stray.left.some((l) => l.worktree === "/cw/recheck-a"));
   assert.match(stray.cleanup, /worktree remove --force '\/cw\/recheck-a'/);
+}
+
+// A merged task's kept attempts are listed only while the gate still lists them as task entries.
+{
+  const integrate = (left_over) => ({ integrate: { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over } });
+  const attempts = (left_over) => fake({
+    review: { "review-a-1": needsWork },
+    impl: { "impl-a-2": { ...taskGate("a"), branch: "pi/a-2", worktree: "/wt/a-2" } },
+    integrate: integrate(left_over),
+  });
+  const tasksOf = (r) => r.left.filter((l) => l.kind === "task" && l.id === "a");
+
+  const none = await run(attempts([]).runs, base);
+  assert.deepEqual(tasksOf(none), []);
+
+  const entry = { kind: "task", id: "a", branch: "pi/a", worktree: "/wt/a" };
+  const kept = await run(attempts([entry]).runs, base);
+  assert.deepEqual(tasksOf(kept), [{ id: "a", kind: "task", branch: "pi/a", worktree: "/wt/a" }]);
+  assert.match(kept.cleanup, /^recipe-gate abandon '\/t\/p' --keep 'implement\/p'/);
+
+  const shared = await run(attempts([{ kind: "review", id: "a", branch: "pi/a-2", worktree: "/rw/other" }]).runs, base);
+  assert.deepEqual(tasksOf(shared), []);
+}
+
+// A re-check that returned no worktree is not left behind; one that kept its worktree is.
+{
+  const gate = { ...mutationFixed.recheck["recheck-a"], recorded: false, branch: "pi/rc", worktree: "/cw/rc" };
+  const withResult = (result) => fake({ ...mutationFixed, recheck: { "recheck-a": { result: { ok: true, structuredOutput: gate, ...result } } } });
+  const gone = await run(withResult({ worktree: null, branch: null }).runs, base);
+  assert.equal(gone.left.some((l) => l.worktree === "/cw/rc"), false);
+  const kept = await run(withResult({ worktree: "/cw/rc" }).runs, base);
+  assert.ok(kept.left.some((l) => l.worktree === "/cw/rc"));
+  assert.match(kept.cleanup, /worktree remove --force '\/cw\/rc'/);
 }
 
 // A survivor that is neither caught by the fix nor claimed stays open.

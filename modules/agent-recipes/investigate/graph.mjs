@@ -583,7 +583,7 @@ pinned = pin.structuredOutput;
 
 const rep = await one(reproItem("reproduce", reproduce));
 const repG = rep.structuredOutput;
-if (repG) noteMade("reproduce", "repro", repG.branch, repG.worktree);
+if (repG && rep.worktree) noteMade("reproduce", "repro", repG.branch, repG.worktree);
 if (!rep.ok || !repG) {
   open.push("the reproduction did not run: " + (rep.error || "its gate did not run"));
   return finish();
@@ -597,7 +597,7 @@ reproduction = { command: reproduce, exit: repG.exit, signature: repG.signature 
 if (verifyCommand !== reproduce) {
   const atBase = await one(reproItem("verify-base", verifyCommand));
   const baseG = atBase.structuredOutput;
-  if (baseG) noteMade("verify-base", "repro", baseG.branch, baseG.worktree);
+  if (baseG && atBase.worktree) noteMade("verify-base", "repro", baseG.branch, baseG.worktree);
   if (!atBase.ok || !baseG) {
     open.push("the verify command could not be run at the base: " + (atBase.error || "its gate did not run"));
     return finish();

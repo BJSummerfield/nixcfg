@@ -1170,7 +1170,9 @@ function integrate(dir, flags) {
   const clean = head ? git(worktree, ["status", "--porcelain"]) === "" : false;
   const pr_text = (readIfExists(path.join(dir, "pr.md")) ?? "").trim().slice(0, PR_CHARS);
   const final_check = finalCheck(flags.final);
-  const pinned = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null")?.base ?? null;
+  const ledger = JSON.parse(readIfExists(path.join(dir, "run.json")) ?? "null");
+  const pinned = ledger?.base ?? null;
+  const made = ledger?.made ?? [];
 
   const reasons = [];
   if (!head) reasons.push("no integration worktree");
@@ -1188,19 +1190,27 @@ function integrate(dir, flags) {
   const ok = reasons.length === 0;
   const out = { ok, reasons, branch, head, merged, unmerged, clean, final_check, pr_text };
   if (flags.tidy === "yes" && ok) {
-    Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied));
+    Object.assign(out, tidy(worktree, pairs.filter(([id]) => merged.includes(id)), recordFile, tidied, made));
     const swept = abandon(dir, { kinds: ["review", "deps", "base"] });
     out.tidy_problems.push(...swept.problems);
-    out.left_over = swept.left;
+    const listing = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: worktree, encoding: "utf8" }).stdout || "";
+    const present = new Set(listing.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9)));
+    const left = [...swept.left];
+    for (const m of made) {
+      if (m.kind !== "task" || !merged.includes(m.id)) continue;
+      const still = (m.branch && branchTip(worktree, m.branch)) || (m.worktree && present.has(m.worktree));
+      if (!still) continue;
+      left.push(m);
+    }
+    out.left_over = left;
   }
   return out;
 }
 
-// Removes the worktree and the branch of every task merged into the
-// integration branch. `branch -d` refuses a branch that is not merged, so
-// nothing unmerged is lost. A branch already gone was tidied by an earlier
-// run, since integrate only passes it here when record holds its commit.
-function tidy(cwd, pairs, recordFile, record) {
+// An attempt that never reached the integration branch is kept, since the merged one may have replaced it. A branch already
+// gone was tidied by an earlier run, since integrate only passes it here when
+// record holds its commit.
+function tidy(cwd, pairs, recordFile, record, made) {
   const listing = spawnSync("git", ["worktree", "list", "--porcelain"], { cwd, encoding: "utf8" }).stdout || "";
   const where = {};
   let current = null;
@@ -1211,23 +1221,34 @@ function tidy(cwd, pairs, recordFile, record) {
   const tidied = [];
   const tidy_problems = [];
   for (const [id, b] of pairs) {
-    const tip = branchTip(cwd, b);
-    if (!tip) {
-      tidied.push(id);
-      continue;
-    }
-    if (where[b]) {
-      const r = spawnSync("git", ["worktree", "remove", where[b]], { cwd, encoding: "utf8" });
-      if (r.status !== 0) {
-        tidy_problems.push(`${id}: worktree ${where[b]} kept: ${(r.stderr || "").trim().split("\n")[0]}`);
+    const branches = new Set([b]);
+    for (const m of made) if (m.kind === "task" && m.id === id && m.branch) branches.add(m.branch);
+    let gone = true;
+    for (const branch of branches) {
+      const tip = branchTip(cwd, branch);
+      if (!tip) continue;
+      if (branch !== b && spawnSync("git", ["merge-base", "--is-ancestor", tip, "HEAD"], { cwd }).status !== 0) {
+        tidy_problems.push(`${id}: branch ${branch} kept: not merged`);
+        gone = false;
         continue;
       }
+      if (where[branch]) {
+        const r = spawnSync("git", ["worktree", "remove", where[branch]], { cwd, encoding: "utf8" });
+        if (r.status !== 0) {
+          tidy_problems.push(`${id}: worktree ${where[branch]} kept: ${(r.stderr || "").trim().split("\n")[0]}`);
+          gone = false;
+          continue;
+        }
+      }
+      record[branch] = tip;
+      fs.writeFileSync(recordFile, JSON.stringify(record, null, 2) + "\n");
+      const d = spawnSync("git", ["branch", "-d", branch], { cwd, encoding: "utf8" });
+      if (d.status !== 0) {
+        tidy_problems.push(`${id}: branch ${branch} kept: ${(d.stderr || "").trim().split("\n")[0]}`);
+        gone = false;
+      }
     }
-    record[b] = tip;
-    fs.writeFileSync(recordFile, JSON.stringify(record, null, 2) + "\n");
-    const d = spawnSync("git", ["branch", "-d", b], { cwd, encoding: "utf8" });
-    if (d.status !== 0) tidy_problems.push(`${id}: branch ${b} kept: ${(d.stderr || "").trim().split("\n")[0]}`);
-    else tidied.push(id);
+    if (gone) tidied.push(id);
   }
   spawnSync("git", ["worktree", "prune"], { cwd });
   return { tidied, tidy_problems };

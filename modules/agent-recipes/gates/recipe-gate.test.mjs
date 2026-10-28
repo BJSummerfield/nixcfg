@@ -1421,5 +1421,141 @@ const gate = (...args) => {
   assert.equal(diag("action: fix\nreason: r\n## Brief\nWhy?\n", "--allow", "fix,decide").question, "");
 }
 
+// integrate --tidy removes every merged attempt of a task, keeps an unmerged replanned one, and can run twice.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const commit = (wt, file) => {
+    fs.writeFileSync(path.join(wt, file), file);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", file);
+  };
+  const branches = () => git(repo, "branch", "--format=%(refname:short)").split("\n");
+
+  const run = dir();
+  const pinned = gateIn(repo, "pin", run, "--repo", repo);
+  const base = pinned.json.base;
+  const attempt = (name, branch, from, file) => {
+    const wt = path.join(run, name);
+    git(repo, "worktree", "add", "-q", "-b", branch, wt, from);
+    commit(wt, file);
+    const id = name.split("-")[0];
+    const r = gateIn(wt, "task", write("report.md", "done"), "--check", "true", "--base", base, "--run", run, "--id", id);
+    assert.equal(r.json.ok, true, r.json.reason);
+    return wt;
+  };
+  const a1 = attempt("a-1", "pi/a", pinned.json.base_ref, "a1.txt");
+  const a2 = attempt("a-2", "pi/a-2", "pi/a", "a2.txt");
+  const b1 = attempt("b-1", "pi/b", pinned.json.base_ref, "b1.txt");
+  const b2 = attempt("b-2", "pi/b-2", pinned.json.base_ref, "b2.txt");
+
+  const integration = path.join(run, "integration");
+  git(repo, "worktree", "add", "-q", "-b", "implement/x", integration, pinned.json.base_ref);
+  git(integration, "merge", "-q", "--no-edit", "pi/a-2");
+  git(integration, "merge", "-q", "--no-edit", "pi/b-2");
+  fs.writeFileSync(path.join(run, "pr.md"), "Title\n");
+
+  const args = ["integrate", run, "--tasks", "a:pi/a-2,b:pi/b-2", "--branch", "implement/x", "--tidy", "yes", "--final", "none"];
+  const first = gateIn(repo, ...args);
+  assert.equal(first.json.ok, true, first.json.reasons.join("; "));
+  assert.deepEqual(first.json.tidied, ["a"]);
+  const left = branches();
+  assert.ok(!left.includes("pi/a") && !left.includes("pi/a-2") && !left.includes("pi/b-2"));
+  assert.ok(!fs.existsSync(a1) && !fs.existsSync(a2) && !fs.existsSync(b2));
+  assert.ok(left.includes("pi/b") && fs.existsSync(b1), "an attempt that never reached the integration branch stays");
+  assert.ok(first.json.tidy_problems.includes("b: branch pi/b kept: not merged"));
+  const tasks = first.json.left_over.filter((m) => m.kind === "task");
+  assert.equal(first.json.left_over.length, 1);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].id, "b");
+  assert.equal(tasks[0].branch, "pi/b");
+
+  const second = gateIn(repo, ...args);
+  assert.equal(second.json.ok, true, second.json.reasons.join("; "));
+  assert.equal(second.json.left_over.length, 1);
+  assert.equal(second.json.left_over[0].id, "b");
+  assert.equal(second.json.left_over[0].branch, "pi/b");
+}
+
+// integrate --tidy reports a detached worktree it did not remove, and a branch git refuses to delete.
+{
+  const env = { ...process.env, HOME: tmp, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (cwd, ...args) => {
+    const r = spawnSync("git", args, { cwd, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  const gateIn = (cwd, ...args) => {
+    const r = spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: "utf8" });
+    return { status: r.status, json: r.stdout ? JSON.parse(r.stdout) : null };
+  };
+  const repo = dir();
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "f.txt"), "one\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const run = dir();
+  const pinned = gateIn(repo, "pin", run, "--repo", repo);
+  const base = pinned.json.base;
+  const attempt = (name, branch, file) => {
+    const wt = path.join(run, name);
+    git(repo, "worktree", "add", "-q", "-b", branch, wt, pinned.json.base_ref);
+    fs.writeFileSync(path.join(wt, file), file);
+    git(wt, "add", "-A");
+    git(wt, "commit", "-q", "-m", file);
+    const id = name.split("-")[0];
+    const r = gateIn(wt, "task", write("report.md", "done"), "--check", "true", "--base", base, "--run", run, "--id", id);
+    assert.equal(r.json.ok, true, r.json.reason);
+    return wt;
+  };
+  attempt("a-1", "pi/a", "a1.txt");
+  attempt("c-1", "pi/c", "c1.txt");
+
+  const integration = path.join(run, "integration");
+  git(repo, "worktree", "add", "-q", "-b", "implement/y", integration, pinned.json.base_ref);
+  git(integration, "merge", "-q", "--no-edit", "pi/a");
+  git(integration, "merge", "-q", "--no-edit", "pi/c");
+  fs.writeFileSync(path.join(run, "pr.md"), "Title\n");
+
+  const detached = path.join(run, "detached");
+  git(repo, "worktree", "add", "-q", "--detach", detached, pinned.json.base_ref);
+  const ledgerFile = path.join(run, "run.json");
+  const ledger = JSON.parse(fs.readFileSync(ledgerFile, "utf8"));
+  ledger.made.push({ kind: "task", id: "a", branch: null, worktree: detached });
+  // A review branch checked out in an unrecorded worktree cannot be deleted by the sweep, so it is reported.
+  git(repo, "worktree", "add", "-q", "-b", "pi/rev", path.join(run, "rev-held"), pinned.json.base_ref);
+  const swept = { kind: "review", id: "r", branch: "pi/rev", worktree: null };
+  ledger.made.push(swept);
+  // A non-task entry of a merged id is not a leftover attempt.
+  ledger.made.push({ kind: "other", id: "a", branch: "pi/other", worktree: null });
+  git(repo, "branch", "pi/other", pinned.json.base_ref);
+  fs.writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2) + "\n");
+
+  git(repo, "branch", "--set-upstream-to=main", "pi/c");
+
+  const r = gateIn(repo, "integrate", run, "--tasks", "a:pi/a,c:pi/c", "--branch", "implement/y", "--tidy", "yes", "--final", "none");
+  assert.equal(r.json.ok, true, r.json.reasons.join("; "));
+  assert.ok(fs.existsSync(detached), "a detached worktree is not removed");
+  assert.ok(r.json.left_over.some((m) => m.worktree === detached && m.branch === null));
+  assert.ok(r.json.left_over.some((m) => m.kind === "review" && m.branch === "pi/rev"), JSON.stringify(r.json.left_over));
+  assert.ok(!r.json.left_over.some((m) => m.kind === "other"));
+  assert.ok(!r.json.tidied.includes("c"));
+  assert.ok(r.json.tidy_problems.some((l) => l.startsWith("c: branch pi/c kept: ")), r.json.tidy_problems.join("; "));
+  assert.ok(git(repo, "branch", "--format=%(refname:short)").split("\n").includes("pi/c"));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log("recipe-gate: all assertions passed");
