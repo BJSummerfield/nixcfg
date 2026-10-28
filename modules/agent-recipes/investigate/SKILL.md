@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: Find the cause of a bug or unexplained behaviour: a command that fails at the base is reproduced, two ranked hypotheses are tested one at a time in worktrees, a round that repeats an earlier failure goes to a diagnosis that may ask a research question, and the receipt says what reproduced, what each hypothesis came to and which branch holds the fix, all run by a script. Use only when the user asks for an investigation.
+description: "Find the cause of a bug or unexplained behaviour: a command that fails at the base is reproduced, two ranked hypotheses are tested one at a time in worktrees, a round that repeats an earlier failure goes to a diagnosis that may ask a research question, and the receipt says what reproduced, what each hypothesis came to and which branch holds the fix, all run by a script. Use only when the user asks for an investigation."
 disable-model-invocation: true
 ---
 

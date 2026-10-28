@@ -59,6 +59,30 @@ lib.listToAttrs (
   ) (testFiles "")
 )
 // {
+  pi-recipe-skills =
+    pkgs.runCommand "pi-recipe-skills"
+      {
+        nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pyyaml ])) ];
+      }
+      ''
+        python3 -I -c '
+        import sys, yaml
+        errors = []
+        for path in sys.argv[1:]:
+            parts = open(path).read().split("---\n")
+            try:
+                meta = yaml.safe_load(parts[1]) if parts[0] == "" and len(parts) > 2 else None
+            except yaml.YAMLError as e:
+                errors.append(f"{path}: {e}")
+                continue
+            if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
+                errors.append(f"{path}: frontmatter needs name and description")
+        if errors:
+            sys.exit("\n".join(errors))
+        ' ${recipeSrc}/*/SKILL.md
+        touch $out
+      '';
+
   pi-recipe-budgets =
     pkgs.runCommand "pi-recipe-budgets"
       {
