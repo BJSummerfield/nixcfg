@@ -1710,7 +1710,7 @@ const mutationFixed = {
 
   const entry = { kind: "task", id: "a", branch: "pi/a", worktree: "/wt/a" };
   const kept = await run(attempts([entry]).runs, base);
-  assert.ok(kept.left.some((l) => l.kind === "task" && l.id === "a" && l.branch === "pi/a" && l.worktree === "/wt/a"));
+  assert.deepEqual(tasksOf(kept), [{ id: "a", kind: "task", branch: "pi/a", worktree: "/wt/a" }]);
   assert.match(kept.cleanup, /^recipe-gate abandon '\/t\/p' --keep 'implement\/p'/);
 
   const shared = await run(attempts([{ kind: "review", id: "a", branch: "pi/a-2", worktree: "/rw/other" }]).runs, base);
