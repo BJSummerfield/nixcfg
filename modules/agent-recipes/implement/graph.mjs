@@ -104,6 +104,7 @@ export default async function implement(args, port) {
 
   function stillThere(m) {
     return leftOver.some(function (l) {
+      if (m.kind === "task" && l.kind !== "task") return false;
       return (m.branch && l.branch === m.branch) || (m.worktree && l.worktree === m.worktree);
     });
   }
@@ -113,7 +114,8 @@ export default async function implement(args, port) {
       if (!tidied) return true;
       if (m.kind === "integration") return false;
       if (m.kind === "review" || m.kind === "deps") return isUnrecorded(m) || stillThere(m);
-      return !(m.kind === "task" && tidied.indexOf(m.id) >= 0);
+      if (m.kind === "task" && tidied.indexOf(m.id) >= 0) return stillThere(m);
+      return true;
     });
   }
 
@@ -534,7 +536,7 @@ export default async function implement(args, port) {
     const lines = [
       "The mutation step at " +
         file +
-        " found changed code the check does not cover: each patch below was applied at the branch head and the check still passed. The patches are the ```diff blocks of that file, numbered in order. Add or strengthen tests in the owned files so that the check fails with each patch applied; if a patch exposes a real defect, fix the code and add the test. A patch that changes no behaviour is answered in your report under a heading `## Equivalent <n>` with the evidence on the next line, and nothing else is done for it. Keep the check passing on the unmodified code.",
+        " found changed code the check does not cover: each patch below was applied at the branch head and the check still passed. The patches are the ```diff blocks of that file, numbered in order. Add or strengthen tests in the owned files so that the check fails with each patch applied; if a patch exposes a real defect, fix the code and add the test. A patch that changes no behaviour is answered in your report under a heading `## Equivalent <n>` with the evidence on the next line, and nothing else is done for it. A patch that changes only text people read, such as a comment or documentation, changes no behaviour: answer it under `## Equivalent <n>` and never add a test that pins the wording. Keep the check passing on the unmodified code.",
       "Check: " + check,
     ];
     list(g.reproduced).forEach(function (f) {
@@ -554,7 +556,7 @@ export default async function implement(args, port) {
   function takeRecheck(t, result) {
     t.mutationFix = false;
     const g = result.structuredOutput;
-    if (g) noteMade(t.id, "review", g.branch, g.worktree, g.recorded);
+    if (g && result.worktree) noteMade(t.id, "review", g.branch, g.worktree, g.recorded);
     if (!result.ok || !g || !g.ok) {
       open.push("task " + t.id + ": the mutation re-check did not run: " + (result.error || (g && g.reason) || "no result"));
     } else {
