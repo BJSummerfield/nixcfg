@@ -17,6 +17,12 @@ fixtures, documentation, comments or configuration. A test file is one the
 repository's own layout or names mark as a test, or one the check exists to
 run.
 
+Text only people read, such as a comment or a line of documentation, is
+never a mutation, even inside a code file. When the range changes
+nothing that runs, mutate nothing: skip `## Running them` and write the
+report as the single line
+`Tried: 0, survived: 0, caught: 0, did not build: 0`.
+
 Choose up to 10 mutations. Each is a single small edit that changes behaviour
 and still parses: a flipped boolean operator, a negated or reversed condition,
 a boundary moved by one, a changed constant, a dropped argument or field, a
