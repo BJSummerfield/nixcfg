@@ -45,8 +45,6 @@
       };
     };
   };
-  users.users.waktu.extraGroups = [ "audio" ];
-
   home-manager.users = {
     waktu = {
       mine.user = {

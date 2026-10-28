@@ -135,7 +135,7 @@ which fits even on a 2 GB board.
 ## 6. Check the audio
 
 ```bash
-aplay -l                                     # the converter shows up as card "dac"
+sudo aplay -l                                # the converter shows up as card "dac"
 systemctl status gmediarender shairport-sync
 ```
 
@@ -155,7 +155,7 @@ the temperature with `cat /sys/class/thermal/thermal_zone0/temp`. 52000 means
   leave it at 100. Any lower value is software attenuation, which changes the
   bits. Set volume on the preamp.
 - **Converter volume:** some converters expose a hardware volume. Open
-  `alsamixer -c dac` once and make sure it's at 100% / 0 dB.
+  `sudo alsamixer -c dac` once and make sure it's at 100% / 0 dB.
 - **Sample rate:** the K11's optical input tops out at 96 kHz, and nothing on
   the Pi resamples, so a 176.4/192 kHz file plays silence. If hi-res files
   turn up, cap the cast in Symfonium's transcoding settings to 96 kHz, or
