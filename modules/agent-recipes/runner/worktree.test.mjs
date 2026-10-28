@@ -52,6 +52,13 @@ const unreadable = worktreeState(one.worktree, "no-such-ref");
 assert.equal(unreadable.commits, null);
 assert.equal(unreadable.exists, true);
 
+assert.deepEqual(worktreeState(path.join(root, "nope"), "main"), { exists: false, clean: false, commits: 0 });
+const notRepo = path.join(tmp, "plain");
+fs.mkdirSync(notRepo);
+assert.equal(worktreeState(notRepo, "main").clean, false);
+assert.equal(makeWorktree({ repo, root }).ok, false);
+assert.equal(makeWorktree({ repo, name: "r9" }).ok, false);
+
 const dup = makeWorktree({ repo, root, name: "r1" });
 assert.equal(dup.ok, false);
 assert.ok(dup.reason.length > 0);
@@ -61,12 +68,54 @@ assert.deepEqual(removeWorktree(one.worktree), { ok: true, reason: null });
 assert.equal(fs.existsSync(one.worktree), false);
 assert.equal(git(repo, "branch", "--list", "recipe/r1"), "");
 
+const detached = path.join(root, "proj", "det");
+git(repo, "worktree", "add", "-q", "--detach", detached, "main");
+assert.deepEqual(removeWorktree(detached), { ok: true, reason: null });
+assert.equal(fs.existsSync(detached), false);
+
+const gone = makeWorktree({ repo, root, name: "gone" });
+const other = makeWorktree({ repo, root, name: "other" });
+fs.rmSync(gone.worktree, { recursive: true, force: true });
+assert.match(git(repo, "worktree", "list"), /gone/);
+assert.equal(removeWorktree(other.worktree).ok, true);
+assert.doesNotMatch(git(repo, "worktree", "list"), /gone/);
+git(repo, "branch", "-D", "recipe/gone");
+
+const edge = makeWorktree({ repo, root, name: "edge" });
+const edgeTime = new Date(Math.floor(Date.now() / 1000) * 1000 - 40 * DAY_MS);
+fs.utimesSync(edge.worktree, edgeTime, edgeTime);
+const edgeMs = fs.statSync(edge.worktree).mtimeMs;
+assert.deepEqual(sweep(root, repo, { now: edgeMs + 20 * DAY_MS }), []);
+assert.equal(fs.existsSync(edge.worktree), true);
+assert.deepEqual(sweep(root, repo, { now: edgeMs + 20 * DAY_MS + 1 }), [edge.worktree]);
+git(repo, "branch", "-D", "recipe/edge");
+
+const stale = makeWorktree({ repo, root, name: "stale" });
+fs.rmSync(stale.worktree, { recursive: true, force: true });
+assert.deepEqual(sweep(root, repo), []);
+assert.match(git(repo, "worktree", "list"), /stale/);
+git(repo, "worktree", "prune");
+git(repo, "branch", "-D", "recipe/stale");
+
 const swept = sweep(root, repo, { now: Date.now() + 21 * DAY_MS });
 assert.deepEqual(swept, [two.worktree]);
 assert.equal(fs.existsSync(two.worktree), false);
 assert.notEqual(git(repo, "branch", "--list", "recipe/r2"), "");
 assert.doesNotMatch(git(repo, "worktree", "list"), /r2/);
 assert.deepEqual(sweep(root, repo), []);
+
+const shimDir = path.join(tmp, "shim");
+const shimLog = path.join(tmp, "git-calls.log");
+fs.mkdirSync(shimDir);
+const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+fs.writeFileSync(path.join(shimDir, "git"), `#!/bin/sh\necho "$*" >> "${shimLog}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+const spied = makeWorktree({ repo, root, name: "spied" });
+const savedPath = process.env.PATH;
+process.env.PATH = `${shimDir}:${savedPath}`;
+assert.deepEqual(sweep(root, repo, { now: Date.now() + 21 * DAY_MS }), [spied.worktree]);
+process.env.PATH = savedPath;
+assert.match(fs.readFileSync(shimLog, "utf8"), /worktree remove --force .*spied/);
+git(repo, "branch", "-D", "recipe/spied");
 
 const files = path.join(tmp, "files");
 fs.mkdirSync(files);
@@ -76,7 +125,14 @@ fs.writeFileSync(oldFile, "{}");
 fs.writeFileSync(newFile, "{}");
 const past = new Date(Date.now() - 30 * DAY_MS);
 fs.utimesSync(oldFile, past, past);
+const target = path.join(tmp, "target.json");
+fs.writeFileSync(target, "{}");
+fs.utimesSync(target, past, past);
+const link = path.join(files, "link.json");
+fs.symlinkSync(target, link);
 assert.deepEqual(sweepFiles(files), [oldFile]);
+assert.equal(fs.existsSync(target), true);
+assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
 assert.equal(fs.existsSync(newFile), true);
 assert.deepEqual(sweepFiles(path.join(tmp, "missing")), []);
 
