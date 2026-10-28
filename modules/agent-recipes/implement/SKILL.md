@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Carry out a plan directory made by the plan skill: each task is built in its own worktree, reviewed by a fresh reviewer and fixed for at most two rounds, a clean review followed by one mutation round, then the finished tasks are merged on one branch, the final checks run once and the pull request text is written, all run by a script. Use only when the user asks for an implementation.
+description: "Carry out a plan directory made by the plan skill: each task is built in its own worktree, reviewed by a fresh reviewer and fixed for at most two rounds, a clean review followed by one mutation round, then the finished tasks are merged on one branch, the final checks run once and the pull request text is written, all run by a script. Use only when the user asks for an implementation."
 disable-model-invocation: true
 ---
 

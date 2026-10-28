@@ -1,6 +1,6 @@
 ---
 name: research
-description: Answer a question from web sources, a repository, or both: a planner splits it into angles, searchers (or locators) list sources, extractors copy out passages, a synthesizer writes the output and a reviewer checks it, all run by a script. Use only when the user asks for research.
+description: "Answer a question from web sources, a repository, or both: a planner splits it into angles, searchers (or locators) list sources, extractors copy out passages, a synthesizer writes the output and a reviewer checks it, all run by a script. Use only when the user asks for research."
 disable-model-invocation: true
 ---
 
@@ -89,7 +89,7 @@ run continues with the same call plus `resume: true`.
   decide: [{id, step, question, diagnosis}], open: [...], gap_round, children }
 ```
 
-Read the receipt with the triage skill.
+Report as in Reading the receipt.
 
 ## Claude Code binding
 
@@ -104,6 +104,23 @@ All paths are absolute. It returns at once. Then run `recipe-run wait <task dir>
 with Bash in the background and a Bash timeout of 7200000. Exit 3 means the
 wait timed out while the run is still going: run the same wait again. On exit 0
 or 1 read `<task dir>/receipt.json`, the
-whole receipt, and report as in the pi binding. `recipe-status <task dir>`
+whole receipt, and report as in Reading the receipt. `recipe-status <task dir>`
 shows progress from any shell. A stopped run continues with `recipe-run resume
 <task dir> --detach`.
+
+## Reading the receipt
+
+- `output` is null when no source was found, no extract passed its check or
+  the synthesizer failed; `open` says which.
+- Each `open` entry is one line: a failed or over-cap source with its URL, a
+  search or angle that produced nothing, a gap the extra round could not
+  close, or the review's verdict when it was not clean (see `review.md`).
+- `gap_round` true means one extra round already ran; there is no second.
+- `healed` lists what a diagnosis recovered, one line each; `decide` lists
+  the questions a diagnosis left for the user, each with its diagnosis file.
+
+Report the output path first. Then each `decide` question with its diagnosis
+file, the counts, what healed, and each `open` entry in one line. A `decide`
+question, a failed source or an unclosed gap is the user's call: a new
+research run, a narrower goal, or accepting the gap. Do not start another run
+unasked.

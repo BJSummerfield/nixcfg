@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Turn a goal and an input file (a research summary, an idea note) into a plan directory of sized, disjoint tasks: a scout gathers repository facts, a planner writes plan.md and one file per task, a script checks sizes and file ownership, and a fresh reviewer checks the result. Use only when the user asks for a plan.
+description: "Turn a goal and an input file (a research summary, an idea note) into a plan directory of sized, disjoint tasks: a scout gathers repository facts, a planner writes plan.md and one file per task, a script checks sizes and file ownership, and a fresh reviewer checks the result. Use only when the user asks for a plan."
 disable-model-invocation: true
 ---
 

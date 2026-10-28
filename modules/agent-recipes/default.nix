@@ -57,7 +57,6 @@ let
     "investigate"
     "plan"
     "research"
-    "triage"
   ];
 
   skillsUnder =
