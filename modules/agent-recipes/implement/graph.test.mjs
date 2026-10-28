@@ -1683,7 +1683,8 @@ const mutationFixed = {
 // The re-check's worktree is recorded by its gate, so the tidy removes it and it is not left behind;
 // one the gate could not record is left, with a command that removes it.
 {
-  const rechecked = (extra) => ({ recheck: { "recheck-a": { ...mutationFixed.recheck["recheck-a"], branch: "pi/a", worktree: "/cw/recheck-a", ...extra } } });
+  const gate = (extra) => ({ ...mutationFixed.recheck["recheck-a"], branch: "pi/a", worktree: "/cw/recheck-a", ...extra });
+  const rechecked = (extra, worktree = "/cw/recheck-a") => ({ recheck: { "recheck-a": { result: { ok: true, structuredOutput: gate(extra), worktree } } } });
   const f = fake({ ...mutationFixed, ...rechecked({}), integrate: { integrate: { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over: [] } } });
   const receipt = await run(f.runs, base);
   assert.equal(receipt.left.some((l) => l.worktree === "/cw/recheck-a"), false);
@@ -1692,6 +1693,26 @@ const mutationFixed = {
   const stray = await run(g.runs, base);
   assert.ok(stray.left.some((l) => l.worktree === "/cw/recheck-a"));
   assert.match(stray.cleanup, /worktree remove --force '\/cw\/recheck-a'/);
+
+  const h = fake({ ...mutationFixed, ...rechecked({ recorded: false }, null) });
+  const gone = await run(h.runs, base);
+  assert.equal(gone.left.some((l) => l.worktree === "/cw/recheck-a"), false);
+}
+
+// A merged task's own attempt stays in `left` only while the gate still lists it as a task entry;
+// a review entry that shares its branch is not that attempt, and other kinds are never dropped.
+{
+  const integrate = (left_over) => ({ integrate: { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over } });
+  const has = (r, kind) => r.left.some((l) => l.kind === kind && l.id === "a");
+
+  const sharedBranch = await run(fake({ integrate: integrate([{ kind: "review", id: "a", branch: "pi/a", worktree: "/rw/other" }]) }).runs, base);
+  assert.equal(has(sharedBranch, "task"), false);
+
+  const kept = await run(fake({ integrate: integrate([{ kind: "task", id: "a", branch: "pi/a", worktree: "/wt/a" }]) }).runs, base);
+  assert.equal(has(kept, "task"), true);
+
+  const keptByWorktree = await run(fake({ integrate: integrate([{ kind: "task", id: "a", branch: "other", worktree: "/wt/a" }]) }).runs, base);
+  assert.equal(has(keptByWorktree, "task"), true);
 }
 
 // A survivor that is neither caught by the fix nor claimed stays open.
