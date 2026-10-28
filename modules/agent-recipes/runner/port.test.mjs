@@ -1059,6 +1059,25 @@ const item = (key, extra = {}) => ({ key, agent: "writer", task: `do ${key}`, ..
   assert.equal(rd.worktree, made("c4"));
   assert.equal(rd.branch, "recipe/c4");
 
+  const gone = withState({ exists: false, clean: true, commits: 0 });
+  const g = setup("gate-gone", { harness: fakeHarness(() => ({})), deps: { worktrees: gone.worktrees } });
+  const rg = await g.port.runOne(gateItem("c5"));
+  assert.deepEqual(gone.removed, []);
+  assert.equal(rg.worktree, made("c5"));
+
+  const failedGate = withState({ exists: true, clean: true, commits: 0 });
+  const f = setup("gate-failed", {
+    harness: fakeHarness(() => ({})),
+    deps: {
+      worktrees: failedGate.worktrees,
+      runGate: async () => ({ ran: true, exit: 1, timedOut: false, ms: 1, tail: "", value: undefined, problem: "boom" }),
+    },
+  });
+  const rf = await f.port.runOne(gateItem("c6"));
+  assert.equal(rf.ok, false);
+  assert.deepEqual(failedGate.removed, [made("c6")]);
+  assert.equal(rf.worktree, null);
+
   const childSide = withState({ exists: true, clean: true, commits: 0 });
   const e = setup("gate-child", { harness: fakeHarness(() => ({})), deps: { worktrees: childSide.worktrees } });
   await e.port.runOne(item("kid", { worktree: true }));
