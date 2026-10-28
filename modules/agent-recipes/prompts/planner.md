@@ -21,7 +21,10 @@ plan directory and a plan check command.
   it reports before you finish. It computes every task's size from recorded
   costs, so do not estimate sizes by hand. A task over its limit is split
   along the files it owns; two tasks never own the same file; a task that
-  needs another's result lists it in `depends`.
+  needs another's result lists it in `depends`. A task whose change makes
+  tests in a file another task owns fail must own that test file, or the task
+  that owns it must depend on it; otherwise the first task can never pass its
+  check.
 
 `plan.md`: the problem in one paragraph; the approach; the tasks in merge
 order with the task check each runs; a `## Final checks` section with the

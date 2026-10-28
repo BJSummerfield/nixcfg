@@ -1670,7 +1670,7 @@ const mutationFixed = {
   assert.equal(k["recheck-a"].agent, null);
   assert.equal(k["recheck-a"].worktree, true);
   assert.equal(k["recheck-a"].baseRef, "refs/heads/pi/a");
-  assert.equal(k["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md'");
+  assert.equal(k["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md' --run '/t/p' --id 'a'");
   assert.equal(k["recheck-a"].gate.timeoutMs, 6600000);
   assert.deepEqual(receipt.merged, ["a"]);
   assert.deepEqual(receipt.mutations, { a: { tried: 5, survived: 2, confirmed: 2, fixed: 1, equivalent: 1, claims: [{ n: 2, reason: "dead constant" }] } });
@@ -1678,6 +1678,20 @@ const mutationFixed = {
   const rows = emits.filter((e) => e.tasks).map((e) => e.tasks.find((t) => t.id === "a"));
   assert.equal(rows[rows.length - 1].fixes, 1);
   assertUniqueOutputs(f);
+}
+
+// The re-check's worktree is recorded by its gate, so the tidy removes it and it is not left behind;
+// one the gate could not record is left, with a command that removes it.
+{
+  const rechecked = (extra) => ({ recheck: { "recheck-a": { ...mutationFixed.recheck["recheck-a"], branch: "pi/a", worktree: "/cw/recheck-a", ...extra } } });
+  const f = fake({ ...mutationFixed, ...rechecked({}), integrate: { integrate: { ok: true, reasons: [], branch: "implement/p", head: "h", merged: ["a"], unmerged: [], clean: true, final_check: "pass", pr_text: "PR", left_over: [] } } });
+  const receipt = await run(f.runs, base);
+  assert.equal(receipt.left.some((l) => l.worktree === "/cw/recheck-a"), false);
+
+  const g = fake({ ...mutationFixed, ...rechecked({ recorded: false }) });
+  const stray = await run(g.runs, base);
+  assert.ok(stray.left.some((l) => l.worktree === "/cw/recheck-a"));
+  assert.match(stray.cleanup, /worktree remove --force '\/cw\/recheck-a'/);
 }
 
 // A survivor that is neither caught by the fix nor claimed stays open.
@@ -1744,7 +1758,7 @@ const mutationFixed = {
 {
   const f = fake({ ...mutationFixed, impl: { "impl-a-2": handedOff("a", { line: "half the fix", key: "a-2" }) } });
   await run(f.runs, base);
-  assert.equal(byKey(f)["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md' --claims '/t/p/impl-a-3.md'");
+  assert.equal(byKey(f)["recheck-a"].gate.command, "recipe-gate findings '/t/p/mutations-a.md' --check 'nixfmt --check a.nix' --claims '/t/p/impl-a-2.md' --claims '/t/p/impl-a-3.md' --run '/t/p' --id 'a'");
 }
 
 // A replan during a mutation fix round sends the new implementation to a review, not to the re-check.
