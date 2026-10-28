@@ -544,7 +544,7 @@ export default async function implement(args, port) {
   }
 
   function recheckItem(t) {
-    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + t.mutationReports.map((f) => " --claims " + quote(f)).join(""), {
+    return gateOnly("recheck-" + t.id, "recipe-gate findings " + quote(t.mutation.file) + " --check " + quote(t.spec.check) + t.mutationReports.map((f) => " --claims " + quote(f)).join("") + " --run " + quote(dir) + " --id " + quote(t.id), {
       gateTimeoutMs: FINDINGS_GATE_MS,
       worktree: true,
       baseRef: "refs/heads/" + t.branch,
@@ -553,8 +553,8 @@ export default async function implement(args, port) {
 
   function takeRecheck(t, result) {
     t.mutationFix = false;
-    if (result.worktree) noteMade(t.id, "review", result.branch || null, result.worktree, false);
     const g = result.structuredOutput;
+    if (g) noteMade(t.id, "review", g.branch, g.worktree, g.recorded);
     if (!result.ok || !g || !g.ok) {
       open.push("task " + t.id + ": the mutation re-check did not run: " + (result.error || (g && g.reason) || "no result"));
     } else {
