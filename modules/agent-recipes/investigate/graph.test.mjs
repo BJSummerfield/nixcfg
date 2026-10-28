@@ -66,7 +66,7 @@ function fake(table = {}) {
     const k = item.key;
     let m;
     if (k === "pin") return pinGate;
-    if (k === "reproduce" || k === "verify-base") return reproGate(k);
+    if (k === "reproduce" || k === "verify-base") return { structuredOutput: reproGate(k), worktree: `/wt/${k}` };
     if (k === "hypothesize") return { ...hypotheses, branch: "pi/hyp", worktree: "/wt/hypothesize" };
     if ((m = /^change-(\d+)/.exec(k))) return taskPass(m[1]);
     if ((m = /^verify-(\d+)/.exec(k))) return taskPass(m[1]);
@@ -690,4 +690,14 @@ const reviewClean = (branch) => ({ ...clean, branch });
   const f = fake({ reproduce: { structuredOutput: undefined, ok: false, status: "aborted", error: "run stopped" } });
   await assert.rejects(run(f.runs, args), { name: "RunStopped" });
   assert.equal(keys(f).at(-1), "reproduce");
+}
+
+// A reproduction worktree the runner already removed is not reported as left behind.
+{
+  const gone = fake({ reproduce: { structuredOutput: reproGate("reproduce"), worktree: null } });
+  const r = await run(gone.runs, args);
+  assert.ok(!r.left.some((l) => l.kind === "repro"));
+  const kept = fake({ reproduce: { structuredOutput: reproGate("reproduce"), worktree: "/wt/reproduce" } });
+  const r2 = await run(kept.runs, args);
+  assert.ok(r2.left.some((l) => l.kind === "repro" && l.worktree === "/wt/reproduce"));
 }
