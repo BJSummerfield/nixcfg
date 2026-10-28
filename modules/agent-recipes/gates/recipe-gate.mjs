@@ -1199,7 +1199,7 @@ function integrate(dir, flags) {
     for (const m of made) {
       if (m.kind !== "task" || !merged.includes(m.id)) continue;
       const still = (m.branch && branchTip(worktree, m.branch)) || (m.worktree && present.has(m.worktree));
-      if (!still || left.some((l) => l.branch === m.branch && l.worktree === m.worktree)) continue;
+      if (!still) continue;
       left.push(m);
     }
     out.left_over = left;
@@ -1207,9 +1207,7 @@ function integrate(dir, flags) {
   return out;
 }
 
-// Removes the worktree and the branch of every recorded attempt of a task
-// merged into the integration branch. An attempt that never reached that
-// branch is kept, since the merged one may have replaced it. A branch already
+// An attempt that never reached the integration branch is kept, since the merged one may have replaced it. A branch already
 // gone was tidied by an earlier run, since integrate only passes it here when
 // record holds its commit.
 function tidy(cwd, pairs, recordFile, record, made) {
