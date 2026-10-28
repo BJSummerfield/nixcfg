@@ -48,6 +48,9 @@ git(one.worktree, "add", "b.txt");
 git(one.worktree, "commit", "-q", "-m", "two");
 assert.deepEqual(worktreeState(one.worktree, "main"), { exists: true, clean: true, commits: 1 });
 assert.equal(worktreeState(path.join(root, "nope"), "main").exists, false);
+const unreadable = worktreeState(one.worktree, "no-such-ref");
+assert.equal(unreadable.commits, null);
+assert.equal(unreadable.exists, true);
 
 const dup = makeWorktree({ repo, root, name: "r1" });
 assert.equal(dup.ok, false);
