@@ -265,6 +265,14 @@ export function createPort(opts) {
       const gate = await gateWithRerun(item, runId, gateCwd, undefined);
       if (stopped()) return aborted("run stopped during the gate");
 
+      if (made) {
+        const state = worktrees.state(made.worktree, base);
+        if (state.exists && state.clean && state.commits === 0 && worktrees.remove(made.worktree).ok) {
+          worktree = null;
+          branch = null;
+        }
+      }
+
       const ok = gate.value !== undefined;
       const result = {
         ok,
