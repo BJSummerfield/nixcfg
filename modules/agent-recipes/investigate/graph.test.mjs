@@ -697,7 +697,18 @@ const reviewClean = (branch) => ({ ...clean, branch });
   const gone = fake({ reproduce: { structuredOutput: reproGate("reproduce"), worktree: null } });
   const r = await run(gone.runs, args);
   assert.ok(!r.left.some((l) => l.kind === "repro"));
-  const kept = fake({ reproduce: { structuredOutput: reproGate("reproduce"), worktree: "/wt/reproduce" } });
+  const kept = fake({ reproduce: { structuredOutput: reproGate("reproduce", { branch: "pi/r", worktree: "/wt/reproduce" }), worktree: "/wt/reproduce" } });
   const r2 = await run(kept.runs, args);
-  assert.ok(r2.left.some((l) => l.kind === "repro" && l.worktree === "/wt/reproduce"));
+  assert.ok(r2.left.some((l) => l.kind === "repro" && l.branch === "pi/r" && l.worktree === "/wt/reproduce"));
+}
+
+// The same holds for the verify run at the base.
+{
+  const gate = reproGate("verify-base", { branch: "pi/vb", worktree: "/rw/vb" });
+  const gone = fake({ "verify-base": { structuredOutput: gate, worktree: null } });
+  const r = await run(gone.runs, { ...args, verify: "make test" });
+  assert.ok(!r.left.some((l) => l.id === "verify-base"));
+  const kept = fake({ "verify-base": { structuredOutput: gate, worktree: "/rw/vb" } });
+  const r2 = await run(kept.runs, { ...args, verify: "make test" });
+  assert.ok(r2.left.some((l) => l.id === "verify-base" && l.branch === "pi/vb" && l.worktree === "/rw/vb"));
 }
