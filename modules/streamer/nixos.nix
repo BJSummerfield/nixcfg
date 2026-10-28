@@ -40,8 +40,16 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = config.mine.system.externalInterface != null;
+        message = "mine.system.streamer.enable requires mine.system.externalInterface to be set.";
+      }
+    ];
+
     services.udev.extraRules = ''
-      SUBSYSTEM=="sound", ACTION=="add", KERNEL=="card*", ATTRS{idVendor}=="${vendor}", ATTRS{idProduct}=="${product}", ATTR{id}!="dac", ATTR{id}="dac", RUN+="${config.systemd.package}/bin/systemctl --no-block try-restart gmediarender.service"
+      SUBSYSTEM=="sound", ACTION=="add", KERNEL=="card*", ATTRS{idVendor}=="${vendor}", ATTRS{idProduct}=="${product}", ATTR{id}!="dac", ATTR{id}="dac", RUN+="${config.systemd.package}/bin/systemctl --no-block restart gmediarender.service"
+      SUBSYSTEM=="sound", ACTION=="remove", KERNEL=="card*", ATTR{id}=="dac", RUN+="${config.systemd.package}/bin/systemctl --no-block stop gmediarender.service"
     '';
 
     services.gmediarender = {
@@ -51,6 +59,15 @@ in
       audioDevice = device;
       port = 49494;
       inherit uuid;
+      package = pkgs.symlinkJoin {
+        name = "gmediarender-${config.mine.system.externalInterface}";
+        paths = [ pkgs."gmrender-resurrect" ];
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        postBuild = ''
+          wrapProgram $out/bin/gmediarender \
+            --append-flag "--interface-name=${config.mine.system.externalInterface}"
+        '';
+      };
     };
 
     systemd.services.gmediarender.environment.GIO_EXTRA_MODULES =

@@ -31,7 +31,7 @@
   mine = {
     system = {
       hostName = "streamer";
-      externalInterface = "end0";
+      externalInterface = "wlan0";
       autoUpgrade.enable = true;
       fish.enable = true;
       # sudo tailscale up
@@ -45,6 +45,8 @@
       };
     };
   };
+  users.users.waktu.extraGroups = [ "audio" ];
+
   home-manager.users = {
     waktu = {
       mine.user = {

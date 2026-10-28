@@ -4,7 +4,7 @@
 desk computer being on. Phones and laptops anywhere in the house cast to it.
 
 ```
-Jellyfin ──HTTP(S)──▶ Pi 4B ──USB──▶ USB→S/PDIF converter ──optical──▶ FiiO K11 R2R
+Jellyfin ──HTTP(S)──▶ Pi 4B ──USB──▶ FiiO K11 R2R (USB input, on the KVM hub)
                         ▲
    Symfonium (UPnP) ────┤
    Mac (AirPlay) ───────┘
@@ -17,12 +17,15 @@ The Pi runs two renderers, both advertised as **Desk**:
 - `shairport-sync`: an AirPlay target for the Mac. AirPlay is CD quality and
   re-times the stream slightly, so treat it as the convenience path.
 
-Both write straight to the converter's ALSA `hw:` device with no software
+Both write straight to the K11's ALSA `hw:` device with no software
 mixing, so a 16/44.1 file reaches the DAC unchanged. A udev rule names the
-audio device set in `mine.system.streamer.usbId` (its `lsusb` vendor:product ID)
-`dac` and restarts `gmediarender` whenever it appears. Other USB audio devices,
-such as a mic sharing a KVM, keep their own names. Swapping the DAC or
-converter means changing `usbId` in `hosts/streamer/default.nix`.
+K11's audio card (set in `mine.system.streamer.usbId`, its `lsusb`
+vendor:product ID) `dac`, restarts `gmediarender` whenever the card appears
+and stops it when the card is removed. The K11 is externally powered:
+switching it off detaches it from the USB bus, so the renderer stops
+advertising until it is switched back on. Other USB audio devices, such as a
+mic sharing a KVM, keep their own names. Swapping the DAC means changing
+`usbId` in `hosts/streamer/default.nix`.
 
 The module is `modules/streamer/nixos.nix`; the host is `hosts/streamer/`.
 
@@ -36,7 +39,9 @@ The module is `modules/streamer/nixos.nix`; the host is `hosts/streamer/`.
 - An optical (TOSLINK) cable to the K11's optical input. Optical keeps the Pi
   electrically isolated from the DAC, so there's no ground-loop hum. The K11's
   optical input stops at 96 kHz (see [Playback settings](#playback-settings)).
-- Wired Ethernet. The host config expects the NIC to be `end0`.
+- Wi-Fi on the built-in `wlan0`, which the host config expects; the renderers
+  advertise only there. Ethernet is only needed for first boot, before Wi-Fi
+  is joined.
 - Any normal Pi 4 case. No fan is needed: audio playback keeps the Pi near idle.
 
 ## 1. Let redtruck build ARM
@@ -115,6 +120,7 @@ That's the key `.sops.yaml` knows about.
 
    ```bash
    sudo ls /run/secrets-for-users/   # waktu/password_hash should be listed
+   sudo nmcli device wifi connect <ssid> --ask
    sudo tailscale up
    ```
 
@@ -186,6 +192,10 @@ KVM (USB). Nothing on the Pi can switch it.
 - **No `dac` card.** Check `cat /proc/asound/cards` and `dmesg` after plugging
   in the DAC. If it's listed under another name, `usbId` doesn't match it:
   compare with `lsusb` (`nix shell nixpkgs#usbutils -c lsusb`).
+- **The K11 is off.** It detaches from the USB bus, the `dac` card
+  disappears, and the udev rule stops `gmediarender`, so **Desk** leaves the
+  renderer list. Switch it back on; the card reappears and the renderer
+  restarts. Error spam in the journal at the moment of removal is expected.
 - **Cast plays nothing, or AirPlay is silent.** `journalctl -u gmediarender -u shairport-sync`.
   "Device or resource busy" means the other renderer still holds the device
   (see [Switching](#switching-between-symfonium-and-airplay)).
