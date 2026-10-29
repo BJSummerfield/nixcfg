@@ -49,16 +49,13 @@
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
         maxContext = 225280;
-        kvCapacity = "auto";
         maxConcurrency = 4;
         kvDtype = "k8v4";
         prefillChunk = 2048;
         spec = "dflash2";
         draftTokens = 7;
-        lmHeadDraft = true;
-        cudaGraphAllowanceMib = 512;
-        deviceStateSlots = 3;
-        hostContextMib = 26624;
+        proposalHead = "optimized";
+        hostCacheMib = 26624;
         pendingTimeoutMs = 600000;
         defaultMaxTokens = 8192;
         vision = true;

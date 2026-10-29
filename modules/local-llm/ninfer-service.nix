@@ -22,25 +22,20 @@ let
     "--port ${toString port}"
     "--model-id ${name}"
     "--max-context ${num n.maxContext}"
-    "--kv-capacity ${toString n.kvCapacity}"
     "--max-concurrency ${num n.maxConcurrency}"
     "--kv-dtype ${n.kvDtype}"
     "--prefill-chunk ${num n.prefillChunk}"
-    "--device-state-slots ${num n.deviceStateSlots}"
-    "--host-context-mib ${num n.hostContextMib}"
-    "--pending-timeout-ms ${num n.pendingTimeoutMs}"
-    "--default-max-tokens ${num n.defaultMaxTokens}"
+    "--host-cache-capacity ${num n.hostCacheMib}MiB"
+    "--pending-timeout ${num n.pendingTimeoutMs}ms"
+    "--max-tokens ${num n.defaultMaxTokens}"
     "--request-log-jsonl ${requestLog}"
   ]
   ++ lib.optionals (n.spec != null) [
     "--spec ${n.spec}"
     "--draft-tokens ${num n.draftTokens}"
   ]
-  ++ lib.optional (n.spec != null && n.lmHeadDraft) "--lm-head-draft"
+  ++ lib.optional (n.spec != null) "--proposal-head ${n.proposalHead}"
   ++ lib.optional n.vision "--vision"
-  ++ lib.optional (
-    n.cudaGraphAllowanceMib != null
-  ) "--cuda-graph-allowance-mib ${num n.cudaGraphAllowanceMib}"
   ++ n.extraArgs;
 
   # NINFER_EXTRA_ARGS is appended last so its flags win; deliberately unquoted.

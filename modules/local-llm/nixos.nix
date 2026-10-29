@@ -10,7 +10,7 @@
 #
 # A throwaway A/B needs no rebuild: one NINFER_EXTRA_ARGS=... line in
 # /var/lib/local-llm/ninfer.env, then restart the unit inside the container.
-# Later flags win, except the booleans (--lm-head-draft, --vision).
+# Later flags win; booleans take a --no- form (--no-vision).
 
 {
   lib,
@@ -112,6 +112,7 @@ in
       "cuda_nvtx"
       "cuda_cudart"
       "cuda_nvcc"
+      "cuda_profiler_api"
     ];
 
     containers.local-llm = {

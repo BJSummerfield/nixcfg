@@ -123,8 +123,11 @@ class LogTail:
         occ = cc.get("occupancy") or {}
         pressure = cc.get("pressure") or {}
         sch = ev.get("scheduling") or {}
-        kv = (cc.get("main_kv_transfers") or {}).get("h2d") or {}
+        main_pool = next((p for p in cc.get("kv_pools") or [] if p.get("pool_id") == 0), {})
+        kv = (main_pool.get("transfers") or {}).get("h2d") or {}
         state = (cc.get("state_transfers") or {}).get("h2d") or {}
+        host = _context_pool(occ, "host")
+        device = _context_pool(occ, "device")
         sched = ev.get("scheduler") or {}
         tps = ev.get("throughput_tokens_per_second") or {}
         tok = ev.get("tokens") or {}
@@ -139,12 +142,14 @@ class LogTail:
             "running": num(sched.get("running")),
             "waiting": num(sched.get("waiting")),
             "paused": num(sched.get("paused")),
-            "host_kv_bytes": num(occ.get("host_kv_bytes")),
-            "host_context_bytes": num(occ.get("host_context_occupied_bytes")),
-            "host_context_peak": num(occ.get("host_context_peak_occupied_bytes")),
-            "host_context_reserved": num(occ.get("host_context_reserved_bytes")),
-            "host_state_slots": num(occ.get("host_state_slots")),
-            "device_state_slots": num(occ.get("device_state_slots")),
+            "host_context_bytes": _occupied(host),
+            "host_context_peak": num(host.get("peak_occupied_bytes")),
+            "host_context_reserved": num(host.get("reserved_bytes")),
+            "host_free_in_blocks": num(host.get("assigned_free_bytes")),
+            "host_free_blocks": num(host.get("unassigned_free_bytes")),
+            "device_context_bytes": _occupied(device),
+            "state_objects": num(occ.get("state_objects")),
+            "history_objects": num(occ.get("history_objects")),
             "restores": num((cc.get("state_operations") or {}).get("restores")),
             "kv_h2d_bytes": num(kv.get("bytes")),
             "kv_h2d_seconds": num(kv.get("seconds")),
@@ -171,15 +176,15 @@ class LogTail:
             return None
         eng, cc = ev.get("engine") or {}, (ev.get("engine") or {}).get("context_cache") or {}
         cap = num(cc.get("host_capacity_bytes"))
+        device = [p for p in eng.get("context_pools") or [] if p.get("domain") == "device"]
         return {
             "instance": ev.get("server_instance_id"),
             "started_unix_ms": ev.get("timestamp_unix_ms"),
             "max_concurrency": eng.get("max_concurrency"),
             "max_context": eng.get("max_context"),
-            "kv_capacity_tokens": eng.get("kv_capacity"),
+            "context_token_capacity_estimate": eng.get("context_token_capacity_estimate"),
+            "device_context_capacity_bytes": sum(num(p.get("capacity_bytes")) for p in device) if device else None,
             "host_context_mib": round(cap / MIB) if cap else None,
-            "device_state_slots": cc.get("device_state_slots"),
-            "total_device_state_slots": cc.get("total_device_state_slots"),
             "speculative": eng.get("speculative_backend"),
             "draft_window": eng.get("speculative_draft_window"),
             "vision": eng.get("vision"),
@@ -283,12 +288,13 @@ def summarize(reqs, samples):
             "kv_h2d_gib": round(h2d_bytes / GIB, 2),
             "kv_h2d_seconds": round(h2d_secs, 2),
             "kv_h2d_gib_per_s": round(h2d_bytes / GIB / h2d_secs, 1) if h2d_secs else None,
-            "peak_host_kv_gib": round(max((s["host_kv_bytes"] for s in samples), default=0) / GIB, 2),
-            "peak_host_state_slots": max((s["host_state_slots"] for s in samples), default=0),
             "peak_host_context_gib": round(max((s["host_context_peak"] or s["host_context_bytes"] for s in samples), default=0) / GIB, 2),
             "last_host_context_gib": round(samples[-1]["host_context_bytes"] / GIB, 2) if samples else None,
             "last_host_context_reserved_gib": round(samples[-1]["host_context_reserved"] / GIB, 2) if samples else None,
-            "peak_device_state_slots": max((s["device_state_slots"] for s in samples), default=0),
+            "last_host_free_in_blocks_gib": round(samples[-1]["host_free_in_blocks"] / GIB, 2) if samples else None,
+            "last_host_free_blocks_gib": round(samples[-1]["host_free_blocks"] / GIB, 2) if samples else None,
+            "peak_state_objects": max((s["state_objects"] for s in samples), default=0),
+            "peak_history_objects": max((s["history_objects"] for s in samples), default=0),
             "spill_pages": sum(s["spill_pages"] for s in samples),
         },
         "scheduling": {
@@ -302,6 +308,15 @@ def summarize(reqs, samples):
             "paused_seconds": round(sum(r["paused"] for r in reqs), 1),
         },
     }
+
+
+def _context_pool(occupancy, domain):
+    return next((p for p in occupancy.get("pools") or [] if p.get("domain") == domain), {})
+
+
+def _occupied(pool):
+    free = sum(num(pool.get(k)) for k in ("assigned_free_bytes", "unassigned_free_bytes", "tail_bytes"))
+    return max(num(pool.get("capacity_bytes")) - free, 0)
 
 
 def _group(rows, key):
@@ -335,19 +350,21 @@ def prometheus(tail):
     cfg = tail.config() or {}
     g("up", 1 if tail.server_start else 0, "1 when a server_start has been seen in the log")
     g("config_max_concurrency", cfg.get("max_concurrency"), "--max-concurrency")
-    g("config_host_context_bytes", int(cfg["host_context_mib"] * MIB) if cfg.get("host_context_mib") else None, "--host-context-mib as bytes")
-    g("config_device_state_slots", cfg.get("device_state_slots"), "device state slots")
-    g("config_kv_capacity_tokens", cfg.get("kv_capacity_tokens"), "device KV pool in tokens")
+    g("config_host_context_bytes", int(cfg["host_context_mib"] * MIB) if cfg.get("host_context_mib") else None, "--host-cache-capacity")
+    g("config_device_context_bytes", cfg.get("device_context_capacity_bytes"), "shared device KV/state pool")
+    g("config_context_token_capacity_estimate", cfg.get("context_token_capacity_estimate"), "device pool in tokens, engine estimate")
     if samples:
         s = samples[-1]
         g("running", s["running"], "requests running at the last sample")
         g("waiting", s["waiting"], "requests queued at the last sample")
         g("paused", s["paused"], "requests paused at the last sample")
-        g("host_kv_bytes", s["host_kv_bytes"], "host KV tier occupancy")
         g("host_context_bytes", s["host_context_bytes"], "host context tier occupancy")
         g("host_context_reserved_bytes", s["host_context_reserved"], "host context tier bytes reserved")
-        g("host_state_slots_used", s["host_state_slots"], "host state slots occupied")
-        g("device_state_slots_used", s["device_state_slots"], "device state slots occupied")
+        g("host_context_free_in_blocks_bytes", s["host_free_in_blocks"], "free slots inside host blocks already assigned to a size")
+        g("host_context_free_blocks_bytes", s["host_free_blocks"], "whole free host blocks")
+        g("device_context_bytes", s["device_context_bytes"], "device KV/state pool occupancy")
+        g("context_state_objects", s["state_objects"], "saved states held")
+        g("context_history_objects", s["history_objects"], "KV histories held")
         g("prefill_tokens_per_second", round(s["prefill_tps"], 1), "prefill rate over the last sample")
         g("decode_tokens_per_second", round(s["decode_tps"], 1), "decode rate over the last sample")
         g("decode_batch_size", round(s["batch"], 2), "mean decode batch over the last sample")
