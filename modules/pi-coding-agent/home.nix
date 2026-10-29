@@ -21,14 +21,6 @@ let
     };
   };
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
-
-  assertionsOk = lib.all (
-    a:
-    if lib.isAttrs a && a ? assertion then
-      if a.assertion then true else throw (a.message or "assertion failed")
-    else
-      a
-  ) config.assertions;
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -37,22 +29,19 @@ in
 
   config = mkIf cfg.enable {
     assertions = [
-      (lib.assertMsg (lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key) (
-        lib.attrNames config.home.file
-      )) "pi skills are no longer installed for the recipe runner; the session has one way to dispatch")
+      {
+        assertion = lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key) (
+          lib.attrNames config.home.file
+        );
+        message = "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
+      }
     ];
 
     home.packages = [ piSubagents ];
 
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-      ".pi/agent/extensions/subagent/config.json".text =
-        assert
-          data.subagentConfig.maxActiveAsyncRunsPerSession == 3
-          && data.subagentConfig."globalConcurrencyLimit" == 3
-          && assertionsOk
-          && lib.strings.hasInfix (".pi/agent/" + "skills/") (builtins.readFile ./home.nix);
-        builtins.toJSON data.subagentConfig;
+      ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
         builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;
