@@ -1,46 +1,56 @@
 # pi mechanics (main session only)
 
-Helpers never see this part: they get the repository's `AGENTS.md`, the
-environment file and their own prompt.
+Helpers never see this part: they get the repository's `AGENTS.md` and their
+own prompt.
 
 ## Dispatching
 
-- One helper is `recipe_dispatch {role, brief, output}`. The foreground call
-  waits and returns the Result; `background: true` returns at once and wakes
-  this session once with the Result, so do not poll. Several at once are
-  several background calls. A whole recipe (`research`, `plan`, `implement`,
-  `investigate`) is `recipe_run {recipe, args}`; it wakes once with the
-  receipt.
-- Always pass `output` as an absolute path; the Result carries the saved
-  path, never the body.
-- Keep the brief short: paths and where the details are. Long text goes to
-  a file first; a few KB inline arrives truncated.
-- Leave the model out: each role's model, window, tools and thinking come
-  from nix.
-- Implementers run with `worktree: true`, one worktree per task. `gate` is a
-  shell command run after the child; its exit is part of the Result.
-- Give every helper a `timeoutMs`.
-- The roles are `planner`, `scout`, `locator`, `searcher`, `extractor`,
-  `synthesizer`, `implementer` and `reviewer`.
+- One helper is `subagent {agent, task, output}`; it runs in the background by
+  default and a completion notice wakes this session. Several at once use the
+  built-in `parallel` workflow; dependent steps a workflow script. In a script
+  every launch is awaited; do not root a launch chain in `Promise.resolve()`
+  after the first await.
+- Always pass `output` as an absolute path in the task directory,
+  `$TMPDIR/pi-plans/<task>/`. That directory also holds the session's own
+  notes and state, so a resumed or restarted session can pick them up from
+  files. Every agent returns only a pointer to its output file
+  (`outputMode: file-only`); read the file.
+- Keep the task text short: the goal, paths, and where any longer brief is.
+  Children start with fresh context: they see only their own prompt, the
+  repository's `AGENTS.md` and the task text.
+- Leave `model` out: nix sets each agent's model and thinking.
+- Give every helper a `timeoutMs` in `options`.
+- Never pass `worktree: true`: pi-subagents deletes that worktree and its
+  branch when the run ends, keeping only a patch. The session owns worktrees
+  instead. For a task it runs
+  `git worktree add -b <branch> /var/tmp/pi-worktrees/<repo>/<task> <base>`
+  and dispatches the implementer with `cwd` set to it; a fix round or a
+  handoff continuation is dispatched into the same worktree. A reviewer gets
+  its own `git worktree add --detach /var/tmp/pi-worktrees/<repo>/<task>-review-<n> <branch>`,
+  never the implementer's. The session merges finished branches and removes
+  worktrees it no longer needs (`git worktree remove`, `git branch -d`).
+- The agents, and when to use each: `planner` turns an acceptance criterion
+  into a task plan; `scout` locates code and answers where-is questions before
+  a plan; `implementer` runs one task file in a worktree; `reviewer` reviews
+  a finished task's diff; `researcher` (bundled) does web research and cites
+  its sources; `evidence-auditor` (bundled) checks a research brief's claims
+  against those sources.
 
 ## Waiting and recovery
 
-- A background run pushes nothing but its one wake. Silence proves nothing:
-  leave it and end the turn or do other work.
-- A failed or timed-out Result is not failed work and a clean one is not
-  finished work: read the output file. A report whose first line starts with
-  `FAILED:` was cut off by the output valve and counts as failed.
-- A Result with `handoff` set is a child that reached its context budget and
-  handed off, not a failure: its output file holds what is done and what is
-  left (with `empty`, only its branch does).
-- `recipe_run` with `resume: true` continues a recipe from its task
-  directory.
-- After a pi or paseo restart the wake is lost. A recipe run carries on
-  without the session: check it with `recipe-status <task dir>` or wait for it
-  with `recipe-run wait <task dir>`, and do not start it again; the runner
-  refuses a second start while the first is alive. A dispatched helper with
-  an output file is done; one without is dispatched once more, then recorded
-  as failed.
+- After a dispatch, end the turn or do other work; do not poll. Use `bg_wait`
+  only when nothing else can proceed. Notices arrive wrapped in a
+  `<pi_subagents_notice>` tag.
+- Read the output file, not the run status: a completed run is not finished
+  work and a failed one is not failed work.
+- A reply or note whose first line starts with `handoff:` means the helper
+  reached its context budget and wrote what is done and what is left.
+  Dispatch a fresh helper of the same role with the original task plus a line
+  to continue from that note and not redo committed work.
+- A first line starting `FAILED:` means the helper was stopped by the output
+  limit or by compaction thrash; treat it as failed work.
+- After a pi restart, completion notices are delivered when the session
+  reopens; if one is missing, check `subagent {action: "status", id}`.
 
 ## Context
 
