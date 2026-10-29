@@ -51,11 +51,10 @@ in
           data.subagentConfig.maxActiveAsyncRunsPerSession == 3
           && data.subagentConfig."globalConcurrencyLimit" == 3
           && assertionsOk
-          &&
-            builtins.match ''key: !lib\.strings\.hasPrefix "\.pi/agent/skills/" key'' (
-              builtins.readFile ./home.nix
-            ) != null
-          && builtins.match ''lib.attrNames config\.home\.file'' (builtins.readFile ./home.nix) != null;
+          && lib.strings.hasInfix ''key: !lib.strings.hasPrefix ".pi/agent/skills/" key'' (
+            builtins.readFile ./home.nix
+          )
+          && lib.strings.hasInfix "lib.attrNames config.home.file" (builtins.readFile ./home.nix);
         builtins.toJSON data.subagentConfig;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
