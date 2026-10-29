@@ -6,6 +6,8 @@
  * `followUp` or `steer` message triggers a turn in the same session).
  */
 import assert from "node:assert/strict";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import budgetValve from "./budget-valve.js";
 
 function harness(options) {
@@ -38,6 +40,17 @@ const assistant = (usage, stopReason = "stop", content) => ({
 });
 
 const toolCalls = [{ type: "toolCall" }];
+
+const optionsFile = new URL("./budget-valve.json", import.meta.url);
+const withOptionsFile = async (json, fn) => {
+  const p = fileURLToPath(optionsFile);
+  if (json !== undefined) writeFileSync(p, json);
+  try {
+    await fn();
+  } finally {
+    if (json !== undefined) unlinkSync(p);
+  }
+};
 
 // A truncated turn is recovered with a followUp, once; a second cut-off ends
 // with a tool-permitting steer; a third sends nothing (sent.length stays 2).
@@ -185,12 +198,81 @@ const toolCalls = [{ type: "toolCall" }];
 }
 
 // No options means no handoff even at a huge context, and tool calls stay
-// unblocked.
+// unblocked. (The readOptions() default argument never runs here: the tests
+// pass options straight in, so the config-file path has its own block below.)
 {
   const h = harness();
   await h.turnEnd(assistant({ totalTokens: 200_000 }, "stop", toolCalls));
   assert.equal(h.sent.length, 0, "no handoff without a budget, at any size");
   assert.equal(h.toolCall({ toolName: "read", input: { path: "x" } }), undefined);
+}
+
+// The default argument reads budget-valve.json from the extension's own
+// directory: a valid handoffTokens is picked up and a tool-bearing turn at
+// that budget hands off; a missing, unparsable or non-positive file means no
+// handoff.
+{
+  const run = (budget, file, expectSteer) =>
+    withOptionsFile(file, async () => {
+      const sent = [];
+      const handlers = {};
+      budgetValve({ on: (event, handler) => (handlers[event] = handler), sendMessage: async (message, opts) => sent.push({ message, options: opts }) }, undefined);
+      await handlers.turn_end({ type: "turn_end", message: assistant({ totalTokens: budget }, "stop", toolCalls) });
+      assert.equal(sent.length, expectSteer ? 1 : 0, `file ${file}`);
+      if (expectSteer) {
+        assert.equal(sent[0].message.customType, "budget-valve-handoff", `file ${file}`);
+        assert.match(sent[0].message.content[0].text, /about 60000 tokens/);
+      }
+    });
+  await run(60_000, '{"handoffTokens": 60000}', true);
+  await run(90_000, undefined, false);
+  await run(90_000, "not json", false);
+  await run(90_000, '{"handoffTokens": 0}', false);
+  await run(90_000, '{"handoffTokens": -5}', false);
+  await run(90_000, '{"handoffTokens": "60000"}', false);
+  await run(90_000, "{}", false);
+}
+
+// A usage without totalTokens counts input, output, cache reads and writes:
+// a context that lives mostly in the cache still reaches the budget.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ input: 30_000, output: 1_000, cacheRead: 25_000, cacheWrite: 4_000 }, "stop", toolCalls), undefined);
+  assert.equal(h.sent.length, 1, "the cache fields count toward the budget");
+  assert.match(h.sent[0].message.content[0].text, /about 60000 tokens/);
+}
+
+// A chain separator the parser must not swallow: `;` (and a bare newline)
+// ends a segment, so a git command that chains onto something else is
+// blocked.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+  for (const command of ["git commit ; rm -rf /", "git add -A\nrm x"]) {
+    const r = h.toolCall({ toolName: "bash", input: { command } });
+    assert.equal(r.block, true, JSON.stringify(command));
+    assert.equal(r.terminate, undefined, JSON.stringify(command));
+    assert.match(r.reason, /handing off/);
+  }
+  const r = h.toolCall({ toolName: "bash", input: { command: "git add -A && git status" } });
+  assert.equal(r, undefined, "an all-git chain still passes");
+}
+
+// `git -C <path> <sub>` takes the subcommand after the path, so a
+// `git -C` with nothing after it is never safe.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+  const allowed = ["git -C repo commit -m x", "git -C repo add -A"];
+  for (const command of allowed) {
+    assert.equal(h.toolCall({ toolName: "bash", input: { command } }), undefined, JSON.stringify(command));
+  }
+  for (const command of ["git -C diff", "git -C /repo"]) {
+    const r = h.toolCall({ toolName: "bash", input: { command } });
+    assert.equal(r.block, true, JSON.stringify(command));
+    assert.equal(r.terminate, undefined, JSON.stringify(command));
+    assert.match(r.reason, /handing off/);
+  }
 }
 
 // Below the budget a tool-bearing turn sends nothing and unblocks nothing.
@@ -246,6 +328,7 @@ const toolCalls = [{ type: "toolCall" }];
     { toolName: "bash", input: { command: "git push" } },
     { toolName: "bash", input: { command: "git commit -m x | cat" } },
     { toolName: "bash", input: { command: "git -c user.name=x commit" } },
+    { toolName: "bash", input: { command: "git add -A; echo done" } },
   ];
   for (const event of blocked) {
     const r = h.toolCall(event);
