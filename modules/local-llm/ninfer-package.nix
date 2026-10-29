@@ -42,6 +42,7 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     cudaPackages_13_1.cuda_cudart
     cudaPackages_13_1.cccl
     cudaPackages_13_1.cuda_nvtx
+    cudaPackages_13_1.cuda_profiler_api
     curl
     ffmpeg
     hwloc

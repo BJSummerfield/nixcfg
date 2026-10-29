@@ -112,6 +112,7 @@ in
       "cuda_nvtx"
       "cuda_cudart"
       "cuda_nvcc"
+      "cuda_profiler_api"
     ];
 
     containers.local-llm = {
