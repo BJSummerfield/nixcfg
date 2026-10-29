@@ -209,11 +209,10 @@ const toolCalls = [{ type: "toolCall" }];
 }
 
 // No options means no handoff even at a huge context, and tool calls stay
-// unblocked. The default argument runs readOptions() with the real config
-// paths and finds nothing here: no budget-valve.json sits next to the file,
-// and these tests never install one in the agent home directory.
+// unblocked. A null options argument keeps the default argument from
+// reading the real config paths.
 {
-  const h = harness();
+  const h = harness(null);
   await h.turnEnd(assistant({ totalTokens: 200_000 }, "stop", toolCalls));
   assert.equal(h.sent.length, 0, "no handoff without a budget, at any size");
   assert.equal(h.toolCall({ toolName: "read", input: { path: "x" } }), undefined);
@@ -234,9 +233,11 @@ const toolCalls = [{ type: "toolCall" }];
     }
     const sent = [];
     const handlers = {};
+    // ?? null so a missing temp file means no options, not the default
+    // argument's real config paths.
     budgetValve(
       { on: (event, handler) => (handlers[event] = handler), sendMessage: async (message, opts) => sent.push({ message, options: opts }) },
-      readOptions([p]),
+      readOptions([p]) ?? null,
     );
     await handlers.turn_end({ type: "turn_end", message: assistant({ totalTokens: budget }, "stop", toolCalls) });
     assert.equal(sent.length, expectSteer ? 1 : 0, `file ${file}`);
