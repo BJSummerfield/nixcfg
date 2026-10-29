@@ -336,7 +336,7 @@ const toolCalls = [{ type: "toolCall" }];
 {
   const h = harness({ handoffTokens: 60_000 });
   await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
-  for (const command of ["cd a b", "cd -P a b", "cd a b && git push"]) {
+  for (const command of ["cd a b", "cd -P a b", "cd a b && git push", "cd a b && git commit -m x"]) {
     const r = h.toolCall({ toolName: "bash", input: { command } });
     assert.equal(r.block, true, JSON.stringify(command));
     assert.equal(r.terminate, undefined, JSON.stringify(command));
