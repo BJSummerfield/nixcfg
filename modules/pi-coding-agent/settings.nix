@@ -134,6 +134,7 @@ in
 
   subagentConfig = {
     globalConcurrencyLimit = 3;
+    maxActiveAsyncRunsPerSession = 3;
     worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     defaultSubagentContext = "fresh";
