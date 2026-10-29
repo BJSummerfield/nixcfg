@@ -3,11 +3,23 @@
 Helpers never see this part: they get the repository's `AGENTS.md` and their
 own prompt.
 
+## Agents
+
+When to use each: `planner` turns an acceptance criterion into a task plan;
+`scout` locates code and answers where-is questions before a plan;
+`implementer` runs one task file in a worktree; `reviewer` reviews a
+finished task's diff; `researcher` (bundled) does web research and cites its
+sources; `evidence-auditor` (bundled) checks a research brief's claims
+against those sources.
+
 ## Task directory
 
 One helper is `subagent {agent, task, output}`; it runs in the background
-by default and a completion notice wakes this session. Always pass
-`output` as an absolute path in `$TMPDIR/pi-plans/<task>/`. That directory
+by default and a completion notice wakes this session. Several at once use
+the built-in `parallel` workflow; dependent steps a workflow script, where
+every launch is awaited and no launch chain is rooted in
+`Promise.resolve()` after the first await. Always pass `output` as an
+absolute path in `$TMPDIR/pi-plans/<task>/`. That directory
 holds the session's own `notes.md` (the request, decisions, helpers running
 with their run ids, and each retry or escalation call) and every helper's
 output. Every agent returns only a pointer to its output file
@@ -60,7 +72,10 @@ is opened from the session's own branch.
 
 Guidance, not rules. A `handoff:` is continued by a fresh helper of the
 same role, with the original task plus the note to continue from and not
-redo committed work. After 2 continuations that commit nothing new, split
+redo committed work. A first line starting `FAILED:` means the helper was
+stopped by the output limit or by compaction thrash; the note in its output
+file says what is incomplete; treat it as failed work. After 2 continuations
+that commit nothing new, split
 the task or ask the user. At most 2 fix rounds, then ask. A `blocked:` gets
 one retry with a corrected brief, then ask. An engine error or timeout gets
 one retry. A choice only the user can make: stop and ask. Record each call
@@ -68,11 +83,16 @@ in `notes.md`.
 
 ## Capacity
 
-At most 3 helpers run at once for the session. A dispatch rejected for
-capacity is not a failure: wait for a completion notice, then dispatch it
-again. Do not poll: after a dispatch, end the turn or do other work, and
-use `bg_wait` only when nothing else can proceed. A `parallel` call needs
-an `output` on the outer call; each child gets a path derived from it.
+The session may hold 3 top-level background runs; a `parallel` run takes
+one of them but runs its own children. Keep the total of helpers running at
+once at 3, counting a `parallel` call's children, because the engine runs
+4 sequences and the session needs one. A dispatch rejected for capacity is
+not a failure: wait for a completion notice, then dispatch it again. Do not
+poll: after a dispatch, end the turn or do other work, and use `bg_wait`
+only when nothing else can proceed. Notices arrive wrapped in a
+`<pi_subagents_notice>` tag. Every agent has a default output file; pass
+explicit `output` paths in the task directory so the files are easy to
+find.
 
 ## Run status
 
