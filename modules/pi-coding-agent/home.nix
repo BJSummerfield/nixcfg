@@ -22,6 +22,20 @@ let
   };
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
 
+  subagentConfigText =
+    homePackages: homeFileKeys:
+    assert lib.assertMsg
+      (lib.strings.hasSuffix ".pi/agent/subagent-only/budget-valve.js" (
+        lib.head settings.subagents.defaultSubagentOnlyExtensions
+      ))
+      "the budget valve must be installed under subagent-only/, which pi loads only in subagent sessions";
+    assert lib.assertMsg (if cfg.enable then lib.elem piSubagents homePackages else true)
+      "pi-subagents must stay in the agent's home.packages, the pi settings install the same store path";
+    assert lib.assertMsg (lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key)
+      homeFileKeys
+    ) "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
+    builtins.toJSON data.subagentConfig;
+
 in
 assert lib.assertMsg (data.subagentConfig.globalConcurrencyLimit == 3)
   "the subagent concurrency limit must stay at 3: the engine decodes four sequences and the parent session keeps one";
@@ -44,15 +58,9 @@ assert lib.assertMsg (
 
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-      ".pi/agent/extensions/subagent/config.json".text =
-        assert lib.assertMsg
-          (lib.strings.hasSuffix ".pi/agent/subagent-only/budget-valve.js" (lib.head settings.subagents.defaultSubagentOnlyExtensions))
-          "the budget valve must be installed under subagent-only/, which pi loads only in subagent sessions";
-        assert lib.assertMsg (if cfg.enable then lib.elem piSubagents config.home.packages else true)
-          "pi-subagents must stay in the agent's home.packages, the pi settings install the same store path";
-        assert lib.assertMsg (lib.all (key: ! lib.strings.hasPrefix ".pi/agent/skills/" key) (lib.attrNames config.home.file))
-          "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
-        builtins.toJSON data.subagentConfig;
+      ".pi/agent/extensions/subagent/config.json".text = subagentConfigText config.home.packages (
+        lib.attrNames config.home.file
+      );
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
         builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;

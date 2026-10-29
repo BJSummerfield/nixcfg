@@ -4,9 +4,6 @@
   pkgs,
   ...
 }:
-assert lib.assertMsg (lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key) (
-  lib.attrNames config.home.file
-)) "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
 let
   inherit (lib)
     mkEnableOption
