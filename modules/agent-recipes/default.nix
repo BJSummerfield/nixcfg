@@ -175,7 +175,6 @@ in
 
     home.file = {
       ".pi/agent/recipes/roles.json".text = builtins.toJSON runnerConfig;
-      ".pi/agent/extensions/recipe-tools.js".source = ./extension/recipe-tools.js;
       ".pi/agent/recipes/sizing.json".source = ./sizing/sizing.json;
       ".pi/agent/subagent-extensions/budget-valve.js".source = ./extensions/budget-valve.js;
       ".pi/agent/subagent-extensions/save-page.js".source = ./extensions/save-page.js;
@@ -186,7 +185,6 @@ in
         text = defaults.prompt "pi" name;
       }
     ) mergedRoles
-    // skillsUnder ".pi/agent/skills"
     // skillsUnder ".claude-state/skills"
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".claude-state/agents/${name}.md" { inherit text; }

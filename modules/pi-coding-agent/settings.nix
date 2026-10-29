@@ -76,6 +76,29 @@ in
     packages = plugins.piPackages;
 
     compaction.reserveTokens = compactionReserve;
+
+    subagents = {
+      defaultModel = qualified llm.provider llm.default;
+      maxThinking = "xhigh";
+      agentOverrides = {
+        advisor.disabled = true;
+        claude-code.disabled = true;
+        claude-code-writer.disabled = true;
+        codex-exec.disabled = true;
+        codex-exec-writer.disabled = true;
+        cursor-agent.disabled = true;
+        cursor-agent-writer.disabled = true;
+        delegate.disabled = true;
+        oracle.disabled = true;
+        worker.disabled = true;
+        researcher.outputMode = "file-only";
+        evidence-auditor.outputMode = "file-only";
+        planner.outputMode = "file-only";
+        scout.outputMode = "file-only";
+        implementer.outputMode = "file-only";
+        reviewer.outputMode = "file-only";
+      };
+    };
   };
 
   recipes = {
@@ -107,5 +130,26 @@ in
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.provider llm.default;
     toolActivation = "eager";
+  };
+
+  subagentConfig = {
+    globalConcurrencyLimit = 3;
+    worktreeBaseDir = "/var/tmp/pi-worktrees";
+    toolActivation = "eager";
+    defaultSubagentContext = "fresh";
+    disabledFeatures = [
+      "agent-management"
+      "watchdog"
+      "panes"
+      "missions"
+      "lane-management"
+      "external-machines"
+      "usage-budgets"
+      "tool-budgets"
+    ];
+  };
+
+  valve = {
+    handoffTokens = window defaultModel - compactionReserve - 32768;
   };
 }
