@@ -188,8 +188,14 @@ const toolCalls = [{ type: "toolCall" }];
       const r = h.toolCall(event);
       assert.equal(r.block, true, JSON.stringify(event));
       assert.equal(r.terminate, false, JSON.stringify(event));
+      // The child sees this reason while still able to save the note: it must
+      // keep the child naming the marker in its reply, which is how the parent
+      // tells the run ended. Anchored, so a drift in that wording fails here.
+      assert.match(r.reason, /^Blocked: /);
       assert.match(r.reason, /FAILED: compaction thrash/);
       assert.match(r.reason, /only writing your output file is allowed/);
+      assert.match(r.reason, /line at its top/);
+      assert.match(r.reason, /then reply with that line\.$/);
     }
     await h.turnEnd(assistant({}, "stop", [{ type: "toolCall" }]));
   }
@@ -202,7 +208,9 @@ const toolCalls = [{ type: "toolCall" }];
     const r = h.toolCall(event);
     assert.equal(r.block, true, JSON.stringify(event));
     assert.equal(r.terminate, true, `after two tool-bearing turns, ${JSON.stringify(event)}`);
-    assert.match(r.reason, /this run is ending/);
+    // The "Blocked:" prefix is what a parent reads as a terminal block.
+    assert.match(r.reason, /^Blocked: /);
+    assert.match(r.reason, /this run is ending\.$/);
   }
 }
 
