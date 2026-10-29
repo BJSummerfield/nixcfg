@@ -37,7 +37,11 @@ const THRASH =
   "(write that file if you have not), with what is incomplete and which files hold your partial " +
   "work, then reply with a message whose first line is that same line.";
 
-const BLOCKED = "Blocked: this run is ending. Reply in text, first line starting `FAILED: compaction thrash`.";
+const THRASH_BLOCKED =
+  "Blocked: only writing your output file is allowed. " +
+  "Put the `FAILED: compaction thrash` line at its top, then reply with that line.";
+
+const BLOCKED = "Blocked: this run is ending.";
 
 const HANDOFF_BLOCKED =
   "Blocked: this run is at its context budget and is handing off. " +
@@ -57,7 +61,7 @@ export function readOptions(paths) {
       const options = JSON.parse(readFileSync(path, "utf8"));
       if (typeof options?.handoffTokens === "number" && options.handoffTokens > 0) return { handoffTokens: options.handoffTokens };
     } catch {
-      // Missing, unreadable or unparsable; try the next path.
+      // The config is optional, so loading must still succeed without it.
     }
   }
   return undefined;
@@ -211,10 +215,11 @@ export default function budgetValve(pi, options = readOptions([
 
   pi.on("tool_call", (event) => {
     if (ending) {
-      // Only saving the note is allowed, and only for two tool-bearing turns:
-      // once the note is on disk every tool call is terminal.
+      // The note gets two tool-bearing turns to save, then the run ends no
+      // matter what: a child that cannot write it must not loop.
       if ((event?.toolName === "write" || event?.toolName === "edit") && blockedTurns < 2) return undefined;
-      return { block: true, reason: BLOCKED, terminate: blockedTurns >= 2 };
+      if (blockedTurns >= 2) return { block: true, reason: BLOCKED, terminate: true };
+      return { block: true, reason: THRASH_BLOCKED, terminate: false };
     }
     if (!handingOff) return undefined;
     if (handoffTurns >= HANDOFF_TURNS) return { block: true, reason: HANDOFF_BLOCKED, terminate: true };
