@@ -10,5 +10,5 @@
 #
 # If `pi remove` fails, manually rm ~/.pi/agent/npm/node_modules/<name>.
 {
-  piPackages = [ "npm:pi-web-access@0.40.0" ];
+  piPackages = [ "npm:pi-web-access@0.46.0" ];
 }
