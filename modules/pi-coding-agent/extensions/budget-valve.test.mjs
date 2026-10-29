@@ -6,9 +6,10 @@
  * `followUp` or `steer` message triggers a turn in the same session).
  */
 import assert from "node:assert/strict";
-import { writeFileSync, unlinkSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import budgetValve from "./budget-valve.js";
+import { existsSync, mkdtempSync, writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import budgetValve, { readOptions } from "./budget-valve.js";
 
 function harness(options) {
   const handlers = {};
@@ -40,17 +41,6 @@ const assistant = (usage, stopReason = "stop", content) => ({
 });
 
 const toolCalls = [{ type: "toolCall" }];
-
-const optionsFile = new URL("./budget-valve.json", import.meta.url);
-const withOptionsFile = async (json, fn) => {
-  const p = fileURLToPath(optionsFile);
-  if (json !== undefined) writeFileSync(p, json);
-  try {
-    await fn();
-  } finally {
-    if (json !== undefined) unlinkSync(p);
-  }
-};
 
 // A truncated turn is recovered with a followUp, once; a second cut-off ends
 // with a tool-permitting steer; a third sends nothing (sent.length stays 2).
@@ -169,21 +159,42 @@ const withOptionsFile = async (json, fn) => {
   assert.equal(h.sent.length, 1, "neither the failed write nor the read reset the count");
 }
 
-// Before the thrash ending, tool_call is unblocked. After it: blocked but not
-// terminal, then terminal once a tool-bearing turn_end has passed.
+// Before the thrash ending, tool_call is unblocked. After it: write and edit
+// pass for two tool-bearing turns while bash and read are blocked without
+// terminating, then every call is blocked with terminate.
 {
   const h = harness();
   assert.equal(h.toolCall(), undefined);
   await h.sessionCompact();
   await h.sessionCompact();
   await h.sessionCompact();
-  const first = h.toolCall();
-  assert.equal(first.block, true);
-  assert.equal(first.terminate, false);
-  await h.turnEnd(assistant({}, "stop", [{ type: "toolCall" }]));
-  const second = h.toolCall();
-  assert.equal(second.block, true);
-  assert.equal(second.terminate, true);
+  const text = h.sent[0].message.content[0].text;
+  assert.match(text, /`FAILED: compaction thrash` at the top of the output file your task names/);
+  assert.match(text, /then reply/);
+  for (const turn of [0, 1]) {
+    assert.equal(h.toolCall({ toolName: "write", input: { path: "x" } }), undefined, `write turn ${turn + 1}`);
+    assert.equal(h.toolCall({ toolName: "edit", input: { path: "x" } }), undefined, `edit turn ${turn + 1}`);
+    for (const event of [
+      { toolName: "bash", input: { command: "git add -A" } },
+      { toolName: "read", input: { path: "x" } },
+    ]) {
+      const r = h.toolCall(event);
+      assert.equal(r.block, true, JSON.stringify(event));
+      assert.equal(r.terminate, false, JSON.stringify(event));
+      assert.match(r.reason, /FAILED: compaction thrash/);
+    }
+    await h.turnEnd(assistant({}, "stop", [{ type: "toolCall" }]));
+  }
+  for (const event of [
+    { toolName: "write", input: { path: "x" } },
+    { toolName: "edit", input: { path: "x" } },
+    { toolName: "bash", input: { command: "git add -A" } },
+    { toolName: "read", input: { path: "x" } },
+  ]) {
+    const r = h.toolCall(event);
+    assert.equal(r.block, true, JSON.stringify(event));
+    assert.equal(r.terminate, true, `after two tool-bearing turns, ${JSON.stringify(event)}`);
+  }
 }
 
 // After the thrash ending, a length turn sends no further valve message.
@@ -198,8 +209,9 @@ const withOptionsFile = async (json, fn) => {
 }
 
 // No options means no handoff even at a huge context, and tool calls stay
-// unblocked. (The readOptions() default argument never runs here: the tests
-// pass options straight in, so the config-file path has its own block below.)
+// unblocked. The default argument runs readOptions() with the real config
+// paths and finds nothing here: no budget-valve.json sits next to the file,
+// and these tests never install one in the agent home directory.
 {
   const h = harness();
   await h.turnEnd(assistant({ totalTokens: 200_000 }, "stop", toolCalls));
@@ -207,30 +219,59 @@ const withOptionsFile = async (json, fn) => {
   assert.equal(h.toolCall({ toolName: "read", input: { path: "x" } }), undefined);
 }
 
-// The default argument reads budget-valve.json from the extension's own
-// directory: a valid handoffTokens is picked up and a tool-bearing turn at
-// that budget hands off; a missing, unparsable or non-positive file means no
-// handoff.
+// The config is read from the given paths, in order: a valid handoffTokens
+// from the first readable path is picked up and a tool-bearing turn at that
+// budget hands off; a missing, unparsable or non-positive file is skipped
+// or means no handoff. The tests point readOptions at a temp directory.
 {
-  const run = (budget, file, expectSteer) =>
-    withOptionsFile(file, async () => {
-      const sent = [];
-      const handlers = {};
-      budgetValve({ on: (event, handler) => (handlers[event] = handler), sendMessage: async (message, opts) => sent.push({ message, options: opts }) }, undefined);
-      await handlers.turn_end({ type: "turn_end", message: assistant({ totalTokens: budget }, "stop", toolCalls) });
-      assert.equal(sent.length, expectSteer ? 1 : 0, `file ${file}`);
-      if (expectSteer) {
-        assert.equal(sent[0].message.customType, "budget-valve-handoff", `file ${file}`);
-        assert.match(sent[0].message.content[0].text, /about 60000 tokens/);
-      }
-    });
-  await run(60_000, '{"handoffTokens": 60000}', true);
-  await run(90_000, undefined, false);
-  await run(90_000, "not json", false);
-  await run(90_000, '{"handoffTokens": 0}', false);
-  await run(90_000, '{"handoffTokens": -5}', false);
-  await run(90_000, '{"handoffTokens": "60000"}', false);
-  await run(90_000, "{}", false);
+  const dir = mkdtempSync(join(tmpdir(), "budget-valve-test-"));
+  const p = join(dir, "budget-valve.json");
+  const run = async (file, budget, expectSteer) => {
+    if (file === undefined) {
+      if (existsSync(p)) unlinkSync(p);
+    } else {
+      writeFileSync(p, file);
+    }
+    const sent = [];
+    const handlers = {};
+    budgetValve(
+      { on: (event, handler) => (handlers[event] = handler), sendMessage: async (message, opts) => sent.push({ message, options: opts }) },
+      readOptions([p]),
+    );
+    await handlers.turn_end({ type: "turn_end", message: assistant({ totalTokens: budget }, "stop", toolCalls) });
+    assert.equal(sent.length, expectSteer ? 1 : 0, `file ${file}`);
+    if (expectSteer) {
+      assert.equal(sent[0].message.customType, "budget-valve-handoff", `file ${file}`);
+      assert.match(sent[0].message.content[0].text, /about 60000 tokens/);
+    }
+  };
+  await run('{"handoffTokens": 60000}', 60_000, true);
+  await run(undefined, 90_000, false);
+  await run("not json", 90_000, false);
+  await run('{"handoffTokens": 0}', 90_000, false);
+  await run('{"handoffTokens": -5}', 90_000, false);
+  await run('{"handoffTokens": "60000"}', 90_000, false);
+  await run("{}", 90_000, false);
+  unlinkSync(p);
+}
+
+// readOptions skips a missing, unparsable or non-positive file and uses the
+// next path, so the config is found wherever pi loads the extension from.
+{
+  const dir = mkdtempSync(join(tmpdir(), "budget-valve-test-"));
+  const p1 = join(dir, "first.json");
+  const p2 = join(dir, "second.json");
+  const path = (n) => join(dir, n);
+  assert.equal(readOptions([path("missing.json"), path("missing-2.json")]), undefined);
+  writeFileSync(p1, "not json");
+  writeFileSync(p2, '{"handoffTokens": 60000}');
+  assert.deepEqual(readOptions([p1, p2]), { handoffTokens: 60_000 }, "unparsable first path falls through");
+  writeFileSync(p1, '{"handoffTokens": 0}');
+  assert.deepEqual(readOptions([p1, p2]), { handoffTokens: 60_000 }, "non-positive first path falls through");
+  writeFileSync(p1, '{"handoffTokens": 40000}');
+  assert.deepEqual(readOptions([p1, p2]), { handoffTokens: 40_000 }, "the first readable valid path wins");
+  unlinkSync(p1);
+  unlinkSync(p2);
 }
 
 // A usage without totalTokens counts input, output, cache reads and writes:
@@ -268,6 +309,34 @@ const withOptionsFile = async (json, fn) => {
     assert.equal(h.toolCall({ toolName: "bash", input: { command } }), undefined, JSON.stringify(command));
   }
   for (const command of ["git -C diff", "git -C /repo"]) {
+    const r = h.toolCall({ toolName: "bash", input: { command } });
+    assert.equal(r.block, true, JSON.stringify(command));
+    assert.equal(r.terminate, undefined, JSON.stringify(command));
+    assert.match(r.reason, /handing off/);
+  }
+}
+
+// The allowlist names every subcommand the handoff may run: `show` and
+// `rev-parse` pass, and anything else is blocked.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+  for (const command of ["git show HEAD", "git rev-parse HEAD"]) {
+    assert.equal(h.toolCall({ toolName: "bash", input: { command } }), undefined, JSON.stringify(command));
+  }
+  for (const command of ["git checkout -b x", "git fetch", "git -C repo push"]) {
+    const r = h.toolCall({ toolName: "bash", input: { command } });
+    assert.equal(r.block, true, JSON.stringify(command));
+    assert.equal(r.terminate, undefined, JSON.stringify(command));
+    assert.match(r.reason, /handing off/);
+  }
+}
+
+// `cd` with more than one argument is not a plain directory change.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+  for (const command of ["cd a b", "cd -P a b", "cd a b && git push"]) {
     const r = h.toolCall({ toolName: "bash", input: { command } });
     assert.equal(r.block, true, JSON.stringify(command));
     assert.equal(r.terminate, undefined, JSON.stringify(command));
@@ -352,6 +421,25 @@ const withOptionsFile = async (json, fn) => {
   const r = h.toolCall({ toolName: "write", input: { path: "x" } });
   assert.equal(r.block, true);
   assert.equal(r.terminate, true, "after four tool-bearing turns every call is terminal");
+}
+
+// Only tool-bearing turns count toward the handoff turn limit: text-only
+// turns interleaved between them never end the run early.
+{
+  const h = harness({ handoffTokens: 60_000 });
+  await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+  assert.equal(h.sent.length, 1);
+  assert.equal(h.sent[0].message.customType, "budget-valve-handoff");
+  for (let i = 0; i < 3; i += 1) {
+    await h.turnEnd(assistant({}, "stop", toolCalls));
+    await h.turnEnd(assistant({}, "stop"));
+  }
+  assert.equal(h.toolCall({ toolName: "write", input: { path: "x" } }), undefined, "only three tool-bearing turns have passed");
+  await h.turnEnd(assistant({}, "stop", toolCalls));
+  await h.turnEnd(assistant({}, "stop"));
+  const r = h.toolCall({ toolName: "write", input: { path: "x" } });
+  assert.equal(r.block, true);
+  assert.equal(r.terminate, true, "the text-only turns never counted");
 }
 
 // The compaction-thrash stop does not start during a handoff: however many
