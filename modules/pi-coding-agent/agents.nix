@@ -63,6 +63,7 @@ let
         "description: ${builtins.toJSON role.description}"
         "tools: ${builtins.concatStringsSep ", " role.tools}"
         "thinking: ${role.thinking}"
+        "output: ${name}.md"
         "systemPromptMode: replace"
         "inheritProjectContext: true"
         "inheritSkills: false"
