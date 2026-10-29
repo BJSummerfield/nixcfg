@@ -27,13 +27,6 @@ let
     const alive = (pid) => {
       try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
     };
-    // Topology of a timed-out background run: the runner is a detached process-
-    // group leader; its bash tool is a detached child in its own group, with the
-    // probe as a grandchild in that group. terminate(runner) must kill all of it.
-    // The whole tree is pure node (no system shell): runner.mjs spawns the
-    // detached "bash" (bash.mjs), which spawns the "probe" in its own group.
-    // The detached descendants ignore SIGTERM, so a signal that is not a
-    // group-wide SIGKILL leaves them behind.
     const runner = spawn(process.execPath, [ "runner.mjs", "bash.mjs" ], { detached: true, stdio: "ignore" });
     await sleep(800);
     const rows = execFileSync("ps", [ "-axo", "pid=,ppid=,pgid=,comm=" ], { encoding: "utf8" })
@@ -112,16 +105,11 @@ let
   '';
   piSubagentsGroupKillRunner = pkgs.writeText "pi-subagents-group-kill-runner.mjs" ''
     import { spawn } from "node:child_process";
-    // The detached "bash tool": a child in its own process group, exactly like
-    // the pi bash tool. Its path is passed as argv[2] so no system shell or
-    // absolute path is needed in the build sandbox.
     spawn(process.execPath, [ process.argv[2] ], { detached: true, stdio: "ignore" });
     setInterval(() => {}, 1000);
   '';
   piSubagentsGroupKillBash = pkgs.writeText "pi-subagents-group-kill-bash.mjs" ''
     import { spawn } from "node:child_process";
-    // The "bash tool" ignores SIGTERM, like a trapping shell: only a group-wide
-    // SIGKILL stops it and the probe it leaves behind in the same group.
     process.on("SIGTERM", () => {});
     spawn(process.execPath, [ "-e", "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000)" ], { stdio: "ignore" });
     setInterval(() => {}, 1000);
@@ -129,9 +117,6 @@ let
 
   piSubagentsDepsCheck = pkgs.writeText "pi-subagents-deps-check.mjs" ''
     import * as fs from "node:fs";
-    // The package must carry every runtime dependency its own package.json
-    // declares, at exactly the declared version; pi's peer packages are not
-    // installed (they are peers, not dependencies).
     const pkg = JSON.parse(fs.readFileSync(new URL("./pkg/package.json", import.meta.url), "utf8"));
     const deps = pkg.dependencies ?? {};
     for (const name of Object.keys(deps)) {
@@ -150,12 +135,6 @@ let
   '';
   piSubagentsRunnerWiringCheck = pkgs.writeText "pi-subagents-runner-wiring-check.mjs" ''
     import * as fs from "node:fs";
-    // The runner process itself is driven by a live pi session, so the check
-    // verifies the group-termination wiring in the built source instead: every
-    // import resolves, the terminal run terminates its process group, an
-    // externally-sent SIGTERM terminates the group first, and the backstop is
-    // armed on both stop and timeout at a grace delay long enough for a clean
-    // terminal write.
     const runner = new URL("./pkg/src/runs/background/subagent-runner.js", import.meta.url);
     const src = fs.readFileSync(runner, "utf8");
     for (const match of src.matchAll(/\bfrom\s+["'](\.[^"']+)['"]/g)) {
@@ -264,81 +243,83 @@ let
       inputs.self.nixosConfigurations.redtruck.config.containers.devbox.config.home-manager.users.agent.mine.user.agent-recipes.resolved;
   };
 in
-evalAll "nixos" inputs.self.nixosConfigurations
-// evalAll "darwin" inputs.self.darwinConfigurations
-// {
-  fmt-check =
-    pkgs.runCommand "fmt-check"
-      {
-        nativeBuildInputs = [
-          inputs.self.formatter.x86_64-linux
-          pkgs.git
-        ];
-      }
-      ''
-        cp -r --no-preserve=mode ${lintSrc} src
-        cd src
-        git init -q
-        git add -Af
-        treefmt --fail-on-change --no-cache
-        touch $out
-      '';
-  statix-check =
-    pkgs.runCommand "statix-check"
-      {
-        nativeBuildInputs = [ pkgs.statix ];
-      }
-      ''
-        cd ${lintSrc}
-        statix check .
-        touch $out
-      '';
-  deadnix-check =
-    pkgs.runCommand "deadnix-check"
-      {
-        nativeBuildInputs = [ pkgs.deadnix ];
-      }
-      ''
-        cd ${lintSrc}
-        deadnix --fail . --exclude ${hwConfigGlob}
-        touch $out
-      '';
-  pi-subagents-group-kill =
-    pkgs.runCommand "pi-subagents-group-kill-check"
-      {
-        nativeBuildInputs = [
-          pkgs.nodejs
-          pkgs.procps
-        ];
-      }
-      ''
-        cp -r --no-preserve=mode ${piSubagents} pkg
-        cp ${piSubagentsGroupKillCheck} group-kill-check.mjs
-        cp ${piSubagentsGroupKillRunner} runner.mjs
-        cp ${piSubagentsGroupKillBash} bash.mjs
-        cp ${piSubagentsGroupKillOwnershipCheck} ownership-check.mjs
-        cp ${piSubagentsGroupKillOwnershipChild} ownership-child.mjs
-        cp ${piSubagentsDepsCheck} deps-check.mjs
-        cp ${piSubagentsRunnerWiringCheck} runner-wiring-check.mjs
-        node group-kill-check.mjs
-        node ownership-check.mjs
-        node deps-check.mjs
-        node runner-wiring-check.mjs
-        touch $out
-      '';
-  valheim-notify-parser =
-    pkgs.runCommand "valheim-notify-parser"
-      {
-        nativeBuildInputs = [ valheimNotify ];
-      }
-      ''
-        valheim-notify parse <${valheimNotifySample} >actual
-        diff -u ${valheimNotifyExpected} actual
-        touch $out
-      '';
-}
-// recipeChecks
-// discoveredExtensionChecks
-// nixpkgs.lib.mapAttrs' (
-  name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
-) inputs.self.packages.x86_64-linux
+nixpkgs.lib.foldl (a: b: a // b) { } [
+  (evalAll "nixos" inputs.self.nixosConfigurations)
+  (evalAll "darwin" inputs.self.darwinConfigurations)
+  {
+    fmt-check =
+      pkgs.runCommand "fmt-check"
+        {
+          nativeBuildInputs = [
+            inputs.self.formatter.x86_64-linux
+            pkgs.git
+          ];
+        }
+        ''
+          cp -r --no-preserve=mode ${lintSrc} src
+          cd src
+          git init -q
+          git add -Af
+          treefmt --fail-on-change --no-cache
+          touch $out
+        '';
+    statix-check =
+      pkgs.runCommand "statix-check"
+        {
+          nativeBuildInputs = [ pkgs.statix ];
+        }
+        ''
+          cd ${lintSrc}
+          statix check .
+          touch $out
+        '';
+    deadnix-check =
+      pkgs.runCommand "deadnix-check"
+        {
+          nativeBuildInputs = [ pkgs.deadnix ];
+        }
+        ''
+          cd ${lintSrc}
+          deadnix --fail . --exclude ${hwConfigGlob}
+          touch $out
+        '';
+    pi-subagents-group-kill =
+      pkgs.runCommand "pi-subagents-group-kill-check"
+        {
+          nativeBuildInputs = [
+            pkgs.nodejs
+            pkgs.procps
+          ];
+        }
+        ''
+          cp -r --no-preserve=mode ${piSubagents} pkg
+          cp ${piSubagentsGroupKillCheck} group-kill-check.mjs
+          cp ${piSubagentsGroupKillRunner} runner.mjs
+          cp ${piSubagentsGroupKillBash} bash.mjs
+          cp ${piSubagentsGroupKillOwnershipCheck} ownership-check.mjs
+          cp ${piSubagentsGroupKillOwnershipChild} ownership-child.mjs
+          cp ${piSubagentsDepsCheck} deps-check.mjs
+          cp ${piSubagentsRunnerWiringCheck} runner-wiring-check.mjs
+          node group-kill-check.mjs
+          node ownership-check.mjs
+          node deps-check.mjs
+          node runner-wiring-check.mjs
+          touch $out
+        '';
+    valheim-notify-parser =
+      pkgs.runCommand "valheim-notify-parser"
+        {
+          nativeBuildInputs = [ valheimNotify ];
+        }
+        ''
+          valheim-notify parse <${valheimNotifySample} >actual
+          diff -u ${valheimNotifyExpected} actual
+          touch $out
+        '';
+  }
+  recipeChecks
+  discoveredExtensionChecks
+  (nixpkgs.lib.mapAttrs' (
+    name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
+  ) inputs.self.packages.x86_64-linux)
+]
