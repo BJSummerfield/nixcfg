@@ -1,21 +1,13 @@
-// Loaded only into pi-subagents child sessions. Ends a child run cleanly when
-// it stops converging, in three independent ways: a reply cut off by the
-// output limit, three compactions in a row with no edit or write, or a
-// context that has reached the budget the child was given.
+// Loaded only into pi-subagents child sessions. Ends a child run cleanly
+// when it stops converging, so the parent reads a report of what is left
+// instead of a hung or looping run.
 //
-// A cut-off reply gets one more turn to carry on in smaller pieces; a second
-// cut-off gets one final, tool-permitting notice to save partial work and
-// reply FAILED:, then the run is left to pi. A compaction thrash gets a
-// tool-blocking notice to stop and reply FAILED: right away, since more tool
-// calls are exactly what did not converge. A tool-bearing turn at the budget
-// gets one steer to commit its work and write a handoff note; from then on
-// only writes and safe git commands are allowed, and once four tool-bearing
-// turns have passed every tool call is terminal, so the run ends.
-//
-// Install outside ~/.pi/agent/extensions. pi loads everything in that
+// Install outside ~/.pi/agent/extensions: pi loads everything in that
 // directory into every session, the interactive one included.
 
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PI_RESERVE_TOKENS = 4096;
@@ -40,8 +32,10 @@ const OUTPUT_LIMIT_FINAL =
 
 const THRASH =
   "This run has compacted three times without an edit or write, so it is not converging. " +
-  "Stop now and do not call any more tools. Reply with a message whose first line starts with " +
-  "`FAILED: compaction thrash`, then say what is incomplete and which files hold your partial work.";
+  "Stop now and do not call any more tools except writing or editing files, for two turns. " +
+  "Put a first line `FAILED: compaction thrash` at the top of the output file your task names " +
+  "(write that file if you have not), with what is incomplete and which files hold your partial " +
+  "work, then reply with a message whose first line is that same line.";
 
 const BLOCKED = "Blocked: this run is ending. Reply in text, first line starting `FAILED: compaction thrash`.";
 
@@ -57,15 +51,16 @@ const handoffText = (tokens) =>
   "`## Done`, `## Left` and `## Watch for`. Reply with that same first line. " +
   "From now on only writing files and git are allowed.";
 
-// The config is optional and sits next to the extension; a child without one
-// ends only by the other two paths.
-function readOptions() {
-  try {
-    const options = JSON.parse(readFileSync(fileURLToPath(new URL("./budget-valve.json", import.meta.url)), "utf8"));
-    return typeof options?.handoffTokens === "number" && options.handoffTokens > 0 ? { handoffTokens: options.handoffTokens } : undefined;
-  } catch {
-    return undefined;
+export function readOptions(paths) {
+  for (const path of paths) {
+    try {
+      const options = JSON.parse(readFileSync(path, "utf8"));
+      if (typeof options?.handoffTokens === "number" && options.handoffTokens > 0) return { handoffTokens: options.handoffTokens };
+    } catch {
+      // Missing, unreadable or unparsable; try the next path.
+    }
   }
+  return undefined;
 }
 
 function contextTokensOf(usage) {
@@ -84,9 +79,6 @@ function outputHeadroom(ctx, message) {
   return window - tokens - PI_RESERVE_TOKENS;
 }
 
-// Splits a shell command on `&&`, `;` and newlines outside quotes into token
-// lists. Returns null for anything that could run something else: pipes,
-// redirects, background jobs, subshells and command substitution.
 function splitCommand(command) {
   const segments = [];
   let tokens = [];
@@ -156,7 +148,10 @@ function gitSubcommands(command) {
 
 const hasToolCall = (message) => message.content?.some?.((b) => b?.type === "toolCall");
 
-export default function budgetValve(pi, options = readOptions()) {
+export default function budgetValve(pi, options = readOptions([
+  join(homedir(), ".pi", "agent", "subagent-only", "budget-valve.json"),
+  join(dirname(fileURLToPath(import.meta.url)), "budget-valve.json"),
+])) {
   // Per registration: foreground children share the parent's process.
   let cutoffs = 0;
   let compactionsSinceWrite = 0;
@@ -215,7 +210,12 @@ export default function budgetValve(pi, options = readOptions()) {
   };
 
   pi.on("tool_call", (event) => {
-    if (ending) return { block: true, reason: BLOCKED, terminate: blockedTurns >= 1 };
+    if (ending) {
+      // Only saving the note is allowed, and only for two tool-bearing turns:
+      // once the note is on disk every tool call is terminal.
+      if ((event?.toolName === "write" || event?.toolName === "edit") && blockedTurns < 2) return undefined;
+      return { block: true, reason: BLOCKED, terminate: blockedTurns >= 2 };
+    }
     if (!handingOff) return undefined;
     if (handoffTurns >= HANDOFF_TURNS) return { block: true, reason: HANDOFF_BLOCKED, terminate: true };
     if (handoffAllows(event)) return undefined;
