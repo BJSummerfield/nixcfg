@@ -8,21 +8,49 @@ let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.pi-coding-agent;
   data = import ./settings.nix;
+  agents = import ./agents.nix;
 
-  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
+  piSubagents = pkgs.callPackage ./pi-subagents-patched.nix { };
 
+  settings = data.settings // {
+    packages = data.settings.packages ++ [ (toString piSubagents) ];
+    subagents = data.settings.subagents // {
+      defaultSubagentOnlyExtensions = [
+        "${config.home.homeDirectory}/.pi/agent/subagent-only/budget-valve.js"
+      ];
+    };
+  };
+  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
 in
 {
   options.mine.user.pi-coding-agent = {
     enable = mkEnableOption "pi AI coding agent";
   };
+
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key) (
+          lib.attrNames config.home.file
+        );
+        message = "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
+      }
+    ];
+
+    home.packages = [ piSubagents ];
+
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
+      ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text =
         builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;
-    };
+      ".pi/agent/subagent-only/budget-valve.js".source = ./extensions/budget-valve.js;
+      ".pi/agent/subagent-only/budget-valve.json".text = builtins.toJSON data.valve;
+    }
+    // lib.mapAttrs' (
+      name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }
+    ) agents.agentFiles;
 
     mine.user.agent-recipes = {
       inherit (data.recipes) window compactionReserve maxTokens;

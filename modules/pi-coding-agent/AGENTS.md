@@ -1,56 +1,115 @@
 # pi mechanics (main session only)
 
-Helpers never see this part: they get the repository's `AGENTS.md`, the
-environment file and their own prompt.
+Helpers never see this part: they get the repository's `AGENTS.md` and their
+own prompt.
 
-## Dispatching
+## Agents
 
-- One helper is `recipe_dispatch {role, brief, output}`. The foreground call
-  waits and returns the Result; `background: true` returns at once and wakes
-  this session once with the Result, so do not poll. Several at once are
-  several background calls. A whole recipe (`research`, `plan`, `implement`,
-  `investigate`) is `recipe_run {recipe, args}`; it wakes once with the
-  receipt.
-- Always pass `output` as an absolute path; the Result carries the saved
-  path, never the body.
-- Keep the brief short: paths and where the details are. Long text goes to
-  a file first; a few KB inline arrives truncated.
-- Leave the model out: each role's model, window, tools and thinking come
-  from nix.
-- Implementers run with `worktree: true`, one worktree per task. `gate` is a
-  shell command run after the child; its exit is part of the Result.
-- Give every helper a `timeoutMs`.
-- The roles are `planner`, `scout`, `locator`, `searcher`, `extractor`,
-  `synthesizer`, `implementer` and `reviewer`.
+When to use each: `planner` turns an acceptance criterion into a task plan;
+`scout` locates code and answers where-is questions before a plan;
+`implementer` runs one task file in a worktree; `reviewer` reviews a
+finished task's diff; `researcher` (bundled) does web research and cites its
+sources; `evidence-auditor` (bundled) checks a research brief's claims
+against those sources.
 
-## Waiting and recovery
+## Task directory
 
-- A background run pushes nothing but its one wake. Silence proves nothing:
-  leave it and end the turn or do other work.
-- A failed or timed-out Result is not failed work and a clean one is not
-  finished work: read the output file. A report whose first line starts with
-  `FAILED:` was cut off by the output valve and counts as failed.
-- A Result with `handoff` set is a child that reached its context budget and
-  handed off, not a failure: its output file holds what is done and what is
-  left (with `empty`, only its branch does).
-- `recipe_run` with `resume: true` continues a recipe from its task
-  directory.
-- After a pi or paseo restart the wake is lost. A recipe run carries on
-  without the session: check it with `recipe-status <task dir>` or wait for it
-  with `recipe-run wait <task dir>`, and do not start it again; the runner
-  refuses a second start while the first is alive. A dispatched helper with
-  an output file is done; one without is dispatched once more, then recorded
-  as failed.
+One helper is `subagent {agent, task, output}`; it runs in the background
+by default and a completion notice wakes this session. Several at once use
+the built-in `parallel` workflow; dependent steps a workflow script, where
+every launch is awaited and no launch chain is rooted in
+`Promise.resolve()` after the first await. Always pass `output` as an
+absolute path in `$TMPDIR/pi-plans/<task>/`. That directory
+holds the session's own `notes.md` (the request, decisions, helpers running
+with their run ids, and each retry or escalation call) and every helper's
+output. Every agent returns only a pointer to its output file
+(`outputMode: file-only`); read the file. Keep `notes.md` current so a
+restarted session resumes from it. If a completion notice is missing after
+a restart, check `subagent {action: "status", id}` with the run id from
+`notes.md`. Keep the task text short: the goal, paths, and where any longer
+brief is. Children start with fresh context: they see only their own prompt,
+the repository's `AGENTS.md` and the task text. Leave `model` out: nix sets
+each agent's model and thinking. Give every helper a `timeoutMs` in
+`options`.
 
-## Context
+## Research
 
-- Reasoning and the answer share one output budget, so a long deliverable at
-  high thinking can spend it all thinking and return nothing; that is why
-  reviewers write the verdict first.
-- Output room per turn shrinks as the transcript grows. Compaction makes no
-  model call: earlier turns become a resume card (task, plan files, modified
-  files, last message). Facts that must survive go in files.
-- Do not read images in this session (the environment file says why); a
-  helper that overruns the image limit loses only its own run. Re-dispatch
-  with fewer images per helper and recover its files rather than reviving
-  it.
+Dispatch the bundled `researcher` for web questions and one `scout` per
+group of repository questions, in parallel; optionally an `evidence-auditor`
+on a research brief whose decisions rest on few sources. Summarise for the
+user from the files.
+
+## Plan
+
+One `planner`, given the goal, the user's decisions and the paths of every
+research and scout file. Its task files may carry `research:` questions;
+answer each with a researcher or a scout before that task starts. Then a
+fresh `reviewer` checks the plan.
+
+## Work a task list
+
+Tasks start once their `depends` are merged. Cut each task's worktree and
+branch from the session's own branch after its dependencies are merged into
+it, so the task branch already holds them. Never pass `worktree: true`:
+pi-subagents deletes that worktree and its branch when the run ends,
+keeping only a patch. The session owns worktrees: for a task it runs
+`git worktree add -b <branch> /var/tmp/pi-worktrees/<repo>/<task> <base>`
+and dispatches the implementer with `cwd` set there; a fix round or a
+handoff continuation is dispatched into the same worktree. Then check it
+yourself: rerun the task's check, `git diff --stat <base>..<branch>` shows
+only owned files, `git status` is clean. Then a fresh reviewer in its own
+detached worktree, `git worktree add --detach
+/var/tmp/pi-worktrees/<repo>/<task>-review-<n> <branch>`, never the
+implementer's. Its report's first line is `verdict: clean` or
+`verdict: needs-work`. On `needs-work`, a fix round: a fresh implementer in
+the same task worktree with the review's blocking findings. On clean, merge
+the task branch into the session's own branch and remove both worktrees
+(`git worktree remove`, `git branch -d`). When all are merged, run the
+plan's final checks once and write the pull request text; the pull request
+is opened from the session's own branch.
+
+## Judgement
+
+Guidance, not rules. A `handoff:` is continued by a fresh helper of the
+same role, with the original task plus the note to continue from and not
+redo committed work. A first line starting `FAILED:` means the helper was
+stopped by the output limit or by compaction thrash; the note in its output
+file says what is incomplete; treat it as failed work. After 2 continuations
+that commit nothing new, split
+the task or ask the user. At most 2 fix rounds, then ask. A `blocked:` gets
+one retry with a corrected brief, then ask. An engine error or timeout gets
+one retry. A choice only the user can make: stop and ask. Record each call
+in `notes.md`.
+
+## Capacity
+
+The session may hold 3 top-level background runs; a `parallel` run takes
+one of them but runs its own children. Keep the total of helpers running at
+once at 3, counting a `parallel` call's children, because the engine runs
+4 sequences and the session needs one. A dispatch rejected for capacity is
+not a failure: wait for a completion notice, then dispatch it again. Do not
+poll: after a dispatch, end the turn or do other work, and use `bg_wait`
+only when nothing else can proceed. Notices arrive wrapped in a
+`<pi_subagents_notice>` tag. Every agent has a default output file; pass
+explicit `output` paths in the task directory so the files are easy to
+find.
+
+## Run status
+
+Read the output file, not the run status: a completed run is not finished
+work and a failed one is not failed work. An implementer's run may show
+acceptance or review requirements from pi-subagents; the session's own gate
+and reviewer decide, not the run status.
+
+## Own context
+
+Read helpers' files, not whole logs; tail long command output; send a scout
+instead of reading many files yourself. Reasoning and the answer share one
+output budget, so a long deliverable at high thinking can spend it all
+thinking and return nothing; that is why reviewers write the verdict first.
+Output room per turn shrinks as the transcript grows. Compaction makes no
+model call: earlier turns become a resume card (task, plan files, modified
+files, last message). Facts that must survive go in files. Do not read
+images in this session (the environment file says why); a helper that
+overruns the image limit loses only its own run. Re-dispatch with fewer
+images per helper and recover its files rather than reviving it.
