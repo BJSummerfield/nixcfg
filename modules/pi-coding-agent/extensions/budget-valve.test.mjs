@@ -6,10 +6,17 @@
  * `followUp` or `steer` message triggers a turn in the same session).
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import budgetValve, { readOptions } from "./budget-valve.js";
+
+// The default argument reads the config from HOME, so the whole file runs
+// against an empty stand-in home: no assertion may depend on the machine's
+// own config, and the home path is exercised only by the test that sets it.
+const realHome = process.env.HOME;
+const emptyHome = mkdtempSync(join(tmpdir(), "budget-valve-home-"));
+process.env.HOME = emptyHome;
 
 function harness(options) {
   const handlers = {};
@@ -181,7 +188,14 @@ const toolCalls = [{ type: "toolCall" }];
       const r = h.toolCall(event);
       assert.equal(r.block, true, JSON.stringify(event));
       assert.equal(r.terminate, false, JSON.stringify(event));
+      // The child sees this reason while still able to save the note: it must
+      // keep the child naming the marker in its reply, which is how the parent
+      // tells the run ended. Anchored, so a drift in that wording fails here.
+      assert.match(r.reason, /^Blocked: /);
       assert.match(r.reason, /FAILED: compaction thrash/);
+      assert.match(r.reason, /only writing your output file is allowed/);
+      assert.match(r.reason, /line at its top/);
+      assert.match(r.reason, /then reply with that line\.$/);
     }
     await h.turnEnd(assistant({}, "stop", [{ type: "toolCall" }]));
   }
@@ -194,6 +208,9 @@ const toolCalls = [{ type: "toolCall" }];
     const r = h.toolCall(event);
     assert.equal(r.block, true, JSON.stringify(event));
     assert.equal(r.terminate, true, `after two tool-bearing turns, ${JSON.stringify(event)}`);
+    // The "Blocked:" prefix is what a parent reads as a terminal block.
+    assert.match(r.reason, /^Blocked: /);
+    assert.match(r.reason, /this run is ending\.$/);
   }
 }
 
@@ -210,12 +227,31 @@ const toolCalls = [{ type: "toolCall" }];
 
 // No options means no handoff even at a huge context, and tool calls stay
 // unblocked. A null options argument keeps the default argument from
-// reading the real config paths.
+// reading the config paths.
 {
   const h = harness(null);
   await h.turnEnd(assistant({ totalTokens: 200_000 }, "stop", toolCalls));
   assert.equal(h.sent.length, 0, "no handoff without a budget, at any size");
   assert.equal(h.toolCall({ toolName: "read", input: { path: "x" } }), undefined);
+}
+
+// The default argument reads the home path: a config under HOME reaches a
+// call that passes no options, so dropping the home path fails this test.
+{
+  const home = mkdtempSync(join(tmpdir(), "budget-valve-home-"));
+  const configDir = join(home, ".pi", "agent", "subagent-only");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, "budget-valve.json"), '{"handoffTokens": 60000}');
+  process.env.HOME = home;
+  try {
+    const h = harness();
+    await h.turnEnd(assistant({ totalTokens: 60_000 }, "stop", toolCalls));
+    assert.equal(h.sent.length, 1, "the home config is read through the default argument");
+    assert.equal(h.sent[0].message.customType, "budget-valve-handoff");
+    assert.match(h.sent[0].message.content[0].text, /about 60000 tokens/);
+  } finally {
+    process.env.HOME = emptyHome;
+  }
 }
 
 // The config is read from the given paths, in order: a valid handoffTokens
@@ -466,4 +502,5 @@ const toolCalls = [{ type: "toolCall" }];
   assert.equal(h.sent[1].options.deliverAs, "followUp");
 }
 
+process.env.HOME = realHome;
 console.log("budget-valve: all assertions passed");
