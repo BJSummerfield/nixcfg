@@ -88,6 +88,27 @@ buildNpmPackage (finalAttrs: {
 
     # Clean up now-dangling .bin symlinks
     find "$nm/.bin" -xtype l -delete
+
+    # The install check runs only `pi --version`, which never loads the
+    # workspace copies above; verify each slot holds the package it is named
+    # after, so a wrong source or a dropped entry fails the build here.
+    for ws in @earendil-works/pi-ai:packages/ai \
+              @earendil-works/pi-agent-core:packages/agent \
+              @earendil-works/pi-codemode:packages/codemode \
+              @earendil-works/pi-mcp:packages/mcp \
+              @earendil-works/pi-telemetry:packages/telemetry \
+              @earendil-works/pi-tui:packages/tui; do
+      IFS=: read -r pkg src <<< "$ws"
+      if [ ! -f "$nm/$pkg/package.json" ]; then
+        echo "workspace slot missing after install: $pkg" >&2
+        exit 1
+      fi
+      name=$(node -e "console.log(require('$nm/$pkg/package.json').name)")
+      if [ "$name" != "$pkg" ]; then
+        echo "workspace slot $pkg declares $name" >&2
+        exit 1
+      fi
+    done
   ''
   + lib.optionalString stdenvNoCC.hostPlatform.isDarwin ''
     # Remove foreign Linux binaries that make audit-tmpdir try to inspect ELF
