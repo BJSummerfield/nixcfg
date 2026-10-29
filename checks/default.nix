@@ -22,7 +22,7 @@ let
   piSubagents = pkgs.callPackage ../modules/pi-coding-agent/pi-subagents-patched.nix { };
   piSubagentsGroupKillCheck = pkgs.writeText "pi-subagents-group-kill-check.mjs" ''
     import { spawn, execFileSync } from "node:child_process";
-    import { createOwnedProcessTreeController } from "./owned-process-tree.js";
+    import { createOwnedProcessTreeController } from "./pkg/src/runs/background/owned-process-tree.js";
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const alive = (pid) => {
       try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
@@ -32,6 +32,8 @@ let
     // probe as a grandchild in that group. terminate(runner) must kill all of it.
     // The whole tree is pure node (no system shell): runner.mjs spawns the
     // detached "bash" (bash.mjs), which spawns the "probe" in its own group.
+    // The detached descendants ignore SIGTERM, so a signal that is not a
+    // group-wide SIGKILL leaves them behind.
     const runner = spawn(process.execPath, [ "runner.mjs", "bash.mjs" ], { detached: true, stdio: "ignore" });
     await sleep(800);
     const rows = execFileSync("ps", [ "-axo", "pid=,ppid=,pgid=,comm=" ], { encoding: "utf8" })
@@ -74,7 +76,7 @@ let
   piSubagentsGroupKillOwnershipChild = pkgs.writeText "pi-subagents-group-kill-ownership-child.mjs" ''
     import * as fs from "node:fs";
     import { fileURLToPath } from "node:url";
-    const src = fs.readFileSync(fileURLToPath(new URL("./subagent-runner.js", import.meta.url)), "utf8");
+    const src = fs.readFileSync(fileURLToPath(new URL("./pkg/src/runs/background/subagent-runner.js", import.meta.url)), "utf8");
     const anchor = "const ownsOwnProcessGroup = ";
     const start = src.indexOf(anchor);
     if (start === -1) {
@@ -118,12 +120,82 @@ let
   '';
   piSubagentsGroupKillBash = pkgs.writeText "pi-subagents-group-kill-bash.mjs" ''
     import { spawn } from "node:child_process";
-    // The probe: a grandchild in this process group (not detached), mirroring
-    // the probe/node the bash tool would leave running.
-    spawn(process.execPath, [ "-e", "setInterval(() => {}, 1000)" ], { stdio: "ignore" });
+    // The "bash tool" ignores SIGTERM, like a trapping shell: only a group-wide
+    // SIGKILL stops it and the probe it leaves behind in the same group.
+    process.on("SIGTERM", () => {});
+    spawn(process.execPath, [ "-e", "process.on('SIGTERM',()=>{});setInterval(() => {}, 1000)" ], { stdio: "ignore" });
     setInterval(() => {}, 1000);
   '';
 
+  piSubagentsDepsCheck = pkgs.writeText "pi-subagents-deps-check.mjs" ''
+    import * as fs from "node:fs";
+    // The package must carry every runtime dependency its own package.json
+    // declares, at exactly the declared version; pi's peer packages are not
+    // installed (they are peers, not dependencies).
+    const pkg = JSON.parse(fs.readFileSync(new URL("./pkg/package.json", import.meta.url), "utf8"));
+    const deps = pkg.dependencies ?? {};
+    for (const name of Object.keys(deps)) {
+        const manifest = new URL("./pkg/node_modules/" + name + "/package.json", import.meta.url);
+        if (!fs.existsSync(manifest)) {
+            console.error("missing runtime dependency: " + name + " " + deps[name]);
+            process.exit(1);
+        }
+        const installed = JSON.parse(fs.readFileSync(manifest, "utf8"));
+        if (installed.version !== deps[name]) {
+            console.error("version mismatch for " + name + ": declared " + deps[name] + ", installed " + installed.version);
+            process.exit(1);
+        }
+    }
+    console.log("deps check: all " + Object.keys(deps).length + " runtime dependencies present at their declared versions");
+  '';
+  piSubagentsRunnerWiringCheck = pkgs.writeText "pi-subagents-runner-wiring-check.mjs" ''
+    import * as fs from "node:fs";
+    // The runner process itself is driven by a live pi session, so the check
+    // verifies the group-termination wiring in the built source instead: every
+    // import resolves, the terminal run terminates its process group, an
+    // externally-sent SIGTERM terminates the group first, and the backstop is
+    // armed on both stop and timeout at a grace delay long enough for a clean
+    // terminal write.
+    const runner = new URL("./pkg/src/runs/background/subagent-runner.js", import.meta.url);
+    const src = fs.readFileSync(runner, "utf8");
+    for (const match of src.matchAll(/\bfrom\s+["'](\.[^"']+)['"]/g)) {
+        if (!fs.existsSync(new URL(match[1], runner))) {
+            console.error("unresolved import in subagent-runner.js: " + match[1]);
+            process.exit(1);
+        }
+    }
+    const terminal = /if \(statusPayload\.timedOut \|\| statusPayload\.stopped\)/.exec(src);
+    if (!terminal) {
+        console.error("no terminal-run process-group kill guard in subagent-runner.js");
+        process.exit(1);
+    }
+    const terminalCall = src.slice(terminal.index).indexOf("terminateOwnProcessGroup();");
+    if (terminalCall === -1 || terminalCall > 400) {
+        console.error("terminal-run block does not terminate the process group");
+        process.exit(1);
+    }
+    const termHandler = src.indexOf('process.on("SIGTERM"');
+    if (termHandler === -1) {
+        console.error("no SIGTERM handler in subagent-runner.js");
+        process.exit(1);
+    }
+    const handlerCall = src.slice(termHandler).indexOf("terminateOwnProcessGroup()");
+    if (handlerCall === -1 || handlerCall > 400) {
+        console.error("SIGTERM handler does not terminate the process group");
+        process.exit(1);
+    }
+    const backstopCalls = src.match(/armGroupBackstop\(\);/g) ?? [];
+    if (backstopCalls.length < 2) {
+        console.error("group backstop not armed on stop and timeout: " + backstopCalls.length + " call(s)");
+        process.exit(1);
+    }
+    const backstopDelay = /TERMINAL_GROUP_BACKSTOP_MS\s*=\s*([0-9][0-9_]*)/.exec(src);
+    if (!backstopDelay || Number(backstopDelay[1].replace(/_/g, "")) < 10_000) {
+        console.error("terminal group backstop delay must be at least 10s, got: " + (backstopDelay ? backstopDelay[1] : "missing"));
+        process.exit(1);
+    }
+    console.log("runner wiring check: imports resolve and the terminal group kill is wired");
+  '';
   # No annotations in the lines themselves (systemd journal lines never have
   # any): the sample covers a join, a death, a respawn, a version-mismatch
   # failed join and a leave, plus a second player who actually joins after the
@@ -240,15 +312,18 @@ evalAll "nixos" inputs.self.nixosConfigurations
         ];
       }
       ''
-        cp ${piSubagents}/src/runs/background/owned-process-tree.js .
-        cp ${piSubagents}/src/runs/background/subagent-runner.js .
+        cp -r --no-preserve=mode ${piSubagents} pkg
         cp ${piSubagentsGroupKillCheck} group-kill-check.mjs
         cp ${piSubagentsGroupKillRunner} runner.mjs
         cp ${piSubagentsGroupKillBash} bash.mjs
         cp ${piSubagentsGroupKillOwnershipCheck} ownership-check.mjs
         cp ${piSubagentsGroupKillOwnershipChild} ownership-child.mjs
+        cp ${piSubagentsDepsCheck} deps-check.mjs
+        cp ${piSubagentsRunnerWiringCheck} runner-wiring-check.mjs
         node group-kill-check.mjs
         node ownership-check.mjs
+        node deps-check.mjs
+        node runner-wiring-check.mjs
         touch $out
       '';
   valheim-notify-parser =
