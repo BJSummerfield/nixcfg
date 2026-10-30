@@ -41,7 +41,7 @@ let
       acceptanceRole = "writer";
     };
     reviewer = {
-      description = "Reviews a change or a plan and runs the check and every reproduction itself";
+      description = "Reviews a change or a plan and runs the check itself";
       tools = [
         "read"
         "grep"
