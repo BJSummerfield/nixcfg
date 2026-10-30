@@ -6,7 +6,7 @@
  * were verified by reading the installed 0.86.1 source instead.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import resumeCard, { buildCard } from "./resume-card.js";
@@ -57,30 +57,6 @@ const basePreparation = (overrides) => ({
   assert.equal(result.compaction.firstKeptEntryId, "kept-1");
   assert.equal(result.compaction.tokensBefore, 80_000);
   assert.equal(result.compaction.details.card, 1);
-}
-
-// 2. ledger lists existing standard files of the most recently touched plan
-// dir, fixed order, including a path found only through bash; at most 2
-// units, latest first.
-{
-  const h = harness();
-  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  const plansRoot = join(tmpdir(), "pi-plans");
-  mkdirSync(join(plansRoot, "rc-test-foo"), { recursive: true });
-  mkdirSync(join(plansRoot, "rc-test-bar"), { recursive: true });
-  writeFileSync(join(plansRoot, "rc-test-foo", "state.json"), "{}");
-  writeFileSync(join(plansRoot, "rc-test-foo", "tasks.json"), "{}");
-  writeFileSync(join(plansRoot, "rc-test-bar", "PAUSE.md"), "x");
-  const branchEntries = [
-    entry("read", { path: join(plansRoot, "rc-test-foo", "state.json") }),
-    entry("bash", { command: `cat > ${join(plansRoot, "rc-test-bar", "PAUSE.md")}` }),
-  ];
-  const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
-  const card = result.compaction.summary;
-  assert.match(card, /pi-plans\/rc-test-bar\/PAUSE\.md/);
-  assert.equal(result.compaction.details.ledger.length <= 2 * 4, true);
-  rmSync(join(plansRoot, "rc-test-foo"), { recursive: true, force: true });
-  rmSync(join(plansRoot, "rc-test-bar"), { recursive: true, force: true });
 }
 
 // 3. modified files cover write/edit from all branchEntries, sorted,
@@ -136,7 +112,7 @@ const basePreparation = (overrides) => ({
 {
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
   const modified = Array.from({ length: 500 }, (_, i) => `modules/${"x".repeat(300)}${i}.nix`.slice(0, 200));
-  const card = buildCard({ ledger: [], modified, excerpt: "e", sessionFile: "/s/x.jsonl" });
+  const card = buildCard({ modified, excerpt: "e", sessionFile: "/s/x.jsonl" });
   assert.ok(card.length <= 6000);
   assert.match(card, /… and/);
   for (const line of card.split("\n")) {
@@ -144,8 +120,8 @@ const basePreparation = (overrides) => ({
   }
 }
 
-// 7. getSessionFile() undefined -> "(not saved to disk)"; no plan paths ->
-// fallback line; empty dropped span -> no-text line.
+// 7. getSessionFile() undefined -> "(not saved to disk)"; empty dropped span
+// -> no-text line.
 {
   const h = harness();
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
@@ -155,7 +131,6 @@ const basePreparation = (overrides) => ({
   );
   const card = result.compaction.summary;
   assert.match(card, /\(not saved to disk\)/);
-  assert.match(card, /No plan ledger was touched/);
   assert.match(card, /\(no assistant text in the removed span\)/);
 }
 
@@ -238,42 +213,6 @@ const basePreparation = (overrides) => ({
   const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
   const result = await h.compact({ preparation: basePreparation(), branchEntries: [] }, ctxFor(cwd));
   assert.doesNotMatch(result.compaction.summary, /Task \(first user message/);
-}
-
-// 14. a bare pi-plans/<task-id> directory reference (no file extension,
-// e.g. from `ls $TMPDIR/pi-plans/<task-id>`) is never listed as a file to
-// re-read itself; only the existing standard files under it are.
-{
-  const h = harness();
-  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  const plansRoot = join(tmpdir(), "pi-plans");
-  mkdirSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true });
-  writeFileSync(join(plansRoot, "rc-test-scene-gen-v3", "tasks.json"), "{}");
-  const branchEntries = [entry("bash", { command: `ls ${join(plansRoot, "rc-test-scene-gen-v3")}` })];
-  const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
-  const ledger = result.compaction.details.ledger;
-  assert.ok(!ledger.includes(join(plansRoot, "rc-test-scene-gen-v3")), "the bare directory itself must not be listed");
-  assert.ok(ledger.some((p) => p.endsWith("tasks.json")));
-  rmSync(join(plansRoot, "rc-test-scene-gen-v3"), { recursive: true, force: true });
-}
-
-// 15. a plan-like file read outside the temp-dir plan root (e.g. under cwd)
-// is never listed; ledger detection is pinned to the temp-dir root.
-{
-  const h = harness();
-  const cwd = mkdtempSync(join(tmpdir(), "resume-card-"));
-  const nonRootPlan = join(cwd, "plans", "x");
-  mkdirSync(nonRootPlan, { recursive: true });
-  const statePath = join(nonRootPlan, "state.json");
-  writeFileSync(statePath, "{}");
-  const branchEntries = [entry("read", { path: statePath })];
-  const result = await h.compact({ preparation: basePreparation(), branchEntries }, ctxFor(cwd));
-  const ledger = result.compaction.details.ledger;
-  // Strict check: the ledger must be empty. A path under the session cwd would
-  // be listed in relative form (show() relativizes), so an exact absolute-string
-  // membership test could never fail here; emptiness pins the exclusion either way.
-  assert.equal(ledger.length, 0, "a plan-like path outside the temp-dir root must not be listed");
-  rmSync(nonRootPlan, { recursive: true, force: true });
 }
 
 // 16. the runner's output block survives the task cap: a long brief ending in
