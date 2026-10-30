@@ -131,7 +131,6 @@ in
         ];
 
         home.packages = agentPkgs;
-        home.file.".pi/agent/APPEND_SYSTEM.md".source = envContract;
 
         programs.git = {
           enable = true;

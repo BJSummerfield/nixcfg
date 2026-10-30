@@ -1,115 +1,62 @@
-# pi mechanics (main session only)
+# Helpers (main session only)
 
-Helpers never see this part: they get the repository's `AGENTS.md` and their
-own prompt.
+This is the user's standing request to delegate research, planning,
+implementation and review to helpers. Helpers do not see this part.
 
 ## Agents
 
-When to use each: `planner` turns an acceptance criterion into a task plan;
-`scout` locates code and answers where-is questions before a plan;
-`implementer` runs one task file in a worktree; `reviewer` reviews a
-finished task's diff; `researcher` (bundled) does web research and cites its
-sources; `evidence-auditor` (bundled) checks a research brief's claims
-against those sources.
+`scout`: where things are in a repository. `researcher` (bundled): web
+research with sources. `evidence-auditor` (bundled): checks a research
+report's key claims. `planner`: a plan from a goal and gathered facts.
+`implementer`: one task of a plan. `reviewer`: reviews a change or a plan
+and runs the check.
 
-## Task directory
+## Dispatch
 
-One helper is `subagent {agent, task, output}`; it runs in the background
-by default and a completion notice wakes this session. Several at once use
-the built-in `parallel` workflow; dependent steps a workflow script, where
-every launch is awaited and no launch chain is rooted in
-`Promise.resolve()` after the first await. Always pass `output` as an
-absolute path in `$TMPDIR/pi-plans/<task>/`. That directory
-holds the session's own `notes.md` (the request, decisions, helpers running
-with their run ids, and each retry or escalation call) and every helper's
-output. Every agent returns only a pointer to its output file
-(`outputMode: file-only`); read the file. Keep `notes.md` current so a
-restarted session resumes from it. If a completion notice is missing after
-a restart, check `subagent {action: "status", id}` with the run id from
-`notes.md`. Keep the task text short: the goal, paths, and where any longer
-brief is. Children start with fresh context: they see only their own prompt,
-the repository's `AGENTS.md` and the task text. Leave `model` out: nix sets
-each agent's model and thinking. Give every helper a `timeoutMs` in
-`options`.
-
-## Research
-
-Dispatch the bundled `researcher` for web questions and one `scout` per
-group of repository questions, in parallel; optionally an `evidence-auditor`
-on a research brief whose decisions rest on few sources. Summarise for the
-user from the files.
+- One helper: `subagent({ agent, task })`. Independent helpers that change
+  no files: `subagent({ workflow: "parallel", args: { tasks: [{ agent,
+  task }, ...] } })`.
+- Keep the task short: the goal, the paths, the user's decisions and the
+  reports to read. Leave `model` out: nix sets each agent's model and
+  thinking.
+- At most 3 helpers at once, counting each `parallel` child: the engine
+  runs 4 sequences and this session needs one. A dispatch refused for
+  capacity is sent again after the next completion notice.
+- Do not poll or call `bg_wait`; the completion notice wakes this session.
+  It shows the start of the reply and the path of the full report.
+- Answer a helper's `contact_supervisor` question with
+  `subagent_supervisor({ action: "reply", replyTo, message })`. Ask the
+  user only what only the user can decide.
+- A report starting `handoff:` or `FAILED:` says what is left; send a fresh
+  helper of the same agent with the original task and that report.
 
 ## Plan
 
-One `planner`, given the goal, the user's decisions and the paths of every
-research and scout file. Its task files may carry `research:` questions;
-answer each with a researcher or a scout before that task starts. Then a
-fresh `reviewer` checks the plan.
+Scouts and researchers first when facts are missing, then one `planner`,
+then a fresh `reviewer` given the goal and the plan's path.
 
-## Work a task list
+## Implement
 
-Tasks start once their `depends` are merged. Cut each task's worktree and
-branch from the session's own branch after its dependencies are merged into
-it, so the task branch already holds them. Never pass `worktree: true`:
-pi-subagents deletes that worktree and its branch when the run ends,
-keeping only a patch. The session owns worktrees: for a task it runs
-`git worktree add -b <branch> /var/tmp/pi-worktrees/<repo>/<task> <base>`
-and dispatches the implementer with `cwd` set there; a fix round or a
-handoff continuation is dispatched into the same worktree. Then check it
-yourself: rerun the task's check, `git diff --stat <base>..<branch>` shows
-only owned files, `git status` is clean. Then a fresh reviewer in its own
-detached worktree, `git worktree add --detach
-/var/tmp/pi-worktrees/<repo>/<task>-review-<n> <branch>`, never the
-implementer's. Its report's first line is `verdict: clean` or
-`verdict: needs-work`. On `needs-work`, a fix round: a fresh implementer in
-the same task worktree with the review's blocking findings. On clean, merge
-the task branch into the session's own branch and remove both worktrees
-(`git worktree remove`, `git branch -d`). When all are merged, run the
-plan's final checks once and write the pull request text; the pull request
-is opened from the session's own branch.
+- Commit first: `worktree: true` needs a clean checkout, untracked files
+  included.
+- Each task: `subagent({ agent: "implementer", task, worktree: true })`.
+  pi runs it in a worktree of your current commit and removes it after.
+- Its notice has a `Parallel handoff: <file>` line. Apply its patch on your
+  branch, run the task's check, and commit:
 
-## Judgement
+  ```sh
+  jq -r '.groups[].children[] | select(.patch.changed) | .patch.path' <file>
+  git apply --index <patch>   # add --3way if it does not apply cleanly
+  ```
 
-Guidance, not rules. A `handoff:` is continued by a fresh helper of the
-same role, with the original task plus the note to continue from and not
-redo committed work. A first line starting `FAILED:` means the helper was
-stopped by the output limit or by compaction thrash; the note in its output
-file says what is incomplete; treat it as failed work. After 2 continuations
-that commit nothing new, split
-the task or ask the user. At most 2 fix rounds, then ask. A `blocked:` gets
-one retry with a corrected brief, then ask. An engine error or timeout gets
-one retry. A choice only the user can make: stop and ask. Record each call
-in `notes.md`.
-
-## Capacity
-
-The session may hold 3 top-level background runs; a `parallel` run takes
-one of them but runs its own children. Keep the total of helpers running at
-once at 3, counting a `parallel` call's children, because the engine runs
-4 sequences and the session needs one. A dispatch rejected for capacity is
-not a failure: wait for a completion notice, then dispatch it again. Do not
-poll: after a dispatch, end the turn or do other work, and use `bg_wait`
-only when nothing else can proceed. Notices arrive wrapped in a
-`<pi_subagents_notice>` tag. Every agent has a default output file; pass
-explicit `output` paths in the task directory so the files are easy to
-find.
-
-## Run status
-
-Read the output file, not the run status: a completed run is not finished
-work and a failed one is not failed work. An implementer's run may show
-acceptance or review requirements from pi-subagents; the session's own gate
-and reviewer decide, not the run status.
+- Then a fresh `reviewer` with `worktree: true`, naming the task, the
+  commit and the check; never apply a reviewer's patch. Blocking findings
+  go to a fresh implementer the same way. Ask the user before a third fix
+  round.
+- Last, run the plan's final checks once and write the pull request text.
 
 ## Own context
 
-Read helpers' files, not whole logs; tail long command output; send a scout
-instead of reading many files yourself. Reasoning and the answer share one
-output budget, so a long deliverable at high thinking can spend it all
-thinking and return nothing; that is why reviewers write the verdict first.
-Output room per turn shrinks as the transcript grows. Compaction makes no
-model call: earlier turns become a resume card (task, plan files, modified
-files, last message). Facts that must survive go in files. Do not read
-images in this session (the environment file says why); a helper that
-overruns the image limit loses only its own run. Re-dispatch with fewer
-images per helper and recover its files rather than reviving it.
+Read reports, not logs; tail long output; send a scout rather than reading
+many files. Read no images here (the environment notes say why); helpers
+may, a few each.

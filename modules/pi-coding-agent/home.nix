@@ -21,6 +21,9 @@ let
     };
   };
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
+  environment = builtins.replaceStrings [ "@imageBudget@" ] [ (toString data.imageBudget) ] (
+    builtins.readFile ../devbox/ENVIRONMENT.md
+  );
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -43,8 +46,8 @@ in
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
       ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
       ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
-      ".pi/agent/AGENTS.md".text =
-        builtins.readFile ../devbox/writing.md + "\n" + builtins.readFile ./AGENTS.md;
+      ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
+      ".pi/agent/APPEND_SYSTEM.md".source = ./AGENTS.md;
       ".pi/agent/subagent-only/budget-valve.js".source = ./extensions/budget-valve.js;
       ".pi/agent/subagent-only/budget-valve.json".text = builtins.toJSON data.valve;
     }

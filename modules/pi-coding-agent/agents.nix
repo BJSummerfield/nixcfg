@@ -1,7 +1,7 @@
 let
   roles = {
     planner = {
-      description = "Writes an implementation plan and task files from gathered facts";
+      description = "Turns a goal and gathered facts into a plan of small tasks";
       tools = [
         "read"
         "grep"
@@ -27,7 +27,7 @@ let
       acceptanceRole = "read-only";
     };
     implementer = {
-      description = "Carries out one task file in the worktree it is started in and commits";
+      description = "Carries out one task of a plan in its own worktree";
       tools = [
         "read"
         "grep"
@@ -41,7 +41,7 @@ let
       acceptanceRole = "writer";
     };
     reviewer = {
-      description = "Reviews a diff or a plan, verdict first, and runs the check and every reproduction itself";
+      description = "Reviews a change or a plan and runs the check and every reproduction itself";
       tools = [
         "read"
         "grep"
@@ -66,6 +66,7 @@ let
         "output: ${name}.md"
         "systemPromptMode: replace"
         "inheritProjectContext: true"
+        "inheritGlobalContext: true"
         "inheritSkills: false"
         "defaultContext: fresh"
         "defaultProgress: false"
