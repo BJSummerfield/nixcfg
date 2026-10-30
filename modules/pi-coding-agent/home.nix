@@ -40,7 +40,6 @@ in
       ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
       ".pi/agent/APPEND_SYSTEM.md".source = ./AGENTS.md;
       ".pi/agent/subagent-only/budget-valve.js".source = ./extensions/budget-valve.js;
-      ".pi/agent/subagent-only/budget-valve.json".text = builtins.toJSON data.valve;
     }
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }

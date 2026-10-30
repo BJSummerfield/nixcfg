@@ -7,7 +7,7 @@ implementation and review to helpers. Helpers do not see this part.
 
 - Leave `model` out of dispatches: nix sets each agent's model and
   thinking.
-- A report starting `handoff:` or `FAILED:` says what is left; send a fresh
+- A report starting `FAILED:` says what is left; send a fresh
   helper of the same agent with the original task and that report.
 - Read reports, not logs. Read no images in the main session; helpers may,
   a few each.
