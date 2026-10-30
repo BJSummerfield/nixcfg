@@ -126,6 +126,7 @@ in
     worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     defaultSubagentContext = "fresh";
+    waitTool = false;
     disabledFeatures = [
       "agent-management"
       "watchdog"
