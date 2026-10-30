@@ -37,22 +37,18 @@ then a fresh `reviewer` given the goal and the plan's path.
 
 ## Implement
 
-- Commit first: `worktree: true` needs a clean checkout, untracked files
-  included.
-- Each task: `subagent({ agent: "implementer", task, worktree: true })`.
-  pi runs it in a worktree of your current commit and removes it after.
-- Its notice has a `Parallel handoff: <file>` line. Apply its patch on your
-  branch, run the task's check, and commit:
+- Each task: `subagent({ agent: "implementer", task, worktree: true })`;
+  several may run at once.
+- On its notice, apply the patches named in its `Parallel handoff:` file,
+  run the task's check, and commit:
 
   ```sh
-  jq -r '.groups[].children[] | select(.patch.changed) | .patch.path' <file>
-  git apply --index <patch>   # add --3way if it does not apply cleanly
+  jq -r '.groups[].children[] | select(.patch.changed) | .patch.path' <file> | xargs -r git apply --index
   ```
 
 - Then a fresh `reviewer` with `worktree: true`, naming the task, the
-  commit and the check; never apply a reviewer's patch. Blocking findings
-  go to a fresh implementer the same way. Ask the user before a third fix
-  round.
+  commit and the check; never apply its patch. Blocking findings go to a
+  fresh implementer the same way. Ask the user before a third fix round.
 - Last, run the plan's final checks once and write the pull request text.
 
 ## Own context
