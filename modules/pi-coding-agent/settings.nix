@@ -11,7 +11,6 @@ let
   window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
 
   compactionReserve = 20480;
-  defaultModel = llm.models.${llm.default};
 
   mkModel =
     id: m:
@@ -137,9 +136,5 @@ in
       "usage-budgets"
       "tool-budgets"
     ];
-  };
-
-  valve = {
-    handoffTokens = window defaultModel - compactionReserve - 32768;
   };
 }
