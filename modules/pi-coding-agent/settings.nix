@@ -86,7 +86,7 @@ in
         codex-exec-writer.disabled = true;
         cursor-agent.disabled = true;
         cursor-agent-writer.disabled = true;
-        delegate.disabled = true;
+        delegate.inheritGlobalContext = true;
         oracle.disabled = true;
         worker.disabled = true;
         researcher.inheritGlobalContext = true;
@@ -125,7 +125,7 @@ in
     worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     defaultSubagentContext = "fresh";
-    waitTool = false;
+    artifactDir = "temp";
     disabledFeatures = [
       "agent-management"
       "watchdog"

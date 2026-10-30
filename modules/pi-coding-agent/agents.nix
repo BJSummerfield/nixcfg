@@ -11,10 +11,9 @@ let
         "write"
       ];
       thinking = "xhigh";
-      acceptanceRole = "read-only";
     };
     scout = {
-      description = "Finds facts in a repository with file and line evidence";
+      description = "Finds facts in a repository or on this box, with evidence";
       tools = [
         "read"
         "grep"
@@ -24,10 +23,9 @@ let
         "write"
       ];
       thinking = "medium";
-      acceptanceRole = "read-only";
     };
     implementer = {
-      description = "Carries out one task of a plan in its own worktree";
+      description = "Carries out one piece of work";
       tools = [
         "read"
         "grep"
@@ -38,7 +36,6 @@ let
         "write"
       ];
       thinking = "medium";
-      acceptanceRole = "writer";
     };
     reviewer = {
       description = "Reviews a change or a plan and runs the check itself";
@@ -51,7 +48,6 @@ let
         "write"
       ];
       thinking = "xhigh";
-      acceptanceRole = "read-only";
     };
   };
 
@@ -68,9 +64,7 @@ let
         "inheritProjectContext: true"
         "inheritGlobalContext: true"
         "inheritSkills: false"
-        "defaultContext: fresh"
-        "defaultProgress: false"
-        "acceptanceRole: ${role.acceptanceRole}"
+        "acceptance: {\"level\":\"none\",\"reason\":\"reports go to the session\"}"
       ];
     in
     "---\n" + builtins.concatStringsSep "\n" lines + "\n---\n\n";
