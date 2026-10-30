@@ -96,14 +96,6 @@ in
     };
   };
 
-  recipes = {
-    inherit (llm) provider;
-    model = llm.default;
-    window = window defaultModel;
-    inherit compactionReserve;
-    inherit (defaultModel) maxTokens;
-  };
-
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
   };

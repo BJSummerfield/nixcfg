@@ -16,16 +16,12 @@ let
     imageBudget = toString (import ../pi-coding-agent/settings.nix).imageBudget;
   };
 
-  recipeTools = config.home-manager.users.agent.mine.user.agent-recipes.package;
-
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
     paths = [ (pkgs.callPackage ../pi-coding-agent/package.nix { }) ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${
-        lib.makeBinPath ([ recipeTools ] ++ (import ../pi-coding-agent/extra-packages.nix pkgs))
-      }
+      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}
     '';
   };
 
@@ -113,14 +109,12 @@ in
         imports = [
           ../direnv/home.nix
           ../pi-coding-agent/home.nix
-          ../agent-recipes/default.nix
         ];
         home.stateVersion = "26.05";
 
         mine.user = {
           direnv.enable = true;
           pi-coding-agent.enable = true;
-          agent-recipes.enable = true;
         };
 
         programs.pi-coding-agent.package = null;

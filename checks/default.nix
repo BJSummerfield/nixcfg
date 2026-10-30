@@ -236,12 +236,6 @@ let
     ) extensionTestFiles
   );
 
-  recipeChecks = import ../modules/agent-recipes/checks.nix {
-    inherit pkgs;
-    inherit (nixpkgs) lib;
-    resolved =
-      inputs.self.nixosConfigurations.redtruck.config.containers.devbox.config.home-manager.users.agent.mine.user.agent-recipes.resolved;
-  };
 in
 nixpkgs.lib.foldl (a: b: a // b) { } [
   (evalAll "nixos" inputs.self.nixosConfigurations)
@@ -317,7 +311,6 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
           touch $out
         '';
   }
-  recipeChecks
   discoveredExtensionChecks
   (nixpkgs.lib.mapAttrs' (
     name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
