@@ -28,6 +28,9 @@ the security boundary; no sandbox wraps your commands.
   write (the filesystem is `noatime`, so reading does not refresh age).
   Helper worktrees live under `/var/tmp/pi-worktrees`; pi removes each one
   when its run ends, unless it could not save the change as a patch.
+- Plans, notes, reports and other working files go under
+  `$TMPDIR/pi-plans/<task>/`, never in a repository, unless the user asks
+  for them there.
 - Memory is shared with the local LLM engine's pinned host cache. Expensive
   commands (full test suites, flake checks, release builds) run one at a time
   box-wide: `flock -w 7200 /var/tmp/pi-plans/locks/heavy.lock <command>`.
