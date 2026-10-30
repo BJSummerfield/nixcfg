@@ -31,15 +31,6 @@ in
   };
 
   config = mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = lib.all (key: !lib.strings.hasPrefix ".pi/agent/skills/" key) (
-          lib.attrNames config.home.file
-        );
-        message = "pi skills are no longer installed for the recipe runner; the session has one way to dispatch";
-      }
-    ];
-
     home.packages = [ piSubagents ];
 
     home.file = {
@@ -54,13 +45,6 @@ in
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }
     ) agents.agentFiles;
-
-    mine.user.agent-recipes = {
-      inherit (data.recipes) window compactionReserve maxTokens;
-      pi = {
-        inherit (data.recipes) provider model;
-      };
-    };
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
       run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"
