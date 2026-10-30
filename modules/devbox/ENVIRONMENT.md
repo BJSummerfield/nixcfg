@@ -25,9 +25,9 @@ the security boundary; no sandbox wraps your commands.
   builds and running processes alike.
 - `/var/tmp` is on disk and is `$TMPDIR`. It survives reboots but nothing in
   it is durable: systemd-tmpfiles removes entries 20 days after their last
-  write (the filesystem is `noatime`, so reading does not refresh age); the
-  recipe runner removes its worktrees under `/var/tmp/pi-worktrees` after 20
-  days.
+  write (the filesystem is `noatime`, so reading does not refresh age).
+  Helper worktrees live under `/var/tmp/pi-worktrees`; pi removes each one
+  when its run ends, unless it could not save the change as a patch.
 - Memory is shared with the local LLM engine's pinned host cache. Expensive
   commands (full test suites, flake checks, release builds) run one at a time
   box-wide: `flock -w 7200 /var/tmp/pi-plans/locks/heavy.lock <command>`.
@@ -44,8 +44,9 @@ the security boundary; no sandbox wraps your commands.
 - The local engine runs 4 sequences at once; helpers run at most 3 at a
   time. A prefill on one sequence stalls decode on the others.
 - Missing tools: `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (the store
-  is shared with the host, so anything it has costs no download); npm, pip
-  and cargo also work. There is no sudo and you will never need it.
+  is shared with the host, so anything it has costs no download). There is
+  no system pip or cargo; get them the same way. There is no sudo and you
+  will never need it.
 - Refer to tools by package name, never by a `/nix/store/<hash>-...` path:
   garbage collection deletes unreferenced paths, so a recorded hash works
   until it abruptly does not.

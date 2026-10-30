@@ -81,7 +81,6 @@ in
       defaultModel = qualified llm.provider llm.default;
       maxThinking = "xhigh";
       agentOverrides = {
-        advisor.disabled = true;
         claude-code.disabled = true;
         claude-code-writer.disabled = true;
         codex-exec.disabled = true;
@@ -91,12 +90,8 @@ in
         delegate.disabled = true;
         oracle.disabled = true;
         worker.disabled = true;
-        researcher.outputMode = "file-only";
-        evidence-auditor.outputMode = "file-only";
-        planner.outputMode = "file-only";
-        scout.outputMode = "file-only";
-        implementer.outputMode = "file-only";
-        reviewer.outputMode = "file-only";
+        researcher.inheritGlobalContext = true;
+        evidence-auditor.inheritGlobalContext = true;
       };
     };
   };
@@ -135,6 +130,7 @@ in
   subagentConfig = {
     globalConcurrencyLimit = 3;
     maxActiveAsyncRunsPerSession = 3;
+    timeoutMs = 3600000;
     worktreeBaseDir = "/var/tmp/pi-worktrees";
     toolActivation = "eager";
     defaultSubagentContext = "fresh";
