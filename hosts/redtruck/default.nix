@@ -149,7 +149,6 @@
             yaml.enable = true;
           };
         };
-        hyprlax.enable = true;
         keybase.enable = true;
         lazygit.enable = true;
         mako.enable = true;
