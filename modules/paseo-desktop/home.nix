@@ -35,7 +35,11 @@ in
     home.packages = lib.optional isLinux (
       pkgs.symlinkJoin {
         name = "paseo-desktop";
-        paths = [ inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop ];
+        paths = [
+          (inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop.overrideAttrs {
+            preBuild = "npm run postinstall";
+          })
+        ];
         nativeBuildInputs = [ pkgs.makeWrapper ];
         postBuild = ''
           wrapProgram $out/bin/paseo-desktop \
