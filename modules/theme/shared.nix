@@ -21,22 +21,40 @@ in
       popups = mkSize "popups" defaults.fonts.sizes.popups;
     };
 
+    background = lib.mkOption {
+      type = lib.types.str;
+      default = defaults.colors.base00;
+      description = "Base background colour as a hex string without the leading #.";
+    };
+
+    terminalOpacity = lib.mkOption {
+      type = lib.types.float;
+      default = defaults.opacity.terminal;
+      description = "Background opacity of terminal emulators.";
+    };
+
     constants = lib.mkOption {
       type = lib.types.attrs;
       internal = true;
       readOnly = true;
       description = ''
         Fully resolved theme constants: constants.nix with the host's
-        fontSizes overrides merged in. Passed to home-manager modules as
-        the `themeConstants` module argument.
+        overrides merged in. Passed to home-manager modules as the
+        `themeConstants` module argument.
       '';
     };
   };
 
   config = {
     mine.system.theme.constants = defaults // {
+      colors = defaults.colors // {
+        base00 = cfg.background;
+      };
       fonts = defaults.fonts // {
         sizes = cfg.fontSizes;
+      };
+      opacity = defaults.opacity // {
+        terminal = cfg.terminalOpacity;
       };
     };
 

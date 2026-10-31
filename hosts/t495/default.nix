@@ -30,6 +30,8 @@
       steambox.enable = true;
       theme = {
         enable = true;
+        background = "000000";
+        terminalOpacity = 1.0;
         fontSizes = {
           applications = 10;
           terminal = 11;
