@@ -103,7 +103,11 @@
       };
       pipewire.sample-switch.enable = true;
       printing.enable = true;
-      theme.enable = true;
+      theme = {
+        enable = true;
+        background = "000000";
+        terminalOpacity = 1.0;
+      };
       steam.enable = true;
       remoteAccess = {
         enable = true;

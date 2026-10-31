@@ -2,6 +2,7 @@
   pkgs,
   config,
   lib,
+  themeConstants,
   ...
 }:
 let
@@ -27,6 +28,11 @@ in
   };
   config = lib.mkIf cfg.enable {
     mine.user._1password.silentStart.enable = true;
+    mine.user.niri.extraConfig = ''
+      overview {
+          backdrop-color "#${themeConstants.colors.base00}"
+      }
+    '';
     xdg.portal = {
       enable = true;
       extraPortals = with pkgs; [
