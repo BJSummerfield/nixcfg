@@ -117,6 +117,21 @@ in
             example = "/run/secrets/devbox-signing-key";
           };
 
+          environmentFile = mkOption {
+            type = types.nullOr types.path;
+            default = null;
+            description = ''
+              Path on the host to a file of `KEY=value` lines added to the paseo
+              unit's environment, and so inherited by every agent paseo starts
+              and every command those agents run. Typically the decrypted path
+              from sops-nix.
+
+              Consumed through `EnvironmentFile=`, like paseoPasswordFile, so
+              sops-nix's default (`mode = "0400"`, `owner = "root"`) is sufficient.
+            '';
+            example = "/run/secrets/workbox-env";
+          };
+
           hostAddress = mkOption {
             type = types.str;
             description = ''
@@ -203,6 +218,12 @@ in
           hostPath = box.signingKeyFile;
           isReadOnly = true;
         };
+      }
+      // lib.optionalAttrs (box.environmentFile != null) {
+        "/run/secrets/environment" = {
+          hostPath = box.environmentFile;
+          isReadOnly = true;
+        };
       };
 
       config.imports = [
@@ -210,6 +231,7 @@ in
           inherit inputs;
           inherit (box) tailnetHostname;
           signCommits = box.signingKeyFile != null;
+          hasEnvironmentFile = box.environmentFile != null;
         })
       ];
     }) cfg;

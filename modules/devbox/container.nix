@@ -2,6 +2,7 @@
   inputs,
   tailnetHostname,
   signCommits,
+  hasEnvironmentFile,
 }:
 {
   config,
@@ -174,7 +175,10 @@ in
     };
   };
 
-  systemd.services.paseo.serviceConfig.EnvironmentFile = "/run/secrets/paseo-password";
+  systemd.services.paseo.serviceConfig.EnvironmentFile = [
+    "/run/secrets/paseo-password"
+  ]
+  ++ lib.optional hasEnvironmentFile "/run/secrets/environment";
 
   systemd.services.paseo.serviceConfig.OOMPolicy = "continue";
 

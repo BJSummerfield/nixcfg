@@ -38,6 +38,7 @@
       mode = "0400";
       uid = 1500;
     };
+    workbox-env.sopsFile = ../../secrets/hosts/redtruck.yaml;
     workbox-github-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0440";
@@ -84,18 +85,11 @@
           hostAddress = "192.168.100.26";
           localAddress = "192.168.100.27";
         };
-        "research-box" = {
-          githubTokenFile = config.sops.secrets.researchbox-github-token.path;
-          paseoPasswordFile = config.sops.secrets.researchbox-paseo-password.path;
-          signingKeyFile = config.sops.secrets.researchbox-signing-key.path;
-          tailnetHostname = "research-box.mist-gamma.ts.net";
-          hostAddress = "192.168.100.34";
-          localAddress = "192.168.100.35";
-        };
         workbox = {
           githubTokenFile = config.sops.secrets.workbox-github-token.path;
           paseoPasswordFile = config.sops.secrets.workbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.workbox-signing-key.path;
+          environmentFile = config.sops.secrets.workbox-env.path;
           tailnetHostname = "workbox.mist-gamma.ts.net";
           hostAddress = "192.168.100.28";
           localAddress = "192.168.100.29";
