@@ -172,8 +172,12 @@
         abcde
         ffmpeg
         jellyfin-tui
+        jq
+        mkvtoolnix-cli
         nvtopPackages.nvidia
+        pgsrip
         picard
+        (tesseract.override { enableLanguages = [ "eng" ]; })
       ];
       home.file =
         let
