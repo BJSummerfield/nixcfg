@@ -222,15 +222,11 @@ let
   };
   stalwartPlan =
     cfg:
-    pkgs.writeText "stalwart-plan.ndjson" (
-      nixpkgs.lib.concatMapStrings (op: (builtins.toJSON op) + "\n") (
-        import ../modules/stalwart/plan.nix {
-          inherit (pkgs) lib;
-          inherit cfg;
-          webui = pkgs.stalwart_1_0.webui;
-        }
-      )
-    );
+    import ../modules/stalwart/render.nix {
+      inherit (pkgs) lib writeText;
+      inherit cfg;
+      webui = pkgs.stalwart_1_0.webui;
+    };
   stalwartPlanNoDns = stalwartPlan stalwartPlanBase;
   stalwartPlanNamecheap = stalwartPlan (
     stalwartPlanBase

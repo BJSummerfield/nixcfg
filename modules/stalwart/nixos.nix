@@ -24,8 +24,8 @@ let
   );
   startScript = pkgs.writeShellScript "stalwart-start" ''
     export STALWART_RECOVERY_ADMIN="admin:$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
-    export STALWART_HOSTNAME=${cfg.hostname}
-    export STALWART_PUBLIC_URL=${cfg.publicUrl}
+    export STALWART_HOSTNAME=$(lib.escapeShellArg cfg.hostname)
+    export STALWART_PUBLIC_URL=$(lib.escapeShellArg cfg.publicUrl)
     exec ${pkgs.stalwart_1_0}/bin/stalwart --config=${configFile}
   '';
 in
@@ -117,14 +117,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    mine.system.stalwart.planFile = pkgs.writeText "stalwart-plan.ndjson" (
-      lib.concatMapStrings (op: (builtins.toJSON op) + "\n") (
-        import ./plan.nix {
-          inherit lib cfg;
-          webui = pkgs.stalwart_1_0.webui;
-        }
-      )
-    );
+    mine.system.stalwart.planFile = import ./render.nix {
+      inherit lib cfg;
+      inherit (pkgs) writeText;
+      webui = pkgs.stalwart_1_0.webui;
+    };
     assertions = [
       {
         message = ''
@@ -145,6 +142,12 @@ in
       mkdir -p ${hostTailscaleDir}
       chmod 700 ${hostTailscaleDir}
     '';
+
+    networking.firewall.allowedTCPPorts = lib.optionals cfg.publicAccess [
+      25
+      465
+      993
+    ];
 
     networking.nat = {
       enable = true;
@@ -221,9 +224,7 @@ in
           };
           users.groups.stalwart = { };
 
-          systemd.tmpfiles.rules = ''
-            d /var/lib/stalwart 0700 stalwart stalwart - -
-          '';
+          systemd.tmpfiles.rules = [ "d /var/lib/stalwart 0700 stalwart stalwart - -" ];
 
           systemd.services.stalwart = {
             description = "Stalwart 1.0 mail server";
@@ -271,6 +272,7 @@ in
               RemainAfterExit = true;
               User = "stalwart";
               LoadCredential = [ "admin-pw:/run/stalwart/admin-pw" ];
+              TimeoutStartSec = 180;
             };
             script = ''
               curl=${pkgs.curl}/bin/curl
@@ -278,7 +280,7 @@ in
               deadline=60
               ok=0
               while [ "$deadline" -gt 0 ]; do
-                if "$curl" -sf -o /dev/null http://127.0.0.1:8080/healthz/live; then
+                if "$curl" -sf --max-time 2 -o /dev/null http://127.0.0.1:8080/healthz/live; then
                   ok=1
                   break
                 fi
