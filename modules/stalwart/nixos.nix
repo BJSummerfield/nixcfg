@@ -24,8 +24,8 @@ let
   );
   startScript = pkgs.writeShellScript "stalwart-start" ''
     export STALWART_RECOVERY_ADMIN="admin:$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
-    export STALWART_HOSTNAME=$(lib.escapeShellArg cfg.hostname)
-    export STALWART_PUBLIC_URL=$(lib.escapeShellArg cfg.publicUrl)
+    export STALWART_HOSTNAME=${lib.escapeShellArg cfg.hostname}
+    export STALWART_PUBLIC_URL=${lib.escapeShellArg cfg.publicUrl}
     exec ${pkgs.stalwart_1_0}/bin/stalwart --config=${configFile}
   '';
 in
