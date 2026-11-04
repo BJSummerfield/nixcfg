@@ -1,0 +1,8 @@
+[
+  {
+    "repo": "NixOS/nixpkgs",
+    "pr": 552103,
+    "branch": "nixos-unstable",
+    "title": "nixpkgs: services.stalwart supports 0.16+ (#552103)"
+  }
+]
