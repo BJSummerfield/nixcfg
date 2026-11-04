@@ -35,6 +35,10 @@
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
+  sops.secrets.stalwart-mail-admin-pw = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
@@ -55,6 +59,10 @@
       stalwart-server = {
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
+      };
+      stalwart = {
+        enable = true;
+        adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       remoteAccess.enable = true;
