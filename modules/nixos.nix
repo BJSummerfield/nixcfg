@@ -20,6 +20,7 @@
     ./pipewire/nixos.nix
     ./printing/nixos.nix
     ./remote-access/nixos.nix
+    ./stalwart/nixos.nix
     ./stalwart-server/nixos.nix
     ./steam/nixos.nix
     ./steambox/nixos.nix

@@ -210,6 +210,40 @@ let
     leave 76561198044411510 TeChNo ViKiNg (0 online)
   '';
 
+  stalwartPlanBase = {
+    hostname = "mx1.example.test";
+    domain = "example.test";
+    namecheap = null;
+    acme = {
+      contact = "postmaster@example.test";
+      staging = true;
+    };
+    publishRecords = [ "dkim" ];
+  };
+  stalwartPlan =
+    cfg:
+    pkgs.writeText "stalwart-plan.ndjson" (
+      nixpkgs.lib.concatMapStrings (op: (builtins.toJSON op) + "\n") (
+        import ../modules/stalwart/plan.nix {
+          inherit (pkgs) lib;
+          inherit cfg;
+          webui = pkgs.stalwart_1_0.webui;
+        }
+      )
+    );
+  stalwartPlanNoDns = stalwartPlan stalwartPlanBase;
+  stalwartPlanNamecheap = stalwartPlan (
+    stalwartPlanBase
+    // {
+      namecheap = {
+        apiUser = "someuser";
+        username = null;
+        clientIp = "203.0.113.7";
+        apiKeyFile = "/etc/namecheap-key";
+      };
+    }
+  );
+
   extensionDir = ../modules/pi-coding-agent/extensions;
   extensionReadDir = builtins.readDir extensionDir;
   extensionTestFiles = nixpkgs.lib.filter (
@@ -298,6 +332,21 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
           node ownership-check.mjs
           node deps-check.mjs
           node runner-wiring-check.mjs
+          touch $out
+        '';
+    stalwart-plan =
+      pkgs.runCommand "stalwart-plan"
+        {
+          nativeBuildInputs = [ pkgs.jq ];
+        }
+        ''
+          for plan in ${stalwartPlanNoDns} ${stalwartPlanNamecheap}; do
+            while IFS= read -r line; do
+              printf '%s\n' "$line" | jq -e . > /dev/null
+            done < "$plan"
+          done
+          [ "$(jq -c . ${stalwartPlanNoDns} | wc -l)" = "6" ]
+          [ "$(jq -c . ${stalwartPlanNamecheap} | wc -l)" = "8" ]
           touch $out
         '';
     valheim-notify-parser =

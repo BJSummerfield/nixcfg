@@ -117,6 +117,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    mine.system.stalwart.planFile = pkgs.writeText "stalwart-plan.ndjson" (
+      lib.concatMapStrings (op: (builtins.toJSON op) + "\n") (
+        import ./plan.nix {
+          inherit lib cfg;
+          webui = pkgs.stalwart_1_0.webui;
+        }
+      )
+    );
     assertions = [
       {
         message = ''
@@ -124,6 +132,10 @@ in
           cannot both be true: the two servers would claim the same mail ports.
         '';
         assertion = !(cfg.publicAccess && config.mine.system.stalwart-server.enable);
+      }
+      {
+        message = "mine.system.stalwart.publishRecords must not be empty when namecheap is set: Stalwart rejects an empty record set";
+        assertion = cfg.namecheap == null || cfg.publishRecords != [ ];
       }
     ];
 
@@ -246,6 +258,42 @@ in
                 "AF_NETLINK"
               ];
             };
+          };
+
+          systemd.services.stalwart-provision = {
+            description = "Apply the Stalwart settings plan";
+            wantedBy = [ "multi-user.target" ];
+            requires = [ "stalwart.service" ];
+            after = [ "stalwart.service" ];
+            partOf = [ "stalwart.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              User = "stalwart";
+              LoadCredential = [ "admin-pw:/run/stalwart/admin-pw" ];
+            };
+            script = ''
+              curl=${pkgs.curl}/bin/curl
+              sleep=${pkgs.coreutils}/bin/sleep
+              deadline=60
+              ok=0
+              while [ "$deadline" -gt 0 ]; do
+                if "$curl" -sf -o /dev/null http://127.0.0.1:8080/healthz/live; then
+                  ok=1
+                  break
+                fi
+                "$sleep" 1
+                deadline=$((deadline - 1))
+              done
+              if [ "$ok" -ne 1 ]; then
+                echo "stalwart did not answer http://127.0.0.1:8080/healthz/live within 60s" >&2
+                exit 1
+              fi
+              export STALWART_URL=http://127.0.0.1:8080
+              export STALWART_USER=admin
+              export STALWART_PASSWORD="$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
+              exec ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}
+            '';
           };
 
           services.tailscale.enable = true;
