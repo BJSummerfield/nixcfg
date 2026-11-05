@@ -1,12 +1,14 @@
 let
   delay = "input_number.bears_tv_delay";
-  notify = title: message: {
+  mark = "input_number.bears_score_mark";
+  eventId = "input_text.bears_event";
+  notify = notification_id: title: message: {
     action = "persistent_notification.create";
     data = {
-      notification_id = "bears_touchdown";
-      inherit title message;
+      inherit notification_id title message;
     };
   };
+  calibrated = notify "bears_calibration";
   setDelay = {
     action = "input_number.set_value";
     target.entity_id = delay;
@@ -56,11 +58,25 @@ in
     mode = "slider";
   };
 
+  input_number.bears_score_mark = {
+    name = "Bears score mark";
+    icon = "mdi:scoreboard-outline";
+    min = 0;
+    max = 999;
+    step = 1;
+    mode = "box";
+  };
+
   input_text.bears_tv_clock = {
     name = "Bears TV clock";
     icon = "mdi:clock-digital";
     max = 5;
-    pattern = "[0-9]{1,2}:[0-9]{2}";
+    pattern = "[0-9]{1,2}:[0-5][0-9]";
+  };
+
+  input_text.bears_event = {
+    name = "Bears game event";
+    icon = "mdi:identifier";
   };
 
   input_datetime.bears_last_score = {
@@ -100,7 +116,9 @@ in
             {
               "if" = "{{ show != \"\" and report_missing | default(false) }}";
               "then" = [
-                (notify "No Bears show" "Create script.{{ show }} in Settings > Automations & scenes > Scripts.")
+                (notify "bears_missing_show" "No Bears show"
+                  "Create script.{{ show }} in Settings > Automations & scenes > Scripts."
+                )
               ];
             }
           ];
@@ -126,7 +144,7 @@ in
         }
         {
           "if" =
-            "{{ is_state('sensor.bears', 'IN') and tv is match('[0-9]{1,2}:[0-9]{2}$') and feed is match('[0-9]{1,2}:[0-9]{2} ') and fetched is not none }}";
+            "{{ is_state('sensor.bears', 'IN') and tv is match('[0-9]{1,2}:[0-5][0-9]$') and feed is match('[0-9]{1,2}:[0-9]{2} ') and fetched is not none }}";
           "then" = [
             {
               variables = {
@@ -137,10 +155,10 @@ in
             { variables.feed_now_s = "{{ (feed_s - (as_timestamp(now()) - fetched)) | round(0) | int }}"; }
             { variables.raw = "{{ tv_s - feed_now_s }}"; }
             setDelay
-            (notify "Bears delay calibrated" "TV {{ tv }}, ESPN {{ feed }} (now {{ feed_now_s }} s left): TV is {{ raw }} s behind, delay set to {{ states('${delay}') | int }} s.")
+            (calibrated "Bears delay calibrated" "TV {{ tv }}, ESPN {{ feed }} (now {{ feed_now_s }} s left): TV is {{ raw }} s behind, delay set to {{ states('${delay}') | int }} s.")
           ];
           "else" = [
-            (notify "Bears delay not changed" "Needs a game in progress, a running clock and a TV clock like 7:42 (ESPN clock: {{ feed or 'none' }}).")
+            (calibrated "Bears delay not changed" "Needs a game in progress, a running clock and a TV clock like 7:42 (ESPN clock: {{ feed or 'none' }}).")
           ];
         }
       ];
@@ -156,10 +174,10 @@ in
           "if" = "{{ scored_at is number and 0 <= raw <= state_attr('${delay}', 'max') | float(120) }}";
           "then" = [
             setDelay
-            (notify "Bears delay calibrated" "The score reached Home Assistant {{ raw }} s before you saw it; delay set to {{ states('${delay}') | int }} s.")
+            (calibrated "Bears delay calibrated" "The score reached Home Assistant {{ raw }} s before you saw it; delay set to {{ states('${delay}') | int }} s.")
           ];
           "else" = [
-            (notify "Bears delay not changed" "No Bears score in the last {{ state_attr('${delay}', 'max') | int }} s.")
+            (calibrated "Bears delay not changed" "No Bears score in the last {{ state_attr('${delay}', 'max') | int }} s.")
           ];
         }
       ];
@@ -178,13 +196,40 @@ in
           entity_id = "sensor.bears";
           attribute = "team_score";
         }
+        {
+          trigger = "state";
+          entity_id = "sensor.bears";
+          to = "PRE";
+        }
       ];
-      variables.points = "{% if trigger.from_state and trigger.to_state %}{{ trigger.to_state.attributes.team_score | int(-1) - trigger.from_state.attributes.team_score | int(-1) }}{% else %}0{% endif %}";
       conditions = [
-        "{{ trigger.from_state is not none and trigger.to_state is not none and trigger.from_state.state == 'IN' and trigger.to_state.state in ['IN', 'POST'] }}"
-        "{{ trigger.from_state.attributes.team_score | int(-1) >= 0 and points > 0 }}"
+        "{{ trigger.to_state is not none and trigger.to_state.attributes.event_id is not none and (trigger.to_state.state == 'PRE' or trigger.to_state.state in ['IN', 'POST'] and trigger.to_state.attributes.team_score | int(-1) >= 0) }}"
       ];
       actions = [
+        {
+          variables = {
+            score = "{{ trigger.to_state.attributes.team_score | int(0) }}";
+            event = "{{ trigger.to_state.attributes.event_id | string }}";
+          };
+        }
+        {
+          variables.old = "{{ states('${mark}') | int(0) if trigger.to_state.state != 'PRE' and states('${eventId}') == event | string else score }}";
+        }
+        { variables.points = "{{ score - old }}"; }
+        {
+          action = "input_text.set_value";
+          target.entity_id = eventId;
+          data.value = "{{ event }}";
+        }
+        {
+          action = "input_number.set_value";
+          target.entity_id = mark;
+          data.value = "{{ [score, old] | max }}";
+        }
+        {
+          condition = "template";
+          value_template = "{{ points > 0 }}";
+        }
         {
           action = "input_datetime.set_datetime";
           target.entity_id = "input_datetime.bears_last_score";
@@ -193,7 +238,43 @@ in
         gameModeOn
         { delay.seconds = "{{ states('${delay}') | int(0) }}"; }
         gameModeOn
+        {
+          condition = "template";
+          value_template = "{{ state_attr('sensor.bears', 'team_score') | int(score) >= score }}";
+        }
         (celebrate "{{ points }}" { })
+      ];
+    }
+    {
+      id = "bears_poll";
+      alias = "Bears poll during game mode";
+      triggers = [
+        {
+          trigger = "time_pattern";
+          seconds = "/20";
+        }
+      ];
+      conditions = [
+        gameModeOn
+        {
+          condition = "not";
+          conditions = [
+            {
+              condition = "state";
+              entity_id = "sensor.bears";
+              state = [
+                "IN"
+                "POST"
+              ];
+            }
+          ];
+        }
+      ];
+      actions = [
+        {
+          action = "homeassistant.update_entity";
+          target.entity_id = "sensor.bears";
+        }
       ];
     }
   ];
