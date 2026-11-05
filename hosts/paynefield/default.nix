@@ -25,6 +25,14 @@
     sopsFile = ../../secrets/hosts/paynefield.yaml;
     mode = "0400";
   };
+  sops.secrets.hass-mqtt-valetudo-pw = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
+  sops.secrets.hass-mqtt-homeassistant-pw = {
+    sopsFile = ../../secrets/hosts/paynefield.yaml;
+    mode = "0400";
+  };
 
   environment.pathsToLink = [
     "/share/applications"
@@ -45,6 +53,11 @@
       };
       jellyfin-server.enable = true;
       immich-server.enable = true;
+      home-assistant = {
+        enable = true;
+        valetudoMqttPasswordFile = config.sops.secrets.hass-mqtt-valetudo-pw.path;
+        homeassistantMqttPasswordFile = config.sops.secrets.hass-mqtt-homeassistant-pw.path;
+      };
       valheim-server = {
         enable = true;
         notifyUrlFile = config.sops.secrets.keybase-webhook-url.path;
