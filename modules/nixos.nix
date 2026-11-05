@@ -8,6 +8,7 @@
     ./filesystems
     ./fish/nixos.nix
     ./gamescope/nixos.nix
+    ./home-assistant/nixos.nix
     ./immich-server/nixos.nix
     ./jellyfin-server/nixos.nix
     ./jellybox/nixos.nix
