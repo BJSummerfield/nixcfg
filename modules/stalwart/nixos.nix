@@ -175,6 +175,7 @@ in
 
     containers.mail = {
       autoStart = true;
+      timeoutStartSec = "5min";
       privateNetwork = true;
       hostAddress = "192.168.100.42";
       localAddress = "192.168.100.43";
@@ -268,13 +269,15 @@ in
             after = [ "stalwart.service" ];
             partOf = [ "stalwart.service" ];
             serviceConfig = {
-              Type = "oneshot";
+              Type = "exec";
               RemainAfterExit = true;
               User = "stalwart";
               LoadCredential = [ "admin-pw:/run/stalwart/admin-pw" ];
-              TimeoutStartSec = 600;
+              Restart = "on-failure";
+              RestartSec = 30;
               CacheDirectory = "stalwart-provision";
             };
+            unitConfig.StartLimitIntervalSec = 0;
             script = ''
               curl=${pkgs.curl}/bin/curl
               sleep=${pkgs.coreutils}/bin/sleep
@@ -296,18 +299,7 @@ in
               export STALWART_USER=admin
               export STALWART_PASSWORD="$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
               export XDG_CACHE_HOME="$CACHE_DIRECTORY"
-              attempts=0
-              while [ "$attempts" -lt 5 ]; do
-                attempts=$((attempts + 1))
-                if ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}; then
-                  exit 0
-                fi
-                if [ "$attempts" -lt 5 ]; then
-                  "$sleep" 15
-                fi
-              done
-              echo "gave up after 5 attempts to apply the settings plan" >&2
-              exit 1
+              exec ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}
             '';
           };
 
