@@ -114,7 +114,39 @@ in
       };
 
       config =
-        { config, ... }:
+        { config, pkgs, ... }:
+        let
+          bearsDashboard = (pkgs.formats.yaml { }).generate "bears-dashboard.yaml" (
+            import ./bears-dashboard.nix
+          );
+          httpStore = pkgs.writeText "hass-http-store.json" (
+            builtins.toJSON {
+              version = 2;
+              minor_version = 2;
+              key = "http";
+              data = {
+                stable = {
+                  server_port = 8123;
+                  cors_allowed_origins = [ "https://cast.home-assistant.io" ];
+                  use_x_forwarded_for = true;
+                  trusted_proxies = [
+                    "127.0.0.1/32"
+                    "::1/128"
+                  ];
+                  login_attempts_threshold = -1;
+                  ip_ban_enabled = true;
+                  ssl_profile = "modern";
+                  use_x_frame_options = true;
+                  created_at = "1970-01-01T00:00:00+00:00";
+                  error = null;
+                  error_message = null;
+                };
+                pending = null;
+                yaml_migration_done = true;
+              };
+            }
+          );
+        in
         {
           services.home-assistant = {
             enable = true;
@@ -128,18 +160,25 @@ in
             ];
             config = {
               default_config = { };
-              http = {
-                use_x_forwarded_for = true;
-                trusted_proxies = [
-                  "127.0.0.1"
-                  "::1"
-                ];
+              homeassistant.packages.bears = import ./bears.nix;
+              lovelace.dashboards.bears-game = {
+                mode = "yaml";
+                filename = "${bearsDashboard}";
+                title = "Bears";
+                icon = "mdi:football";
+                show_in_sidebar = true;
               };
               "automation ui" = "!include automations.yaml";
               "scene ui" = "!include scenes.yaml";
               "script ui" = "!include scripts.yaml";
             };
+            customComponents = [ (pkgs.callPackage ./teamtracker.nix { }) ];
           };
+
+          systemd.services.home-assistant.preStart = lib.mkAfter ''
+            mkdir -p ${config.services.home-assistant.configDir}/.storage
+            install -m 0600 ${httpStore} ${config.services.home-assistant.configDir}/.storage/http
+          '';
 
           systemd.tmpfiles.rules = [
             "f ${config.services.home-assistant.configDir}/automations.yaml 0600 hass hass - []"
