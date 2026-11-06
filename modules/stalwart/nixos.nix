@@ -1,7 +1,7 @@
 #   sudo nixos-container root-login mail
 #   tailscale up --hostname=mail --advertise-tags=tag:solo-node --accept-dns=false
-#   tailscale serve --bg --https=8443 8080
-#     (admin UI: https://mail.mist-gamma.ts.net:8443, log in as admin with the
+#   tailscale serve --bg 8080
+#     (admin UI: https://mail.mist-gamma.ts.net, log in as admin with the
 #      password from adminPasswordFile)
 #   systemctl restart stalwart, once after the first stalwart-provision run
 #     (listener changes only bind on restart)
@@ -121,7 +121,7 @@ in
 
     publicUrl = lib.mkOption {
       type = lib.types.str;
-      default = "https://mail.mist-gamma.ts.net:8443";
+      default = "https://mail.mist-gamma.ts.net";
     };
 
     planFile = lib.mkOption {
