@@ -144,6 +144,7 @@ in
             {
               "@type" = "Automatic";
               dnsServerId = "#dns-namecheap";
+              origin = cfg.domain;
               publishRecords = lib.listToAttrs (
                 map (r: {
                   name = r;
