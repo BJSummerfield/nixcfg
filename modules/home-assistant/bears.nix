@@ -32,6 +32,13 @@ let
     icon = "mdi:football";
     sequence = [ (celebrate points { report_missing = true; }) ];
   };
+  lightOn = alias: entity_id: data: {
+    inherit alias data;
+    action = "light.turn_on";
+    target = {
+      inherit entity_id;
+    };
+  };
 in
 {
   sensor = [
@@ -86,6 +93,103 @@ in
   };
 
   script = {
+    bears_celebration = {
+      alias = "Bears celebration";
+      icon = "mdi:football";
+      mode = "queued";
+      max = 10;
+      variables = {
+        lamps_a = [ "light.living_room_hue_color_lamp_1" ];
+        lamps_b = [ "light.living_room_hue_color_lamp_2" ];
+        sinks = [
+          "light.kitchen_kitchen_sink1"
+          "light.kitchen_kitchen_sink2"
+          "light.kitchen_kitchen_sink3"
+        ];
+        orange = "[200, 56, 3]";
+        blue = "[0, 70, 255]";
+        beats = 9;
+      };
+      sequence = [
+        {
+          variables = {
+            lamps = "{{ lamps_a + lamps_b }}";
+            sparklers = "{{ expand(lamps_a + lamps_b) | selectattr('attributes.effect_list', 'defined') | selectattr('attributes.effect_list', 'contains', 'sparkle') | map(attribute='entity_id') | list }}";
+          };
+        }
+        {
+          alias = "Remember how the lights are now";
+          action = "scene.create";
+          data = {
+            scene_id = "bears_celebration_before";
+            snapshot_entities = "{{ lamps + sinks }}";
+          };
+        }
+        (lightOn "Kitchen to warm amber, low" "{{ sinks }}" {
+          color_temp_kelvin = 2000;
+          brightness_pct = 20;
+          transition = 1;
+        })
+        {
+          alias = "Lamps trade orange and blue while the kitchen waves";
+          repeat = {
+            count = "{{ beats }}";
+            sequence = [
+              (lightOn "First lamps" "{{ lamps_a }}" {
+                rgb_color = "{{ orange if repeat.index is odd else blue }}";
+                brightness_pct = 100;
+                transition = 0.4;
+              })
+              (lightOn "Second lamps, opposite colour" "{{ lamps_b }}" {
+                rgb_color = "{{ blue if repeat.index is odd else orange }}";
+                brightness_pct = 100;
+                transition = 0.4;
+              })
+              (lightOn "Previous sink falls back" "{{ sinks[(repeat.index - 2) % (sinks | count)] }}" {
+                brightness_pct = 20;
+                transition = 0.8;
+              })
+              (lightOn "Next sink swells" "{{ sinks[(repeat.index - 1) % (sinks | count)] }}" {
+                brightness_pct = 100;
+                transition = 0.8;
+              })
+              { delay.seconds = 1; }
+            ];
+          };
+        }
+        (lightOn "Finale, lamps orange" "{{ lamps }}" {
+          rgb_color = "{{ orange }}";
+          brightness_pct = 100;
+          transition = 0.5;
+        })
+        (lightOn "Finale, kitchen full amber" "{{ sinks }}" {
+          brightness_pct = 100;
+          transition = 0.5;
+        })
+        { delay.seconds = 1; }
+        {
+          alias = "Orange sparkle";
+          "if" = "{{ sparklers | count > 0 }}";
+          "then" = [
+            (lightOn "Sparkle on" "{{ sparklers }}" { effect = "sparkle"; })
+            { delay.seconds = 3; }
+            (lightOn "Sparkle off" "{{ sparklers }}" { effect = "off"; })
+            { delay.seconds = 1; }
+          ];
+        }
+        {
+          alias = "Put every light back";
+          action = "scene.turn_on";
+          target.entity_id = "scene.bears_celebration_before";
+          data.transition = 1;
+        }
+        {
+          alias = "Let the lights settle before a queued celebration";
+          delay.seconds = 2;
+        }
+      ];
+    };
+
     bears_celebrate = {
       alias = "Bears celebrate";
       icon = "mdi:party-popper";
