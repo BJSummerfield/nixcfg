@@ -31,10 +31,6 @@
     helix
   ];
 
-  sops.secrets.stalwart-admin-pw = {
-    sopsFile = ../../secrets/hosts/vps.yaml;
-    mode = "0400";
-  };
   sops.secrets.stalwart-mail-admin-pw = {
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
@@ -60,10 +56,6 @@
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
-      stalwart-server = {
-        enable = false;
-        adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
-      };
       stalwart = {
         enable = true;
         publicAccess = true;
