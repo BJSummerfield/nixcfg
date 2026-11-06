@@ -19,18 +19,9 @@ let
     entity_id = "input_boolean.bears_game_mode";
     state = "on";
   };
-  celebrate = points: extra: {
+  celebrate = {
     action = "script.turn_on";
-    target.entity_id = "script.bears_celebrate";
-    data.variables = {
-      inherit points;
-    }
-    // extra;
-  };
-  testScore = alias: points: {
-    inherit alias;
-    icon = "mdi:football";
-    sequence = [ (celebrate points { report_missing = true; }) ];
+    target.entity_id = "script.bears_celebration";
   };
   lightOn = alias: entity_id: data: {
     inherit alias data;
@@ -190,50 +181,11 @@ in
       ];
     };
 
-    bears_celebrate = {
-      alias = "Bears celebrate";
-      icon = "mdi:party-popper";
-      mode = "queued";
-      max = 10;
-      fields = {
-        points = {
-          name = "Points";
-          required = true;
-          selector.number = {
-            min = 1;
-            max = 8;
-          };
-        };
-        report_missing = {
-          name = "Report a missing show";
-          default = false;
-        };
-      };
-      sequence = [
-        {
-          variables.show = "{% set p = points | int(0) %}{{ 'bears_touchdown' if p >= 6 else 'bears_field_goal' if p >= 3 else 'bears_two_points' if p == 2 else 'bears_extra_point' if p == 1 else \"\" }}";
-        }
-        {
-          "if" = "{{ show != \"\" and has_value('script.' ~ show) }}";
-          "then" = [ { action = "script.{{ show }}"; } ];
-          "else" = [
-            {
-              "if" = "{{ show != \"\" and report_missing | default(false) }}";
-              "then" = [
-                (notify "bears_missing_show" "No Bears show"
-                  "Create script.{{ show }} in Settings > Automations & scenes > Scripts."
-                )
-              ];
-            }
-          ];
-        }
-      ];
+    bears_test_celebration = {
+      alias = "Bears test celebration";
+      icon = "mdi:football";
+      sequence = [ celebrate ];
     };
-
-    bears_test_touchdown = testScore "Bears test touchdown" 7;
-    bears_test_field_goal = testScore "Bears test field goal" 3;
-    bears_test_two_points = testScore "Bears test two points" 2;
-    bears_test_extra_point = testScore "Bears test extra point" 1;
 
     bears_calibrate_from_clock = {
       alias = "Bears calibrate delay from TV clock";
@@ -346,7 +298,7 @@ in
           condition = "template";
           value_template = "{{ state_attr('sensor.bears', 'team_score') | int(score) >= score }}";
         }
-        (celebrate "{{ points }}" { })
+        celebrate
       ];
     }
     {
