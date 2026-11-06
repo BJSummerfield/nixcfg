@@ -273,6 +273,7 @@ in
               User = "stalwart";
               LoadCredential = [ "admin-pw:/run/stalwart/admin-pw" ];
               TimeoutStartSec = 180;
+              CacheDirectory = "stalwart-provision";
             };
             script = ''
               curl=${pkgs.curl}/bin/curl
@@ -294,6 +295,7 @@ in
               export STALWART_URL=http://127.0.0.1:8080
               export STALWART_USER=admin
               export STALWART_PASSWORD="$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
+              export XDG_CACHE_HOME="$CACHE_DIRECTORY"
               exec ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}
             '';
           };
