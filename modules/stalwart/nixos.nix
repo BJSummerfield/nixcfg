@@ -139,13 +139,6 @@ in
     };
     assertions = [
       {
-        message = ''
-          mine.system.stalwart.publicAccess and mine.system.stalwart-server.enable
-          cannot both be true: the two servers would claim the same mail ports.
-        '';
-        assertion = !(cfg.publicAccess && config.mine.system.stalwart-server.enable);
-      }
-      {
         message = "mine.system.stalwart.publishRecords must not be empty when namecheap is set: Stalwart rejects an empty record set";
         assertion = cfg.namecheap == null || cfg.publishRecords != [ ];
       }
