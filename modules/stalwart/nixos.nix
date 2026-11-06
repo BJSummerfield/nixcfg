@@ -51,15 +51,11 @@ in
               type = lib.types.nullOr lib.types.str;
               default = null;
             };
-            aliases = lib.mkOption {
-              type = lib.types.listOf lib.types.str;
-              default = [ ];
-            };
           };
         }
       );
       default = { };
-      description = "Mailbox accounts to declare in the settings plan; the attribute name is the account's local part and aliases are local parts on cfg.domain.";
+      description = "Mailbox accounts to declare in the settings plan; the attribute name is the account's local part. Aliases stay managed in the admin UI.";
     };
 
     adminPasswordFile = lib.mkOption {

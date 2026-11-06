@@ -70,17 +70,6 @@
         acme.staging = false;
         accounts.brian = {
           description = "Brian Summerfield";
-          aliases = [
-            "dentist1"
-            "jlc3dp"
-            "llm1"
-            "metra1"
-            "pokemon1"
-            "postmaster"
-            "toast1"
-            "typeracer"
-            "work1"
-          ];
         };
         namecheap = {
           apiUser = "bjsummerfield";

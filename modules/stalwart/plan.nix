@@ -181,16 +181,6 @@ in
           "@type" = "User";
           inherit name;
           domainId = "#main-domain";
-          aliases = lib.listToAttrs (
-            lib.imap (i: alias: {
-              name = toString i;
-              value = {
-                enable = true;
-                name = alias;
-                domainId = "#main-domain";
-              };
-            }) account.aliases
-          );
         }
         // lib.optionalAttrs (account.description != null) {
           inherit (account) description;

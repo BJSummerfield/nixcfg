@@ -240,10 +240,6 @@ let
       };
       accounts.test = {
         description = "Test account";
-        aliases = [
-          "test-one"
-          "test-two"
-        ];
       };
     }
   );
