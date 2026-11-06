@@ -67,6 +67,7 @@
       stalwart = {
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
+        acme.staging = false;
         namecheap = {
           apiUser = "bjsummerfield";
           clientIp = "178.104.51.195";
