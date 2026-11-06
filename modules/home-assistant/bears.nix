@@ -172,7 +172,6 @@ in
           alias = "Put every light back";
           action = "scene.turn_on";
           target.entity_id = "scene.bears_celebration_before";
-          data.transition = 1;
         }
         {
           alias = "Let the lights settle before a queued celebration";
