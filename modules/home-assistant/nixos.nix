@@ -116,6 +116,9 @@ in
       config =
         { config, pkgs, ... }:
         let
+          bearsDashboard = (pkgs.formats.yaml { }).generate "bears-dashboard.yaml" (
+            import ./bears-dashboard.nix
+          );
           httpStore = pkgs.writeText "hass-http-store.json" (
             builtins.toJSON {
               version = 2;
@@ -158,6 +161,13 @@ in
             config = {
               default_config = { };
               homeassistant.packages.bears = import ./bears.nix;
+              lovelace.dashboards.bears-game = {
+                mode = "yaml";
+                filename = "${bearsDashboard}";
+                title = "Bears";
+                icon = "mdi:football";
+                show_in_sidebar = true;
+              };
               "automation ui" = "!include automations.yaml";
               "scene ui" = "!include scenes.yaml";
               "script ui" = "!include scripts.yaml";
