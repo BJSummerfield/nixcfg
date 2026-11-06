@@ -168,6 +168,38 @@ in
       };
     };
   }
+]
+++ lib.optionals (cfg.accounts != { }) [
+  {
+    "@type" = "upsert";
+    object = "Account";
+    matchOn = [ "name" ];
+    value = lib.mapAttrs' (
+      name: account:
+      lib.nameValuePair "account-${name}" (
+        {
+          "@type" = "User";
+          inherit name;
+          domainId = "#main-domain";
+          aliases = lib.listToAttrs (
+            lib.imap (i: alias: {
+              name = toString i;
+              value = {
+                enable = true;
+                name = alias;
+                domainId = "#main-domain";
+              };
+            }) account.aliases
+          );
+        }
+        // lib.optionalAttrs (account.description != null) {
+          inherit (account) description;
+        }
+      )
+    ) cfg.accounts;
+  }
+]
+++ [
   {
     "@type" = "update";
     object = "SystemSettings";

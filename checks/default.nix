@@ -219,6 +219,7 @@ let
       staging = true;
     };
     publishRecords = [ "dkim" ];
+    accounts = { };
   };
   stalwartPlan =
     cfg:
@@ -236,6 +237,13 @@ let
         username = null;
         clientIp = "203.0.113.7";
         apiKeyFile = "/etc/namecheap-key";
+      };
+      accounts.test = {
+        description = "Test account";
+        aliases = [
+          "test-one"
+          "test-two"
+        ];
       };
     }
   );
@@ -342,7 +350,7 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
             done < "$plan"
           done
           [ "$(jq -c . ${stalwartPlanNoDns} | wc -l)" = "6" ]
-          [ "$(jq -c . ${stalwartPlanNamecheap} | wc -l)" = "8" ]
+          [ "$(jq -c . ${stalwartPlanNamecheap} | wc -l)" = "9" ]
           touch $out
         '';
     valheim-notify-parser =

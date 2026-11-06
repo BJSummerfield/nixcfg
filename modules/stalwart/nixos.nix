@@ -5,7 +5,7 @@
 #      password from adminPasswordFile)
 #   systemctl restart stalwart, once after the first stalwart-provision run
 #     (listener changes only bind on restart)
-#   Create the mailbox account in the UI.
+#   Set the mailbox account's password in the UI, once.
 {
   lib,
   config,
@@ -41,6 +41,25 @@ in
     domain = lib.mkOption {
       type = lib.types.str;
       default = "brianjs.com";
+    };
+
+    accounts = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            description = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+            };
+            aliases = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Mailbox accounts to declare in the settings plan; the attribute name is the account's local part and aliases are local parts on cfg.domain.";
     };
 
     adminPasswordFile = lib.mkOption {

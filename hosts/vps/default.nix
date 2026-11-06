@@ -68,6 +68,20 @@
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
         acme.staging = false;
+        accounts.brian = {
+          description = "Brian Summerfield";
+          aliases = [
+            "dentist1"
+            "jlc3dp"
+            "llm1"
+            "metra1"
+            "pokemon1"
+            "postmaster"
+            "toast1"
+            "typeracer"
+            "work1"
+          ];
+        };
         namecheap = {
           apiUser = "bjsummerfield";
           clientIp = "178.104.51.195";
