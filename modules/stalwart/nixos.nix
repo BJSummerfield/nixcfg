@@ -272,7 +272,7 @@ in
               RemainAfterExit = true;
               User = "stalwart";
               LoadCredential = [ "admin-pw:/run/stalwart/admin-pw" ];
-              TimeoutStartSec = 180;
+              TimeoutStartSec = 600;
               CacheDirectory = "stalwart-provision";
             };
             script = ''
@@ -296,7 +296,18 @@ in
               export STALWART_USER=admin
               export STALWART_PASSWORD="$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
               export XDG_CACHE_HOME="$CACHE_DIRECTORY"
-              exec ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}
+              attempts=0
+              while [ "$attempts" -lt 5 ]; do
+                attempts=$((attempts + 1))
+                if ${pkgs.stalwart-cli}/bin/stalwart-cli apply --file ${cfg.planFile}; then
+                  exit 0
+                fi
+                if [ "$attempts" -lt 5 ]; then
+                  "$sleep" 15
+                fi
+              done
+              echo "gave up after 5 attempts to apply the settings plan" >&2
+              exit 1
             '';
           };
 
