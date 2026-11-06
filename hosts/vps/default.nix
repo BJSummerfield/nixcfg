@@ -39,6 +39,10 @@
     sopsFile = ../../secrets/hosts/vps.yaml;
     mode = "0400";
   };
+  sops.secrets.namecheap-api-key = {
+    sopsFile = ../../secrets/hosts/vps.yaml;
+    mode = "0400";
+  };
   sops.secrets.restic-b2-env = {
     sopsFile = ../../secrets/services/restic-b2.yaml;
     mode = "0400";
@@ -63,6 +67,11 @@
       stalwart = {
         enable = true;
         adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
+        namecheap = {
+          apiUser = "bjsummerfield";
+          clientIp = "178.104.51.195";
+          apiKeyFile = config.sops.secrets.namecheap-api-key.path;
+        };
       };
       # sudo tailscale up --advertise-tags=tag:vps --accept-dns=false
       remoteAccess.enable = true;
