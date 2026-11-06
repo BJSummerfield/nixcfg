@@ -40,7 +40,6 @@ in
         DisableFirefoxStudies = true;
         DisableFirefoxAccounts = true;
         SearchSuggestEnabled = false;
-        HttpsOnlyMode = "force_enabled";
         DNSOverHTTPS = {
           Enabled = false;
           Locked = true;
