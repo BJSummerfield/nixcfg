@@ -61,11 +61,12 @@
       externalInterface = "enp1s0";
       fish.enable = true;
       stalwart-server = {
-        enable = true;
+        enable = false;
         adminPasswordFile = config.sops.secrets.stalwart-admin-pw.path;
       };
       stalwart = {
         enable = true;
+        publicAccess = true;
         adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
         acme.staging = false;
         accounts.brian = {
