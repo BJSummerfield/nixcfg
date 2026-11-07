@@ -30,6 +30,11 @@ let
       inherit entity_id;
     };
   };
+  restore = alias: {
+    inherit alias;
+    action = "scene.turn_on";
+    target.entity_id = "scene.bears_celebration_before";
+  };
 in
 {
   sensor = [
@@ -172,14 +177,18 @@ in
             (lightOn "Sparkle on" "{{ sparklers }}" { effect = "sparkle"; })
             { delay.seconds = 3; }
             (lightOn "Sparkle off" "{{ sparklers }}" { effect = "off"; })
-            { delay.seconds = 1; }
+            {
+              alias = "Give the bridge time to end the sparkle";
+              delay.seconds = 3;
+            }
           ];
         }
+        (restore "Put every light back")
         {
-          alias = "Put every light back";
-          action = "scene.turn_on";
-          target.entity_id = "scene.bears_celebration_before";
+          alias = "Wait for the bridge's late return to the pre-sparkle state";
+          delay.seconds = 2;
         }
+        (restore "Put back any light the bridge changed after the first restore")
         {
           alias = "Let the lights settle before a queued celebration";
           delay.seconds = 2;
