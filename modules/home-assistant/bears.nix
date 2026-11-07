@@ -90,8 +90,15 @@ in
       mode = "queued";
       max = 10;
       variables = {
-        lamps_a = [ "light.living_room_hue_color_lamp_1" ];
-        lamps_b = [ "light.living_room_hue_color_lamp_2" ];
+        lamps_a = [
+          "light.living_room_hue_color_lamp_1"
+          "light.bedroom_kids_hue_play_left"
+          "light.bedroom_kids_hue_center"
+        ];
+        lamps_b = [
+          "light.living_room_hue_color_lamp_2"
+          "light.bedroom_kids_hue_play_1"
+        ];
         sinks = [
           "light.kitchen_kitchen_sink1"
           "light.kitchen_kitchen_sink2"
