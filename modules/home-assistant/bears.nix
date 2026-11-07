@@ -30,6 +30,11 @@ let
       inherit entity_id;
     };
   };
+  restore = alias: {
+    inherit alias;
+    action = "scene.turn_on";
+    target.entity_id = "scene.bears_celebration_before";
+  };
 in
 {
   sensor = [
@@ -90,8 +95,15 @@ in
       mode = "queued";
       max = 10;
       variables = {
-        lamps_a = [ "light.living_room_hue_color_lamp_1" ];
-        lamps_b = [ "light.living_room_hue_color_lamp_2" ];
+        lamps_a = [
+          "light.living_room_hue_color_lamp_1"
+          "light.bedroom_kids_hue_play_left"
+          "light.bedroom_kids_hue_center"
+        ];
+        lamps_b = [
+          "light.living_room_hue_color_lamp_2"
+          "light.bedroom_kids_hue_play_1"
+        ];
         sinks = [
           "light.kitchen_kitchen_sink1"
           "light.kitchen_kitchen_sink2"
@@ -165,14 +177,18 @@ in
             (lightOn "Sparkle on" "{{ sparklers }}" { effect = "sparkle"; })
             { delay.seconds = 3; }
             (lightOn "Sparkle off" "{{ sparklers }}" { effect = "off"; })
-            { delay.seconds = 1; }
+            {
+              alias = "Give the bridge time to end the sparkle";
+              delay.seconds = 3;
+            }
           ];
         }
+        (restore "Put every light back")
         {
-          alias = "Put every light back";
-          action = "scene.turn_on";
-          target.entity_id = "scene.bears_celebration_before";
+          alias = "Wait for the bridge's late return to the pre-sparkle state";
+          delay.seconds = 2;
         }
+        (restore "Put back any light the bridge changed after the first restore")
         {
           alias = "Let the lights settle before a queued celebration";
           delay.seconds = 2;
