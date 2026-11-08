@@ -56,6 +56,15 @@
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
+      ari-photo = {
+        enable = true;
+        sopsFile = ../../secrets/hosts/vps.yaml;
+        mail = {
+          username = "brian";
+          fromAddress = "brian@brianjs.com";
+          inboxAddress = "brian@brianjs.com";
+        };
+      };
       stalwart = {
         enable = true;
         publicAccess = true;
