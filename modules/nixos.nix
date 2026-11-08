@@ -26,6 +26,7 @@
     ./steam/nixos.nix
     ./steambox/nixos.nix
     ./streamer/nixos.nix
+    ./switchyard/nixos.nix
     ./system/nixos.nix
     ./tailscale/nixos.nix
     ./teamspeak-client/nixos.nix

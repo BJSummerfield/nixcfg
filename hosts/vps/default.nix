@@ -90,6 +90,7 @@
         enable = true;
         publicAccess = true;
       };
+      switchyard.enable = true;
     };
     backups = {
       enable = true;

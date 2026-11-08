@@ -13,7 +13,7 @@ disks are declared with disko, and every host is on the same tailnet.
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
 | `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
 | `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. See `docs/streamer.md`. |
-| `vps` | NixOS | Public edge — Stalwart mail, TeamSpeak, Ari Summerfield Photography, backups. |
+| `vps` | NixOS | Public edge — Stalwart mail, TeamSpeak, Ari Summerfield Photography, Switchyard, backups. |
 | `mac` | nix-darwin | macOS workstation. |
 
 ## Layout
