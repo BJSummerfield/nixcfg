@@ -90,10 +90,7 @@
         enable = true;
         publicAccess = true;
       };
-      switchyard = {
-        enable = true;
-        sopsFile = ../../secrets/hosts/vps.yaml;
-      };
+      switchyard.enable = true;
     };
     backups = {
       enable = true;
