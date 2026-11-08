@@ -43,6 +43,12 @@ in
       default = "brianjs.com";
     };
 
+    extraDomains = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Further mail domains. They share the main hostname's certificate and MX, and get DKIM keys published like the main domain.";
+    };
+
     accounts = lib.mkOption {
       type = lib.types.attrsOf (
         lib.types.submodule {
@@ -50,6 +56,11 @@ in
             description = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
               default = null;
+            };
+            domain = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Domain the account belongs to; null is the main domain.";
             };
           };
         }
@@ -138,6 +149,12 @@ in
       webui = pkgs.stalwart_1_0.webui;
     };
     assertions = [
+      {
+        message = "every mine.system.stalwart.accounts.<name>.domain must be the main domain or one of extraDomains";
+        assertion = lib.all (
+          a: a.domain == null || a.domain == cfg.domain || lib.elem a.domain cfg.extraDomains
+        ) (lib.attrValues cfg.accounts);
+      }
       {
         message = "mine.system.stalwart.publishRecords must not be empty when namecheap is set: Stalwart rejects an empty record set";
         assertion = cfg.namecheap == null || cfg.publishRecords != [ ];

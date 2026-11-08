@@ -2,6 +2,7 @@
   imports = [
     inputs.sops-nix.nixosModules.sops
     ./_1password/nixos.nix
+    ./ari-photo/nixos.nix
     ./avahi/nixos.nix
     ./backups/nixos.nix
     ./dns-server/nixos.nix
