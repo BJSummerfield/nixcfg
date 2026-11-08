@@ -10,6 +10,36 @@ let
       "https://acme-staging-v02.api.letsencrypt.org/directory"
     else
       "https://acme-v02.api.letsencrypt.org/directory";
+  domainKey = name: "domain-${lib.replaceStrings [ "." ] [ "-" ] name}";
+  domainRef =
+    name: if name == null || name == cfg.domain then "#main-domain" else "#${domainKey name}";
+  dnsManagement =
+    name:
+    if hasDns then
+      {
+        "@type" = "Automatic";
+        dnsServerId = "#dns-namecheap";
+        origin = name;
+        publishRecords = lib.listToAttrs (
+          map (r: {
+            name = r;
+            value = true;
+          }) cfg.publishRecords
+        );
+      }
+    else
+      {
+        "@type" = "Manual";
+      };
+  dkimManagement =
+    if hasDns && lib.elem "dkim" cfg.publishRecords then
+      {
+        "@type" = "Automatic";
+      }
+    else
+      {
+        "@type" = "Manual";
+      };
 in
 [
   {
@@ -139,34 +169,22 @@ in
             {
               "@type" = "Manual";
             };
-        dnsManagement =
-          if hasDns then
-            {
-              "@type" = "Automatic";
-              dnsServerId = "#dns-namecheap";
-              origin = cfg.domain;
-              publishRecords = lib.listToAttrs (
-                map (r: {
-                  name = r;
-                  value = true;
-                }) cfg.publishRecords
-              );
-            }
-          else
-            {
-              "@type" = "Manual";
-            };
-        dkimManagement =
-          if hasDns && lib.elem "dkim" cfg.publishRecords then
-            {
-              "@type" = "Automatic";
-            }
-          else
-            {
-              "@type" = "Manual";
-            };
+        dnsManagement = dnsManagement cfg.domain;
+        inherit dkimManagement;
       };
-    };
+    }
+    // lib.listToAttrs (
+      map (
+        name:
+        lib.nameValuePair (domainKey name) {
+          inherit name dkimManagement;
+          dnsManagement = dnsManagement name;
+          certificateManagement = {
+            "@type" = "Manual";
+          };
+        }
+      ) cfg.extraDomains
+    );
   }
 ]
 ++ lib.optionals (cfg.accounts != { }) [
@@ -180,7 +198,7 @@ in
         {
           "@type" = "User";
           inherit name;
-          domainId = "#main-domain";
+          domainId = domainRef account.domain;
         }
         // lib.optionalAttrs (account.description != null) {
           inherit (account) description;

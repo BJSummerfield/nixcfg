@@ -56,13 +56,27 @@
       wheelNeedsPassword = false;
       externalInterface = "enp1s0";
       fish.enable = true;
+      ari-photo = {
+        enable = true;
+        sopsFile = ../../secrets/hosts/vps.yaml;
+        mail = {
+          username = "ari@summerfieldphotography.com";
+          fromAddress = "no-reply@summerfieldphotography.com";
+          inboxAddress = "ari@summerfieldphotography.com";
+        };
+      };
       stalwart = {
         enable = true;
         publicAccess = true;
         adminPasswordFile = config.sops.secrets.stalwart-mail-admin-pw.path;
         acme.staging = false;
-        accounts.brian = {
-          description = "Brian Summerfield";
+        extraDomains = [ "summerfieldphotography.com" ];
+        accounts = {
+          brian.description = "Brian Summerfield";
+          ari = {
+            description = "Ari Summerfield";
+            domain = "summerfieldphotography.com";
+          };
         };
         namecheap = {
           apiUser = "bjsummerfield";

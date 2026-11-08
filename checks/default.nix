@@ -220,6 +220,7 @@ let
     };
     publishRecords = [ "dkim" ];
     accounts = { };
+    extraDomains = [ ];
   };
   stalwartPlan =
     cfg:
@@ -238,8 +239,16 @@ let
         clientIp = "203.0.113.7";
         apiKeyFile = "/etc/namecheap-key";
       };
-      accounts.test = {
-        description = "Test account";
+      extraDomains = [ "other.test" ];
+      accounts = {
+        test = {
+          description = "Test account";
+          domain = null;
+        };
+        other = {
+          description = null;
+          domain = "other.test";
+        };
       };
     }
   );
@@ -347,6 +356,9 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
           done
           [ "$(jq -c . ${stalwartPlanNoDns} | wc -l)" = "6" ]
           [ "$(jq -c . ${stalwartPlanNamecheap} | wc -l)" = "9" ]
+          jq -e 'select(.object == "Domain") | .value."domain-other-test".name == "other.test"' ${stalwartPlanNamecheap}
+          jq -e 'select(.object == "Account") | .value."account-other".domainId == "#domain-other-test"' ${stalwartPlanNamecheap}
+          jq -e 'select(.object == "Account") | .value."account-test".domainId == "#main-domain"' ${stalwartPlanNamecheap}
           touch $out
         '';
     valheim-notify-parser =
