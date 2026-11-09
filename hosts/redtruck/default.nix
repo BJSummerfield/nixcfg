@@ -43,11 +43,6 @@
       mode = "0400";
       uid = 1500;
     };
-    workbox-claude-token = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
-      mode = "0400";
-      uid = 1500;
-    };
     workbox-env.sopsFile = ../../secrets/hosts/redtruck.yaml;
     workbox-github-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
@@ -98,7 +93,6 @@
         };
         workbox = {
           githubTokenFile = config.sops.secrets.workbox-github-token.path;
-          claudeTokenFile = config.sops.secrets.workbox-claude-token.path;
           paseoPasswordFile = config.sops.secrets.workbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.workbox-signing-key.path;
           environmentFile = config.sops.secrets.workbox-env.path;
