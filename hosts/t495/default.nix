@@ -85,6 +85,7 @@
         polkit-kde.enable = true;
         swayidle.enable = true;
         swaylock.enable = true;
+        thunderbird.enable = true;
       };
       programs = {
         eza.enable = true;

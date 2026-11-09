@@ -23,6 +23,7 @@
     ./steambox/home.nix
     ./swayidle/home.nix
     ./swaylock/home.nix
+    ./thunderbird/home.nix
     ./unfree/home.nix
   ];
 }
