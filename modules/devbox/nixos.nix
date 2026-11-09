@@ -117,6 +117,27 @@ in
             example = "/run/secrets/devbox-signing-key";
           };
 
+          claudeTokenFile = mkOption {
+            type = types.nullOr types.path;
+            default = null;
+            description = ''
+              Path on the host to a file containing only the token printed by
+              `claude setup-token`, a long-lived subscription OAuth token, not
+              an API key. Typically the decrypted path from sops-nix.
+
+              Must be readable by uid 1500: the `claude` wrapper reads it as
+              the agent at launch, so set `mode = "0400"` with `uid = 1500`
+              - no host user has that uid (the container agent's pinned uid,
+              chosen deliberately outside the host's uid range - see
+              container.nix), so `owner` cannot name it at all. Same reasoning
+              as signingKeyFile.
+
+              null leaves this instance authenticating through `claude auth
+              login` instead.
+            '';
+            example = "/run/secrets/devbox-claude-token";
+          };
+
           environmentFile = mkOption {
             type = types.nullOr types.path;
             default = null;
@@ -224,6 +245,12 @@ in
           hostPath = box.environmentFile;
           isReadOnly = true;
         };
+      }
+      // lib.optionalAttrs (box.claudeTokenFile != null) {
+        "/run/secrets/claude-token" = {
+          hostPath = box.claudeTokenFile;
+          isReadOnly = true;
+        };
       };
 
       config.imports = [
@@ -232,6 +259,7 @@ in
           inherit (box) tailnetHostname;
           signCommits = box.signingKeyFile != null;
           hasEnvironmentFile = box.environmentFile != null;
+          hasClaudeToken = box.claudeTokenFile != null;
         })
       ];
     }) cfg;
