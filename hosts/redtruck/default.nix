@@ -16,6 +16,11 @@
   ];
 
   sops.secrets = {
+    devbox-claude-token = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0400";
+      uid = 1500;
+    };
     devbox-github-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0440";
@@ -79,6 +84,7 @@
       devboxes = {
         devbox = {
           githubTokenFile = config.sops.secrets.devbox-github-token.path;
+          claudeTokenFile = config.sops.secrets.devbox-claude-token.path;
           paseoPasswordFile = config.sops.secrets.devbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.devbox-signing-key.path;
           tailnetHostname = "devbox.mist-gamma.ts.net";

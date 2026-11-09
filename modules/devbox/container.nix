@@ -3,6 +3,7 @@
   tailnetHostname,
   signCommits,
   hasEnvironmentFile,
+  hasClaudeToken,
 }:
 {
   config,
@@ -29,7 +30,14 @@ let
   agentPkgs = [
     (mkAgent {
       name = "claude";
-      real = lib.getExe pkgs.claude-code;
+      real =
+        if hasClaudeToken then
+          pkgs.writeShellScript "claude" ''
+            export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/secrets/claude-token)"
+            exec ${lib.getExe pkgs.claude-code} "$@"
+          ''
+        else
+          lib.getExe pkgs.claude-code;
       args = ''--append-system-prompt "$(cat ${envContract})"'';
     })
     (mkAgent {
@@ -90,7 +98,10 @@ in
       direnv
     ]);
 
-  # claude auth login must be run as the agent user: a root login writes
+  # Instances with a claudeTokenFile authenticate from that token: it comes
+  # from `claude setup-token` (run once, anywhere you can open a browser) and
+  # is stored with sops secrets/hosts/redtruck.yaml. Instances without one
+  # still need a login run as the agent user - a root login writes
   # root-owned credentials into $CLAUDE_CONFIG_DIR that agent cannot read.
   # From the host:
   #   sudo nixos-container run devbox -- runuser -u agent -- \
