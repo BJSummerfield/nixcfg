@@ -17,7 +17,7 @@ keys:
   - &host_paynefield age1anxkzm9fplrrdcn5gpdjp0qz0lg4uawzudlps80veueeptwmk4ms6seu7j
   - &host_elitebook age1cz6x3vqld336w8s58kd529wncl98e6wmay26msv0uhdlv3ffrv3scaqq0e
   - &host_vps age1e2uwgdjehu3xh0pk57hsnlz98rzntpfakaw5qvav9hl6u2vqza9sll5qz7
-  - &host_streamer age19eqpwjehlj5lpd548xtl064kudx70dm5qprnhf5zznuq4zjwau8sgz5l50
+  - &host_streamer age1hrkegtlr44dxxcty6h5hmhnevks9n286u8fkl4yvaahuzhq5tvnsate57g
 
 creation_rules:
   - path_regex: secrets/users/waktu\.yaml$
