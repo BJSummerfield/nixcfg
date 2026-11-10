@@ -106,7 +106,7 @@ class LogTail:
             "finish": res.get("finish_reason", "?"),
             "path": res.get("prefix_reuse_path") or "none",
             "total": num(t.get("total")),
-            "ttft": num(t.get("ttft")),
+            "ttft": t.get("ttft") if isinstance(t.get("ttft"), (int, float)) else None,
             "decode": num(t.get("decode")),
             "prefill": num(t.get("prefill")),
             "queue": num((ev.get("engine_timing") or {}).get("queue_wait_seconds")),
@@ -257,7 +257,7 @@ def summarize(reqs, samples):
             "cold_re_prefill_seconds": round(sum(r["prefill"] for r in cold), 1),
         },
         "latency_s": {
-            "ttft": _pcts([r["ttft"] for r in reqs]),
+            "ttft": _pcts([r["ttft"] for r in reqs if r["ttft"] is not None]),
             "queue": _pcts([r["queue"] for r in reqs]),
             "total": _pcts([r["total"] for r in reqs]),
         },
