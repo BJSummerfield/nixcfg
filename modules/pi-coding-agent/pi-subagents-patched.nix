@@ -5,7 +5,7 @@
 }:
 
 let
-  version = "0.87.0";
+  version = "0.88.0";
   patch = writeText "pi-subagents-group-kill.diff" (builtins.readFile ./pi-subagents-group-kill.diff);
   jsTemporalPolyfill = fetchurl {
     url = "https://registry.npmjs.org/@js-temporal%2fpolyfill/-/polyfill-0.5.1.tgz";
@@ -20,8 +20,8 @@ let
     hash = "sha256-jdDTZftJwOfMQtagDfb7LakFb8JEkglDRvw07NvPKMo=";
   };
   undici = fetchurl {
-    url = "https://registry.npmjs.org/undici/-/undici-8.12.3.tgz";
-    hash = "sha256-4D+i7TR1J8kVAmwEgQ07m8+Yk6IXazFKpMKclFYS0Yw=";
+    url = "https://registry.npmjs.org/undici/-/undici-8.12.4.tgz";
+    hash = "sha256-JgWM2yF0YjZm6CPmtEzP741cGVUQf5ebgIOQS2Ggzm4=";
   };
   yaml = fetchurl {
     url = "https://registry.npmjs.org/yaml/-/yaml-2.8.3.tgz";
@@ -36,7 +36,7 @@ runCommand "pi-subagents-${version}-group-kill"
   {
     src = fetchurl {
       url = "https://registry.npmjs.org/pi-subagents/-/pi-subagents-${version}.tgz";
-      hash = "sha256-aZrVciZ+/QU4tiI6DGueTFR8et/9Q7c4X+v8slJ+6DY=";
+      hash = "sha256-kGzCbyY+P1DAeLTMMqM42H7N0MChpyecovQnKX9cZ9s=";
     };
     dontUnpack = true;
   }
