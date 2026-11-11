@@ -1,6 +1,5 @@
-diff -Nur a/src/runs/background/owned-process-tree.js b/src/runs/background/owned-process-tree.js
---- a/src/runs/background/owned-process-tree.js	2026-10-17 01:18:29.919139814 -0500
-+++ b/src/runs/background/owned-process-tree.js	2026-10-17 01:18:41.078139557 -0500
+--- a/src/runs/background/owned-process-tree.js
++++ b/src/runs/background/owned-process-tree.js
 @@ -94,6 +94,11 @@
              if (term !== "sent" && term !== "absent") {
                  return { state: "unknown", reason: "signal-failed", diagnostic: term.diagnostic };
@@ -13,21 +12,20 @@ diff -Nur a/src/runs/background/owned-process-tree.js b/src/runs/background/owne
              const termExit = await waitUntilGroupTerminal(pid, options.termGraceMs ?? DEFAULT_TERM_GRACE_MS);
              if (termExit === false)
                  return observedUnlessLiveDetached(pid, detached);
-diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagent-runner.js
---- a/src/runs/background/subagent-runner.js	2026-10-17 01:18:29.917984706 -0500
-+++ b/src/runs/background/subagent-runner.js	2026-10-17 01:18:41.078139557 -0500
+--- a/src/runs/background/subagent-runner.js
++++ b/src/runs/background/subagent-runner.js
 @@ -12,6 +12,7 @@
  import { performance } from "node:perf_hooks";
  import { pathToFileURL } from "node:url";
  import { installRunnerHttpDispatcher } from "./runner-http-dispatcher.js";
 +import { createOwnedProcessTreeController } from "./owned-process-tree.js";
  import { writeAtomicJson } from "../../shared/atomic-json.js";
+ import { extractReportedProgress } from "../../shared/reported-progress.js";
  import { withResultRunLease, writeAsyncResultFile, writePendingAsyncResultFile } from "./result-files.js";
- import { createFileCoalescer } from "../../shared/file-coalescer.js";
-@@ -3099,6 +3100,58 @@
+@@ -3141,6 +3142,58 @@
          });
          writeStatusPayload();
-     }, config.deadlineAt);
+     }, runDeadlineAt());
 +    // The detached runner is its own process-group leader, and every bash tool
 +    // tree in the run is a descendant of it — in its own group when the tool
 +    // spawned detached. A run that ends on its deadline or on a stop must not
@@ -83,7 +81,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      const interruptRunner = () => {
          consumeInterruptRequest(asyncDir);
          if (interrupted || statusPayload.state !== "running")
-@@ -3164,6 +3217,7 @@
+@@ -3206,6 +3259,7 @@
          stopAbortController.abort();
          stopNestedAsyncDescendants();
          stopActiveChildren();
@@ -91,7 +89,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      };
      const timeoutRunner = () => {
          if (timedOut || stopped || interrupted || statusPayload.state !== "running")
-@@ -3200,6 +3254,7 @@
+@@ -3242,6 +3296,7 @@
          timeoutAbortController.abort();
          timeoutNestedAsyncDescendants();
          timeoutActiveChildren();
@@ -99,7 +97,7 @@ diff -Nur a/src/runs/background/subagent-runner.js b/src/runs/background/subagen
      };
      process.on(ASYNC_INTERRUPT_SIGNAL, interruptRunner);
      // Portable control inbox: the parent drops control request files here when
-@@ -4873,6 +4928,12 @@
+@@ -4910,6 +4965,12 @@
              console.error(`Failed to write process-terminal candidate for '${id}':`, error);
          }
      }
