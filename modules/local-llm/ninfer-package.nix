@@ -25,8 +25,8 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "4461c96830ddb45ac9175d1407e23c298079ecf1";
-    hash = "sha256-g47wqv8F0BGAmxd5YhpBRyI59ozETzbf5WQnz9CLU84=";
+    rev = "13ebb92f6f1d56b676e5300cb19555b2ba24053a";
+    hash = "sha256-4g9EAShDAtAI41n638oZyXZPblgYodX5u7l3MflGhKo=";
   };
 
   nativeBuildInputs = [
