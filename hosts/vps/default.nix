@@ -57,7 +57,7 @@
       externalInterface = "enp1s0";
       fish.enable = true;
       ari-photo = {
-        enable = true;
+        enable = false;
         sopsFile = ../../secrets/hosts/vps.yaml;
         mail = {
           username = "ari@summerfieldphotography.com";
@@ -90,7 +90,10 @@
         enable = true;
         publicAccess = true;
       };
-      switchyard.enable = true;
+      switchyard = {
+        enable = true;
+        eventTimeZone = "America/Chicago";
+      };
     };
     backups = {
       enable = true;

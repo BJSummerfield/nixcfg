@@ -5,11 +5,11 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "BJSummerfield";
     repo = "switchyard";
-    rev = "6c54efb699807bf6044c554433c07ba9d248800c";
-    sha256 = "sha256-xcyOqAJMyrCT1q41isDFXY35tFImFqZpz75jC32Xbto=";
+    rev = "448800444d0a0f288b23123219a6aa84de25b461";
+    sha256 = "sha256-dnDH38+c9deOwFh/OLY3kQIAwDGnGgD3hxrYO3mVQ/4=";
     private = true;
   };
-  cargoHash = "sha256-/uv44TiZg2c9kFC8mkawJaLCGcUig1p++V0zMZSKuKw=";
+  cargoHash = "sha256-y0Y8qj2/KbGrj9z7X70cgSsSSlZN7aHL+h7UYHzdZXk=";
   passthru.cache = true;
   meta = {
     description = "Order taking and pickup tracking for a small event kitchen";
