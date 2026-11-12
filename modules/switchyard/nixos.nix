@@ -11,7 +11,6 @@ let
   localAddress = "192.168.100.61";
   port = 3000;
   switchyard = pkgs.callPackage ./package.nix { };
-  hasLogins = cfg.sopsFile != null;
 in
 {
   options.mine.system.switchyard = {
@@ -22,21 +21,15 @@ in
       default = "switchyard.brianjs.com";
     };
 
-    persistent = lib.mkEnableOption "a file-backed SQLite database in a host directory that the nightly backup covers; without it the database is in memory and is lost on every restart";
-
-    sopsFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
+    eventTimeZone = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
       default = null;
-      description = "sops file holding switchyard-admin-password-hash and switchyard-worker-password-hash (argon2id PHC strings). Null keeps the app's default logins admin/admin and worker/worker.";
+      example = "America/Chicago";
+      description = "IANA time zone the Sales page buckets sales by hour in. Null leaves the app's default, UTC.";
     };
   };
 
   config = lib.mkIf cfg.enable {
-    sops.secrets = lib.mkIf hasLogins {
-      switchyard-admin-password-hash.sopsFile = cfg.sopsFile;
-      switchyard-worker-password-hash.sopsFile = cfg.sopsFile;
-    };
-
     networking.nat = {
       enable = true;
       internalInterfaces = [ "ve-switchyard" ];
@@ -55,12 +48,12 @@ in
       '';
     };
 
-    system.activationScripts.switchyard-dirs = lib.mkIf cfg.persistent ''
+    system.activationScripts.switchyard-dirs = ''
       mkdir -p ${hostStateDir}
       chmod 700 ${hostStateDir}
     '';
 
-    mine.backups = lib.mkIf (cfg.persistent && config.mine.backups.enable) {
+    mine.backups = lib.mkIf config.mine.backups.enable {
       paths = [ hostStateDir ];
       stopContainers = [ "switchyard" ];
     };
@@ -70,23 +63,10 @@ in
       privateNetwork = true;
       inherit hostAddress localAddress;
 
-      bindMounts =
-        lib.optionalAttrs cfg.persistent {
-          "/var/lib/switchyard" = {
-            hostPath = hostStateDir;
-            isReadOnly = false;
-          };
-        }
-        // lib.optionalAttrs hasLogins {
-          "/run/host-secrets/admin-password-hash" = {
-            hostPath = config.sops.secrets.switchyard-admin-password-hash.path;
-            isReadOnly = true;
-          };
-          "/run/host-secrets/worker-password-hash" = {
-            hostPath = config.sops.secrets.switchyard-worker-password-hash.path;
-            isReadOnly = true;
-          };
-        };
+      bindMounts."/var/lib/switchyard" = {
+        hostPath = hostStateDir;
+        isReadOnly = false;
+      };
 
       config = _: {
         users.users.switchyard = {
@@ -106,23 +86,16 @@ in
           after = [ "network.target" ];
           environment = {
             ADDR = "0.0.0.0:${toString port}";
+            DATABASE_URL = "sqlite:///var/lib/switchyard/switchyard.db?mode=rwc";
             TRUSTED_PROXIES = hostAddress;
           }
-          // lib.optionalAttrs cfg.persistent {
-            DATABASE_URL = "sqlite:///var/lib/switchyard/switchyard.db?mode=rwc";
-          }
-          // lib.optionalAttrs hasLogins {
-            ADMIN_PASSWORD_HASH_FILE = "/run/credentials/switchyard.service/admin-password-hash";
-            WORKER_PASSWORD_HASH_FILE = "/run/credentials/switchyard.service/worker-password-hash";
+          // lib.optionalAttrs (cfg.eventTimeZone != null) {
+            EVENT_TIMEZONE = cfg.eventTimeZone;
           };
           serviceConfig = {
             User = "switchyard";
             Group = "switchyard";
             ExecStart = lib.getExe switchyard;
-            LoadCredential = lib.optionals hasLogins [
-              "admin-password-hash:/run/host-secrets/admin-password-hash"
-              "worker-password-hash:/run/host-secrets/worker-password-hash"
-            ];
             WorkingDirectory = "/var/lib/switchyard";
             Restart = "on-failure";
             ProtectHome = true;
