@@ -105,6 +105,10 @@ in
       lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedUnfree) config.home-manager.users
     );
 
+    mine.allowedInsecure = lib.concatLists (
+      lib.mapAttrsToList (_userName: userCfg: userCfg.mine.allowedInsecure) config.home-manager.users
+    );
+
     home-manager = {
       useGlobalPkgs = true;
       useUserPackages = true;

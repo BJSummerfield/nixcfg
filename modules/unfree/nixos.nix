@@ -2,6 +2,8 @@
 {
   imports = [ ./options.nix ];
 
-  config.nixpkgs.config.allowUnfreePredicate =
-    pkg: builtins.elem (lib.getName pkg) config.mine.allowedUnfree;
+  config.nixpkgs.config = {
+    allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) config.mine.allowedUnfree;
+    permittedInsecurePackages = config.mine.allowedInsecure;
+  };
 }
