@@ -33,8 +33,6 @@ in
 
     programs.pi-coding-agent = {
       enable = true;
-      extraPackages = import ./extra-packages.nix pkgs;
-      settings = { };
       inherit (data) models;
     };
   };

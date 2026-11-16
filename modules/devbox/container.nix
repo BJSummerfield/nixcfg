@@ -23,7 +23,12 @@ let
     paths = [ (pkgs.callPackage ../pi-coding-agent/package.nix { }) ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}
+      wrapProgram $out/bin/pi --suffix PATH : ${
+        lib.makeBinPath [
+          pkgs.nodejs
+          pkgs.bun
+        ]
+      }
     '';
   };
 

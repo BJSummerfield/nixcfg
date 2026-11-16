@@ -63,10 +63,6 @@ in
       "-builtin:codemode"
       "-builtin:tool-search"
     ];
-    model = {
-      inherit (llm) provider;
-      model = llm.default;
-    };
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "medium";
