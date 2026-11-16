@@ -11,8 +11,8 @@
   only a Claude agent starts Claude agents.
 - At most @localLanes@ local-model agents at once, fewer if you also run on
   the local model. Extra requests wait for a free lane; one that waits more
-  than 10 minutes fails with HTTP 503 (`request_queue_timeout`), which pi
-  retries three times before the turn fails. Claude agents use no local
+  than @localQueueMinutes@ minutes fails with HTTP 503 (`request_queue_timeout`),
+  which pi retries before the turn fails. Claude agents use no local
   capacity. One agent per independent slice of work: one per question for
   research, one per file group for edits. Never two writers on the same
   files.

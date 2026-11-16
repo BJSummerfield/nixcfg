@@ -4,6 +4,7 @@ let
   vars = {
     "@localModel@" = "pi/${llm.provider}/${llm.default}";
     "@localLanes@" = toString model.ninfer.maxConcurrency;
+    "@localQueueMinutes@" = toString (model.ninfer.pendingTimeoutMs / 60000);
   };
   render =
     path:
