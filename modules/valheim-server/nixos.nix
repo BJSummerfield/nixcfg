@@ -2,26 +2,16 @@
 #   sudo nixos-container root-login valheim
 #   tailscale up --hostname=valheim --advertise-tags=tag:solo-node
 #
-# First install or repair: valheim-update stages a full copy in the
-# background, verifies it, then stops the server only long enough to swap it
-# in. Use it for the first install and any time the running build looks
-# broken:
+# First install or repair:
 #   sudo nixos-container run valheim -- systemctl start valheim-update
-# A run started this way stops a timer tick that's in progress first, but if
-# one is already mid-download it waits for that download's lock before it
-# starts its own.
 #
-# With autoUpdate on (the default), the same check runs on its own every ten
-# minutes; a new build downloads in the background and is swapped in as soon
-# as the server is empty, or after forceRestartAfter minutes regardless.
-# Status:
+# Auto-update status:
 #   sudo nixos-container run valheim -- journalctl -u valheim-autoupdate
 #   sudo nixos-container run valheim -- cat /var/lib/valheim/server/state/pending
 #
-# Instant rollback: flip /var/lib/valheim/server/current to point at the
-# other slot (slots/a or slots/b) and restart valheim.service by hand. Set
-# autoUpdate = false, or pin branch, so the next auto-update doesn't undo it;
-# a branch pin is picked up by the next check, within about 10 minutes.
+# Rollback: point /var/lib/valheim/server/current at the other slot (slots/a
+# or slots/b), restart valheim.service, and set autoUpdate = false or pin
+# branch so the next check does not undo it.
 #
 # Players join valheim.<tailnet>.ts.net:2456 from the client's Join IP field.
 
@@ -316,11 +306,7 @@ in
           exe = "${install}/current/valheim_server.x86_64";
           systemctl = "${config.systemd.package}/bin/systemctl";
 
-          # How often valheim-autoupdate checks Steam for a new build.
           checkCalendar = "*:0/10";
-          # Per-phase timeouts (minutes), shared between the units' own
-          # TimeoutStartSec and the env vars the script uses for `timeout`
-          # and `flock -w`.
           checkTimeoutMin = 10;
           stageTimeoutMin = 45;
           lockWaitMin = 10;
@@ -339,22 +325,18 @@ in
             text = builtins.readFile ./updater.sh;
           };
 
-          # notifyUrlFile is bind-mounted read-only at this fixed path (see
-          # bindMounts above).
           sender = pkgs.callPackage ../keybase-notify/package.nix {
             urlFile = "/run/host-secrets/keybase-webhook-url";
           };
 
           valheimNotify = pkgs.callPackage ./notify-package.nix { };
 
-          # Used by valheim.service's ExecStopPost and by valheim-notify.
           notifyEnvironment = [
             "VALHEIM_INSTALL=${install}"
             "VALHEIM_NOTIFY_SEND=${lib.getExe sender}"
             "VALHEIM_WORLD=${cfg.worldName}"
           ];
 
-          # Shared by valheim-layout, valheim-autoupdate and valheim-update.
           updaterEnvironment = [
             "VALHEIM_INSTALL=${install}"
             "VALHEIM_APP_ID=${cfg.appId}"
@@ -423,8 +405,6 @@ in
           systemd.services.valheim-layout = {
             description = "Lay out the Valheim install directory";
             wantedBy = [ "multi-user.target" ];
-            # Re-running on a rebuild would flip current to a pending slot
-            # under a running server, which then never gets restarted onto it.
             restartIfChanged = false;
             before = [
               "valheim.service"
@@ -501,8 +481,6 @@ in
               ++ lib.optionals notifyOn notifyEnvironment;
               ExecStart = "${exe} ${flags}";
               KillSignal = "SIGINT";
-              # 120s to save plus ~25s worst case for a notify post stays
-              # comfortably under the container's containerStopTimeout (180s).
               TimeoutStopSec = toString saveTimeout;
               Restart = "on-failure";
               RestartSec = "30";
@@ -513,9 +491,6 @@ in
               NoNewPrivileges = true;
             }
             // lib.optionalAttrs notifyOn {
-              # Every start (including automatic restarts) hands the fresh
-              # invocation to a freshly (re)started watcher; `+` runs it as
-              # root regardless of this unit's own User=.
               ExecStartPost = "-+${systemctl} restart --no-block valheim-notify.service";
               ExecStopPost = "-+${lib.getExe valheimNotify} stopped";
             };
@@ -525,9 +500,6 @@ in
 
           systemd.services.valheim-notify = lib.mkIf notifyOn {
             description = "Watch the Valheim journal and post join/leave/version events";
-            # Deliberately no wantedBy/bindsTo: it is only ever started by
-            # valheim.service's ExecStartPost, on every start including
-            # restarts, and exits on its own once its invocation is stale.
             after = [ "valheim.service" ];
             serviceConfig = {
               Type = "simple";
