@@ -5,7 +5,7 @@
 }:
 
 let
-  version = "0.88.0";
+  version = "0.88.1";
   patch = writeText "pi-subagents-group-kill.diff" (builtins.readFile ./pi-subagents-group-kill.diff);
   jsTemporalPolyfill = fetchurl {
     url = "https://registry.npmjs.org/@js-temporal%2fpolyfill/-/polyfill-0.5.1.tgz";
@@ -36,7 +36,7 @@ runCommand "pi-subagents-${version}-group-kill"
   {
     src = fetchurl {
       url = "https://registry.npmjs.org/pi-subagents/-/pi-subagents-${version}.tgz";
-      hash = "sha256-kGzCbyY+P1DAeLTMMqM42H7N0MChpyecovQnKX9cZ9s=";
+      hash = "sha256-RHjvgIdXnBvCY4uxrVMwOK8x8OJDQ539wh+a6UvbpWE=";
     };
     dontUnpack = true;
   }
