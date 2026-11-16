@@ -21,7 +21,11 @@ in
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
       ".pi/agent/AGENTS.md".text =
-        builtins.readFile ../devbox/writing.md + "\n" + instructions.environment;
+        builtins.readFile ../devbox/writing.md
+        + "\n"
+        + instructions.delegation
+        + "\n"
+        + instructions.environment;
     };
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''

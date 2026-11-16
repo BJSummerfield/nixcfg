@@ -162,7 +162,8 @@ in
           };
         };
 
-        home.file.".claude-state/CLAUDE.md".source = ./writing.md;
+        home.file.".claude-state/CLAUDE.md".text =
+          builtins.readFile ./writing.md + "\n" + instructions.delegation;
 
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"

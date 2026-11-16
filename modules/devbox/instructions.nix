@@ -21,4 +21,5 @@ in
 {
   inherit render;
   environment = render ./ENVIRONMENT.md;
+  delegation = render ./delegation.md;
 }
