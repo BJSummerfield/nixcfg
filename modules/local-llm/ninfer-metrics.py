@@ -1,6 +1,6 @@
 """Health and performance metrics for ninfer-serve, from its --request-log-jsonl.
 
-  /health  /summary?window=15m|1h|6h|24h|all  /metrics  /requests?n=50
+  /health  /summary?window=15m|1h|6h|24h|all  /requests?n=50
 """
 
 import argparse
@@ -18,6 +18,7 @@ RETAIN_REQUESTS = 50000
 RETAIN_SAMPLES = 40000
 GIB = 1024 ** 3
 MIB = 1024 ** 2
+CHUNK_BYTES = 8 * MIB
 
 
 def pct(values, p):
@@ -40,7 +41,6 @@ class LogTail:
         self.inode = None
         self.requests = collections.deque(maxlen=RETAIN_REQUESTS)
         self.samples = collections.deque(maxlen=RETAIN_SAMPLES)
-        self.server_start = None
         self.errors = 0
         self.last_event_ms = 0
         self.lock = threading.Lock()
@@ -56,15 +56,21 @@ class LogTail:
             return
         with open(self.path, "rb") as f:
             f.seek(self.offset)
-            chunk = f.read()
-        cut = chunk.rfind(b"\n")
-        if cut < 0:
-            return
-        self.offset += cut + 1
-        with self.lock:
-            for line in chunk[:cut].split(b"\n"):
-                if line:
-                    self._ingest(line)
+            while True:
+                chunk = f.read(CHUNK_BYTES)
+                cut = chunk.rfind(b"\n")
+                if cut < 0:
+                    if len(chunk) < CHUNK_BYTES:
+                        return
+                    self.offset += len(chunk)
+                    self.errors += 1
+                    continue
+                self.offset += cut + 1
+                with self.lock:
+                    for line in chunk[:cut].split(b"\n"):
+                        if line:
+                            self._ingest(line)
+                f.seek(self.offset)
 
     def _ingest(self, line):
         try:
@@ -79,9 +85,6 @@ class LogTail:
             self.requests.append(self._flatten_request(ev, ts))
         elif kind == "throughput":
             self.samples.append(self._flatten_sample(ev, ts))
-        elif kind == "server_start":
-            self.server_start = ev
-            self.server_start_ts = ts
         elif kind == "request_error":
             self.errors += 1
 
@@ -169,27 +172,6 @@ class LogTail:
             return reqs, samples
         since = (time.time() - secs) * 1000
         return [r for r in reqs if r["ts"] >= since], [s for s in samples if s["ts"] >= since]
-
-    def config(self):
-        ev = self.server_start
-        if not ev:
-            return None
-        eng, cc = ev.get("engine") or {}, (ev.get("engine") or {}).get("context_cache") or {}
-        cap = num(cc.get("host_capacity_bytes"))
-        device = [p for p in eng.get("context_pools") or [] if p.get("domain") == "device"]
-        return {
-            "instance": ev.get("server_instance_id"),
-            "started_unix_ms": ev.get("timestamp_unix_ms"),
-            "max_concurrency": eng.get("max_concurrency"),
-            "max_context": eng.get("max_context"),
-            "context_token_capacity_estimate": eng.get("context_token_capacity_estimate"),
-            "device_context_capacity_bytes": sum(num(p.get("capacity_bytes")) for p in device) if device else None,
-            "host_context_mib": round(cap / MIB) if cap else None,
-            "speculative": eng.get("speculative_backend"),
-            "draft_window": eng.get("speculative_draft_window"),
-            "vision": eng.get("vision"),
-            "argv": ev.get("argv"),
-        }
 
 
 def summarize(reqs, samples):
@@ -336,60 +318,6 @@ def _pcts(values):
     }
 
 
-def prometheus(tail):
-    reqs, samples = tail.window("all")
-    lines = []
-
-    def g(name, value, help_text, labels=""):
-        if value is None:
-            return
-        lines.append(f"# HELP ninfer_{name} {help_text}")
-        lines.append(f"# TYPE ninfer_{name} gauge")
-        lines.append(f"ninfer_{name}{labels} {value}")
-
-    cfg = tail.config() or {}
-    g("up", 1 if tail.server_start else 0, "1 when a server_start has been seen in the log")
-    g("config_max_concurrency", cfg.get("max_concurrency"), "--max-concurrency")
-    g("config_host_context_bytes", int(cfg["host_context_mib"] * MIB) if cfg.get("host_context_mib") else None, "--host-cache-capacity")
-    g("config_device_context_bytes", cfg.get("device_context_capacity_bytes"), "shared device KV/state pool")
-    g("config_context_token_capacity_estimate", cfg.get("context_token_capacity_estimate"), "device pool in tokens, engine estimate")
-    if samples:
-        s = samples[-1]
-        g("running", s["running"], "requests running at the last sample")
-        g("waiting", s["waiting"], "requests queued at the last sample")
-        g("paused", s["paused"], "requests paused at the last sample")
-        g("host_context_bytes", s["host_context_bytes"], "host context tier occupancy")
-        g("host_context_reserved_bytes", s["host_context_reserved"], "host context tier bytes reserved")
-        g("host_context_free_in_blocks_bytes", s["host_free_in_blocks"], "free slots inside host blocks already assigned to a size")
-        g("host_context_free_blocks_bytes", s["host_free_blocks"], "whole free host blocks")
-        g("device_context_bytes", s["device_context_bytes"], "device KV/state pool occupancy")
-        g("context_state_objects", s["state_objects"], "saved states held")
-        g("context_history_objects", s["history_objects"], "KV histories held")
-        g("prefill_tokens_per_second", round(s["prefill_tps"], 1), "prefill rate over the last sample")
-        g("decode_tokens_per_second", round(s["decode_tps"], 1), "decode rate over the last sample")
-        g("decode_batch_size", round(s["batch"], 2), "mean decode batch over the last sample")
-    for finish, count in collections.Counter(r["finish"] for r in reqs).items():
-        g("requests_total", count, "completed requests by finish reason", f'{{finish="{finish}"}}')
-    g("prompt_tokens_total", sum(r["prompt"] for r in reqs), "prompt tokens received")
-    g("cached_prompt_tokens_total", sum(r["cached"] for r in reqs), "prompt tokens served from prefix cache")
-    g("computed_prefill_tokens_total", sum(r["computed"] for r in reqs), "prompt tokens actually prefilled")
-    g("completion_tokens_total", sum(r["output"] for r in reqs), "output tokens generated")
-    g("mtp_drafted_tokens_total", sum(r["drafted"] for r in reqs), "speculative tokens drafted")
-    g("mtp_accepted_tokens_total", sum(r["accepted"] for r in reqs), "speculative tokens accepted")
-    g("ram_restores_total", sum(s["restores"] for s in samples), "contexts restored from the host tier")
-    g("ram_kv_h2d_bytes_total", sum(s["kv_h2d_bytes"] for s in samples), "KV bytes moved host to device")
-    g("ram_kv_h2d_seconds_total", round(sum(s["kv_h2d_seconds"] for s in samples), 3), "time spent on those moves")
-    g("preemptions_total", sum(s["preemptions"] for s in samples), "requests preempted off the device")
-    g("snapshot_restores_total", sum(s["snapshot_restores"] for s in samples), "preempted requests resumed from a snapshot")
-    g("replay_restores_total", sum(s["replay_restores"] for s in samples), "preempted requests resumed by replay")
-    g("replayed_tokens_total", sum(s["replayed_tokens"] for s in samples), "tokens replayed after preemption")
-    g("spill_pages_total", sum(s["spill_pages"] for s in samples), "KV pages spilled under device pressure")
-    g("log_parse_errors_total", tail.errors, "log lines that did not parse, plus request_error events")
-    g("log_last_event_age_seconds", round(time.time() - tail.last_event_ms / 1000, 1) if tail.last_event_ms else None,
-      "seconds since the newest log event")
-    return "\n".join(lines) + "\n"
-
-
 class Handler(http.server.BaseHTTPRequestHandler):
     tail = None
     engine = None
@@ -408,17 +336,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if window not in WINDOWS:
                     return self._json({"error": f"window must be one of {list(WINDOWS)}"}, 400)
                 reqs, samples = self.tail.window(window)
-                body = {"window": window, "config": self.tail.config()}
+                body = {"window": window}
                 body.update(summarize(reqs, samples) if reqs else {"requests": 0})
                 self._json(body)
-            elif path == "/metrics":
-                self._text(prometheus(self.tail), "text/plain; version=0.0.4")
             elif path == "/requests":
                 n = max(1, min(int(params.get("n", "50")), 5000))
                 reqs, _ = self.tail.window("all")
                 self._json(reqs[-n:])
             elif path == "/":
-                self._json({"endpoints": ["/health", "/summary?window=15m|1h|6h|24h|all", "/metrics", "/requests?n=50"]})
+                self._json({"endpoints": ["/health", "/summary?window=15m|1h|6h|24h|all", "/requests?n=50"]})
             else:
                 self._json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
@@ -448,7 +374,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "samples_retained": len(tail.samples),
                 "parse_errors": tail.errors,
             },
-            "config": tail.config(),
         }
 
     def _json(self, body, status=200):

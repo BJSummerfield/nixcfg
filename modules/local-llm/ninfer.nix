@@ -34,6 +34,14 @@ in
 {
   systemd.services.ninfer = ninferService // wanted;
 
+  services.logrotate.settings.ninfer-requests = {
+    files = requestLog;
+    size = "512M";
+    rotate = 1;
+    copytruncate = true;
+    missingok = true;
+  };
+
   systemd.services.ninfer-metrics = {
     description = "NInfer health and performance metrics from ${requestLog}";
     wantedBy = [ "multi-user.target" ];
