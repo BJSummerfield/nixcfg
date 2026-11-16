@@ -8,7 +8,7 @@ let
     input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
   };
 
-  window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
+  window = m: m.ninfer.maxContext - m.headroom;
 
   compactionReserve = 20480;
 
