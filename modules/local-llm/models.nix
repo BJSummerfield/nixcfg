@@ -24,7 +24,7 @@
           file = "qwen3_8_27b_nvfp4.ninfer";
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
-        maxContext = 225280;
+        maxContext = 245760;
         maxConcurrency = 4;
         kvDtype = "k8v4";
         prefillChunk = 2048;
