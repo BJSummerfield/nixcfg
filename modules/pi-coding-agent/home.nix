@@ -8,7 +8,6 @@ let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.pi-coding-agent;
   data = import ./settings.nix;
-  agents = import ./agents.nix;
 
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
   environment = builtins.replaceStrings [ "@imageBudget@" ] [ (toString data.imageBudget) ] (
@@ -24,11 +23,7 @@ in
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
       ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
-      ".pi/agent/APPEND_SYSTEM.md".source = ./AGENTS.md;
-    }
-    // lib.mapAttrs' (
-      name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }
-    ) agents.agentFiles;
+    };
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
       run mkdir -p $VERBOSE_ARG "$HOME/.pi/agent"
