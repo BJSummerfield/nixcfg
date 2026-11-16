@@ -1,4 +1,10 @@
-{ rustPlatform, fetchFromGitHub, ... }:
+{
+  rustPlatform,
+  fetchFromGitHub,
+  pkg-config,
+  sqlite,
+  ...
+}:
 rustPlatform.buildRustPackage {
   pname = "switchyard";
   version = "unstable";
@@ -10,6 +16,8 @@ rustPlatform.buildRustPackage {
     private = true;
   };
   cargoHash = "sha256-y0Y8qj2/KbGrj9z7X70cgSsSSlZN7aHL+h7UYHzdZXk=";
+  nativeBuildInputs = [ pkg-config ];
+  buildInputs = [ sqlite ];
   passthru.cache = true;
   meta = {
     description = "Order taking and pickup tracking for a small event kitchen";
