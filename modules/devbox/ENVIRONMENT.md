@@ -18,34 +18,27 @@ the security boundary; no sandbox wraps your commands.
   directory under `CLAUDE_CONFIG_DIR`.
 - A fact worth keeping about a repository goes in that repository's
   `AGENTS.md`, in the same change that taught it; a fact about this
-  environment is a request to the user,
-  made in the report or the pull request, never by asking.
+  environment is a request to the user in the final report, never in a
+  pull request body and never by asking.
 - `/tmp` is a RAM tmpfs, wiped on reboot, capacity is memory. Never put
   anything large there (a build tree, a `CARGO_TARGET_DIR`): ENOSPC kills
   builds and running processes alike.
 - `/var/tmp` is on disk and is `$TMPDIR`. It survives reboots but nothing in
   it is durable: systemd-tmpfiles removes entries 20 days after their last
   write (the filesystem is `noatime`, so reading does not refresh age).
-  Helper worktrees live under `/var/tmp/pi-worktrees`; pi removes each one
-  when its run ends, unless it could not save the change as a patch.
-- Plans, notes, reports and other working files go under
-  `$TMPDIR/pi-plans/<task>/`, never in a repository, unless the user asks
-  for them there.
 - Memory is shared with the local LLM engine's pinned host cache. Expensive
   commands (full test suites, flake checks, release builds) run one at a time
   box-wide: `flock -w 7200 /var/tmp/pi-plans/locks/heavy.lock <command>`.
-  A command written down for something else to run later, such as a plan's
-  final checks, carries the same wrapper.
-- The local LLM engine admits @imageBudget@ images per prompt, counted over
-  the whole conversation because history is resent every turn. Exceeding it
-  is terminal for that session: every later request fails with
-  `At most @imageBudget@ image(s) may be provided in one prompt`. Each read
-  of an image spends one of them; take notes on first sight and never look
-  twice.
+  A command run later by someone else needs the same wrapper.
+- The local LLM engine admits at most 32,768 vision tokens per prompt,
+  counted over the whole conversation because history is resent every turn:
+  about 8 full-size 2000x2000 images. A session on that engine that goes
+  over fails every later request, so it reads each image once and takes
+  notes on first sight.
 - The engine lists its recent requests, with the prompt size of each, at
   `/ops/requests?n=<N>` on the same host and port as the model endpoint.
-- The local engine runs 4 sequences at once; helpers run at most 3 at a
-  time. A prefill on one sequence stalls decode on the others.
+- The local engine runs @localLanes@ sequences at once. A prefill on one
+  sequence stalls decode on the others.
 - Missing tools: `nix shell nixpkgs#<pkg>` or `nix-shell -p <pkg>` (the store
   is shared with the host, so anything it has costs no download). There is
   no system pip or cargo; get them the same way. There is no sudo and you
