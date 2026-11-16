@@ -20,13 +20,13 @@
 # emit atomic-wait symbols that library lacks (XGrammar semaphores).
 cudaPackages_13_1.backendStdenv.mkDerivation {
   pname = "ninfer";
-  version = "0-unstable-2026-11-10";
+  version = "0-unstable-2026-11-14";
 
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "13ebb92f6f1d56b676e5300cb19555b2ba24053a";
-    hash = "sha256-4g9EAShDAtAI41n638oZyXZPblgYodX5u7l3MflGhKo=";
+    rev = "d9ad9dea4cdbc64ec44b5b18704b46b5db2613dc";
+    hash = "sha256-BaKb2ITHJvcD1u88wS826ILTdzyIBaVgxUGCfB4RBBY=";
   };
 
   nativeBuildInputs = [
