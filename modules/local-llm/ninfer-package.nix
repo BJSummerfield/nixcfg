@@ -1,6 +1,3 @@
-# NInfer ships no releases, no tags and no binaries: upstream's own instruction
-# is to build a commit from source. The pin is therefore the version. Bump it
-# deliberately - the engine is under daily development.
 {
   lib,
   fetchFromGitHub,
@@ -16,8 +13,6 @@
   libjpeg,
   python3,
 }:
-# nvcc 13.1 hosts on GCC 15 and links its libstdc++; the default GCC 16 headers
-# emit atomic-wait symbols that library lacks (XGrammar semaphores).
 cudaPackages_13_1.backendStdenv.mkDerivation {
   pname = "ninfer";
   version = "0-unstable-2026-11-14";
@@ -50,8 +45,6 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     libjpeg
   ];
 
-  # CMakeLists.txt hard-rejects any architecture other than 120a, and the
-  # nixpkgs CUDA hooks would otherwise pass the "12.0" spelling.
   cmakeFlags = [
     (lib.cmakeFeature "CMAKE_CUDA_ARCHITECTURES" "120a")
     (lib.cmakeBool "NINFER_BUILD_APPS" true)
@@ -75,9 +68,6 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     runHook postCheck
   '';
 
-  # Upstream has no install target, by design ("run NInfer from its source
-  # build tree"), so the product binaries and their shared libraries are
-  # installed by hand.
   installPhase = ''
     runHook preInstall
     install -Dm755 apps/ninfer apps/ninfer-serve -t "$out/bin"
