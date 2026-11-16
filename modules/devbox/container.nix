@@ -225,7 +225,6 @@ in
     "d /home/agent/projects 0755 agent users -"
     "d /var/lib/paseo/worktrees 0755 agent users -"
     "d /var/tmp/pi-plans 0755 agent users 20d"
-    "d /var/tmp/pi-worktrees 0755 agent users 20d"
     "d /var/tmp/claude-1500 0755 agent users 20d"
     "d /var/tmp/pi-plans/locks 0755 agent users -"
     "x /var/tmp/pi-plans/locks"

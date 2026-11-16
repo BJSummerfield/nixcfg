@@ -10,12 +10,7 @@ let
   data = import ./settings.nix;
   agents = import ./agents.nix;
 
-  piSubagents = pkgs.callPackage ./pi-subagents-patched.nix { };
-
-  settings = data.settings // {
-    packages = data.settings.packages ++ [ (toString piSubagents) ];
-  };
-  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
+  piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
   environment = builtins.replaceStrings [ "@imageBudget@" ] [ (toString data.imageBudget) ] (
     builtins.readFile ../devbox/ENVIRONMENT.md
   );
@@ -26,11 +21,8 @@ in
   };
 
   config = mkIf cfg.enable {
-    home.packages = [ piSubagents ];
-
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-      ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
       ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
       ".pi/agent/APPEND_SYSTEM.md".source = ./AGENTS.md;
     }

@@ -75,24 +75,6 @@ in
     packages = plugins.piPackages;
 
     compaction.reserveTokens = compactionReserve;
-
-    subagents = {
-      defaultModel = qualified llm.provider llm.default;
-      maxThinking = "xhigh";
-      agentOverrides = {
-        claude-code.disabled = true;
-        claude-code-writer.disabled = true;
-        codex-exec.disabled = true;
-        codex-exec-writer.disabled = true;
-        cursor-agent.disabled = true;
-        cursor-agent-writer.disabled = true;
-        delegate.inheritGlobalContext = true;
-        oracle.disabled = true;
-        worker.disabled = true;
-        researcher.inheritGlobalContext = true;
-        evidence-auditor.inheritGlobalContext = true;
-      };
-    };
   };
 
   models = {
@@ -116,25 +98,5 @@ in
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.provider llm.default;
     toolActivation = "eager";
-  };
-
-  subagentConfig = {
-    globalConcurrencyLimit = 3;
-    maxActiveAsyncRunsPerSession = 3;
-    timeoutMs = 3600000;
-    worktreeBaseDir = "/var/tmp/pi-worktrees";
-    toolActivation = "eager";
-    defaultSubagentContext = "fresh";
-    artifactDir = "temp";
-    disabledFeatures = [
-      "agent-management"
-      "watchdog"
-      "panes"
-      "missions"
-      "lane-management"
-      "external-machines"
-      "usage-budgets"
-      "tool-budgets"
-    ];
   };
 }
