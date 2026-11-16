@@ -14,9 +14,9 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  envContract = pkgs.replaceVars ./ENVIRONMENT.md {
-    imageBudget = toString (import ../pi-coding-agent/settings.nix).imageBudget;
-  };
+  instructions = import ./instructions.nix;
+
+  envContract = pkgs.writeText "ENVIRONMENT.md" instructions.environment;
 
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";

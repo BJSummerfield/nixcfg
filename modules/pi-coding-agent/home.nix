@@ -10,9 +10,7 @@ let
   data = import ./settings.nix;
 
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON data.settings);
-  environment = builtins.replaceStrings [ "@imageBudget@" ] [ (toString data.imageBudget) ] (
-    builtins.readFile ../devbox/ENVIRONMENT.md
-  );
+  instructions = import ../devbox/instructions.nix;
 in
 {
   options.mine.user.pi-coding-agent = {
@@ -22,7 +20,8 @@ in
   config = mkIf cfg.enable {
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
-      ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
+      ".pi/agent/AGENTS.md".text =
+        builtins.readFile ../devbox/writing.md + "\n" + instructions.environment;
     };
 
     home.activation.piSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
