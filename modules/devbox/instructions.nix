@@ -4,7 +4,6 @@ let
   vars = {
     "@localModel@" = "pi/${llm.provider}/${llm.default}";
     "@localLanes@" = toString model.ninfer.maxConcurrency;
-    "@imageBudget@" = toString model.vision.maxImages;
   };
   render =
     path:

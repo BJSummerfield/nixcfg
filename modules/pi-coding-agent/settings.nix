@@ -5,7 +5,7 @@ let
   thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
 
   inputsOf = m: {
-    input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
+    input = [ "text" ] ++ (if m.ninfer.vision then [ "image" ] else [ ]);
   };
 
   window = m: m.ninfer.maxContext - m.headroom;
@@ -76,12 +76,6 @@ in
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
   };
-
-  imageBudget =
-    let
-      m = llm.models.${llm.default};
-    in
-    if m ? vision then m.vision.maxImages else 0;
 
   webSearch = {
     workflow = "auto-summary";

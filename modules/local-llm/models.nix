@@ -17,10 +17,6 @@
         xhigh = "xhigh";
         max = "xhigh";
       };
-      vision = {
-        maxImages = 3;
-      };
-
       ninfer = {
         artifact = {
           repo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
