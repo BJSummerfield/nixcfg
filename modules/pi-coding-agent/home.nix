@@ -14,11 +14,6 @@ let
 
   settings = data.settings // {
     packages = data.settings.packages ++ [ (toString piSubagents) ];
-    subagents = data.settings.subagents // {
-      defaultSubagentOnlyExtensions = [
-        "${config.home.homeDirectory}/.pi/agent/subagent-only/budget-valve.js"
-      ];
-    };
   };
   piSettings = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
   environment = builtins.replaceStrings [ "@imageBudget@" ] [ (toString data.imageBudget) ] (
@@ -36,10 +31,8 @@ in
     home.file = {
       ".pi/agent/web-search.json".text = builtins.toJSON data.webSearch;
       ".pi/agent/extensions/subagent/config.json".text = builtins.toJSON data.subagentConfig;
-      ".pi/agent/extensions/resume-card.js".source = ./extensions/resume-card.js;
       ".pi/agent/AGENTS.md".text = builtins.readFile ../devbox/writing.md + "\n" + environment;
       ".pi/agent/APPEND_SYSTEM.md".source = ./AGENTS.md;
-      ".pi/agent/subagent-only/budget-valve.js".source = ./extensions/budget-valve.js;
     }
     // lib.mapAttrs' (
       name: text: lib.nameValuePair ".pi/agent/agents/${name}.md" { inherit text; }

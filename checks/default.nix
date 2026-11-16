@@ -253,32 +253,6 @@ let
     }
   );
 
-  extensionDir = ../modules/pi-coding-agent/extensions;
-  extensionReadDir = builtins.readDir extensionDir;
-  extensionTestFiles = nixpkgs.lib.filter (
-    name: extensionReadDir.${name} == "regular" && nixpkgs.lib.hasSuffix ".test.mjs" name
-  ) (nixpkgs.lib.attrNames extensionReadDir);
-  discoveredExtensionChecks = builtins.listToAttrs (
-    map (
-      file:
-      let
-        name = "pi-extension-${nixpkgs.lib.removeSuffix ".test.mjs" file}";
-      in
-      nixpkgs.lib.nameValuePair name (
-        pkgs.runCommand name
-          {
-            nativeBuildInputs = [ pkgs.nodejs ];
-          }
-          ''
-            cp -r --no-preserve=mode ${extensionDir} extensions
-            cd extensions
-            node ${file}
-            touch $out
-          ''
-      )
-    ) extensionTestFiles
-  );
-
 in
 nixpkgs.lib.foldl (a: b: a // b) { } [
   (evalAll "nixos" inputs.self.nixosConfigurations)
@@ -372,7 +346,6 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
           touch $out
         '';
   }
-  discoveredExtensionChecks
   (nixpkgs.lib.mapAttrs' (
     name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
   ) inputs.self.packages.x86_64-linux)
