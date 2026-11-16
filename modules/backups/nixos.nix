@@ -23,8 +23,6 @@ let
 
   sender = pkgs.callPackage ../keybase-notify/package.nix { urlFile = cfg.notifyUrlFile; };
 
-  # message may itself contain shell variable references (e.g. "$took"),
-  # so it is embedded in double quotes rather than shell-escaped.
   notify = message: ''${timeout} 25 ${lib.getExe sender} "${message}" || true'';
 
 in

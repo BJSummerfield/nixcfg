@@ -103,12 +103,9 @@ in
       direnv
     ]);
 
-  # Instances with a claudeTokenFile authenticate from that token: it comes
-  # from `claude setup-token` (run once, anywhere you can open a browser) and
-  # is stored with sops secrets/hosts/redtruck.yaml. Instances without one
-  # still need a login run as the agent user - a root login writes
-  # root-owned credentials into $CLAUDE_CONFIG_DIR that agent cannot read.
-  # From the host:
+  # claudeTokenFile: run `claude setup-token` once, anywhere you can open a
+  # browser, and store the token with sops in secrets/hosts/redtruck.yaml.
+  # Instances without one log in once as agent, from the host:
   #   sudo nixos-container run devbox -- runuser -u agent -- \
   #     env CLAUDE_CONFIG_DIR=/home/agent/.claude-state claude auth login
   environment.sessionVariables = {
