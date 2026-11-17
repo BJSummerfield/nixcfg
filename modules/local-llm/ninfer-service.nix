@@ -38,8 +38,6 @@ let
   ++ lib.optional n.vision "--vision"
   ++ n.extraArgs;
 
-  # NINFER_EXTRA_ARGS is appended last so its flags win; deliberately unquoted.
-  # shellcheck disable=SC2086
   start = pkgs.writeShellScript "ninfer-start" ''
     exec ${lib.getExe' ninfer "ninfer-serve"} ${lib.concatStringsSep " \\\n  " serveArgs} \
       ''${NINFER_EXTRA_ARGS-}
@@ -77,7 +75,6 @@ in
     TimeoutStopSec = 60;
     Restart = "on-failure";
     RestartSec = 10;
-    # The host tier is pinned at startup; the default 8 MiB limit fails it.
     LimitMEMLOCK = "infinity";
   };
 }

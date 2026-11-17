@@ -14,16 +14,21 @@
 let
   inherit (import ./agents.nix { inherit pkgs lib; }) mkAgent;
 
-  envContract = pkgs.replaceVars ./ENVIRONMENT.md {
-    imageBudget = toString (import ../pi-coding-agent/settings.nix).imageBudget;
-  };
+  instructions = import ./instructions.nix;
+
+  envContract = pkgs.writeText "ENVIRONMENT.md" instructions.environment;
 
   piWrapped = pkgs.symlinkJoin {
     name = "pi-wrapped";
     paths = [ (pkgs.callPackage ../pi-coding-agent/package.nix { }) ];
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/pi --suffix PATH : ${lib.makeBinPath (import ../pi-coding-agent/extra-packages.nix pkgs)}
+      wrapProgram $out/bin/pi --suffix PATH : ${
+        lib.makeBinPath [
+          pkgs.nodejs
+          pkgs.bun
+        ]
+      }
     '';
   };
 
@@ -98,12 +103,9 @@ in
       direnv
     ]);
 
-  # Instances with a claudeTokenFile authenticate from that token: it comes
-  # from `claude setup-token` (run once, anywhere you can open a browser) and
-  # is stored with sops secrets/hosts/redtruck.yaml. Instances without one
-  # still need a login run as the agent user - a root login writes
-  # root-owned credentials into $CLAUDE_CONFIG_DIR that agent cannot read.
-  # From the host:
+  # claudeTokenFile: run `claude setup-token` once, anywhere you can open a
+  # browser, and store the token with sops in secrets/hosts/redtruck.yaml.
+  # Instances without one log in once as agent, from the host:
   #   sudo nixos-container run devbox -- runuser -u agent -- \
   #     env CLAUDE_CONFIG_DIR=/home/agent/.claude-state claude auth login
   environment.sessionVariables = {
@@ -157,7 +159,8 @@ in
           };
         };
 
-        home.file.".claude-state/CLAUDE.md".source = ./writing.md;
+        home.file.".claude-state/CLAUDE.md".text =
+          builtins.readFile ./writing.md + "\n" + instructions.delegation;
 
         home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
           run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
@@ -225,7 +228,6 @@ in
     "d /home/agent/projects 0755 agent users -"
     "d /var/lib/paseo/worktrees 0755 agent users -"
     "d /var/tmp/pi-plans 0755 agent users 20d"
-    "d /var/tmp/pi-worktrees 0755 agent users 20d"
     "d /var/tmp/claude-1500 0755 agent users 20d"
     "d /var/tmp/pi-plans/locks 0755 agent users -"
     "x /var/tmp/pi-plans/locks"

@@ -5,10 +5,10 @@ let
   thinkingMapOf = m: if m ? thinkingLevels then { thinkingLevelMap = m.thinkingLevels; } else { };
 
   inputsOf = m: {
-    input = [ "text" ] ++ (if m ? vision then [ "image" ] else [ ]);
+    input = [ "text" ] ++ (if m.ninfer.vision then [ "image" ] else [ ]);
   };
 
-  window = m: (m.ninfer.maxContext or m.maxModelLen) - m.headroom;
+  window = m: m.ninfer.maxContext - m.headroom;
 
   compactionReserve = 20480;
 
@@ -63,10 +63,6 @@ in
       "-builtin:codemode"
       "-builtin:tool-search"
     ];
-    model = {
-      inherit (llm) provider;
-      model = llm.default;
-    };
     defaultProvider = llm.provider;
     defaultModel = llm.default;
     defaultThinkingLevel = "medium";
@@ -75,35 +71,11 @@ in
     packages = plugins.piPackages;
 
     compaction.reserveTokens = compactionReserve;
-
-    subagents = {
-      defaultModel = qualified llm.provider llm.default;
-      maxThinking = "xhigh";
-      agentOverrides = {
-        claude-code.disabled = true;
-        claude-code-writer.disabled = true;
-        codex-exec.disabled = true;
-        codex-exec-writer.disabled = true;
-        cursor-agent.disabled = true;
-        cursor-agent-writer.disabled = true;
-        delegate.inheritGlobalContext = true;
-        oracle.disabled = true;
-        worker.disabled = true;
-        researcher.inheritGlobalContext = true;
-        evidence-auditor.inheritGlobalContext = true;
-      };
-    };
   };
 
   models = {
     providers.${llm.provider} = mkProvider modelsFor;
   };
-
-  imageBudget =
-    let
-      m = llm.models.${llm.default};
-    in
-    if m ? vision then m.vision.maxImages else 0;
 
   webSearch = {
     workflow = "auto-summary";
@@ -116,25 +88,5 @@ in
     curatorTimeoutSeconds = 20;
     summaryModel = qualified llm.provider llm.default;
     toolActivation = "eager";
-  };
-
-  subagentConfig = {
-    globalConcurrencyLimit = 3;
-    maxActiveAsyncRunsPerSession = 3;
-    timeoutMs = 3600000;
-    worktreeBaseDir = "/var/tmp/pi-worktrees";
-    toolActivation = "eager";
-    defaultSubagentContext = "fresh";
-    artifactDir = "temp";
-    disabledFeatures = [
-      "agent-management"
-      "watchdog"
-      "panes"
-      "missions"
-      "lane-management"
-      "external-machines"
-      "usage-budgets"
-      "tool-budgets"
-    ];
   };
 }
