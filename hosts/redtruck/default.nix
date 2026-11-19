@@ -43,6 +43,11 @@
       mode = "0400";
       uid = 1500;
     };
+    workbox-claude-token = {
+      sopsFile = ../../secrets/hosts/redtruck.yaml;
+      mode = "0400";
+      uid = 1500;
+    };
     workbox-env.sopsFile = ../../secrets/hosts/redtruck.yaml;
     workbox-github-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
@@ -92,6 +97,7 @@
           localAddress = "192.168.100.27";
         };
         workbox = {
+          claudeTokenFile = config.sops.secrets.workbox-claude-token.path;
           githubTokenFile = config.sops.secrets.workbox-github-token.path;
           paseoPasswordFile = config.sops.secrets.workbox-paseo-password.path;
           signingKeyFile = config.sops.secrets.workbox-signing-key.path;

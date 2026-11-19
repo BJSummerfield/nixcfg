@@ -29,14 +29,26 @@
 - The worker sees none of your conversation. The brief states the goal,
   absolute input paths, one absolute output path, a budget in tool calls or
   minutes, and that the output's first line is `DONE:`, `FAILED: <why>` or
-  `BLOCKED: <decision needed>`. It forbids starting agents, detaching
+  `BLOCKED: <decision needed>`, and that its last step is the ping below. It forbids starting agents, detaching
   processes (`setsid`, `nohup`, `&`), edits outside named files, `git stash`,
   `git push` and switching branches. For a structured answer from a
   local-model agent, add `--output-schema <json-schema>` to a run without
   `--no-wait`.
-- `paseo wait <id> --timeout <s>` returns at the timeout with exit code 0 and
-  the agent still running: check `paseo inspect <id> --json` for status.
+- Do not poll. The brief gives the worker your agent id (`$PASEO_AGENT_ID`)
+  and ends with its last step: `paseo send <your-id> --no-wait "DONE <task>:
+  <first line of output> <output path>"`. The output file is the truth; the
+  message only wakes you. A plain send reaches you after your current turn
+  ends; `--behavior interrupt` reaches you at once. A send also wakes an
+  archived agent, so never address an archived or replaced one. Never end a
+  turn waiting on workers unless a running one will ping you.
+- If a ping may have been missed, do one blocking `paseo wait <id> --timeout
+  600` per round, then `paseo inspect <id> --json` for status: the wait
+  returns at the timeout with exit code 0 and the agent still running.
   `paseo logs <id>` shows what it did.
+- Start a long-lived coordinator from the main session with no `--workspace`,
+  so it stays visible; workers it launches stay hidden. A coordinator never
+  starts its own successor: it writes its state to a file, pings the main
+  session `HANDOFF:` and ends.
 - A launch with a bad model name also exits 0; the failure shows only in
   `paseo inspect` and `paseo logs`. Judge every agent by its status and its
   output file, never by an exit code.
