@@ -311,18 +311,8 @@ in
           stageTimeoutMin = 45;
           lockWaitMin = 10;
 
-          valheimUpdater = pkgs.writeShellApplication {
-            name = "valheim-updater";
-            runtimeInputs = [
-              pkgs.depotdownloader
-              pkgs.coreutils
-              pkgs.findutils
-              pkgs.gawk
-              pkgs.gnugrep
-              pkgs.util-linux
-              config.systemd.package
-            ];
-            text = builtins.readFile ./updater.sh;
+          valheimUpdater = pkgs.callPackage ./updater-package.nix {
+            systemd = config.systemd.package;
           };
 
           sender = pkgs.callPackage ../keybase-notify/package.nix {
