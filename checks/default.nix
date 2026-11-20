@@ -18,79 +18,9 @@ let
   hwConfigGlob = "hosts/*/hardware-configuration.nix";
 
   valheimNotify = pkgs.callPackage ../modules/valheim-server/notify-package.nix { };
-
-  valheimNotifySample = pkgs.writeText "valheim-notify-sample.txt" ''
-    09/10/2026 21:14:02: Player history entry with index 0:  infestedmrt (Steam_76561198044411510, 4C8BF26B49A14417)
-    09/10/2026 21:14:03: Player history entry with index 1:  Bjorn Ironside (Steam_76561198044411999, 5D9CF37C5AB25528)
-    09/10/2026 21:14:05: Valheim version: l-1.0.12 (network version 40)
-    09/10/2026 21:14:30: Game server connected
-    09/10/2026 21:20:00: Got connection SteamID 76561198044411510
-    09/10/2026 21:20:01: Network version check, their:40, mine:40
-    09/10/2026 21:20:25: Got character ZDOID from TeChNo ViKiNg : 1930526702:19
-    09/10/2026 21:24:00: Connections 1 ZDOS:170402  sent:0 recv:0
-    09/10/2026 21:30:00: Got character ZDOID from TeChNo ViKiNg : 0:0
-    09/10/2026 21:30:10: Got character ZDOID from TeChNo ViKiNg : 1930526702:44
-    09/10/2026 21:31:00: Got connection SteamID 76561198044411999
-    09/10/2026 21:31:05: Network version check, their:40, mine:40
-    09/10/2026 21:31:20: Got character ZDOID from Bjorn Ironside : 2200000000:5
-    09/10/2026 21:35:00: Got connection SteamID 76561190000000001
-    09/10/2026 21:35:05: Network version check, their:39, mine:40
-    09/10/2026 21:35:06: Closing socket 76561190000000001
-    09/10/2026 21:36:00: Closing socket 76561198044411999
-    09/10/2026 21:40:00: Closing socket 76561198044411510
-  '';
-
-  valheimNotifyExpected = pkgs.writeText "valheim-notify-expected.txt" ''
-    up l-1.0.12
-    join 76561198044411510 TeChNo ViKiNg (1 online)
-    join 76561198044411999 Bjorn Ironside (2 online)
-    mismatch 39 40
-    leave 76561198044411999 Bjorn Ironside (1 online)
-    leave 76561198044411510 TeChNo ViKiNg (0 online)
-  '';
-
-  stalwartPlanBase = {
-    hostname = "mx1.example.test";
-    domain = "example.test";
-    namecheap = null;
-    acme = {
-      contact = "postmaster@example.test";
-      staging = true;
-    };
-    publishRecords = [ "dkim" ];
-    accounts = { };
-    extraDomains = [ ];
+  valheimUpdater = pkgs.callPackage ../modules/valheim-server/updater-package.nix {
+    inherit (pkgs) systemd;
   };
-  stalwartPlan =
-    cfg:
-    import ../modules/stalwart/render.nix {
-      inherit (pkgs) lib writeText;
-      inherit cfg;
-      webui = pkgs.stalwart_1_0.webui;
-    };
-  stalwartPlanNoDns = stalwartPlan stalwartPlanBase;
-  stalwartPlanNamecheap = stalwartPlan (
-    stalwartPlanBase
-    // {
-      namecheap = {
-        apiUser = "someuser";
-        username = null;
-        clientIp = "203.0.113.7";
-        apiKeyFile = "/etc/namecheap-key";
-      };
-      extraDomains = [ "other.test" ];
-      accounts = {
-        test = {
-          description = "Test account";
-          domain = null;
-        };
-        other = {
-          description = null;
-          domain = "other.test";
-        };
-      };
-    }
-  );
 
 in
 nixpkgs.lib.foldl (a: b: a // b) { } [
@@ -133,34 +63,16 @@ nixpkgs.lib.foldl (a: b: a // b) { } [
           deadnix --fail . --exclude ${hwConfigGlob}
           touch $out
         '';
-    stalwart-plan =
-      pkgs.runCommand "stalwart-plan"
-        {
-          nativeBuildInputs = [ pkgs.jq ];
-        }
-        ''
-          for plan in ${stalwartPlanNoDns} ${stalwartPlanNamecheap}; do
-            while IFS= read -r line; do
-              printf '%s\n' "$line" | jq -e . > /dev/null
-            done < "$plan"
-          done
-          [ "$(jq -c . ${stalwartPlanNoDns} | wc -l)" = "6" ]
-          [ "$(jq -c . ${stalwartPlanNamecheap} | wc -l)" = "9" ]
-          jq -e 'select(.object == "Domain") | .value."domain-other-test".name == "other.test"' ${stalwartPlanNamecheap}
-          jq -e 'select(.object == "Account") | .value."account-other".domainId == "#domain-other-test"' ${stalwartPlanNamecheap}
-          jq -e 'select(.object == "Account") | .value."account-test".domainId == "#main-domain"' ${stalwartPlanNamecheap}
-          touch $out
-        '';
-    valheim-notify-parser =
-      pkgs.runCommand "valheim-notify-parser"
-        {
-          nativeBuildInputs = [ valheimNotify ];
-        }
-        ''
-          valheim-notify parse <${valheimNotifySample} >actual
-          diff -u ${valheimNotifyExpected} actual
-          touch $out
-        '';
+    shell-scripts = pkgs.linkFarm "shell-scripts" [
+      {
+        name = "valheim-notify";
+        path = valheimNotify;
+      }
+      {
+        name = "valheim-updater";
+        path = valheimUpdater;
+      }
+    ];
   }
   (nixpkgs.lib.mapAttrs' (
     name: drv: nixpkgs.lib.nameValuePair "pkg-${name}" drv
