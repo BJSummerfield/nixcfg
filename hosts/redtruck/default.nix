@@ -32,17 +32,6 @@
       mode = "0400";
       uid = 1500;
     };
-    researchbox-github-token = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
-      mode = "0440";
-      group = "users";
-    };
-    researchbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
-    researchbox-signing-key = {
-      sopsFile = ../../secrets/hosts/redtruck.yaml;
-      mode = "0400";
-      uid = 1500;
-    };
     workbox-claude-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
