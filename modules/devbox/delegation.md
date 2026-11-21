@@ -8,7 +8,10 @@
   if the brief says so.
 - Local model: `--provider @localModel@`. Claude:
   `--provider claude/<model>`, for review and anything a decision rests on;
-  only a Claude agent starts Claude agents.
+  only a Claude agent starts Claude agents. Every `paseo run` of a Claude
+  agent adds `--mode bypassPermissions`; without it the agent stops at its
+  first shell permission prompt and nobody answers. Runs of local-model
+  agents omit the flag.
 - At most @localLanes@ local-model agents at once, fewer if you also run on
   the local model. Extra requests wait for a free lane; one that waits more
   than @localQueueMinutes@ minutes fails with HTTP 503 (`request_queue_timeout`),
