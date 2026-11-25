@@ -25,7 +25,7 @@
           hash = "sha256-dNLFcUXm/xHR0vqnlZRHf5vJA6YRrx+yAhgYn7u3fYI=";
         };
         maxContext = 245760;
-        maxConcurrency = 3;
+        maxConcurrency = 4;
         kvDtype = "k8v4";
         prefillChunk = 2048;
         spec = "dflash2";
