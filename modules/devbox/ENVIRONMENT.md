@@ -3,9 +3,11 @@
 You are inside a long-lived NixOS container (systemd-nspawn). The container is
 the security boundary; no sandbox wraps your commands.
 
-- Two containers exist: `devbox` and `workbox`; `hostname` says which one you
-  are in. Anything installed by hand is per container.
+- Three containers exist: `devbox`, `workbox` and `research-box`; `hostname`
+  says which one you are in. Anything installed by hand is per container.
 - `workbox` also has `ATLASSIAN_API_TOKEN` in its agents' environment.
+- `research-box` has no claude, no GitHub token and no `gh`; public
+  repositories still clone over HTTPS. It runs only when started by hand.
 - The container persists across sessions and host reboots: home, shell
   history and hand-installed tools are still here next time. Projects live in
   `/home/agent/projects`, paseo worktrees in `/var/lib/paseo/worktrees`;

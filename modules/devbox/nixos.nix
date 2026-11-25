@@ -41,7 +41,8 @@ in
       types.submodule {
         options = {
           githubTokenFile = mkOption {
-            type = types.path;
+            type = types.nullOr types.path;
+            default = null;
             description = ''
               Path on the host to a file containing only a GitHub fine-grained
               PAT, scoped to an explicit repository allowlist with Contents and
@@ -59,8 +60,30 @@ in
               container.nix), so `owner` cannot name this uid at all. Set
               `mode = "0440"` with `group = "users"` instead (gid 100, which
               exists on the host and is the container agent's primary group).
+
+              null leaves this instance without GitHub access: no credential
+              helper and no `gh`.
             '';
             example = "/run/secrets/devbox-github-token";
+          };
+
+          claude = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether claude is installed in this instance. false leaves pi as
+              its only agent, and claudeTokenFile must then be null.
+            '';
+          };
+
+          autoStart = mkOption {
+            type = types.bool;
+            default = true;
+            description = ''
+              Whether the container starts at boot. false leaves it stopped
+              until started by hand, with
+              `sudo systemctl start container@<name>`.
+            '';
           };
 
           paseoPasswordFile = mkOption {
@@ -192,6 +215,13 @@ in
           characters, because the veth interface "ve-${name}" must fit
           Linux's 15-character interface name limit.
         '';
+      }) cfg
+      ++ mapAttrsToList (name: box: {
+        assertion = box.claude || box.claudeTokenFile == null;
+        message = ''
+          mine.system.devboxes.${name}: claudeTokenFile is set but claude is
+          false.
+        '';
       }) cfg;
 
     networking.nat = {
@@ -205,9 +235,8 @@ in
     ) cfg;
 
     containers = mapAttrs (name: box: {
-      autoStart = true;
       privateNetwork = true;
-      inherit (box) hostAddress localAddress;
+      inherit (box) autoStart hostAddress localAddress;
 
       allowedDevices = [
         {
@@ -225,12 +254,14 @@ in
           hostPath = "/var/lib/tailscale-${name}";
           isReadOnly = false;
         };
-        "/run/secrets/github-token" = {
-          hostPath = box.githubTokenFile;
-          isReadOnly = true;
-        };
         "/run/secrets/paseo-password" = {
           hostPath = box.paseoPasswordFile;
+          isReadOnly = true;
+        };
+      }
+      // lib.optionalAttrs (box.githubTokenFile != null) {
+        "/run/secrets/github-token" = {
+          hostPath = box.githubTokenFile;
           isReadOnly = true;
         };
       }
@@ -260,6 +291,8 @@ in
           signCommits = box.signingKeyFile != null;
           hasEnvironmentFile = box.environmentFile != null;
           hasClaudeToken = box.claudeTokenFile != null;
+          hasGithubToken = box.githubTokenFile != null;
+          withClaude = box.claude;
         })
       ];
     }) cfg;

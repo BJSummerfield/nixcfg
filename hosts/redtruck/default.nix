@@ -32,6 +32,7 @@
       mode = "0400";
       uid = 1500;
     };
+    researchbox-paseo-password.sopsFile = ../../secrets/hosts/redtruck.yaml;
     workbox-claude-token = {
       sopsFile = ../../secrets/hosts/redtruck.yaml;
       mode = "0400";
@@ -84,6 +85,14 @@
           tailnetHostname = "devbox.mist-gamma.ts.net";
           hostAddress = "192.168.100.26";
           localAddress = "192.168.100.27";
+        };
+        research-box = {
+          claude = false;
+          autoStart = false;
+          paseoPasswordFile = config.sops.secrets.researchbox-paseo-password.path;
+          tailnetHostname = "research-box.mist-gamma.ts.net";
+          hostAddress = "192.168.100.34";
+          localAddress = "192.168.100.35";
         };
         workbox = {
           claudeTokenFile = config.sops.secrets.workbox-claude-token.path;
