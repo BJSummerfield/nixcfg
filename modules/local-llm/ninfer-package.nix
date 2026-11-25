@@ -15,13 +15,13 @@
 }:
 cudaPackages_13_1.backendStdenv.mkDerivation {
   pname = "ninfer";
-  version = "0-unstable-2026-11-16";
+  version = "0-unstable-2026-11-24";
 
   src = fetchFromGitHub {
     owner = "Neroued";
     repo = "ninfer";
-    rev = "ebdc67e584bcd9ebe16ee63af9abeb2118bac6cd";
-    hash = "sha256-9tkgzswKNvxH7TNVZ42KYixMC5MH6KoInncZ59SvSBg=";
+    rev = "9ebb72ed756ecbec5dbc18ee22d58fc08575e129";
+    hash = "sha256-pJYoDZX/X/yUwuHpRLsfk25SJw79a4Pk+PI8K2qU3uY=";
   };
 
   nativeBuildInputs = [
