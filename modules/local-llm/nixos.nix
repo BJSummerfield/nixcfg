@@ -108,7 +108,7 @@ in
     mine.allowedUnfree = lib.mkIf cudaEnabled [
       "libnvvm"
       "cuda_crt"
-      "cuda_cccl"
+      "cccl"
       "cuda_nvtx"
       "cuda_cudart"
       "cuda_nvcc"
