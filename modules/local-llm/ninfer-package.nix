@@ -4,7 +4,7 @@
   cmake,
   ninja,
   pkg-config,
-  cudaPackages_13_1,
+  cudaPackages_13_4,
   autoAddDriverRunpath,
   ffmpeg,
   curl,
@@ -13,7 +13,7 @@
   libjpeg,
   python3,
 }:
-cudaPackages_13_1.backendStdenv.mkDerivation {
+cudaPackages_13_4.backendStdenv.mkDerivation {
   pname = "ninfer";
   version = "0-unstable-2026-11-24";
 
@@ -28,16 +28,16 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
     cmake
     ninja
     pkg-config
-    cudaPackages_13_1.cuda_nvcc
+    cudaPackages_13_4.cuda_nvcc
     autoAddDriverRunpath
     python3
   ];
 
   buildInputs = [
-    cudaPackages_13_1.cuda_cudart
-    cudaPackages_13_1.cccl
-    cudaPackages_13_1.cuda_nvtx
-    cudaPackages_13_1.cuda_profiler_api
+    cudaPackages_13_4.cuda_cudart
+    cudaPackages_13_4.cccl
+    cudaPackages_13_4.cuda_nvtx
+    cudaPackages_13_4.cuda_profiler_api
     curl
     ffmpeg
     hwloc
@@ -63,7 +63,7 @@ cudaPackages_13_1.backendStdenv.mkDerivation {
   doCheck = true;
   checkPhase = ''
     runHook preCheck
-    LD_LIBRARY_PATH="${cudaPackages_13_1.cuda_cudart}/lib/stubs" \
+    LD_LIBRARY_PATH="${cudaPackages_13_4.cuda_cudart}/lib/stubs" \
       ctest --output-on-failure --no-tests=error -R "^ninfer_(resource_manager|context_pool|serve_options)_test$"
     runHook postCheck
   '';
