@@ -4,6 +4,8 @@
   signCommits,
   hasEnvironmentFile,
   hasClaudeToken,
+  hasGithubToken,
+  withClaude,
 }:
 {
   config,
@@ -32,8 +34,8 @@ let
     '';
   };
 
-  agentPkgs = [
-    (mkAgent {
+  agentPkgs =
+    lib.optional withClaude (mkAgent {
       name = "claude";
       real =
         if hasClaudeToken then
@@ -45,11 +47,12 @@ let
           lib.getExe pkgs.claude-code;
       args = ''--append-system-prompt "$(cat ${envContract})"'';
     })
-    (mkAgent {
-      name = "pi";
-      real = "${piWrapped}/bin/pi";
-    })
-  ];
+    ++ [
+      (mkAgent {
+        name = "pi";
+        real = "${piWrapped}/bin/pi";
+      })
+    ];
 
   ghWrapped = pkgs.writeShellScriptBin "gh" ''
     export GH_TOKEN=$(cat /run/secrets/github-token)
@@ -89,11 +92,11 @@ in
   nix.registry.nixpkgs.flake = inputs.nixpkgs;
   nix.settings.nix-path = [ "nixpkgs=flake:nixpkgs" ];
 
-  mine.allowedUnfree = [ "claude-code" ];
+  mine.allowedUnfree = lib.optional withClaude "claude-code";
 
   environment.systemPackages =
     agentPkgs
-    ++ [ ghWrapped ]
+    ++ lib.optional hasGithubToken ghWrapped
     ++ (with pkgs; [
       curl
       fd
@@ -109,9 +112,11 @@ in
   #   sudo nixos-container run devbox -- runuser -u agent -- \
   #     env CLAUDE_CONFIG_DIR=/home/agent/.claude-state claude auth login
   environment.sessionVariables = {
-    CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
     DISABLE_AUTOUPDATER = "1";
     TMPDIR = "/var/tmp";
+  }
+  // lib.optionalAttrs withClaude {
+    CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
   };
 
   home-manager = {
@@ -150,6 +155,8 @@ in
             // lib.optionalAttrs signCommits {
               signingkey = "/run/secrets/signing-key";
             };
+          }
+          // lib.optionalAttrs hasGithubToken {
             credential."https://github.com".helper =
               "!f() { echo username=x-access-token; echo password=$(cat /run/secrets/github-token); }; f";
           }
@@ -159,15 +166,18 @@ in
           };
         };
 
-        home.file.".claude-state/CLAUDE.md".text =
-          builtins.readFile ./writing.md + "\n" + instructions.delegation;
+        home.file.".claude-state/CLAUDE.md" = lib.mkIf withClaude {
+          text = builtins.readFile ./writing.md + "\n" + instructions.delegation;
+        };
 
-        home.activation.claudeSettings = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-          run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
-          run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
-          run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
-            "$HOME/.claude-state/settings.json"
-        '';
+        home.activation.claudeSettings = lib.mkIf withClaude (
+          lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+            run mkdir -p $VERBOSE_ARG "$HOME/.claude-state"
+            run rm -f $VERBOSE_ARG "$HOME/.claude-state/settings.json"
+            run install $VERBOSE_ARG -m 0644 ${claudeSettings} \
+              "$HOME/.claude-state/settings.json"
+          ''
+        );
       };
   };
 
@@ -182,10 +192,12 @@ in
     hostnames = [ tailnetHostname ];
     dataDir = "/var/lib/paseo";
     environment = {
-      CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
       DISABLE_AUTOUPDATER = "1";
       PASEO_WEB_UI_ENABLED = "true";
       TMPDIR = "/var/tmp";
+    }
+    // lib.optionalAttrs withClaude {
+      CLAUDE_CONFIG_DIR = "/home/agent/.claude-state";
     };
   };
 
@@ -228,10 +240,10 @@ in
     "d /home/agent/projects 0755 agent users -"
     "d /var/lib/paseo/worktrees 0755 agent users -"
     "d /var/tmp/pi-plans 0755 agent users 20d"
-    "d /var/tmp/claude-1500 0755 agent users 20d"
     "d /var/tmp/pi-plans/locks 0755 agent users -"
     "x /var/tmp/pi-plans/locks"
-  ];
+  ]
+  ++ lib.optional withClaude "d /var/tmp/claude-1500 0755 agent users 20d";
 
   system.stateVersion = "26.05";
 }
