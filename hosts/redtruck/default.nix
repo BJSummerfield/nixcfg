@@ -115,10 +115,7 @@
       steam.enable = true;
       remoteAccess = {
         enable = true;
-        authorizedKeys = [
-          "t495"
-          "mac"
-        ];
+        authorizedKeys = [ "t495" ];
       };
       teamspeak-client.enable = true;
     };
