@@ -12,20 +12,6 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix-darwin = {
-      url = "github:nix-darwin/nix-darwin/master";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
-    mac-app-util = {
-      url = "github:hraban/mac-app-util";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
-        cl-nix-lite.inputs.nixpkgs.follows = "nixpkgs";
-        cl-nix-lite.inputs.treefmt-nix.follows = "mac-app-util/treefmt-nix";
-      };
-    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     paseo = {
       url = "github:getpaseo/paseo";
@@ -40,7 +26,6 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
     in
@@ -57,15 +42,6 @@
       checks.x86_64-linux = import ./checks {
         inherit nixpkgs inputs;
         pkgs = nixpkgs.legacyPackages.x86_64-linux;
-      };
-
-      darwinConfigurations = {
-        mac = inputs.nix-darwin.lib.darwinSystem {
-          specialArgs = {
-            inherit inputs;
-          };
-          modules = [ ./hosts/mac ];
-        };
       };
 
       nixosConfigurations = {
