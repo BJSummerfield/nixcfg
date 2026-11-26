@@ -172,9 +172,9 @@ Only one renderer can hold the converter at a time.
 - **AirPlay after Symfonium:** this just works. shairport-sync restarts
   `gmediarender` before each AirPlay session, which releases the device even
   if a Symfonium queue was paused or had finished.
-- **Symfonium after AirPlay:** deselect **Desk** on the AirPlay sender first. A paused
-  AirPlay session keeps the device open, and the cast stays silent until it's
-  released.
+- **Symfonium after AirPlay:** deselect **Desk** on the AirPlay sender first. A
+  paused AirPlay session keeps the device open, and the cast stays silent until
+  it's released.
 
 The K11's front-panel input selector picks between the Pi (optical) and the
 KVM (USB). Nothing on the Pi can switch it.
