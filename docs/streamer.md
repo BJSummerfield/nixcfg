@@ -7,15 +7,16 @@ desk computer being on. Phones and laptops anywhere in the house cast to it.
 Jellyfin ──HTTP(S)──▶ Pi 4B ──USB──▶ FiiO K11 R2R (USB input, on the KVM hub)
                         ▲
    Symfonium (UPnP) ────┤
-   Mac (AirPlay) ───────┘
+   AirPlay client ──────┘
 ```
 
 The Pi runs two renderers, both advertised as **Desk**:
 
 - `gmediarender`: a UPnP renderer. Symfonium casts to it. The Pi fetches the
   file from Jellyfin itself, so the phone only sends the controls.
-- `shairport-sync`: an AirPlay target for the Mac. AirPlay is CD quality and
-  re-times the stream slightly, so treat it as the convenience path.
+- `shairport-sync`: an AirPlay target for any AirPlay sender (a laptop, a
+  phone). AirPlay is CD quality and re-times the stream slightly, so treat it
+  as the convenience path.
 
 Both write straight to the K11's ALSA `hw:` device with no software
 mixing, so a 16/44.1 file reaches the DAC unchanged. A udev rule names the
@@ -161,8 +162,8 @@ the temperature with `cat /sys/class/thermal/thermal_zone0/temp`. 52000 means
   turn up, cap the cast in Symfonium's transcoding settings to 96 kHz, or
   switch to the coax input (192 kHz). Coax ties the Pi's ground to the DAC,
   so listen for hum.
-- **Mac:** pick **Desk** as the AirPlay output. Leave the Mac's volume at
-  maximum; shairport-sync ignores it either way.
+- **AirPlay sender:** pick **Desk** as the AirPlay output. Leave the sender's
+  volume at maximum; shairport-sync ignores it either way.
 
 ## Switching between Symfonium and AirPlay
 
@@ -171,7 +172,7 @@ Only one renderer can hold the converter at a time.
 - **AirPlay after Symfonium:** this just works. shairport-sync restarts
   `gmediarender` before each AirPlay session, which releases the device even
   if a Symfonium queue was paused or had finished.
-- **Symfonium after AirPlay:** deselect **Desk** on the Mac first. A paused
+- **Symfonium after AirPlay:** deselect **Desk** on the AirPlay sender first. A paused
   AirPlay session keeps the device open, and the cast stays silent until it's
   released.
 
