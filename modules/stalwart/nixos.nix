@@ -27,7 +27,7 @@ let
     export STALWART_RECOVERY_ADMIN="admin:$(< "$CREDENTIALS_DIRECTORY/admin-pw")"
     export STALWART_HOSTNAME=${lib.escapeShellArg cfg.hostname}
     export STALWART_PUBLIC_URL=${lib.escapeShellArg cfg.publicUrl}
-    exec ${pkgs.stalwart_1_0}/bin/stalwart --config=${configFile}
+    exec ${pkgs.stalwart_1}/bin/stalwart --config=${configFile}
   '';
 in
 {
@@ -145,15 +145,13 @@ in
 
   config = lib.mkIf cfg.enable {
     warnings =
-      lib.optional (lib.versionAtLeast pkgs.stalwart_1_0.version "1.1.0") "stalwart_1_0 is ${pkgs.stalwart_1_0.version} in nixpkgs, which carries NixOS/nixpkgs#582349; check its release notes before the next vps rebuild"
-      ++
-        lib.optional (options.services.stalwart ? provision)
-          "nixpkgs services.stalwart now supports 1.0 (NixOS/nixpkgs#552103); consider replacing the hand-rolled container in modules/stalwart/nixos.nix";
+      lib.optional (options.services.stalwart ? provision)
+        "nixpkgs services.stalwart now supports 1.0 (NixOS/nixpkgs#552103); consider replacing the hand-rolled container in modules/stalwart/nixos.nix";
 
     mine.system.stalwart.planFile = import ./render.nix {
       inherit lib cfg;
       inherit (pkgs) writeText;
-      webui = pkgs.stalwart_1_0.webui;
+      webui = pkgs.stalwart_1.webui;
     };
     assertions = [
       {
