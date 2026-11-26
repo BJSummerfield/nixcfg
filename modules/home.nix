@@ -2,7 +2,6 @@
   imports = [
     ./_1password/home.nix
     ./alacritty/home.nix
-    ./alacritty/linux.nix
     ./battery-notifications/home.nix
     ./direnv/home.nix
     ./encode_queue/home.nix
