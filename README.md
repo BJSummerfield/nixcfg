@@ -1,7 +1,7 @@
 # nixcfg
 
-One flake for every machine I run: six NixOS hosts, one nix-darwin Mac, and the
-home-manager configuration for their users. Secrets are sops-encrypted in-tree,
+One flake for every machine I run: six NixOS hosts and the home-manager
+configuration for their users. Secrets are sops-encrypted in-tree,
 disks are declared with disko, and every host is on the same tailnet.
 
 ## Hosts
@@ -12,29 +12,26 @@ disks are declared with disko, and every host is on the same tailnet.
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
 | `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
-| `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. See `docs/streamer.md`. |
+| `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. |
 | `vps` | NixOS | Public edge — Stalwart mail, TeamSpeak, Ari Summerfield Photography, Switchyard, backups. |
-| `mac` | nix-darwin | macOS workstation. |
 
 ## Layout
 
-- `flake.nix` — inputs and the `nixosConfigurations` / `darwinConfigurations` outputs.
+- `flake.nix` — inputs and the `nixosConfigurations` output.
 - `hosts/<name>/` — per-host config, `hardware-configuration.nix`, and `disko.nix`.
-- `modules/` — the `mine.*` option modules, split into `nixos.nix` / `home.nix` / `darwin.nix` per feature.
+- `modules/` — the `mine.*` option modules, split into `nixos.nix` / `home.nix` per feature.
 - `users/` — per-user definitions.
 - `packages/` — flake packages.
 - `checks/` — the flake checks (see below).
 - `secrets/` — sops-encrypted secrets, keyed to host SSH keys.
 - `ci/`, `.github/workflows/check.yml` — CI, including the binary cache plumbing.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
-- `docs/streamer.md` — building, flashing and bringing up the Raspberry Pi streamer.
 
 ## Working on it
 
 ```sh
 nix develop                                   # nixfmt, sops, statix, deadnix
-sudo nixos-rebuild switch --flake .#<host>    # NixOS
-darwin-rebuild switch --flake .#mac           # macOS
+sudo nixos-rebuild switch --flake .#<host>
 nix fmt                                       # nixfmt via treefmt
 nix flake check                               # everything below
 ```

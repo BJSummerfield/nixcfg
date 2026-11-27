@@ -40,10 +40,7 @@
       };
       remoteAccess = {
         enable = true;
-        authorizedKeys = [
-          "redtruck"
-          "mac"
-        ];
+        authorizedKeys = [ "redtruck" ];
       };
       teamspeak-client.enable = true;
     };

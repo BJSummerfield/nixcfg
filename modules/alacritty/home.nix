@@ -7,6 +7,7 @@
 let
   inherit (lib) mkEnableOption mkIf;
   cfg = config.mine.user.alacritty;
+  niriCfg = config.mine.user.niri;
   inherit (themeConstants) colors;
   mono = themeConstants.fonts.monospace.name;
 in
@@ -115,5 +116,8 @@ in
     home.sessionVariables = {
       TERMINAL = "alacritty";
     };
+    mine.user.niri.extraBinds = mkIf niriCfg.enable ''
+      Mod+Return { spawn "${lib.getExe config.programs.alacritty.package}"; }
+    '';
   };
 }

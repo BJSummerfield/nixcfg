@@ -7,14 +7,9 @@
 }:
 let
   inherit (lib) mkEnableOption mkIf;
-  inherit (pkgs.stdenv.hostPlatform) isDarwin isLinux;
   cfg = config.mine.user.paseo-desktop;
 
-  settingsDir =
-    if isDarwin then
-      "${config.home.homeDirectory}/Library/Application Support/Paseo"
-    else
-      "${config.xdg.configHome}/Paseo";
+  settingsDir = "${config.xdg.configHome}/Paseo";
 
   settingsSeed = pkgs.writeText "paseo-desktop-settings.json" (
     builtins.toJSON {
@@ -32,8 +27,8 @@ in
     mkEnableOption "Paseo desktop app as a client for a remote daemon";
 
   config = mkIf cfg.enable {
-    home.packages = lib.optional isLinux (
-      pkgs.symlinkJoin {
+    home.packages = [
+      (pkgs.symlinkJoin {
         name = "paseo-desktop";
         paths = [
           (inputs.paseo.packages.${pkgs.stdenv.hostPlatform.system}.desktop.overrideAttrs {
@@ -45,8 +40,8 @@ in
           wrapProgram $out/bin/paseo-desktop \
             --set PASEO_ELECTRON_USER_DATA_DIR ${settingsDir}
         '';
-      }
-    );
+      })
+    ];
 
     home.activation.paseoDesktopSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       settings_dir="${settingsDir}"

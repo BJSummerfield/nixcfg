@@ -25,7 +25,6 @@ let
 in
 nixpkgs.lib.foldl (a: b: a // b) { } [
   (evalAll "nixos" inputs.self.nixosConfigurations)
-  (evalAll "darwin" inputs.self.darwinConfigurations)
   {
     fmt-check =
       pkgs.runCommand "fmt-check"

@@ -16,7 +16,6 @@
       sshKeys = {
         t495 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB7J5ZniIdU5XnuPLC4xB4bTuQpHMSWBWqfJ1NlJrewj waktu@t495";
         redtruck = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG6p+QgFfhPs3W2FWXLhtdn0d1ZUuXllOdbrmjglMr0K waktu@redtruck";
-        mac = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIJvp5+k7aS98u1vw7Vg4qd8M4kTg8SrKT+q5rHEtcHz brian@mac.local";
       };
       nasAccess = {
         media = "rw";

@@ -24,7 +24,7 @@ nothing by itself; each host picks the change up at its next upgrade.
   `nix eval --raw '.#nixosConfigurations.redtruck.config.containers.devbox.config.home-manager.users.agent.home.file.".pi/agent/AGENTS.md".source'`,
   or `nix build --no-link --print-out-paths` of one such file attribute, one
   flake package, or one entry of `.#checks.x86_64-linux` other than the
-  `nixos-*` and `darwin-*` ones. New files must be `git add`ed first; flake
+  `nixos-*` ones. New files must be `git add`ed first; flake
   evaluation does not see untracked files.
 
 ## Heavy checks
