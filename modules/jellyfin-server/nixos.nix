@@ -29,7 +29,7 @@ in
       }
       {
         assertion = mediaRoGid != null;
-        message = "NAS media share must have rwGid defined to use jellyfin-server";
+        message = "NAS media share must have roGid defined to use jellyfin-server";
       }
     ];
 
