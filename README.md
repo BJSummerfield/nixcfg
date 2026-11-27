@@ -12,7 +12,7 @@ disks are declared with disko, and every host is on the same tailnet.
 | `t495` | NixOS | Laptop, niri desktop. |
 | `elitebook` | NixOS | Couch machine — `jellybox` and `steambox`. |
 | `paynefield` | NixOS | Home server — DNS, Jellyfin, Immich, Valheim, backups. |
-| `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. See `docs/streamer.md`. |
+| `streamer` | NixOS (aarch64) | Raspberry Pi 4B network audio streamer — UPnP (Symfonium) and AirPlay into the desk DAC. |
 | `vps` | NixOS | Public edge — Stalwart mail, TeamSpeak, Ari Summerfield Photography, Switchyard, backups. |
 
 ## Layout
@@ -26,7 +26,6 @@ disks are declared with disko, and every host is on the same tailnet.
 - `secrets/` — sops-encrypted secrets, keyed to host SSH keys.
 - `ci/`, `.github/workflows/check.yml` — CI, including the binary cache plumbing.
 - `New_Host.md` — provisioning a brand new machine with `nixos-anywhere`.
-- `docs/streamer.md` — building, flashing and bringing up the Raspberry Pi streamer.
 
 ## Working on it
 
